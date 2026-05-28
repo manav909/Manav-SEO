@@ -133,7 +133,7 @@ async function runPsi(url: string): Promise<{
   if (!key) return { lcp: null, tbt: null, cls: null, score: null };
   try {
     const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${key}&fields=lighthouseResult.categories.performance.score,lighthouseResult.audits.largest-contentful-paint.numericValue,lighthouseResult.audits.total-blocking-time.numericValue,lighthouseResult.audits.cumulative-layout-shift.numericValue`;
-    const r = await withTimeout(fetch(endpoint).then(r => r.json()), `PSI(${url})`, 25000);
+    const r = await withTimeout(fetch(endpoint).then(r => r.json()), `PSI(${url})`, 20000);
     if (!r) return { lcp: null, tbt: null, cls: null, score: null };
     const lr = (r as any)?.lighthouseResult;
     return {
@@ -427,14 +427,17 @@ const stepTechnicalPerformance = {
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls } = await resolveTargetPages(ctx);
-    const toTest = targetUrls.slice(0, 6); // PSI rate limit consideration
+    // PSI is slow (20-40s per page). Test only 3 pages, in PARALLEL, with a
+    // hard 50s ceiling on the whole batch so the step can't hit Vercel's timeout.
+    const toTest = targetUrls.slice(0, 3);
 
-    // Run PSI sequentially to avoid rate limiting
-    const psiResults: Array<{ url: string; lcp: number | null; tbt: number | null; cls: number | null; score: number | null }> = [];
-    for (const url of toTest) {
-      const r = await runPsi(url);
-      psiResults.push({ url, ...r });
-    }
+    const psiResults: Array<{ url: string; lcp: number | null; tbt: number | null; cls: number | null; score: number | null }> =
+      await Promise.race([
+        Promise.all(toTest.map(async url => ({ url, ...(await runPsi(url)) }))),
+        new Promise<any[]>((resolve) =>
+          setTimeout(() => resolve(toTest.map(url => ({ url, lcp: null, tbt: null, cls: null, score: null }))), 50000)
+        ),
+      ]);
 
     const failed = psiResults.filter(p => p.score === null);
     const scored = psiResults.filter(p => p.score !== null);
