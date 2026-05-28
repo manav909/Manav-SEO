@@ -536,6 +536,7 @@ Produce the complete JSON report now.`;
     // The report is identified by its pillar, not its kind, so the fallback is fine.
     const baseRow: any = {
       campaign_id:       opts.campaignId,
+      project_id:        opts.projectId,   // REQUIRED — NOT NULL column; its absence was rejecting every insert
       panel_id:          (panel as any)?.id || null,
       pillar:            opts.pillar,
       report_kind:       "deep_analysis",
@@ -560,7 +561,7 @@ Produce the complete JSON report now.`;
     if (error) {
       console.error(`[pillar-deep] insert failed (${error.message}), retrying minimal row`);
       const retry = await db().from("seo_campaign_reports").insert({
-        campaign_id: opts.campaignId, panel_id: (panel as any)?.id || null,
+        campaign_id: opts.campaignId, project_id: opts.projectId, panel_id: (panel as any)?.id || null,
         pillar: opts.pillar, report_kind: "manual_refresh",
         title: baseRow.title, body_md: md, generated_by: "manual",
       }).select("id").single();
