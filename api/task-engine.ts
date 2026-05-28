@@ -5163,6 +5163,20 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
         log.push(`✓ Objective created: "${objectiveTitle}"`);
       }
 
+      // ── Create traffic-growth pillars (multi-page, batch-tracked) ──
+      if (campaignType === 'traffic_growth') {
+        try {
+          const { createTrafficPillars } = await import('./lib/season-traffic-pillars.js');
+          const pillarResult = await createTrafficPillars({
+            campaignId, projectId,
+            targetUrls: Array.isArray(targetUrls) ? targetUrls : [],
+          });
+          if (pillarResult.created > 0) log.push(`✓ ${pillarResult.created} traffic pillars created`);
+        } catch (e: any) {
+          log.push(`⚠ Pillar creation skipped: ${e?.message || 'error'}`);
+        }
+      }
+
       // ── 2. Find or create site workspace ────────────────────────
       let siteId: string | null = null;
       let siteName = '';
