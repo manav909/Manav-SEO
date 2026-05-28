@@ -193,25 +193,36 @@ export default function SeasonPipelineDashboard({
     return () => { cancelled = true; clearInterval(id); };
   }, [runId, onComplete]);
 
-  /* True pipeline runtime — anchored to the run's own started_at (server time),
-     not when the dashboard was opened. Frozen at finished_at once the run ends,
-     so the clock shows the actual end-to-end runtime, not time-on-screen. */
+  /* True pipeline runtime — anchored to the run's own started_at (server time).
+     Freezes only when the run is GENUINELY done: status terminal AND no step is
+     still pending/running. A run can be briefly mis-marked finished while later
+     steps are still executing (a known race in the step-by-step executor); in
+     that case finished_at is wrong, so we keep ticking off started_at until the
+     steps actually finish. This stops the clock freezing at 00:01. */
   useEffect(() => {
+    const stepsStillActive = steps.some(s => s.status === 'running' || s.status === 'pending');
+    const trulyDone = !!run?.finished_at && !stepsStillActive;
+
     const computeElapsed = () => {
       if (run?.started_at) {
         const start = new Date(run.started_at).getTime();
-        const end   = run.finished_at ? new Date(run.finished_at).getTime() : Date.now();
-        return Math.max(0, Math.floor((end - start) / 1000));
+        // Use finished_at only when truly done; otherwise tick to now.
+        const end = trulyDone ? new Date(run.finished_at as string).getTime() : Date.now();
+        const secs = Math.floor((end - start) / 1000);
+        // Guard against bad/missing started_at producing a tiny or negative value
+        // while work is clearly ongoing: fall back to dashboard-open time.
+        if (secs < 1 && stepsStillActive) {
+          return Math.floor((Date.now() - pollStartedAt.current) / 1000);
+        }
+        return Math.max(0, secs);
       }
-      // Fallback before run data arrives: time since dashboard opened
       return Math.floor((Date.now() - pollStartedAt.current) / 1000);
     };
     setElapsed(computeElapsed());
-    // Once the run has finished, freeze — no interval needed
-    if (run?.finished_at) return;
+    if (trulyDone) return;  // freeze only when genuinely complete
     const id = setInterval(() => setElapsed(computeElapsed()), 250);
     return () => clearInterval(id);
-  }, [polling, run?.started_at, run?.finished_at]);
+  }, [polling, run?.started_at, run?.finished_at, steps]);
 
   const stuckStep = useMemo(() => {
     if (!polling) return null;
@@ -226,7 +237,11 @@ export default function SeasonPipelineDashboard({
                   mood === 'celebrating'   ? '152 70% 50%' :
                                              '186 80% 55%';
 
-  const isDone = run && ['completed', 'failed', 'cancelled'].includes(run.status || '');
+  /* A run is only DONE when its status is terminal AND no step is still
+     pending/running. Guards against the executor briefly mis-marking the run
+     finished while later steps execute (which showed "Complete" at step 2). */
+  const anyStepActive = steps.some(s => s.status === 'running' || s.status === 'pending');
+  const isDone = !!run && ['completed', 'failed', 'cancelled'].includes(run.status || '') && !anyStepActive;
 
   const displaySteps: PipelineStepDetail[] = steps.length > 0
     ? steps
