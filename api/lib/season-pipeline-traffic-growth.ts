@@ -921,6 +921,21 @@ Write:
 4. What we need from them (content approvals, developer access, etc.)`
     );
 
+    // Pipeline is the panel that gathered verified facts. Now hand off to the
+    // deep pillar engine. Each deep call is large (~20-40s), so running all 7
+    // inline would blow the step budget. Run only the 2 highest-value pillars
+    // here; the rest are generated on-demand from the campaign drawer.
+    const dpCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+    if (dpCampaignId) {
+      try {
+        const { runDeepPillarAnalysis } = await import("./season-pillar-deep-engine.js");
+        await runDeepPillarAnalysis({ campaignId: dpCampaignId, projectId: ctx.projectId, pillar: "visibility" });
+        await runDeepPillarAnalysis({ campaignId: dpCampaignId, projectId: ctx.projectId, pillar: "query_opportunity" });
+      } catch (e: any) {
+        console.warn(`[traffic-pipeline] deep pillar analysis failed: ${e?.message}`);
+      }
+    }
+
     return {
       ok: true,
       output: { brief },

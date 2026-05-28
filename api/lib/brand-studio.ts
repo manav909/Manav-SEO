@@ -752,6 +752,17 @@ export async function handleBrandStudio(action: string, body: any): Promise<any 
       const { bsSeasonPipelineDelete } = await import("./season-pipeline-routes.js");
       return bsSeasonPipelineDelete(body);
     }
+    /* Deep pillar engine — runs the full interrogation for one pillar or all */
+    case "bs_pillar_deep_analysis": {
+      const { campaignId, projectId, pillar } = body || {};
+      if (!campaignId || !projectId) return { success: false, error: "campaignId and projectId required" };
+      if (pillar) {
+        const { runDeepPillarAnalysis } = await import("./season-pillar-deep-engine.js");
+        return runDeepPillarAnalysis({ campaignId, projectId, pillar });
+      }
+      const { runAllDeepPillars } = await import("./season-pillar-deep-engine.js");
+      return runAllDeepPillars({ campaignId, projectId });
+    }
     /* Phase 13a-v2 — step-by-step execution */
     case "bs_season_pipeline_create": {
       const { bsSeasonPipelineCreate } = await import("./season-pipeline-routes.js");

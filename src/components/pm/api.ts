@@ -2820,6 +2820,14 @@ export interface SeoOpportunity {
   expires_at:              string;
 }
 
+export async function pillarDeepAnalysis(opts: {
+  projectId: string;
+  campaignId: string;
+  pillar?: string;   // omit to run all pillars
+}): Promise<{ success: boolean; report_id?: string; results?: Record<string, string>; error?: string }> {
+  return post(ENGINE, { action: 'bs_pillar_deep_analysis', ...opts });
+}
+
 export async function seoCampaignList(opts: { projectId: string; statusFilter?: string }):
   Promise<{ campaigns?: SeoCampaign[]; error?: string }>
 {

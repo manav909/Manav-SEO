@@ -17,7 +17,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   seoCampaignList, seoCampaignGet, seoCampaignPause, seoCampaignResume,
-  seoCampaignArchive, seoCampaignOverviewRefresh,
+  seoCampaignArchive, seoCampaignOverviewRefresh, pillarDeepAnalysis,
   seoOpportunityList, seoOpportunityPromoteToCampaign, seoOpportunityDismiss,
   seoTechnicalAuditRun, seoTechnicalAuditSetTargetUrl,
   seoClusterMapRun,
@@ -652,6 +652,8 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [error, setError] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<SeoCampaignReport | null>(null);
   const [refreshingOverview, setRefreshingOverview] = useState(false);
+  const [deepBusy, setDeepBusy] = useState(false);
+  const [roleFilter, setRoleFilter] = useState<string>('all');
   // Site workspace linking
   const [sites,          setSites]          = useState<any[]>([]);
   const [showSitePicker, setShowSitePicker] = useState(false);
@@ -746,6 +748,19 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     else toast({ title: 'Overview regenerated' });
     await load();
     setRefreshingOverview(false);
+  };
+
+  /* Deep pillar analysis — runs the full interrogation engine for all pillars.
+     Each pillar produces a complete, role-tagged report stored as a campaign report. */
+  const handleDeepAnalysis = async () => {
+    if (!data?.campaign?.project_id) return;
+    setDeepBusy(true);
+    toast({ title: 'Deep analysis started', description: 'Running the full interrogation across all pillars — this takes a minute.' });
+    const r = await pillarDeepAnalysis({ projectId: data.campaign.project_id, campaignId });
+    if (r.error) toast({ title: 'Deep analysis failed', description: r.error, variant: 'destructive' });
+    else toast({ title: 'Deep analysis complete', description: 'Reports generated for all pillars.' });
+    await load();
+    setDeepBusy(false);
   };
 
   /* Phase 17.5.1 — refresh pipeline run from latest audit + drive execution to completion.
@@ -1249,14 +1264,26 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <h3 style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>Living overview</h3>
-                <button onClick={handleRefreshOverview} disabled={refreshingOverview} style={{
-                  padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(160,160,180,0.2)',
-                  background: 'transparent', cursor: 'pointer', fontSize: 11,
-                  display: 'flex', alignItems: 'center', gap: 4, opacity: refreshingOverview ? 0.5 : 1,
-                }}>
-                  <RefreshCw size={11} className={refreshingOverview ? 'animate-spin' : ''} />
-                  Regenerate
-                </button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {(data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking') && (
+                    <button onClick={handleDeepAnalysis} disabled={deepBusy} style={{
+                      padding: '5px 10px', borderRadius: 6, border: '1px solid hsla(186 70% 55% / 0.35)',
+                      background: 'hsla(186 70% 55% / 0.1)', color: 'hsl(186 80% 65%)', cursor: 'pointer', fontSize: 11,
+                      display: 'flex', alignItems: 'center', gap: 4, fontWeight: 700, opacity: deepBusy ? 0.5 : 1,
+                    }}>
+                      <Sparkles size={11} className={deepBusy ? 'animate-spin' : ''} />
+                      {deepBusy ? 'Analysing…' : 'Generate deep analysis'}
+                    </button>
+                  )}
+                  <button onClick={handleRefreshOverview} disabled={refreshingOverview} style={{
+                    padding: '5px 10px', borderRadius: 6, border: '1px solid rgba(160,160,180,0.2)',
+                    background: 'transparent', cursor: 'pointer', fontSize: 11,
+                    display: 'flex', alignItems: 'center', gap: 4, opacity: refreshingOverview ? 0.5 : 1,
+                  }}>
+                    <RefreshCw size={11} className={refreshingOverview ? 'animate-spin' : ''} />
+                    Regenerate
+                  </button>
+                </div>
               </div>
               <div style={{
                 padding: 16, borderRadius: 10,
@@ -1272,16 +1299,16 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               </div>
             </div>
 
-            {/* Documents — Phase 14.0.1: latest report fully expanded inline.
-               Reads seo_campaign_reports (keyword pillar reports only). Hidden for
-               other campaign types, which surface artifacts via CampaignDocumentsSection below. */}
-            {(!data.campaign.campaign_type || data.campaign.campaign_type === 'keyword_ranking') && (
+            {/* Pillar deep-analysis reports (seo_campaign_reports). Keyword campaigns
+               use this for pillar reports; traffic campaigns use it for deep-engine
+               reports. Shown for all types now that the deep engine writes here. */}
+            {((data.recent_reports || []).length > 0 || (data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking')) && (
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>
-                Documents &amp; reports ({(data.recent_reports || []).length})
+                {(data.campaign.campaign_type && data.campaign.campaign_type !== 'keyword_ranking') ? 'Pillar deep analysis' : 'Documents &amp; reports'} ({(data.recent_reports || []).length})
               </h3>
               {(data.recent_reports || []).length === 0 ? (
-                <div style={{ fontSize: 11.5, color: 'rgba(120,120,140,0.6)' }}>No reports yet.</div>
+                <div style={{ fontSize: 11.5, color: 'rgba(120,120,140,0.6)' }}>No deep analysis yet — click <strong>Generate deep analysis</strong> above.</div>
               ) : (
                 <>
                   {/* Latest report — expanded with full content */}

@@ -1,0 +1,575 @@
+/* ════════════════════════════════════════════════════════════════
+   api/lib/season-pillar-deep-engine.ts
+
+   THE DEEP PILLAR ENGINE — the masterwork analysis layer.
+
+   ARCHITECTURE (Manav's vision):
+   - The PIPELINE is a panel of expert minds. Each step interrogates the
+     data with high-IQ questions from its specialty — forensic diagnosis,
+     market context, what-if scenarios, fastest-path, best-combination of
+     efforts, doubts to resolve. It passes verified facts AND its open
+     questions + context down to the pillars.
+   - The PILLARS are the deep engine. Each takes the panel's handoff and,
+     with a far larger reasoning budget than the inline pipeline, produces
+     the COMPLETE report for its domain: what exists (hard facts), what to
+     do, why, the impact, the effort/timeline — ranked by best approach.
+   - Every insight is ROLE-TAGGED so each stakeholder filters to theirs:
+     client, dms (senior specialist), writer, brand, pm, dev.
+   - HARD RULE: verified data only. No synthesis. Anything unproven is
+     flagged as an open question requiring verification — never asserted.
+
+   Output is structured JSON (role-tagged insights) so the UI can filter.
+════════════════════════════════════════════════════════════════ */
+
+import { db } from "./db.js";
+import { ga4PullPageMetrics } from "./pm-ga4.js";
+import { fetchSerpFeatures } from "./serpapi.js";
+
+const MODEL             = "claude-sonnet-4-6";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const PSI_KEY           = process.env.PAGESPEED_API_KEY || "";
+
+/* Stakeholder roles every pillar report tags its insights with */
+export const STAKEHOLDER_ROLES = ["client", "dms", "writer", "brand", "pm", "dev"] as const;
+
+/* ─── Timeout wrapper ──────────────────────────────────────────── */
+async function withTimeout<T>(p: Promise<T>, label = "q", ms = 12000): Promise<T | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((_, rej) => setTimeout(() => rej(new Error(`${label} timeout ${ms}ms`)), ms)),
+  ]).catch((e) => { console.warn(`[pillar-deep] ${e.message}`); return null; });
+}
+
+/* ─── Deep LLM call — large reasoning budget, JSON output ──────── */
+async function deepLlm(system: string, user: string, maxTokens = 5000): Promise<string> {
+  if (!ANTHROPIC_API_KEY) { console.error("[pillar-deep] no API key"); return ""; }
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+    });
+    if (!r.ok) { console.error(`[pillar-deep] LLM ${r.status}: ${(await r.text().catch(() => "")).slice(0, 300)}`); return ""; }
+    const d = await r.json();
+    return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+  } catch (e: any) { console.error(`[pillar-deep] exc ${e?.message}`); return ""; }
+}
+
+/* ─── HTML fetch with AbortController hard-kill ─────────────────── */
+async function fetchHtml(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+      redirect: "follow", signal: controller.signal,
+    });
+    return (await r.text()) || "";
+  } catch { return ""; } finally { clearTimeout(timer); }
+}
+
+/* ─── CrUX field data ──────────────────────────────────────────── */
+async function runCrux(url: string): Promise<any> {
+  if (!PSI_KEY) return null;
+  try {
+    const r = await withTimeout(
+      fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${PSI_KEY}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, formFactor: "PHONE" }),
+      }).then(x => x.json()), `CrUX(${url})`, 12000
+    );
+    const m = (r as any)?.record?.metrics;
+    if (!m) return null;
+    return {
+      url,
+      lcp_ms: m.largest_contentful_paint?.percentiles?.p75 ?? null,
+      cls:    m.cumulative_layout_shift?.percentiles?.p75 ?? null,
+      inp_ms: m.interaction_to_next_paint?.percentiles?.p75 ?? null,
+    };
+  } catch { return null; }
+}
+
+/* ─── Load all GSC data for the project ────────────────────────── */
+async function loadGsc(projectId: string): Promise<{
+  topPages: any[]; topQueries: any[]; queryPagePairs: any[];
+}> {
+  try {
+    const r = await withTimeout(
+      db().from("project_knowledge").select("field_key,field_value")
+        .eq("project_id", projectId).in("field_key", ["gsc_top_pages", "gsc_top_queries", "gsc_query_page_pairs"]),
+      "gsc"
+    );
+    const rows = ((r as any)?.data || []) as any[];
+    const parse = (k: string) => { const row = rows.find(x => x.field_key === k); return row ? JSON.parse(row.field_value || "[]") : []; };
+    return { topPages: parse("gsc_top_pages"), topQueries: parse("gsc_top_queries"), queryPagePairs: parse("gsc_query_page_pairs") };
+  } catch { return { topPages: [], topQueries: [], queryPagePairs: [] }; }
+}
+
+/* ─── Resolve the campaign's target pages ──────────────────────── */
+async function loadTargetUrls(campaignId: string, projectId: string): Promise<string[]> {
+  try {
+    const r = await withTimeout(
+      db().from("seo_campaigns").select("target_urls").eq("id", campaignId).maybeSingle(), "targets"
+    );
+    const urls = ((r as any)?.data as any)?.target_urls;
+    if (Array.isArray(urls) && urls.length > 0) return urls.filter(Boolean);
+  } catch { /* fall through */ }
+  // Fallback: GSC top pages
+  const { topPages } = await loadGsc(projectId);
+  return topPages.slice(0, 30).map((p: any) => p.page || p.url).filter(Boolean);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   THE INTERROGATIONS — each pillar's expert question architecture.
+
+   These are the high-IQ question sets a world-class specialist would
+   relentlessly ask. Five lenses per pillar:
+     forensic   — what EXACTLY is happening, traced to data
+     market     — competitive / market context
+     scenario   — what-if, fastest-path, best-combination of efforts
+     impact     — quantified outcome + timeline + effort
+     doubts     — what could mislead, what needs verification
+════════════════════════════════════════════════════════════════ */
+interface Interrogation {
+  expert_role: string;
+  data_sources: string[];
+  forensic: string[];
+  market: string[];
+  scenario: string[];
+  impact: string[];
+  doubts: string[];
+}
+
+export const PILLAR_INTERROGATIONS: Record<string, Interrogation> = {
+  visibility: {
+    expert_role: "Senior Technical SEO Lead specialising in indexation and crawl",
+    data_sources: ["GSC pages", "GSC queries", "GSC query-page pairs", "live HTML"],
+    forensic: [
+      "For each invisible page: is it crawled-not-indexed, discovered-not-crawled, or excluded? What is the precise indexation state?",
+      "Is each invisible page present in the sitemap and internally linked, or is it orphaned with no crawl path?",
+      "For visible pages with impressions but zero clicks: is the title/meta the cause, or is a SERP feature stealing the click?",
+      "Which target pages share near-identical content and may be competing or canonicalising each other away?",
+    ],
+    market: [
+      "For each near-ranking target page, who occupies the positions above it, and what specifically do those competitors have that this page lacks?",
+      "Which queries show the site appearing via the WRONG page (a generic page ranking where a specialist target page should)?",
+    ],
+    scenario: [
+      "Of all visibility problems, which SINGLE fix unlocks the most impressions for the least effort? State the 80/20.",
+      "If indexation + title + internal-linking are fixed together on one page, is the compounded gain greater than doing them in isolation? Quantify.",
+      "What is the fastest path to first incremental traffic — which 3 pages move first?",
+    ],
+    impact: [
+      "For each priority page, project the click ceiling at improved position using its real impression volume (label as ceiling, query volume is shared).",
+      "Give a realistic 30/60/90-day visibility trajectory if the prioritised actions are executed.",
+    ],
+    doubts: [
+      "Are any 'invisible' pages intentionally noindexed or canonicalised (not a problem)? Flag for verification.",
+      "Is any low CTR explained by brand/navigational queries rather than a fixable title issue?",
+    ],
+  },
+
+  query_opportunity: {
+    expert_role: "Senior SEO Strategist specialising in query intent and SERP positioning",
+    data_sources: ["GSC queries", "GSC query-page pairs", "SerpAPI"],
+    forensic: [
+      "Which real query-page pairs sit at positions 4-20 with meaningful impressions — the genuine quick wins?",
+      "Which queries have high impressions but a CTR far below the position benchmark, signalling a title/meta or intent-mismatch problem?",
+      "Are target pages ranking for queries that do not match their commercial intent (informational query on a product page or vice versa)?",
+    ],
+    market: [
+      "For the top 3 quick-win queries, what SERP features are present (PAA, shopping, video) and how do they change the realistic CTR ceiling?",
+      "Who are the consistent organic competitors across these queries, and what query clusters do they dominate that the site is absent from?",
+    ],
+    scenario: [
+      "Which query represents the single best effort-to-reward ratio to target first, and why?",
+      "If we built one new page to capture an unserved high-impression query cluster, what is the realistic opportunity vs optimising an existing page?",
+    ],
+    impact: [
+      "For each priority query, project realistic click gain at a target position using real impression volume and a sourced CTR-by-position benchmark.",
+    ],
+    doubts: [
+      "Which queries are seasonal or trend-spiked and should NOT be treated as durable opportunities? Flag for verification.",
+      "Are any high-impression queries actually irrelevant to the business (wrong intent)?",
+    ],
+  },
+
+  on_page_health: {
+    expert_role: "Senior On-Page SEO Specialist and content quality auditor",
+    data_sources: ["live HTML crawl"],
+    forensic: [
+      "For each page: exact state of title tag, H1, meta description, word count, schema, canonical — cite the actual values found.",
+      "Which pages have thin content (under ~300 words) relative to the query intent they target?",
+      "Which pages have missing, duplicate, or truncated title tags / meta descriptions?",
+      "Which pages lack structured data that competitors in this category typically deploy?",
+    ],
+    market: [
+      "For the highest-value pages, what content depth and structure do page-1 competitors have that these pages lack?",
+    ],
+    scenario: [
+      "Which on-page fix is mechanical and instant (title rewrite) vs which requires content investment? Separate the quick wins from the projects.",
+      "Which single page, if fully optimised on-page, would benefit most given its existing impression volume?",
+    ],
+    impact: [
+      "Rank every on-page issue by expected impact-to-effort, naming the specific page and the specific change.",
+    ],
+    doubts: [
+      "For pages that failed to load during the crawl: flag as unverified — do not assume their on-page state.",
+      "Is any 'thin' page intentionally thin (a hub/category page) where word count is not the right metric?",
+    ],
+  },
+
+  technical_performance: {
+    expert_role: "Senior Web Performance Engineer specialising in Core Web Vitals",
+    data_sources: ["CrUX field data", "Site Manager lab baseline (if present)"],
+    forensic: [
+      "For each page with CrUX field data: exact p75 LCP, CLS, INP — which fail Google's thresholds (LCP>2.5s, CLS>0.1, INP>200ms) and by how much?",
+      "Which pages have no field data, and is that because of low traffic (a fact to state) rather than a performance verdict?",
+    ],
+    market: [
+      "Does poor performance correlate with the pages that most need to rank? Prioritise CWV fixes on commercially important pages.",
+    ],
+    scenario: [
+      "Which performance fix (image optimisation, render-blocking JS, CLS anchors) addresses the most failing pages at once?",
+    ],
+    impact: [
+      "State the Page Experience ranking risk for failing pages in concrete terms, citing the real metric values.",
+    ],
+    doubts: [
+      "Never speculate on causes that lab/field data does not show. For pages without data, state plainly that no real-user signal exists yet.",
+    ],
+  },
+
+  internal_links: {
+    expert_role: "Senior SEO specialising in site architecture and PageRank flow",
+    data_sources: ["live HTML crawl", "GSC pages (authority signal)"],
+    forensic: [
+      "Which target pages receive zero internal links from the site's high-authority (high-traffic) pages?",
+      "Which authority pages exist that SHOULD link to target pages but do not?",
+      "Is there a logical hub-and-spoke structure, or are target pages orphaned from the site's link graph?",
+    ],
+    market: [
+      "How does the internal link depth of target pages compare to the typical structure that supports ranking in this category?",
+    ],
+    scenario: [
+      "What is the single highest-leverage internal link to add (from which authority page to which target page) and why?",
+      "If a hub page were created or strengthened, how would authority redistribute to the target cluster?",
+    ],
+    impact: [
+      "For each recommended link, state the from-page, to-page, suggested anchor text, and why it helps — ranked by the authority of the source page.",
+    ],
+    doubts: [
+      "For authority pages that could not be fetched: flag their link status as unverified.",
+    ],
+  },
+
+  engagement: {
+    expert_role: "Senior Analytics and CRO specialist",
+    data_sources: ["GA4 per-page metrics"],
+    forensic: [
+      "For each page with GA4 data: sessions, engagement rate, bounce rate, conversions — which pages attract traffic but fail to engage or convert?",
+      "Which pages have high engagement but low traffic (deserve more visibility) vs high traffic but low engagement (leaking value)?",
+    ],
+    market: [
+      "Do the engagement patterns suggest an intent mismatch — are visitors arriving and immediately leaving because the page does not match their query?",
+    ],
+    scenario: [
+      "Which page, if its engagement/conversion were fixed, would yield the most value given its existing traffic?",
+      "Where is the biggest leak in the funnel from organic landing to conversion?",
+    ],
+    impact: [
+      "Quantify the value at stake for the worst-converting high-traffic pages, using real session and conversion numbers.",
+    ],
+    doubts: [
+      "For pages with no GA4 session data: state plainly there is insufficient traffic — do not infer engagement quality.",
+    ],
+  },
+
+  monitoring: {
+    expert_role: "Senior SEO performance analyst tracking trajectory",
+    data_sources: ["GSC pages", "GA4 aggregate"],
+    forensic: [
+      "What is the aggregate organic trajectory across all target pages — rising, flat, or declining?",
+      "Which specific pages improved and which slipped since the last measurement?",
+    ],
+    market: [
+      "Is any movement attributable to seasonality or an algorithm update rather than the campaign's actions? Flag for verification.",
+    ],
+    scenario: [
+      "Are the campaign's actions on track to hit the stated goal in the stated timeframe? If off-trajectory, what is the corrective priority?",
+    ],
+    impact: [
+      "State the gap between current trajectory and goal, and what acceleration is needed.",
+    ],
+    doubts: [
+      "Distinguish real movement from normal GSC data fluctuation and reporting lag.",
+    ],
+  },
+};
+
+/* ════════════════════════════════════════════════════════════════
+   THE DEEP ANALYSIS — runs one pillar's full interrogation.
+════════════════════════════════════════════════════════════════ */
+export async function runDeepPillarAnalysis(opts: {
+  campaignId: string;
+  pillar: string;
+  projectId: string;
+}): Promise<{ success: boolean; report_id?: string; error?: string }> {
+  const interro = PILLAR_INTERROGATIONS[opts.pillar];
+  if (!interro) return { success: false, error: `Unknown pillar: ${opts.pillar}` };
+
+  const targetUrls = await loadTargetUrls(opts.campaignId, opts.projectId);
+  if (targetUrls.length === 0) return { success: false, error: "No target pages" };
+
+  const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
+  const targetSet = new Set(targetUrls.map(norm));
+
+  /* ── Gather the VERIFIED data this pillar needs (no synthesis) ── */
+  let dataBlock = "";
+
+  if (["visibility", "query_opportunity", "internal_links", "monitoring"].includes(opts.pillar)) {
+    const { topPages, topQueries, queryPagePairs } = await loadGsc(opts.projectId);
+    const targetPairs = queryPagePairs.filter((p: any) => targetSet.has(norm(p.page)))
+      .sort((a: any, b: any) => (b.impressions || 0) - (a.impressions || 0));
+    const targetPages = topPages.filter((p: any) => targetSet.has(norm(p.page || p.url || "")));
+    const invisible = targetUrls.filter(u => !topPages.some((p: any) => norm(p.page || p.url || "") === norm(u)));
+
+    dataBlock += `\n## VERIFIED GSC DATA\n`;
+    dataBlock += `Target pages: ${targetUrls.length} | Visible in GSC: ${targetPages.length} | Invisible (0 impressions): ${invisible.length}\n\n`;
+    dataBlock += `INVISIBLE PAGES:\n${invisible.slice(0, 20).map(u => `- ${u.replace(/^https?:\/\/[^/]+/, "") || "/"}`).join("\n") || "- none"}\n\n`;
+    dataBlock += `VISIBLE TARGET PAGES (GSC):\n${targetPages.slice(0, 20).map((p: any) => `- ${(p.page || p.url || "").replace(/^https?:\/\/[^/]+/, "") || "/"}: pos ${(p.position || 0).toFixed(1)}, ${p.impressions || 0} impr, ${p.clicks || 0} clicks`).join("\n") || "- none"}\n\n`;
+    dataBlock += `REAL QUERY-PAGE PAIRS (GSC joined data — facts):\n${targetPairs.slice(0, 25).map((p: any) => `- "${p.query}" -> ${p.page.replace(/^https?:\/\/[^/]+/, "") || "/"}: ${p.impressions} impr, ${p.clicks} clicks, CTR ${p.ctr}%, pos ${p.position?.toFixed(1)}`).join("\n") || "- none"}\n\n`;
+    dataBlock += `TOP SITE QUERIES:\n${topQueries.slice(0, 15).map((q: any) => `- "${q.query || q.keyword}": pos ${(q.position || 0).toFixed(1)}, ${q.impressions || 0} impr, ${q.clicks || 0} clicks`).join("\n") || "- none"}\n`;
+
+    // SerpAPI for query_opportunity — top quick-win query
+    if (opts.pillar === "query_opportunity") {
+      const tq = targetPairs.find((p: any) => (p.position || 0) >= 4 && (p.position || 0) <= 20);
+      if (tq?.query) {
+        const serp = await withTimeout(fetchSerpFeatures(tq.query, opts.projectId, {}), "serp", 15000);
+        if (serp) {
+          dataBlock += `\nLIVE SERP for "${tq.query}" (pos ${(tq.position || 0).toFixed(1)}):\n`;
+          dataBlock += `- Features: ${(serp as any).features?.join(", ") || "none"}\n`;
+          dataBlock += `- PAA: ${((serp as any).paa || []).slice(0, 4).join(" | ") || "none"}\n`;
+          dataBlock += `- Top competitors: ${((serp as any).organic_results || []).slice(0, 5).map((r: any) => r.domain || r.link).join(", ") || "none"}\n`;
+        }
+      }
+    }
+  }
+
+  if (["on_page_health", "internal_links"].includes(opts.pillar)) {
+    const toFetch = targetUrls.slice(0, 12);
+    const pages = await Promise.race([
+      Promise.all(toFetch.map(async url => {
+        const html = await fetchHtml(url);
+        const title = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1]?.trim() || "";
+        const h1 = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
+        const meta = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) || [])[1]?.trim() || "";
+        const wc = html.replace(/<[^>]+>/g, " ").split(/\s+/).filter(w => w.length > 2).length;
+        const noindex = /noindex/i.test(html.slice(0, 2000));
+        const schema = /application\/ld\+json/i.test(html);
+        return { url, title, h1, meta, wc, noindex, schema, loaded: html.length > 500 };
+      })),
+      new Promise<any[]>((res) => setTimeout(() => res([]), 60000)),
+    ]);
+    dataBlock += `\n## VERIFIED ON-PAGE DATA (live crawl of ${(pages as any[]).length} pages)\n`;
+    dataBlock += (pages as any[]).map((p: any) => `- ${p.url.replace(/^https?:\/\/[^/]+/, "") || "/"}: ${p.loaded ? `title "${p.title.slice(0, 60)}" (${p.title.length}ch), H1 "${p.h1.slice(0, 40)}", meta ${p.meta ? "yes" : "MISSING"}, ${p.wc} words, ${p.noindex ? "NOINDEX" : "indexable"}, schema ${p.schema ? "yes" : "no"}` : "FAILED TO LOAD (unverified)"}`).join("\n");
+    dataBlock += "\n";
+  }
+
+  if (opts.pillar === "technical_performance") {
+    const toTest = targetUrls.slice(0, 12);
+    const crux = await Promise.race([
+      Promise.all(toTest.map(runCrux)),
+      new Promise<any[]>((res) => setTimeout(() => res([]), 45000)),
+    ]);
+    const valid = (crux as any[]).filter(Boolean);
+    dataBlock += `\n## VERIFIED CORE WEB VITALS (CrUX field data, ${valid.length} of ${toTest.length} pages have data)\n`;
+    dataBlock += valid.map((c: any) => `- ${c.url.replace(/^https?:\/\/[^/]+/, "") || "/"}: LCP ${c.lcp_ms ? (c.lcp_ms / 1000).toFixed(2) + "s" : "—"}, CLS ${c.cls ?? "—"}, INP ${c.inp_ms ? Math.round(c.inp_ms) + "ms" : "—"}`).join("\n") || "- No CrUX field data — pages lack sufficient real-user traffic (a fact, not a performance verdict)";
+    dataBlock += "\n";
+  }
+
+  if (["engagement", "monitoring"].includes(opts.pillar)) {
+    const toPull = targetUrls.slice(0, 12);
+    const ga4 = await Promise.race([
+      Promise.all(toPull.map(async url => {
+        const path = url.replace(/^https?:\/\/[^/]+/, "") || "/";
+        const m = await ga4PullPageMetrics({ projectId: opts.projectId, pagePath: path, days: 28 }).catch(() => null);
+        return m ? { path, ...m } : null;
+      })),
+      new Promise<any[]>((res) => setTimeout(() => res([]), 45000)),
+    ]);
+    const valid = (ga4 as any[]).filter(Boolean);
+    dataBlock += `\n## VERIFIED GA4 ENGAGEMENT (last 28 days, ${valid.length} of ${toPull.length} pages have data)\n`;
+    dataBlock += valid.map((g: any) => `- ${g.path}: ${g.sessions} sessions, ${g.engagement_rate_pct}% engaged, ${g.bounce_rate_pct}% bounce, ${g.conversions} conversions`).join("\n") || "- No GA4 session data — pages lack sufficient traffic (a fact, not an engagement verdict)";
+    dataBlock += "\n";
+  }
+
+  /* ── Build the interrogation prompt ── */
+  const questionBlock = [
+    `FORENSIC QUESTIONS (what exactly is happening — trace every answer to the data above):`,
+    ...interro.forensic.map(q => `  - ${q}`),
+    `\nMARKET / COMPETITIVE QUESTIONS:`,
+    ...interro.market.map(q => `  - ${q}`),
+    `\nSCENARIO QUESTIONS (what-if, fastest-path, best-combination of efforts):`,
+    ...interro.scenario.map(q => `  - ${q}`),
+    `\nIMPACT QUESTIONS (quantify outcome, effort, timeline):`,
+    ...interro.impact.map(q => `  - ${q}`),
+    `\nDOUBTS TO RESOLVE (flag anything unproven — never assert it):`,
+    ...interro.doubts.map(q => `  - ${q}`),
+  ].join("\n");
+
+  const system = `You are a ${interro.expert_role}. You are producing the definitive deep-analysis report for the "${opts.pillar}" pillar of an SEO traffic-growth campaign. This report will be read by the client, a senior digital marketing specialist, a content writer, a brand manager, a project manager, and a developer — each must find exactly what concerns them.
+
+ABSOLUTE RULES:
+- Use ONLY the verified data provided. Every factual claim must trace to a specific number or fact in the data block. NEVER synthesize, estimate-as-fact, or invent.
+- Anything you cannot prove from the data is an OPEN QUESTION requiring verification — state it as such, never assert it.
+- Forecasts are CEILINGS (query impressions are shared across pages) and must cite a sourced benchmark or be omitted.
+- Be brutally honest. If the data is thin, say so. If a page is fine, say so. Do not manufacture problems or inflate impact.
+- This must be so complete and impactful that following it achieves the goal. Leave nothing out within this pillar's domain.
+
+OUTPUT FORMAT — respond with ONLY valid JSON, no preamble, no markdown fences:
+{
+  "headline": "one-sentence verdict for this pillar, citing the key number",
+  "state_of_play": "2-3 sentence factual summary of what exists right now",
+  "insights": [
+    {
+      "roles": ["client"|"dms"|"writer"|"brand"|"pm"|"dev"],  // which stakeholders this matters to (1+)
+      "finding": "what is true, traced to data",
+      "evidence": "the specific number/fact from the data",
+      "action": "exactly what to do",
+      "why": "why it matters / the mechanism",
+      "impact": "expected outcome (label ceilings)",
+      "effort": "low"|"medium"|"high",
+      "priority": 1-5,  // 1 = do first
+      "confidence": "high"|"medium"|"low"
+    }
+  ],
+  "open_questions": ["things that need verification before acting — be honest about gaps"],
+  "ninety_day_plan": "a tight prioritised sequence: what to do in week 1, month 1, quarter 1, grounded in the insights"
+}
+
+Aim for 8-15 high-quality insights covering all relevant roles. Quality over quantity — every insight must be specific, evidenced, and actionable.`;
+
+  const user = `PILLAR: ${opts.pillar}
+Data sources leveraged: ${interro.data_sources.join(", ")}
+Target pages in campaign: ${targetUrls.length}
+${dataBlock}
+
+INTERROGATION — answer every question below against the verified data:
+${questionBlock}
+
+Produce the complete JSON report now.`;
+
+  const raw = await deepLlm(system, user, 6000);
+  if (!raw) return { success: false, error: "Deep analysis returned empty" };
+
+  // Parse JSON (strip any fences defensively)
+  let parsed: any;
+  try {
+    const clean = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+    parsed = JSON.parse(clean);
+  } catch {
+    return { success: false, error: "Deep analysis returned unparseable JSON" };
+  }
+
+  /* ── Render to markdown for storage + reading ── */
+  const md = renderReport(opts.pillar, interro, parsed);
+
+  /* ── Persist as a campaign report ── */
+  try {
+    const { data: panel } = await db().from("seo_campaign_panels")
+      .select("id").eq("campaign_id", opts.campaignId).eq("pillar", opts.pillar).maybeSingle();
+
+    const { data: inserted, error } = await db().from("seo_campaign_reports").insert({
+      campaign_id:       opts.campaignId,
+      panel_id:          (panel as any)?.id || null,
+      pillar:            opts.pillar,
+      report_kind:       "deep_analysis",
+      title:             parsed.headline?.slice(0, 200) || `${opts.pillar} deep analysis`,
+      summary:           parsed.state_of_play?.slice(0, 500) || null,
+      body_md:           md,
+      confidence_rating: avgConfidence(parsed.insights),
+      generated_by:      "pillar-deep-engine",
+      data_sources:      interro.data_sources,
+    }).select("id").single();
+    if (error) return { success: false, error: error.message };
+
+    // Update the panel summary
+    if ((panel as any)?.id) {
+      await db().from("seo_campaign_panels").update({
+        current_summary: parsed.headline?.slice(0, 500) || null,
+        current_status:  "analysed",
+        current_findings: parsed.insights || null,
+        last_assessed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq("id", (panel as any).id);
+    }
+
+    return { success: true, report_id: (inserted as any).id };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
+/* ─── Render the structured report to markdown ─────────────────── */
+function renderReport(pillar: string, interro: Interrogation, p: any): string {
+  const roleLabel: Record<string, string> = {
+    client: "CLIENT", dms: "SPECIALIST", writer: "WRITER", brand: "BRAND", pm: "PM", dev: "DEV",
+  };
+  const lines: string[] = [];
+  lines.push(`# ${pillar.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} — Deep Analysis`);
+  lines.push("");
+  lines.push(`> ${p.headline || ""}`);
+  lines.push("");
+  lines.push(`**Analyst:** ${interro.expert_role}`);
+  lines.push(`**Data sources:** ${interro.data_sources.join(", ")}`);
+  lines.push("");
+  if (p.state_of_play) { lines.push(`## State of play`); lines.push(p.state_of_play); lines.push(""); }
+
+  // Insights sorted by priority
+  const insights = (p.insights || []).slice().sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5));
+  lines.push(`## Insights (${insights.length})`);
+  lines.push("");
+  for (const ins of insights) {
+    const tags = (ins.roles || []).map((r: string) => `[${roleLabel[r] || r.toUpperCase()}]`).join(" ");
+    lines.push(`### ${tags} ${ins.finding || ""}`);
+    if (ins.evidence) lines.push(`- **Evidence:** ${ins.evidence}`);
+    if (ins.action)   lines.push(`- **Action:** ${ins.action}`);
+    if (ins.why)      lines.push(`- **Why:** ${ins.why}`);
+    if (ins.impact)   lines.push(`- **Impact:** ${ins.impact}`);
+    lines.push(`- **Effort:** ${ins.effort || "—"} · **Priority:** ${ins.priority || "—"} · **Confidence:** ${ins.confidence || "—"}`);
+    lines.push("");
+  }
+
+  if ((p.open_questions || []).length > 0) {
+    lines.push(`## Open questions (need verification — not yet proven)`);
+    for (const q of p.open_questions) lines.push(`- ${q}`);
+    lines.push("");
+  }
+  if (p.ninety_day_plan) { lines.push(`## 90-day plan`); lines.push(p.ninety_day_plan); lines.push(""); }
+
+  return lines.join("\n");
+}
+
+function avgConfidence(insights: any[]): string {
+  if (!insights || insights.length === 0) return "medium";
+  const score = { high: 3, medium: 2, low: 1 } as Record<string, number>;
+  const avg = insights.reduce((s, i) => s + (score[i.confidence] || 2), 0) / insights.length;
+  return avg >= 2.5 ? "high" : avg >= 1.5 ? "medium" : "low";
+}
+
+/* ─── Run ALL pillars for a campaign (sequential to respect budget) ── */
+export async function runAllDeepPillars(opts: {
+  campaignId: string; projectId: string;
+}): Promise<{ success: boolean; results: Record<string, string> }> {
+  const results: Record<string, string> = {};
+  for (const pillar of Object.keys(PILLAR_INTERROGATIONS)) {
+    const r = await runDeepPillarAnalysis({ ...opts, pillar });
+    results[pillar] = r.success ? "ok" : (r.error || "failed");
+  }
+  return { success: true, results };
+}
