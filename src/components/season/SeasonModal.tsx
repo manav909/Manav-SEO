@@ -943,10 +943,12 @@ export default function SeasonModal() {
                       onClose={() => setPendingObjective(null)}
                       onLaunched={(result) => {
                         setPendingObjective(null);
-                        setMood('happy');
-                        // If user clicked Go to Objectives, close the modal
-                        if (result?.navigateTo === 'objectives') {
-                          setIsOpen?.(false);
+                        // Open pipeline dashboard immediately — same as keyword campaigns
+                        if (result?.run_id) {
+                          setActiveRunId(result.run_id);
+                          setActiveRunStepCount(result.step_count || 6);
+                          setActiveRunLabel(result.label || 'Traffic Growth Pipeline');
+                          setActiveRunType('traffic_growth' as any);
                         }
                       }}
                     />

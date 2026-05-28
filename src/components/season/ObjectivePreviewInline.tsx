@@ -72,6 +72,7 @@ export default function ObjectivePreviewInline({
         traffic_growth: 'traffic_growth',
       };
       const pipelineType = PIPELINE_MAP[preview.goalType];
+      let pipelineRun: any = null;
       console.log('[ObjectivePreview] pipelineType:', pipelineType, 'for goalType:', preview.goalType);
 
       // Step 1: objective_full_setup (non-blocking)
@@ -115,15 +116,15 @@ export default function ObjectivePreviewInline({
           },
         };
         console.log('[ObjectivePreview] launching pipeline:', pipelineBody);
-        const pipelineR = await fetch('/api/task-engine', {
+        pipelineRun = await fetch('/api/task-engine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(pipelineBody),
         }).then(r => r.json());
-        console.log('[ObjectivePreview] pipeline launch result:', pipelineR);
+        console.log('[ObjectivePreview] pipeline launch result:', pipelineRun);
 
-        if (!pipelineR.success) {
-          setError('Pipeline failed to start: ' + (pipelineR.error || 'unknown error'));
+        if (!pipelineRun.success) {
+          setError('Pipeline failed to start: ' + (pipelineRun.error || 'unknown error'));
           setLaunching(false);
           return;
         }
@@ -134,10 +135,15 @@ export default function ObjectivePreviewInline({
         return;
       }
 
-      setLaunched(true);
       setLaunching(false);
-      // Don't call onLaunched yet — let user see success state first.
-      // onLaunched is called when user clicks "Go to Objectives" or dismisses.
+      // Fire onLaunched immediately with run_id — parent opens pipeline dashboard
+      onLaunched?.({
+        run_id:     pipelineRun?.run_id,
+        step_count: pipelineRun?.step_count || 6,
+        label:      preview.title || 'Traffic Growth Pipeline',
+        pipeline_type: preview.goalType,
+      });
+      onClose();
     } catch (e: any) {
       console.error('[ObjectivePreview] handleLaunch error:', e);
       setError(e?.message || 'Launch failed');
