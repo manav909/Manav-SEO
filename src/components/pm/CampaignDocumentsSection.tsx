@@ -25,6 +25,7 @@ import ArtifactMarkdown from './ArtifactMarkdown';
 import {
   FileText, ChevronDown, ChevronRight, CheckCircle2, Send,
   ExternalLink, Eye, Loader2, AlertTriangle, RefreshCw, Filter,
+  Download, Copy, Check,
 } from 'lucide-react';
 import {
   artifactsList, artifactsGet, artifactsMarkReviewed, artifactsMarkSent,
@@ -403,6 +404,24 @@ function ArtifactCard({
 }) {
   const meta = kindMeta(artifact.artifact_kind);
   const needsReview = !artifact.pm_reviewed && artifact.status === 'current';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    const body = detail?.body || '';
+    if (!body) return;
+    try { await navigator.clipboard.writeText(body); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch {}
+  };
+  const handleDownload = () => {
+    const body = detail?.body || '';
+    if (!body) return;
+    const safe = (artifact.title || 'document').replace(/[^a-z0-9-_]/gi, '_').slice(0, 80);
+    const blob = new Blob([body], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${safe}.md`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div style={{
@@ -499,6 +518,26 @@ function ArtifactCard({
               <ExternalLink size={11} />
               Open in Documents
             </Link>
+            {detail?.body && (
+              <>
+                <button onClick={handleCopy} style={{
+                  padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(160,160,180,0.2)',
+                  background: 'transparent', color: 'inherit', cursor: 'pointer',
+                  fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  {copied ? <Check size={11} /> : <Copy size={11} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+                <button onClick={handleDownload} style={{
+                  padding: '4px 8px', borderRadius: 6, border: '1px solid rgba(160,160,180,0.2)',
+                  background: 'transparent', color: 'inherit', cursor: 'pointer',
+                  fontSize: 10.5, display: 'flex', alignItems: 'center', gap: 4,
+                }}>
+                  <Download size={11} />
+                  Download
+                </button>
+              </>
+            )}
             {artifact.generation_cost_usd !== null && artifact.generation_cost_usd > 0 && (
               <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'rgba(150,150,170,0.6)', alignSelf: 'center' }}>
                 ${artifact.generation_cost_usd.toFixed(2)} · {artifact.llm_calls} LLM calls
