@@ -193,11 +193,25 @@ export default function SeasonPipelineDashboard({
     return () => { cancelled = true; clearInterval(id); };
   }, [runId, onComplete]);
 
+  /* True pipeline runtime — anchored to the run's own started_at (server time),
+     not when the dashboard was opened. Frozen at finished_at once the run ends,
+     so the clock shows the actual end-to-end runtime, not time-on-screen. */
   useEffect(() => {
-    if (!polling) return;
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - pollStartedAt.current) / 1000)), 250);
+    const computeElapsed = () => {
+      if (run?.started_at) {
+        const start = new Date(run.started_at).getTime();
+        const end   = run.finished_at ? new Date(run.finished_at).getTime() : Date.now();
+        return Math.max(0, Math.floor((end - start) / 1000));
+      }
+      // Fallback before run data arrives: time since dashboard opened
+      return Math.floor((Date.now() - pollStartedAt.current) / 1000);
+    };
+    setElapsed(computeElapsed());
+    // Once the run has finished, freeze — no interval needed
+    if (run?.finished_at) return;
+    const id = setInterval(() => setElapsed(computeElapsed()), 250);
     return () => clearInterval(id);
-  }, [polling]);
+  }, [polling, run?.started_at, run?.finished_at]);
 
   const stuckStep = useMemo(() => {
     if (!polling) return null;

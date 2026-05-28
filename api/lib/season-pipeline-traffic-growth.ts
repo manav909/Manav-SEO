@@ -27,6 +27,13 @@ const MODEL             = "claude-sonnet-4-6";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const PSI_KEY           = process.env.PAGESPEED_API_KEY || "";
 
+// Max target pages processed per step in one run. Steps fetch in PARALLEL with
+// per-call AbortController timeouts, so wall-clock time is bounded by the slowest
+// single call (~12s), not the page count. 30 covers virtually all objectives while
+// staying well within each step's ~280s function budget. Pages beyond this, or any
+// page that times out, are reported HONESTLY as unmeasured — never synthesized.
+const MAX_PAGES_PER_STEP = 30;
+
 /* ─── Timeout wrapper — Supabase and external APIs can hang silently ── */
 async function withTimeout<T>(promise: Promise<T>, label = "query", ms = 12000): Promise<T | null> {
   return Promise.race([
@@ -441,8 +448,9 @@ const stepOnPageFundamentals = {
       };
     }
 
-    // Fetch and analyse up to 8 pages in parallel (Vercel limit consideration)
-    const toFetch = targetUrls.slice(0, 8);
+    // Fetch and analyse all target pages in PARALLEL. Each fetchHtml is AbortController-capped
+    // at 12s, so wall time is bounded by the slowest single fetch, not the page count.
+    const toFetch = targetUrls.slice(0, MAX_PAGES_PER_STEP);
     const pageResults = await Promise.all(
       toFetch.map(async url => {
         const html = await fetchHtml(url);
@@ -510,7 +518,7 @@ Write:
         title: "On-Page Fundamentals",
         body: `# On-Page Fundamentals\n\n${analysis}\n\n---\n**Pages audited:** ${pageResults.length} | **Issues found:** ${issues.length} | **Failed to load:** ${pageResults.filter(p => !p.loadedOk).length}`,
       },
-      honest_note: `${pageResults.length} pages fetched and analysed. ${issues.length} on-page issues found. ${pageResults.filter(p => p.hasNoindex).length} noindex pages. ${pageResults.filter(p => p.wordCount < 300).length} thin-content pages.`,
+      honest_note: `${pageResults.length} of ${targetUrls.length} target pages fetched and analysed. ${pageResults.filter(p => !p.loadedOk).length} failed to load. ${issues.length} on-page issues found. ${pageResults.filter(p => p.hasNoindex).length} noindex pages. ${pageResults.filter(p => p.wordCount < 300).length} thin-content pages.`,
     };
   },
 };
@@ -530,13 +538,13 @@ const stepTechnicalPerformance = {
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls } = await resolveTargetPages(ctx);
     // CrUX field data returns in 2-5s. Test up to 8 pages in parallel, 30s ceiling.
-    const toTest = targetUrls.slice(0, 8);
+    const toTest = targetUrls.slice(0, MAX_PAGES_PER_STEP);
 
     const results: Array<{ url: string } & Awaited<ReturnType<typeof runCrux>>> =
       await Promise.race([
         Promise.all(toTest.map(async url => ({ url, ...(await runCrux(url)) }))),
         new Promise<any[]>((resolve) =>
-          setTimeout(() => resolve(toTest.map(url => ({ url, lcp_ms: null, cls: null, inp_ms: null, lcp_rating: null, has_field_data: false, source: "none" }))), 30000)
+          setTimeout(() => resolve(toTest.map(url => ({ url, lcp_ms: null, cls: null, inp_ms: null, lcp_rating: null, has_field_data: false, source: "none" }))), 45000)
         ),
       ]);
 
@@ -733,12 +741,12 @@ const stepActionPlan = {
     // Pull live GA4 engagement for up to 5 target pages (parallel, 30s ceiling).
     // Tells us which pages engage vs bounce — critical for prioritisation.
     const ga4Pages = await Promise.race([
-      Promise.all(targetUrls.slice(0, 5).map(async url => {
+      Promise.all(targetUrls.slice(0, MAX_PAGES_PER_STEP).map(async url => {
         const pagePath = url.replace(/^https?:\/\/[^/]+/, "") || "/";
         const m = await ga4PullPageMetrics({ projectId: ctx.projectId, pagePath, days: 28 }).catch(() => null);
         return m ? { pagePath, ...m } : null;
       })),
-      new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 30000)),
+      new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 45000)),
     ]);
     const ga4Valid = (ga4Pages || []).filter(Boolean) as any[];
 
