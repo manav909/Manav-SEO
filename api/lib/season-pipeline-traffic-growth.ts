@@ -76,16 +76,21 @@ async function llm(system: string, user: string, maxTokens = 2500): Promise<stri
 
 /* ─── Fetch page HTML (15s timeout) ────────────────────────────── */
 async function fetchHtml(url: string): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
-    const r = await withTimeout(
-      fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
-        redirect: "follow",
-      }).then(r => r.text()),
-      `fetchHtml(${url})`, 15000
-    );
-    return (r as string | null) || "";
-  } catch { return ""; }
+    const r = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    const text = await r.text();
+    return text || "";
+  } catch {
+    return "";  // aborted, network error, or non-text — caller handles empty
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /* ─── Extract basic on-page facts from HTML ────────────────────── */
@@ -610,24 +615,26 @@ const stepInternalLinks = {
 
     const domain = targetUrls[0] ? (targetUrls[0].match(/^https?:\/\/[^/]+/)?.[0] || "") : "";
 
-    // Fetch authority pages and check which target pages they link to
-    const linkMap: Array<{ authorityPage: string; clicks: number; linksToTargets: string[] }> = [];
-    for (const ap of authorityPages.slice(0, 3)) { // limit fetches
-      const apUrl = ap.page || ap.url || "";
-      if (!apUrl) continue;
-      const html = await fetchHtml(apUrl);
-      if (!html) continue;
-      const links = [...html.matchAll(/href=["']([^"']+)["']/gi)].map(m => m[1]);
-      const linksToTargets = targetUrls.filter(t => {
-        const slug = t.replace(domain, "");
-        return links.some(l => l === slug || l === t || l.endsWith(slug));
-      });
-      linkMap.push({
-        authorityPage: apUrl.replace(domain, "") || "/",
-        clicks: ap.clicks || 0,
-        linksToTargets,
-      });
-    }
+    // Fetch authority pages in PARALLEL with a hard 35s ceiling on the whole batch.
+    // Sequential fetching previously hung the step when one page redirected slowly.
+    const fetchTargets = authorityPages.slice(0, 3)
+      .map((ap: any) => ({ apUrl: ap.page || ap.url || "", clicks: ap.clicks || 0 }))
+      .filter((a: any) => a.apUrl);
+
+    const linkMap: Array<{ authorityPage: string; clicks: number; linksToTargets: string[] }> =
+      await Promise.race([
+        Promise.all(fetchTargets.map(async ({ apUrl, clicks }: any) => {
+          const html = await fetchHtml(apUrl);
+          if (!html) return { authorityPage: apUrl.replace(domain, "") || "/", clicks, linksToTargets: [] };
+          const links = [...html.matchAll(/href=["']([^"']+)["']/gi)].map(m => m[1]);
+          const linksToTargets = targetUrls.filter(t => {
+            const slug = t.replace(domain, "");
+            return links.some(l => l === slug || l === t || l.endsWith(slug));
+          });
+          return { authorityPage: apUrl.replace(domain, "") || "/", clicks, linksToTargets };
+        })),
+        new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 35000)),
+      ]);
 
     const unlinkedTargets = targetUrls.filter(t => {
       return !linkMap.some(lm => lm.linksToTargets.includes(t));
