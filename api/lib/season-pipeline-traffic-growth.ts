@@ -295,7 +295,7 @@ const stepContentGap = {
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const trafficData = ctx.prior["traffic_audit"] || {};
     const topPages: any[]   = trafficData.topPages || [];
-    const targetUrls        = await resolveTargetPages(ctx);
+    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
     const keyword           = ctx.scope.keyword || "";
 
     /* Pages with high impressions but poor CTR — title/meta opportunity */
@@ -408,7 +408,7 @@ const stepGrowthStrategy = {
   description: "Prioritised action plan from all findings",
   artifact_kind: "strategy",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const targetUrls     = await resolveTargetPages(ctx);
+    const { urls: targetUrls } = await resolveTargetPages(ctx);
     const trafficData    = ctx.prior["traffic_audit"]  || {};
     const healthData     = ctx.prior["page_health"]    || {};
     const contentData    = ctx.prior["content_gap"]    || {};
@@ -470,7 +470,7 @@ const stepClientUpdate = {
   description: "Plain-English summary for the client",
   artifact_kind: "client_update",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const targetUrls  = await resolveTargetPages(ctx);
+    const { urls: targetUrls } = await resolveTargetPages(ctx);
     const strategy    = ctx.prior["growth_strategy"]?.strategy || "";
     const quickWins   = (ctx.prior["traffic_audit"]?.quickWins || []).length;
     const badLcp      = ctx.prior["page_health"]?.badLcp || 0;
