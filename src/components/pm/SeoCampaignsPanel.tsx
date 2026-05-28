@@ -86,17 +86,22 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [c, o, pr] = await Promise.all([
+      const [c, o] = await Promise.all([
         seoCampaignList({ projectId, statusFilter: statusFilter === 'all' ? undefined : statusFilter }),
         seoOpportunityList({ projectId, status: 'open', limit: 50 }),
-        fetch('/api/task-engine', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'bs_season_pipeline_list', projectId, limit: 10 }) }).then(r => r.json()),
       ]);
       if (c.error)   { setError(c.error); }
       else           { setCampaigns(c.campaigns || []); }
       setOpportunities(o.opportunities || []);
       setOppCounts(o.counts || {});
-      setPipelineRuns(pr.runs || []);
+      // Pipeline runs loaded separately — non-blocking so it can't crash the panel
+      try {
+        const pr = await fetch('/api/task-engine', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'bs_season_pipeline_list', projectId, limit: 10 }),
+        }).then(r => r.json());
+        setPipelineRuns(pr.runs || []);
+      } catch { setPipelineRuns([]); }
     } catch (e: any) {
       setError(e?.message || 'load failed');
     }
@@ -2259,8 +2264,11 @@ function ObjectivesView({
                   </span>
                 </div>
                 <div style={{ fontSize: 10, color: 'hsl(var(--muted-foreground))', marginTop: 3 }}>
-                  {run.steps_completed || 0}/{run.step_count || 6} steps complete
-                  {run.finished_at && <span> · {new Date(run.finished_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>}
+                  {run.steps_completed || 0} of {run.step_count || 6} steps
+                  {run.status === 'running' && ' · running…'}
+                  {run.status === 'completed' && ' · complete'}
+                  {run.status === 'failed' && ' · failed'}
+                  {run.finished_at && ` · ${new Date(run.finished_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`}
                 </div>
                 {run.status === 'running' && (
                   <div style={{ marginTop: 5, height: 3, borderRadius: 3, background: 'hsl(var(--muted)/0.4)', overflow: 'hidden' }}>
