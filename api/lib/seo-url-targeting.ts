@@ -55,16 +55,16 @@ export const OBJECTIVE_PATTERNS: Array<{
   re: RegExp;
   goalType: string;
 }> = [
-  { re: /^(?:grow|increase|boost|improve)\s+(?:organic\s+)?traffic/i,         goalType: 'traffic_growth' },
-  { re: /^(?:get\s+)?more\s+(?:organic\s+)?(?:traffic|clicks|visitors)/i,     goalType: 'traffic_growth' },
-  { re: /^(?:fix|resolve|recover|improve)\s+(?:technical|tech|core\s+web)/i,  goalType: 'technical_recovery' },
-  { re: /^(?:technical\s+recovery|fix\s+(?:all\s+)?(?:technical|site))/i,     goalType: 'technical_recovery' },
-  { re: /^(?:improve|build|grow|increase)\s+(?:domain\s+authority|da|dr|authority)/i, goalType: 'domain_authority' },
-  { re: /^(?:local\s+(?:seo|visibility|rankings?)|rank(?:ing)?\s+(?:in|for)\s+(?:a\s+)?(?:city|location|area))/i, goalType: 'local_visibility' },
-  { re: /^(?:rank\s+(?:in|for)\s+[a-z]+(?:,\s*[a-z]+)*|target\s+(?:local|city|location))/i, goalType: 'local_visibility' },
-  { re: /^(?:improve|build|boost)\s+e[\-–]?e[\-–]?a[\-–]?t/i,               goalType: 'eeat' },
-  { re: /^(?:improve|build)\s+(?:expertise|authority|trust|credibility)/i,    goalType: 'eeat' },
-  { re: /^(?:build|grow|establish)\s+(?:topical\s+)?(?:content\s+)?authority/i, goalType: 'content_authority' },
+  { re: /^(?:grow|increase|boost|improve)\s+(?:organic\s+)?traffic\b/i,         goalType: 'traffic_growth' },
+  { re: /^(?:get\s+)?more\s+(?:organic\s+)?(?:traffic|clicks|visitors)\b/i,     goalType: 'traffic_growth' },
+  { re: /^(?:fix|resolve|recover|improve)\s+(?:technical|tech|core\s+web)\b/i,  goalType: 'technical_recovery' },
+  { re: /^(?:technical\s+recovery|fix\s+(?:all\s+)?(?:technical|site))\b/i,     goalType: 'technical_recovery' },
+  { re: /^(?:improve|build|grow|increase)\s+(?:domain\s+authority|da|dr|authority)\b/i, goalType: 'domain_authority' },
+  { re: /^(?:local\s+(?:seo|visibility|rankings?)|rank(?:ing)?\s+(?:in|for)\s+(?:a\s+)?(?:city|location|area))\b/i, goalType: 'local_visibility' },
+  { re: /^(?:rank\s+(?:in|for)\s+[a-z]+(?:,\s*[a-z]+)*|target\s+(?:local|city|location))\b/i, goalType: 'local_visibility' },
+  { re: /^(?:improve|build|boost)\s+e[\-–]?e[\-–]?a[\-–]?t\b/i,               goalType: 'eeat' },
+  { re: /^(?:improve|build)\s+(?:expertise|authority|trust|credibility)\b/i,    goalType: 'eeat' },
+  { re: /^(?:build|grow|establish)\s+(?:topical\s+)?(?:content\s+)?authority\b/i, goalType: 'content_authority' },
   { re: /^rank\s+for\s+.+\s+(?:and|,)\s+.+\s+(?:on|for)\s+\//i,               goalType: 'keyword_ranking' }, // multi-keyword
 ];
 
