@@ -1272,7 +1272,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               </div>
             </div>
 
-            {/* Documents — Phase 14.0.1: latest report fully expanded inline */}
+            {/* Documents — Phase 14.0.1: latest report fully expanded inline.
+               Reads seo_campaign_reports (keyword pillar reports only). Hidden for
+               other campaign types, which surface artifacts via CampaignDocumentsSection below. */}
+            {(!data.campaign.campaign_type || data.campaign.campaign_type === 'keyword_ranking') && (
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 8px' }}>
                 Documents &amp; reports ({(data.recent_reports || []).length})
@@ -1315,10 +1318,10 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
               )}
             </div>
 
-            {/* Phase D4 — Documents from artifacts table (parallel to legacy
-               reports above). Eventually the legacy block can be deprecated
-               once artifacts coverage is verified complete. Both render for
-               now so PMs see both views and we don't risk regression. */}
+            )}
+
+            {/* Documents from artifacts table — primary document surface.
+               For traffic/other campaigns this is the ONLY document section. */}
             <CampaignDocumentsSection
               campaignId={campaignId}
               projectId={data?.panels?.[0]?.project_id}
