@@ -764,21 +764,23 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
     setDeepBusy(true);
     let ok = 0, failed = 0;
     let pillarErr = '';
+    let firstFailReason = '';
     for (let i = 0; i < pillars.length; i++) {
       setDeepProgress(`${i + 1}/${pillars.length} · ${PILLAR_LABEL[pillars[i]] || pillars[i]}`);
       const r = await pillarDeepAnalysis({ projectId, campaignId, pillar: pillars[i] });
-      if (r.error) { failed++; } else { ok++; }
+      if (r.error) { failed++; if (!firstFailReason) firstFailReason = `${PILLAR_LABEL[pillars[i]] || pillars[i]}: ${r.error}`; }
+      else { ok++; }
       if ((r as any).pillar_create_error && !pillarErr) pillarErr = (r as any).pillar_create_error;
       await load();  // surface each report as it lands
     }
     setDeepProgress('');
     setDeepBusy(false);
-    if (pillarErr) {
+    if (failed > 0 && firstFailReason) {
+      toast({ title: `Deep analysis: ${ok} ok, ${failed} failed`, description: firstFailReason, variant: 'destructive' });
+    } else if (pillarErr) {
       toast({ title: 'Reports generated, but pillar panels failed', description: `DB error creating panels: ${pillarErr}`, variant: 'destructive' });
-    } else if (failed === 0) {
-      toast({ title: 'Deep analysis complete', description: `${ok} pillar reports generated.` });
     } else {
-      toast({ title: 'Deep analysis finished with errors', description: `${ok} succeeded, ${failed} failed. Re-run to retry.`, variant: failed > ok ? 'destructive' : 'default' });
+      toast({ title: 'Deep analysis complete', description: `${ok} pillar reports generated. Click any pillar card to read it.` });
     }
   };
 

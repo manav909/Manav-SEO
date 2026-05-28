@@ -485,15 +485,39 @@ ${questionBlock}
 Produce the complete JSON report now.`;
 
   const raw = await deepLlm(system, user, 6000);
-  if (!raw) return { success: false, error: "Deep analysis returned empty" };
+  if (!raw) return { success: false, error: "Deep analysis returned empty (LLM gave no output — likely timeout or API error)" };
 
-  // Parse JSON (strip any fences defensively)
+  // Parse JSON robustly. The model often wraps the object in prose ("Here is
+  // the report:") or fences, which breaks a naive JSON.parse. Strip fences,
+  // then extract the outermost { ... } span before parsing.
   let parsed: any;
+  let parseFailed = false;
   try {
-    const clean = raw.replace(/```json/g, "").replace(/```/g, "").trim();
+    let clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const first = clean.indexOf("{");
+    const last  = clean.lastIndexOf("}");
+    if (first !== -1 && last !== -1 && last > first) {
+      clean = clean.slice(first, last + 1);
+    }
     parsed = JSON.parse(clean);
-  } catch {
-    return { success: false, error: "Deep analysis returned unparseable JSON" };
+  } catch (e: any) {
+    // Don't discard the analysis — the model produced real content, it just
+    // wasn't valid JSON. Fall back to storing the raw text as the report body
+    // so the user ALWAYS gets their analysis, even if role-tagging is lost.
+    console.error(`[pillar-deep] JSON parse failed for ${opts.pillar}, storing raw. Head: ${raw.slice(0, 200)}`);
+    parseFailed = true;
+    parsed = {
+      headline: `${opts.pillar.replace(/_/g, " ")} analysis`,
+      state_of_play: "",
+      insights: [],
+      open_questions: [],
+      ninety_day_plan: "",
+      _raw: raw,
+    };
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    return { success: false, error: "Deep analysis parsed to a non-object" };
   }
 
   /* ── Render to markdown for storage + reading ── */
@@ -504,19 +528,40 @@ Produce the complete JSON report now.`;
     const { data: panel } = await db().from("seo_campaign_panels")
       .select("id").eq("campaign_id", opts.campaignId).eq("pillar", opts.pillar).maybeSingle();
 
-    const { data: inserted, error } = await db().from("seo_campaign_reports").insert({
+    const baseRow: any = {
       campaign_id:       opts.campaignId,
       panel_id:          (panel as any)?.id || null,
       pillar:            opts.pillar,
       report_kind:       "deep_analysis",
-      title:             parsed.headline?.slice(0, 200) || `${opts.pillar} deep analysis`,
-      summary:           parsed.state_of_play?.slice(0, 500) || null,
+      title:             (parsed.headline ? String(parsed.headline).slice(0, 200) : "") || `${opts.pillar} deep analysis`,
+      summary:           parsed.state_of_play ? String(parsed.state_of_play).slice(0, 500) : null,
       body_md:           md,
       confidence_rating: avgConfidence(parsed.insights),
       generated_by:      "pillar-deep-engine",
       data_sources:      interro.data_sources,
-    }).select("id").single();
-    if (error) return { success: false, error: error.message };
+    };
+
+    let { data: inserted, error } = await db().from("seo_campaign_reports").insert(baseRow).select("id").single();
+
+    // If a CHECK constraint rejects report_kind='deep_analysis', retry with an
+    // allowed kind so the report still lands (it's identified by pillar anyway).
+    if (error && /report_kind/i.test(error.message || "")) {
+      console.error(`[pillar-deep] report_kind rejected, retrying with 'recheck': ${error.message}`);
+      const retry = await db().from("seo_campaign_reports").insert({ ...baseRow, report_kind: "recheck" }).select("id").single();
+      inserted = retry.data; error = retry.error;
+    }
+    // If some other column is rejected, retry with only the essential columns.
+    if (error) {
+      console.error(`[pillar-deep] insert failed (${error.message}), retrying minimal row`);
+      const minimal = {
+        campaign_id: opts.campaignId, panel_id: (panel as any)?.id || null,
+        pillar: opts.pillar, report_kind: "deep_analysis",
+        title: baseRow.title, body_md: md,
+      };
+      const retry = await db().from("seo_campaign_reports").insert(minimal).select("id").single();
+      inserted = retry.data; error = retry.error;
+    }
+    if (error) return { success: false, error: `report insert failed: ${error.message}` };
 
     // Update the panel summary
     if ((panel as any)?.id) {
@@ -543,6 +588,16 @@ function renderReport(pillar: string, interro: Interrogation, p: any): string {
   const lines: string[] = [];
   lines.push(`# ${pillar.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} — Deep Analysis`);
   lines.push("");
+
+  // Fallback: JSON parse failed, store the model's raw analysis directly.
+  if (p._raw) {
+    lines.push(`**Analyst:** ${interro.expert_role}`);
+    lines.push(`**Data sources:** ${interro.data_sources.join(", ")}`);
+    lines.push("");
+    lines.push(p._raw);
+    return lines.join("\n");
+  }
+
   lines.push(`> ${p.headline || ""}`);
   lines.push("");
   lines.push(`**Analyst:** ${interro.expert_role}`);
