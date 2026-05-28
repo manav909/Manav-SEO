@@ -251,7 +251,8 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
 /* ─── Load GSC data (no impression threshold — ALL pages matter) ─ */
 async function loadGscData(projectId: string): Promise<{
   topPages: any[];
-  topQueries: any[];          // query-level GSC data — what searches pages appear for
+  topQueries: any[];          // query-level GSC data
+  queryPagePairs: any[];      // REAL joined query→page data {query,page,clicks,impressions,ctr,position}
   zeroClickPages: any[];      // ranked but no clicks = CTR problem
   notRankingPages: any[];     // in GSC but position > 50 = visibility problem
   quickWins: any[];           // positions 4-20 with impressions
@@ -259,24 +260,28 @@ async function loadGscData(projectId: string): Promise<{
   try {
     const r = await withTimeout(
       db().from("project_knowledge").select("field_key,field_value")
-        .eq("project_id", projectId).in("field_key", ["gsc_top_pages","gsc_top_queries"]),
+        .eq("project_id", projectId).in("field_key", ["gsc_top_pages","gsc_top_queries","gsc_query_page_pairs"]),
       "gsc_data query"
     );
     const rows = ((r as any)?.data || []) as any[];
     const topPagesRow   = rows.find(r => r.field_key === "gsc_top_pages");
     const topQueriesRow = rows.find(r => r.field_key === "gsc_top_queries");
+    const pairsRow      = rows.find(r => r.field_key === "gsc_query_page_pairs");
     const topPages   = topPagesRow   ? JSON.parse(topPagesRow.field_value || "[]")   : [];
     const topQueries = topQueriesRow ? JSON.parse(topQueriesRow.field_value || "[]") : [];
+    // REAL joined query→page data from GSC — no inference needed
+    const queryPagePairs = pairsRow ? JSON.parse(pairsRow.field_value || "[]") : [];
 
     return {
       topPages,
       topQueries,
+      queryPagePairs,
       zeroClickPages:  topPages.filter((p: any) => (p.impressions || 0) > 0 && (p.clicks || 0) === 0),
       notRankingPages: topPages.filter((p: any) => (p.position || 0) > 50),
       quickWins:       topPages.filter((p: any) => (p.position || 0) >= 4 && (p.position || 0) <= 20),
     };
   } catch {
-    return { topPages: [], topQueries: [], zeroClickPages: [], notRankingPages: [], quickWins: [] };
+    return { topPages: [], topQueries: [], queryPagePairs: [], zeroClickPages: [], notRankingPages: [], quickWins: [] };
   }
 }
 
@@ -294,29 +299,48 @@ const stepVisibilityAudit = {
   artifact_kind: "traffic_audit",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const { topPages, topQueries, zeroClickPages, quickWins } = await loadGscData(ctx.projectId);
+    const { topPages, topQueries, queryPagePairs, zeroClickPages } = await loadGscData(ctx.projectId);
+
+    const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
+    const targetSet = new Set(targetUrls.map(norm));
 
     // Cross-reference: which target pages appear in GSC?
-    const gscUrlSet = new Set(topPages.map((p: any) => (p.page || p.url || "").replace(/\/$/, "")));
-    const invisiblePages   = targetUrls.filter(u => !gscUrlSet.has(u.replace(/\/$/, "")));
-    const visiblePages     = targetUrls.filter(u =>  gscUrlSet.has(u.replace(/\/$/, "")));
+    const gscUrlSet = new Set(topPages.map((p: any) => norm(p.page || p.url || "")));
+    const invisiblePages = targetUrls.filter(u => !gscUrlSet.has(norm(u)));
+    const visiblePages   = targetUrls.filter(u =>  gscUrlSet.has(norm(u)));
+
+    // FIX #2: quick-wins counted on TARGET PAGES ONLY (not site-wide).
+    const targetQuickWins = topPages.filter((p: any) =>
+      targetSet.has(norm(p.page || p.url || "")) && (p.position || 0) >= 4 && (p.position || 0) <= 20);
+
+    // FIX #1: REAL query→page mapping from GSC joined data — filtered to target pages.
+    // No more LLM guessing which page ranks for which query.
+    const targetPairs = (queryPagePairs || [])
+      .filter((pr: any) => targetSet.has(norm(pr.page)))
+      .sort((a: any, b: any) => (b.impressions || 0) - (a.impressions || 0));
 
     const makePageRow = (url: string) => {
       const slug = url.replace(/^https?:\/\/[^/]+/, "") || "/";
-      const gscData = topPages.find((p: any) => (p.page || p.url || "").replace(/\/$/, "") === url.replace(/\/$/, ""));
+      const gscData = topPages.find((p: any) => norm(p.page || p.url || "") === norm(url));
       if (!gscData) return `| ${slug} | NOT IN GSC | — | — | — | 🔴 Invisible |`;
-      const pos   = gscData.position?.toFixed(1) || "—";
-      const impr  = gscData.impressions || 0;
+      const pos    = gscData.position?.toFixed(1) || "—";
+      const impr   = gscData.impressions || 0;
       const clicks = gscData.clicks || 0;
-      const ctr   = impr > 0 ? ((clicks / impr) * 100).toFixed(1) + "%" : "—";
-      const flag  = clicks === 0 && impr > 0 ? "🟡 Ranked, 0 clicks"
-                  : parseFloat(pos) <= 3 ? "🟢 Top 3"
-                  : parseFloat(pos) <= 20 ? "🟡 Quick win"
-                  : "🔴 Low ranking";
+      const ctr    = impr > 0 ? ((clicks / impr) * 100).toFixed(1) + "%" : "—";
+      const flag   = clicks === 0 && impr > 0 ? "🟡 Ranked, 0 clicks"
+                   : parseFloat(pos) <= 3 ? "🟢 Top 3"
+                   : parseFloat(pos) <= 20 ? "🟡 Quick win"
+                   : "🔴 Low ranking";
       return `| ${slug} | ${pos} | ${impr.toLocaleString()} | ${clicks} | ${ctr} | ${flag} |`;
     };
 
-    // For the highest-impression quick-win query, pull live SERP to see who ranks
+    // Real query→page rows for the prompt — these are GSC facts, not inference
+    const pairRows = targetPairs.slice(0, 15).map((pr: any) => {
+      const slug = pr.page.replace(/^https?:\/\/[^/]+/, "") || "/";
+      return `| "${pr.query}" | ${slug} | ${pr.impressions} | ${pr.clicks} | ${pr.ctr}% | ${pr.position?.toFixed(1)} |`;
+    }).join("\n");
+
+    // For the highest-impression quick-win query, pull live SERP
     let serpContext = "";
     try {
       const topQuery = (topQueries || []).filter((q: any) => (q.position||0) >= 4 && (q.position||0) <= 20)
@@ -336,50 +360,54 @@ const stepVisibilityAudit = {
     } catch { /* SERP non-blocking */ }
 
     const analysis = await llm(
-      `You are a Senior SEO Analyst writing a GSC visibility audit.
-Be specific and data-driven. Every finding must cite a real number.
-Do not write generic advice. Write about these specific pages.
-Format in clean markdown. 500-700 words.`,
-      `GSC Visibility Audit for ${targetUrls.length} target pages.
-Data source: ${pageSource}
+      `You are a Senior SEO Analyst writing a GSC visibility audit for a client deliverable.
+HARD RULES — this will be challenged by a senior practitioner:
+- The query→page table below is REAL GSC joined data. Use ONLY those mappings. NEVER invent which page ranks for which query.
+- This audit reports GSC SIGNALS ONLY. You have NOT crawled these pages. Do NOT speculate about noindex tags, robots.txt, canonical, or thin content as causes of invisibility — a later crawl step verifies those. For invisible pages, state only the GSC fact: zero recorded impressions. You may list possible causes ONLY as "to be confirmed by the crawl step," never as findings.
+- Forecasts: a query's impressions are shared across all ranking pages. Any click projection for a single page is a CEILING, not an estimate. Always label it "ceiling — assumes this page captures the full query volume, which it will not."
+- Cite a source for any CTR-by-position benchmark (e.g. "Advanced Web Ranking CTR study"). If you cannot source it, do not state a specific number.
+Format clean markdown, 500-700 words.`,
+      `GSC Visibility Audit for ${targetUrls.length} target pages. Source: ${pageSource}
 
 TARGET PAGE GSC STATUS:
 | URL | Position | Impressions | Clicks | CTR | Status |
 |---|---|---|---|---|---|
 ${targetUrls.slice(0, 20).map(makePageRow).join("\n")}
 
-KEY FINDINGS:
-- Pages invisible to Google (not in GSC): ${invisiblePages.length} of ${targetUrls.length}
-${invisiblePages.slice(0, 5).map(u => `  • ${u.replace(/^https?:\/\/[^/]+/, "") || "/"}`).join("\n")}
+REAL QUERY→PAGE MAPPING (GSC joined data — these are facts, the exact page that appeared for each query):
+| Query | Page | Impressions | Clicks | CTR | Position |
+|---|---|---|---|---|---|
+${pairRows || "| No joined query-page data available — GSC may need a fresh pull |"}
 
-- Pages ranking but not clicking (position found, 0 clicks): ${zeroClickPages.length}
-${zeroClickPages.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impressions`).join("\n")}
-
-- Quick-win pages (position 4-20): ${quickWins.length}
-${quickWins.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impr, ${p.clicks||0} clicks`).join("\n")}
-
-TOP QUERIES (what searches the site appears for — ${topQueries.length} total):
-${topQueries.slice(0, 12).map((q: any) => `  • "${q.query || q.keyword || ""}" — pos ${(q.position||0).toFixed(1)}, ${q.impressions||0} impr, ${q.clicks||0} clicks, CTR ${q.impressions > 0 ? ((q.clicks/q.impressions)*100).toFixed(1) : 0}%`).join("\n") || "  No query-level GSC data available"}
+KEY FINDINGS (target pages only):
+- Invisible (0 GSC impressions): ${invisiblePages.length} of ${targetUrls.length}
+${invisiblePages.slice(0, 8).map(u => `  • ${u.replace(/^https?:\/\/[^/]+/, "") || "/"}`).join("\n")}
+- Target pages ranking but 0 clicks: ${zeroClickPages.filter((p: any) => targetSet.has(norm(p.page||p.url||""))).length}
+- Target quick-wins (pos 4-20): ${targetQuickWins.length}
+${targetQuickWins.slice(0, 8).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impr, ${p.clicks||0} clicks`).join("\n")}
 
 Write:
-1. Headline finding (1 paragraph — what's the core GSC problem?)
-2. Query opportunity analysis — which queries have high impressions but low clicks or poor position? Which target pages should be optimised for these queries?
-2. Invisible pages analysis — WHY might these pages be invisible?
-3. Quick-win opportunities with specific expected outcomes
-4. CTR problems — pages ranking but not being clicked (title/meta issue)
-5. Clear priority ranking of these pages
-${serpContext ? "6. Competitive context — based on the live SERP data below, what would it take to win the top quick-win query?" + serpContext : ""}`
+1. Headline finding — the core GSC problem (GSC signals only)
+2. Query opportunity analysis — using ONLY the real query→page table above, which mappings show high impressions but poor position or CTR?
+3. Invisible pages — state the GSC fact (0 impressions). List possible causes ONLY as "to confirm in crawl step"
+4. Quick-win opportunities — with click projections labelled as CEILINGS and sourced CTR benchmarks
+5. CTR problems on ranking target pages
+6. Priority ranking of these target pages${serpContext ? "\n7. Competitive context from the live SERP below" + serpContext : ""}`
     );
 
     return {
       ok: true,
-      output: { topPages: topPages.slice(0,20), topQueries: topQueries.slice(0,20), quickWins: quickWins.slice(0,10), targetUrls, invisiblePages, visiblePages },
+      output: {
+        topPages: topPages.slice(0,20), topQueries: topQueries.slice(0,20),
+        queryPagePairs: targetPairs.slice(0,20), targetQuickWins: targetQuickWins.slice(0,10),
+        targetUrls, invisiblePages, visiblePages,
+      },
       artifact: {
         kind: "traffic_audit",
         title: "GSC Visibility Audit",
-        body: `# GSC Visibility Audit\n\n${analysis}\n\n---\n**Target pages:** ${targetUrls.length} | **Source:** ${pageSource} | **Invisible:** ${invisiblePages.length} | **Quick wins:** ${quickWins.length} | **Zero-click ranked pages:** ${zeroClickPages.length}`,
+        body: `# GSC Visibility Audit\n\n${analysis}\n\n---\n**Target pages:** ${targetUrls.length} | **Source:** ${pageSource} | **Invisible:** ${invisiblePages.length} | **Target quick-wins (pos 4-20):** ${targetQuickWins.length} | **Real query→page pairs:** ${targetPairs.length}`,
       },
-      honest_note: `${targetUrls.length} target pages from ${pageSource}. ${invisiblePages.length} invisible to Google. ${quickWins.length} quick wins at positions 4-20. ${zeroClickPages.length} pages rank but get 0 clicks.`,
+      honest_note: `${targetUrls.length} target pages from ${pageSource}. ${invisiblePages.length} invisible (0 GSC impressions). ${targetQuickWins.length} target-page quick wins at pos 4-20. ${targetPairs.length} real query→page mappings from GSC.`,
     };
   },
 };
@@ -700,7 +728,7 @@ const stepActionPlan = {
     const cwvWithData    = techData.withData || 0;
     const cwvPoorLcp     = techData.poorLcp || 0;
     const unlinkedCount  = (linkData.unlinkedTargets || []).length;
-    const quickWins      = gscData.quickWins || [];
+    const quickWins      = gscData.targetQuickWins || gscData.quickWins || [];
 
     // Pull live GA4 engagement for up to 5 target pages (parallel, 30s ceiling).
     // Tells us which pages engage vs bounce — critical for prioritisation.
@@ -793,7 +821,7 @@ Cite real numbers. Never overpromise timelines.
 Site: ${targetUrls[0] ? (targetUrls[0].match(/^https?:\/\/[^/]+/)?.[0] || "their website") : "their website"}
 Target pages: ${targetUrls.length} pages
 Pages invisible to Google: ${(gscData.invisiblePages||[]).length}
-Quick-win opportunities: ${(gscData.quickWins||[]).length} pages at positions 4-20
+Quick-win opportunities: ${(gscData.targetQuickWins||gscData.quickWins||[]).length} target pages at positions 4-20
 On-page issues found: ${onPage.issueCount || 0}
 Core Web Vitals: ${techData.withData || 0} pages with real field data, ${techData.poorLcp || 0} failing LCP
 
