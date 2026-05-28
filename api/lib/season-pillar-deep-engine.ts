@@ -330,6 +330,13 @@ export async function runDeepPillarAnalysis(opts: {
   const targetUrls = await loadTargetUrls(opts.campaignId, opts.projectId);
   if (targetUrls.length === 0) return { success: false, error: "No target pages" };
 
+  // Ensure the pillar panels exist (idempotent) — so a campaign that ran before
+  // pillar creation, or whose creation failed, still gets its panels here.
+  try {
+    const { createTrafficPillars } = await import("./season-traffic-pillars.js");
+    await createTrafficPillars({ campaignId: opts.campaignId, projectId: opts.projectId, targetUrls });
+  } catch { /* non-blocking */ }
+
   const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
   const targetSet = new Set(targetUrls.map(norm));
 

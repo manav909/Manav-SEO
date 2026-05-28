@@ -132,7 +132,17 @@ export async function createTrafficPillars(opts: {
 
     if (toCreate.length === 0) return { success: true, created: 0 };
 
-    const { error } = await db().from("seo_campaign_panels").insert(toCreate);
+    let { error } = await db().from("seo_campaign_panels").insert(toCreate);
+
+    // Resilience: if the coverage_state column doesn't exist yet (migration not
+    // run), the insert fails. Retry WITHOUT coverage_state so pillars still get
+    // created — coverage shows in current_summary instead of a progress bar.
+    if (error && /coverage_state/i.test(error.message || "")) {
+      const withoutCoverage = toCreate.map(({ coverage_state, ...rest }: any) => rest);
+      const retry = await db().from("seo_campaign_panels").insert(withoutCoverage);
+      error = retry.error;
+    }
+
     if (error) return { success: false, created: 0, error: error.message };
     return { success: true, created: toCreate.length };
   } catch (e: any) {
