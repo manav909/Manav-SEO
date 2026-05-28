@@ -941,7 +941,14 @@ export default function SeasonModal() {
                       projectId={selectedProjectId}
                       originalInput={input}
                       onClose={() => setPendingObjective(null)}
-                      onLaunched={() => { setPendingObjective(null); setMood('happy'); }}
+                      onLaunched={(result) => {
+                        setPendingObjective(null);
+                        setMood('happy');
+                        // If user clicked Go to Objectives, close the modal
+                        if (result?.navigateTo === 'objectives') {
+                          setIsOpen?.(false);
+                        }
+                      }}
                     />
                   </div>
                 )}

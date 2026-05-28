@@ -76,6 +76,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [promoteConfirm, setPromoteConfirm] = useState<SeoOpportunity | null>(null);
   const [tab, setTab] = useState<'campaigns' | 'opportunities' | 'objectives'>('campaigns');
+  const pipelinePollRef = React.useRef<any>(null);
   const [showNewObjective, setShowNewObjective] = useState(false);
   /* Active pipeline run being driven/watched in dashboard overlay */
   const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number; pipelineType?: string } | null>(null);

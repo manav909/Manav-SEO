@@ -136,7 +136,8 @@ export default function ObjectivePreviewInline({
 
       setLaunched(true);
       setLaunching(false);
-      onLaunched?.({ campaign_id: campaignId, site_id: siteId });
+      // Don't call onLaunched yet — let user see success state first.
+      // onLaunched is called when user clicks "Go to Objectives" or dismisses.
     } catch (e: any) {
       console.error('[ObjectivePreview] handleLaunch error:', e);
       setError(e?.message || 'Launch failed');
