@@ -4297,8 +4297,16 @@ export async function artifactsPortfolioKpis(opts: { projectIds?: string[] } = {
 /* ════════════════════════════════════════════════════════════════
    Quantum Intelligence Workspace — ws_* actions
 ═══════════════════════════════════════════════════════════════ */
-export async function wsCreateRun(opts: { projectId: string; campaignId?: string; goal?: string }):
-  Promise<{ success?: boolean; run_id?: string; error?: string }> {
+export async function wsGoalCatalog():
+  Promise<{ success?: boolean; goals?: any[]; steps?: any[]; sources?: any[]; error?: string }> {
+  return post(ENGINE, { action: 'ws_goal_catalog' });
+}
+export async function wsComposeConfig(opts: { goalIds?: string[]; customNeeds?: string[]; customLabel?: string }):
+  Promise<{ success?: boolean; config?: any; error?: string }> {
+  return post(ENGINE, { action: 'ws_compose_config', ...opts });
+}
+export async function wsCreateRun(opts: { projectId: string; campaignId?: string; goalIds?: string[]; customNeeds?: string[]; customLabel?: string; stepOverrides?: Array<{ key: string; enabled?: boolean; depth?: string }> }):
+  Promise<{ success?: boolean; run_id?: string; config?: any; error?: string }> {
   return post(ENGINE, { action: 'ws_create_run', ...opts });
 }
 export async function wsRunDeepSteps(opts: { runId: string; projectId: string; campaignId?: string }):

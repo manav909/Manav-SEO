@@ -25,7 +25,7 @@ export interface VisibilityEvidence {
   visible_pages: Array<{ url: string; position: number; impressions: number; clicks: number; ctr: number }>;
   invisible_pages: string[];                       // 0 impressions in GSC
   query_page_pairs: Array<{ query: string; page: string; impressions: number; clicks: number; ctr: number; position: number }>;
-  site_ctr_curve: Record<number, { ctr: number; samples: number }>;  // THIS site's real curve
+  site_ctr_curve: Record<number, { ctr: number; samples: number; impressions: number }>;  // THIS site's real curve (impression-weighted)
   near_ranking: Array<{ query: string; page: string; position: number; impressions: number }>; // pos 4-20
   indexation_checks: Array<{ url: string; status_ok: boolean; noindex: boolean; canonical: string; loaded: boolean }>;
   provenance: SourcedFact[];
@@ -130,13 +130,13 @@ function renderVisibilityReport(e: VisibilityEvidence): string {
   L.push("");
 
   L.push(`## This site's own CTR-by-position curve`);
-  L.push(`_Median click-through rate at each position, computed from this site's real query-page data. Use this — not generic benchmarks — to ground any forecast._`);
+  L.push(`_Impression-weighted click-through rate at each position (sum of clicks / sum of impressions), computed from this site's real query-page data. Use this — not generic benchmarks — to ground any forecast._`);
   L.push("");
-  L.push(`| Position | Median CTR | Samples |`);
-  L.push(`|---|---|---|`);
+  L.push(`| Position | CTR (weighted) | Impressions | Samples |`);
+  L.push(`|---|---|---|---|`);
   for (let pos = 1; pos <= 10; pos++) {
     const c = e.site_ctr_curve[pos];
-    if (c) L.push(`| ${pos} | ${c.ctr}% | ${c.samples} |`);
+    if (c) L.push(`| ${pos} | ${c.ctr}% | ${c.impressions} | ${c.samples} |`);
   }
   L.push("");
 

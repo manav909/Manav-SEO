@@ -38,14 +38,19 @@ export interface PanelOutput {
 }
 
 /* Build the prompt context from all step evidence reports for the run. */
-async function loadStepEvidence(runId: string): Promise<{ reports: string; goal: string }> {
-  const { data: run } = await db().from("workspace_runs").select("goal").eq("id", runId).maybeSingle();
+async function loadStepEvidence(runId: string): Promise<{ reports: string; goal: string; framing: string }> {
+  const { data: run } = await db().from("workspace_runs").select("goal, run_config").eq("id", runId).maybeSingle();
+  const cfg = (run as any)?.run_config || null;
   const { data: steps } = await db().from("step_reports")
     .select("step_key, report_md, worth_deeper_json").eq("run_id", runId).order("created_at");
   const reports = ((steps || []) as any[]).map((s: any) =>
     `### Evidence: ${s.step_key}\n${s.report_md || ""}\n\nFlagged for deeper investigation:\n${(s.worth_deeper_json || []).map((w: string) => `- ${w}`).join("\n") || "- (none)"}`
   ).join("\n\n---\n\n");
-  return { reports, goal: (run as any)?.goal || "grow organic traffic" };
+  return {
+    reports,
+    goal: (run as any)?.goal || "grow organic traffic",
+    framing: cfg?.panel_framing || "",
+  };
 }
 
 /* Run a panel round. round=1 over evidence; round=2 incorporates Manav input. */
@@ -56,14 +61,14 @@ export async function runPanelRound(opts: {
   manavInput?: string;     // round 2 only
   priorOutput?: PanelOutput;  // round 2: the round-1 result to build on
 }): Promise<{ success: boolean; output?: PanelOutput; error?: string }> {
-  const { reports, goal } = await loadStepEvidence(opts.runId);
+  const { reports, goal, framing } = await loadStepEvidence(opts.runId);
   if (!reports.trim()) return { success: false, error: "No step evidence found for this run." };
 
   const roleList = STAKEHOLDER_ROLES.join(", ");
   const system = `You are facilitating a panel of senior stakeholders analysing how to achieve a specific goal for a website, working ONLY from verified evidence. The panel roles are: ${roleList}.
 
 Goal: ${goal}
-
+${framing ? `\nHow to frame this goal:\n${framing}\n` : ""}
 Your job is NOT to gather data or guess. It is to FRAME the problem for a team of scientist-analysts (the pillars) who will answer with deep verified data. Produce:
 1. SCENARIOS — the distinct, realistic paths to the goal that THIS project's evidence actually supports (e.g. recover near-ranking pages, fix indexation, capture untapped query clusters, displace specific competitors, convert existing traffic). Each grounded in specific evidence. No generic playbook items.
 2. QUESTIONS — for each scenario, the sharp questions each relevant role needs answered. Tag every question with the asking role and the pillar that must answer it (visibility, query_opportunity, on_page_health, technical_performance, internal_links, engagement, monitoring).

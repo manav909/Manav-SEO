@@ -1,6 +1,6 @@
 # PROJECT_BRIEF — SEO Season · Quantum Intelligence Workspace
 
-_Last updated: 2026-05-28. Re-upload at the start of every session so the plan is never lost. Single source of truth for the Workspace architecture and build order._
+_Last updated: 2026-05-28 (Build 1 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
 
 ---
 
@@ -45,7 +45,7 @@ Taxonomy + dependencies:
 ---
 
 ## 3. BUILD ORDER (confirmed)
-Build 1 — Goal infrastructure FIRST (foundation): composable goal definitions (needs+deps); goal-selection+config UI (multi-select/custom, computed config shown, toggles+depth, dependency-surfacing); document folder/filter model; CTR-curve bug fix (S5). Traffic becomes first goal EXPRESSED IN this system.
+Build 1 — Goal infrastructure [SHIPPED 2026-05-28]: composable goal definitions (api/lib/workspace/goals.ts: GOAL_DEFS, STEP_DEFS, DATA_SOURCES, composeRunConfig, goalCatalog); goal-selection+config UI in Workspace.tsx (multi-select goals/custom, computed config, step toggles+depth shown, dependency-surfacing satisfied-vs-needs-activation); document run-folder label; CTR-curve bug FIXED (impression-weighted). Migration: workspace-build1-migration.sql adds goal_ids + run_config to workspace_runs. New actions: ws_goal_catalog, ws_compose_config; ws_create_run now takes goalIds/customLabel/stepOverrides; wsRunDeepSteps honors enabled steps; panel uses composed framing.
 Build 2 — Traffic full depth on the foundation: goal-aware deep steps using FULL GSC/GA4/SerpAPI/CrUX; all 7 pillars.
 Then: goal by goal; shared infra built once in Build 1, reused. Infra-first avoids retrofit rework across 6+ goals.
 
@@ -61,7 +61,7 @@ Then: goal by goal; shared infra built once in Build 1, reused. Infra-first avoi
 ---
 
 ## 5. KNOWN BUGS / MUST-FIX
-- CTR-CURVE BUG (fold into Build 1): siteCtrCurve uses MEDIAN per position bucket -> long tail of low-impression/0-click pairs makes median 0% even at pos 1 (42 samples). Useless. FIX: impression-weighted = sum(clicks)/sum(impressions) per bucket; drop ultra-low-impression noise. Underpins every forecast.
+- CTR-CURVE BUG [FIXED 2026-05-28]: siteCtrCurve now impression-weighted = sum(clicks)/sum(impressions) per position bucket, skips zero-impression pairs. Report table shows CTR(weighted)/Impressions/Samples.
 
 ---
 

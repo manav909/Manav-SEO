@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { SimpleMarkdown } from '@/components/pm/SeoCampaignsPanel';
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
+  wsGoalCatalog, wsComposeConfig,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
@@ -50,6 +51,23 @@ export default function Workspace() {
   const [busy, setBusy] = useState('');
   const [manavInput, setManavInput] = useState('');
   const [pillarBusy, setPillarBusy] = useState('');
+  // Goal selection + config
+  const [catalog, setCatalog] = useState<any>(null);
+  const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
+  const [customLabel, setCustomLabel] = useState('');
+  const [config, setConfig] = useState<any>(null);
+  const [showPicker, setShowPicker] = useState(false);
+
+  useEffect(() => { wsGoalCatalog().then((r) => { if (r.success) setCatalog(r); }); }, []);
+
+  // Recompute the config preview whenever goal selection changes
+  useEffect(() => {
+    if (!selectedGoals.length && !customLabel) { setConfig(null); return; }
+    wsComposeConfig({ goalIds: selectedGoals, customLabel: customLabel || undefined }).then((r) => { if (r.success) setConfig(r.config); });
+  }, [selectedGoals, customLabel]);
+
+  const toggleGoal = (id: string) => setSelectedGoals((g) => g.includes(id) ? g.filter((x) => x !== id) : [...g, id]);
+  const toggleStep = (key: string) => setConfig((c: any) => c ? { ...c, steps: c.steps.map((s: any) => s.key === key ? { ...s, enabled: !s.enabled } : s) } : c);
 
   const load = useCallback(async () => {
     if (!selectedProjectId) return;
@@ -67,14 +85,17 @@ export default function Workspace() {
   /* ── lifecycle actions ── */
   const startRun = async () => {
     if (!selectedProjectId) return;
+    if (!selectedGoals.length && !customLabel) { toast({ title: 'Pick a goal first', description: 'Select one or more goals (or name a custom goal) to configure the run.' }); setShowPicker(true); return; }
+    const stepOverrides = (config?.steps || []).map((s: any) => ({ key: s.key, enabled: s.enabled, depth: s.depth }));
     setBusy('Creating run');
-    const cr = await wsCreateRun({ projectId: selectedProjectId });
+    const cr = await wsCreateRun({ projectId: selectedProjectId, goalIds: selectedGoals, customLabel: customLabel || undefined, stepOverrides });
     if (!cr.success || !cr.run_id) { toast({ title: 'Could not start run', description: cr.error, variant: 'destructive' }); setBusy(''); return; }
-    setBusy('Deep steps gathering verified evidence — this runs a full GSC + live-crawl + SerpAPI pass');
+    setShowPicker(false);
+    setBusy('Deep steps gathering verified evidence — full GSC + live-crawl + SerpAPI pass');
     const ds = await wsRunDeepSteps({ runId: cr.run_id, projectId: selectedProjectId });
     setBusy('');
     if (!ds.success) { toast({ title: 'Deep steps failed', description: ds.error, variant: 'destructive' }); }
-    else { toast({ title: 'Evidence gathered', description: 'Deep step reports ready. Review, then run the panel.' }); }
+    else { toast({ title: 'Evidence gathered', description: 'Step reports ready. Review, then run the panel.' }); }
     await load();
   };
 
@@ -163,17 +184,91 @@ export default function Workspace() {
       {/* ── SECTION: DEEP STEPS ── */}
       {section === 'pipeline' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 700 }}>Deep evidence steps</div>
-              <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 2 }}>Each step gathers verified data exhaustively (GSC, live crawl, SerpAPI) and produces a downloadable sourced report.</div>
+          <div style={{ ...card }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Configure the run</div>
+                <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 2 }}>Pick one or more goals (or a custom goal). The goal configures which deep steps run and at what depth — and what the panel discusses.</div>
+              </div>
+              <button onClick={() => setShowPicker((v) => !v)} style={{ ...iconBtn(), width: 'auto', padding: '6px 12px', gap: 5, display: 'flex' }}>
+                {showPicker ? 'Hide' : (selectedGoals.length || customLabel ? 'Edit goals' : 'Pick goals')}
+              </button>
             </div>
-            <button onClick={startRun} disabled={!!busy} style={primaryBtn(!!busy)}>
-              <Play size={13} /> {run ? 'Re-run evidence' : 'Start run'}
-            </button>
+
+            {/* selected-goal summary chips */}
+            {(selectedGoals.length > 0 || customLabel) && !showPicker && (
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+                {selectedGoals.map((g) => <span key={g} style={chip(true)}>{catalog?.goals?.find((x: any) => x.id === g)?.label || g}</span>)}
+                {customLabel && <span style={chip(true)}>{customLabel}</span>}
+              </div>
+            )}
+
+            {/* the picker */}
+            {showPicker && catalog && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>Goals (select one or more)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                  {catalog.goals.map((g: any) => {
+                    const on = selectedGoals.includes(g.id);
+                    return (
+                      <button key={g.id} onClick={() => toggleGoal(g.id)} style={{
+                        textAlign: 'left', padding: 10, borderRadius: 9, cursor: 'pointer',
+                        border: `1px solid ${on ? 'hsla(186 80% 55% / 0.5)' : 'rgba(160,160,180,0.18)'}`,
+                        background: on ? 'hsla(186 80% 55% / 0.1)' : 'transparent', color: 'inherit',
+                      }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: on ? CYAN : 'inherit' }}>{on ? '✓ ' : ''}{g.label}</div>
+                        <div style={{ fontSize: 10.5, color: 'rgba(160,170,185,0.7)', marginTop: 3 }}>{g.description}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <input value={customLabel} onChange={(e) => setCustomLabel(e.target.value)} placeholder="…or name a custom goal"
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12 }} />
+                </div>
+
+                {/* computed config: steps + dependencies */}
+                {config && (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>Computed run — steps (toggle / shown depth)</div>
+                    {config.steps.map((s: any) => (
+                      <div key={s.key} onClick={() => toggleStep(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', opacity: s.enabled ? 1 : 0.45 }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, border: `1px solid ${s.enabled ? CYAN : 'rgba(160,160,180,0.35)'}`, background: s.enabled ? 'hsla(186 80% 55% / 0.25)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: CYAN }}>{s.enabled ? '✓' : ''}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</span>
+                        <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(160,160,180,0.15)', color: 'rgba(170,180,195,0.8)' }}>{s.depth}</span>
+                      </div>
+                    ))}
+                    {/* dependency surfacing */}
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', margin: '12px 0 6px' }}>Data sources</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {config.dependencies.map((d: any) => (
+                        <span key={d.source} title={d.activation_note || ''} style={{
+                          fontSize: 10, fontWeight: 700, padding: '3px 9px', borderRadius: 6,
+                          background: d.satisfied ? 'hsla(152 70% 50% / 0.12)' : 'hsla(38 90% 55% / 0.12)',
+                          color: d.satisfied ? 'hsl(152 70% 62%)' : 'hsl(38 90% 62%)',
+                          border: `1px solid ${d.satisfied ? 'hsla(152 70% 50% / 0.3)' : 'hsla(38 90% 55% / 0.35)'}`,
+                        }}>{d.satisfied ? '✓' : '⚠'} {d.label}</span>
+                      ))}
+                    </div>
+                    {config.dependencies.some((d: any) => !d.satisfied) && (
+                      <div style={{ fontSize: 10.5, color: 'hsl(38 90% 65%)', marginTop: 8, lineHeight: 1.5 }}>
+                        ⚠ Some sources need activation. The run still works on existing tools — questions needing the missing source will be flagged as unverified rather than answered. {config.dependencies.filter((d: any) => !d.satisfied).map((d: any) => d.activation_note).filter(Boolean).join(' ')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: 14, display: 'flex', gap: 8 }}>
+              <button onClick={startRun} disabled={!!busy} style={primaryBtn(!!busy)}>
+                <Play size={13} /> {run ? 'New run' : 'Start run'}
+              </button>
+            </div>
           </div>
+
           {steps.length === 0 ? (
-            <div style={{ ...card, color: 'rgba(150,160,180,0.7)', fontSize: 12.5 }}>No evidence yet. Click <strong style={{ color: CYAN }}>Start run</strong>.</div>
+            <div style={{ ...card, color: 'rgba(150,160,180,0.7)', fontSize: 12.5 }}>No evidence yet. Configure goals above and click <strong style={{ color: CYAN }}>Start run</strong>.</div>
           ) : steps.map((s) => (
             <StepCard key={s.id} step={s} />
           ))}
@@ -235,6 +330,11 @@ export default function Workspace() {
       {/* ── SECTION: DOCUMENTS ── */}
       {section === 'documents' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ ...card, padding: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)' }}>Run folder</div>
+            <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3 }}>{run?.goal || 'No run'}</div>
+            {run?.created_at && <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.6)', marginTop: 2 }}>{new Date(run.created_at).toLocaleString()} · {steps.length} evidence · {panel ? '1 panel' : '0 panel'} · {reports.length} solutions</div>}
+          </div>
           <SectionHeading title="Step evidence reports" />
           {steps.length === 0 && <Empty />}
           {steps.map((s) => <DocCard key={s.id} title={s.step_key} body={s.report_md} />)}
@@ -386,4 +486,7 @@ function iconBtn(): React.CSSProperties {
 }
 function linkBtn(): React.CSSProperties {
   return { background: 'none', border: 'none', color: CYAN, cursor: 'pointer', fontSize: 11, padding: 0 };
+}
+function chip(on: boolean): React.CSSProperties {
+  return { fontSize: 10.5, fontWeight: 700, padding: '3px 10px', borderRadius: 7, background: on ? 'hsla(186 80% 55% / 0.14)' : 'rgba(160,160,180,0.12)', color: on ? CYAN : 'rgba(180,190,205,0.8)', border: `1px solid ${on ? 'hsla(186 80% 55% / 0.35)' : 'rgba(160,160,180,0.2)'}` };
 }

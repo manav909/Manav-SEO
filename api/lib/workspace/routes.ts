@@ -10,21 +10,47 @@
 
 import { db } from "../db.js";
 import { resolveTargetUrls } from "./shared.js";
+import { composeRunConfig, goalCatalog } from "./goals.js";
 
 const domainOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
 
-/* ─── create a workspace run ───────────────────────────────────── */
+/* ─── goal catalog for the picker UI ───────────────────────────── */
+export async function wsGoalCatalog() {
+  return { success: true, ...goalCatalog() };
+}
+
+/* ─── preview a composed run config (no run created yet) ───────── */
+export async function wsComposeConfig(body: any) {
+  const { goalIds, customNeeds, customLabel } = body || {};
+  const config = composeRunConfig({ goalIds, customNeeds, customLabel });
+  return { success: true, config };
+}
+
+/* ─── create a workspace run with selected goals + config ──────── */
 export async function wsCreateRun(body: any) {
-  const { projectId, campaignId, goal } = body || {};
+  const { projectId, campaignId, goalIds, customNeeds, customLabel, stepOverrides } = body || {};
   if (!projectId) return { success: false, error: "projectId required" };
+
+  // Compose the config from the selected goals, then apply any step overrides
+  // (enabled/depth toggles the operator set in the UI).
+  const config = composeRunConfig({ goalIds, customNeeds, customLabel });
+  if (Array.isArray(stepOverrides)) {
+    for (const ov of stepOverrides) {
+      const s = config.steps.find(x => x.key === ov.key);
+      if (s) { if (typeof ov.enabled === "boolean") s.enabled = ov.enabled; if (ov.depth) s.depth = ov.depth; }
+    }
+  }
+
   const { data, error } = await db().from("workspace_runs").insert({
     project_id: projectId,
     campaign_id: campaignId || null,
-    goal: goal || "grow organic traffic",
+    goal: config.composed_goal,
+    goal_ids: config.goal_ids,
+    run_config: config,
     status: "gathering",
   }).select("id").single();
   if (error) return { success: false, error: error.message };
-  return { success: true, run_id: (data as any).id };
+  return { success: true, run_id: (data as any).id, config };
 }
 
 /* ─── run the deep steps for a run (gather evidence + reports) ──── */
@@ -32,27 +58,46 @@ export async function wsRunDeepSteps(body: any) {
   const { runId, projectId, campaignId } = body || {};
   if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
 
+  // Load the run's composed config to know which steps are enabled.
+  const { data: runRow } = await db().from("workspace_runs").select("run_config").eq("id", runId).maybeSingle();
+  const config = (runRow as any)?.run_config || null;
+  const isEnabled = (key: string) => {
+    if (!config || !Array.isArray(config.steps)) return true;  // no config → run the slice's defaults
+    const s = config.steps.find((x: any) => x.key === key);
+    return s ? s.enabled !== false : false;
+  };
+
   const { urls: targetUrls } = await resolveTargetUrls(campaignId, projectId);
   if (!targetUrls.length) return { success: false, error: "No target pages found for this project." };
 
   const results: Record<string, string> = {};
 
-  // Step 1 — GSC visibility evidence
   try {
-    const { gatherGscVisibility } = await import("./deep-steps/gsc-visibility.js");
-    const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
-    await upsertStepReport(runId, projectId, "gsc_visibility", evidence, report_md, evidence.worth_deeper);
-    results["gsc_visibility"] = "ok";
+    // Step — GSC visibility (run if enabled or no config)
+    let nearRanking: any[] = [];
+    if (isEnabled("gsc_visibility")) {
+      const { gatherGscVisibility } = await import("./deep-steps/gsc-visibility.js");
+      const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
+      await upsertStepReport(runId, projectId, "gsc_visibility", evidence, report_md, evidence.worth_deeper);
+      results["gsc_visibility"] = "ok";
+      nearRanking = evidence.near_ranking || [];
+    }
 
-    // Step 2 — Competitor intelligence (uses near-ranking queries from step 1)
-    const { gatherCompetitorIntel } = await import("./deep-steps/competitor-intel.js");
-    const projectDomain = domainOf(targetUrls[0] || "");
-    const queries = (evidence.near_ranking || [])
-      .sort((a: any, b: any) => b.impressions - a.impressions)
-      .map((q: any) => ({ query: q.query, position: q.position }));
-    const comp = await gatherCompetitorIntel({ projectId, projectDomain, queries });
-    await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
-    results["competitor_intel"] = "ok";
+    // Step — Competitor intelligence (uses near-ranking queries from visibility)
+    if (isEnabled("competitor_intel")) {
+      const { gatherCompetitorIntel } = await import("./deep-steps/competitor-intel.js");
+      const projectDomain = domainOf(targetUrls[0] || "");
+      const queries = nearRanking
+        .sort((a: any, b: any) => b.impressions - a.impressions)
+        .map((q: any) => ({ query: q.query, position: q.position }));
+      const comp = await gatherCompetitorIntel({ projectId, projectDomain, queries });
+      await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
+      results["competitor_intel"] = "ok";
+    }
+    // NOTE: other steps (query_landscape, onpage_audit, core_web_vitals,
+    // internal_link_graph, engagement_value, authority_signals, trajectory)
+    // are added in Build 2 — they slot in here, gated by isEnabled(), reading
+    // the run's goal from config to adapt their pulls.
   } catch (e: any) {
     return { success: false, error: `deep steps failed: ${e?.message}`, results };
   }
@@ -183,6 +228,8 @@ export async function wsGetRun(body: any) {
 /* ─── action router ────────────────────────────────────────────── */
 export async function handleWorkspace(action: string, body: any): Promise<any | null> {
   switch (action) {
+    case "ws_goal_catalog":        return wsGoalCatalog();
+    case "ws_compose_config":      return wsComposeConfig(body);
     case "ws_create_run":          return wsCreateRun(body);
     case "ws_run_deep_steps":      return wsRunDeepSteps(body);
     case "ws_run_panel":           return wsRunPanel(body);

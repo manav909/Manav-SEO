@@ -106,19 +106,27 @@ export async function loadGsc(projectId: string): Promise<GscData> {
 /** Compute THIS site's own CTR-by-position curve from its real GSC query-page
     pairs. Returns median CTR per integer position bucket (1..20). This grounds
     forecasts in the site's actual behaviour instead of generic benchmarks. */
-export function siteCtrCurve(pairs: any[]): Record<number, { ctr: number; samples: number }> {
-  const buckets: Record<number, number[]> = {};
+export function siteCtrCurve(pairs: any[]): Record<number, { ctr: number; samples: number; impressions: number }> {
+  // Impression-WEIGHTED CTR per position bucket: sum(clicks)/sum(impressions).
+  // A naive median is broken here — the long tail of 1-2 impression, 0-click
+  // pairs drags the median to 0% even at position 1, which is nonsense and
+  // poisons every forecast. Weighting by impressions gives the true CTR the
+  // site actually earns at each position.
+  const buckets: Record<number, { clicks: number; impressions: number; samples: number }> = {};
   for (const p of pairs) {
     const pos = Math.round(p.position || 0);
     if (pos < 1 || pos > 30) continue;
-    const ctr = typeof p.ctr === "number" ? p.ctr : (p.impressions > 0 ? (p.clicks / p.impressions) * 100 : 0);
-    (buckets[pos] = buckets[pos] || []).push(ctr);
+    const impr = +(p.impressions || 0);
+    const clicks = +(p.clicks || 0);
+    if (impr <= 0) continue;                       // can't contribute CTR with zero impressions
+    const b = (buckets[pos] = buckets[pos] || { clicks: 0, impressions: 0, samples: 0 });
+    b.clicks += clicks; b.impressions += impr; b.samples += 1;
   }
-  const curve: Record<number, { ctr: number; samples: number }> = {};
+  const curve: Record<number, { ctr: number; samples: number; impressions: number }> = {};
   for (const k of Object.keys(buckets)) {
-    const arr = buckets[+k].slice().sort((a, b) => a - b);
-    const median = arr[Math.floor(arr.length / 2)];
-    curve[+k] = { ctr: Math.round(median * 100) / 100, samples: arr.length };
+    const b = buckets[+k];
+    const ctr = b.impressions > 0 ? (b.clicks / b.impressions) * 100 : 0;
+    curve[+k] = { ctr: Math.round(ctr * 100) / 100, samples: b.samples, impressions: b.impressions };
   }
   return curve;
 }
