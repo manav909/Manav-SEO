@@ -569,7 +569,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
   const [showSitePicker, setShowSitePicker] = useState(false);
   const [linkingSite,    setLinkingSite]    = useState(false);
   /* Active pipeline dashboard for this drawer */
-  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number } | null>(null);
+  const [activeDashRun, setActiveDashRun] = useState<{ runId: string; label: string; stepCount: number; pipelineType?: string } | null>(null);
   /* Phase 15 — audit state */
   const [auditBusyPanel, setAuditBusyPanel] = useState<string | null>(null);
   const [urlPromptPanel, setUrlPromptPanel] = useState<SeoCampaignPanel | null>(null);
@@ -1030,7 +1030,7 @@ function CampaignDetailDrawer({ campaignId, onClose, onPause, onResume }: {
           runId={activeDashRun.runId}
           expectedSteps={activeDashRun.stepCount}
           pipelineLabel={activeDashRun.label}
-          pipelineType="rank_for_keyword"
+          pipelineType={(activeDashRun as any).pipelineType || 'rank_for_keyword'}
           onClose={() => { setActiveDashRun(null); load(); }}
           onComplete={() => { load(); }}
         />

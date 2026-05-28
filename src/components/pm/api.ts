@@ -2445,6 +2445,7 @@ export async function seasonActionAddKanbanNote(opts: {
 
 export type PipelineType =
   | 'rank_for_keyword'
+  | 'traffic_growth'
   | 'content_production'
   | 'audit_remediation'
   | 'monthly_client_pack'
