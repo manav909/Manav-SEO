@@ -62,16 +62,19 @@ export default function ObjectivePreviewInline({
   async function handleLaunch() {
     setLaunching(true);
     setError(null);
+    console.log('[ObjectivePreview] handleLaunch fired', { projectId, goalType: preview.goalType });
     try {
       const { supabase: sb } = await import('@/lib/supabase');
       const { data: { user } } = await sb.auth.getUser();
+      console.log('[ObjectivePreview] user:', user?.id);
 
       const PIPELINE_MAP: Record<string, string> = {
         traffic_growth: 'traffic_growth',
       };
       const pipelineType = PIPELINE_MAP[preview.goalType];
+      console.log('[ObjectivePreview] pipelineType:', pipelineType, 'for goalType:', preview.goalType);
 
-      // Step 1: wire up objective + workspace + pages (non-blocking if already exists)
+      // Step 1: objective_full_setup (non-blocking)
       let campaignId: string | undefined;
       let siteId: string | undefined;
       try {
@@ -89,32 +92,35 @@ export default function ObjectivePreviewInline({
             userId:          user?.id,
           }),
         }).then(r => r.json());
+        console.log('[ObjectivePreview] objective_full_setup result:', setupR);
         if (setupR.success) {
           campaignId = setupR.campaign_id;
           siteId     = setupR.site_id;
         }
-        // Non-fatal — objective may already exist, pipeline still launches
-      } catch { /* non-blocking */ }
+      } catch (e) { console.warn('[ObjectivePreview] setup non-fatal error:', e); }
 
-      // Step 2: launch pipeline — always fires regardless of setup result
+      // Step 2: launch pipeline — always fires
       if (pipelineType) {
+        const pipelineBody = {
+          action:       'bs_season_pipeline_launch',
+          projectId,
+          pipelineType,
+          inputText:    preview.title || 'grow traffic',
+          scope: {
+            keyword:    parsedKws[0] || undefined,
+            targetUrls: parsedUrls.length > 0 ? parsedUrls : undefined,
+            goalType:   preview.goalType,
+            campaignId,
+            siteId,
+          },
+        };
+        console.log('[ObjectivePreview] launching pipeline:', pipelineBody);
         const pipelineR = await fetch('/api/task-engine', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action:       'bs_season_pipeline_launch',
-            projectId,
-            pipelineType,
-            inputText:    preview.title || 'grow traffic',
-            scope: {
-              keyword:    parsedKws[0] || undefined,
-              targetUrls: parsedUrls.length > 0 ? parsedUrls : undefined,
-              goalType:   preview.goalType,
-              campaignId,
-              siteId,
-            },
-          }),
+          body: JSON.stringify(pipelineBody),
         }).then(r => r.json());
+        console.log('[ObjectivePreview] pipeline launch result:', pipelineR);
 
         if (!pipelineR.success) {
           setError('Pipeline failed to start: ' + (pipelineR.error || 'unknown error'));
@@ -122,13 +128,17 @@ export default function ObjectivePreviewInline({
           return;
         }
       } else {
-        // No pipeline for this goal type yet — objective still created
+        console.warn('[ObjectivePreview] No pipeline mapped for goalType:', preview.goalType);
+        setError('No pipeline configured for goal type: ' + preview.goalType);
+        setLaunching(false);
+        return;
       }
 
       setLaunched(true);
       setLaunching(false);
       onLaunched?.({ campaign_id: campaignId, site_id: siteId });
     } catch (e: any) {
+      console.error('[ObjectivePreview] handleLaunch error:', e);
       setError(e?.message || 'Launch failed');
       setLaunching(false);
     }
