@@ -274,10 +274,7 @@ export default function ObjectivePreviewInline({
         )}
       </div>
 
-      {/* What happens on confirm */}
-      <div className="text-[11px] text-muted-foreground/65 leading-relaxed italic">
-        On launch: creates the objective, links your site workspace, imports target pages, and seeds your Data Room. You'll then run baseline + audit from Site Manager.
-      </div>
+
 
       {error && (
         <div className="text-[11px] text-rose-400 leading-relaxed">{error}</div>
