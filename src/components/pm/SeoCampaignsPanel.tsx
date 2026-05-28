@@ -35,6 +35,22 @@ interface Props {
   projectId: string;
 }
 
+/* Shared campaign goal-type metadata — used by both Campaigns list and Objectives view.
+   A campaign is a campaign; the goal type is just an attribute that changes its
+   label, icon and pipeline. All types live in the Campaigns tab. */
+const CAMPAIGN_TYPE_META: Record<string, { label: string; icon: string; pipeline?: string }> = {
+  keyword_ranking:    { label: 'Keyword Ranking',    icon: '🏆', pipeline: 'rank_for_keyword' },
+  traffic_growth:     { label: 'Traffic Growth',     icon: '📈', pipeline: 'traffic_growth' },
+  local_visibility:   { label: 'Local Visibility',   icon: '📍' },
+  domain_authority:   { label: 'Domain Authority',   icon: '🔗' },
+  technical_recovery: { label: 'Technical Recovery', icon: '⚙️' },
+  content_authority:  { label: 'Content Authority',  icon: '✍️' },
+  eeat:               { label: 'E-E-A-T',            icon: '🎓' },
+};
+function campaignTypeMeta(type?: string | null) {
+  return CAMPAIGN_TYPE_META[type || 'keyword_ranking'] || { label: type || 'Campaign', icon: '🎯' };
+}
+
 const PILLAR_ICON: Record<string, any> = {
   content:          FileText,
   research:         Sparkles,
@@ -189,7 +205,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
       {/* Tab bar */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid rgba(160,160,180,0.15)' }}>
         <TabButton active={tab === 'campaigns'} onClick={() => setTab('campaigns')}>
-          Campaigns ({campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking').length})
+          Campaigns ({campaigns.length})
         </TabButton>
         <TabButton active={tab === 'opportunities'} onClick={() => setTab('opportunities')}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -204,7 +220,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
           </span>
         </TabButton>
         <TabButton active={tab === 'objectives'} onClick={() => setTab('objectives')}>
-          🎯 Objectives
+          🎯 Manage Objectives
         </TabButton>
       </div>
 
@@ -221,7 +237,8 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
 
       {tab === 'campaigns' && (
         <CampaignsList
-          campaigns={campaigns.filter(c => !c.campaign_type || c.campaign_type === 'keyword_ranking')}
+          campaigns={campaigns}
+          pipelineRuns={pipelineRuns}
           loading={loading}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
@@ -229,6 +246,7 @@ export default function SeoCampaignsPanel({ projectId }: Props) {
           onPause={handlePause}
           onResume={handleResume}
           onArchive={handleArchive}
+          onWatchPipeline={(runId, label, stepCount, pipelineType) => setActiveDashRun({ runId, label, stepCount, pipelineType })}
         />
       )}
 
@@ -288,8 +306,9 @@ function TabButton({ children, active, onClick }: { children: any; active: boole
 }
 
 /* ─── Campaigns list ─────────────────────────────────────── */
-function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSelect, onPause, onResume, onArchive }: {
+function CampaignsList({ campaigns, pipelineRuns = [], loading, statusFilter, setStatusFilter, onSelect, onPause, onResume, onArchive, onWatchPipeline }: {
   campaigns: SeoCampaign[];
+  pipelineRuns?: any[];
   loading: boolean;
   statusFilter: 'active' | 'paused' | 'all';
   setStatusFilter: (v: 'active' | 'paused' | 'all') => void;
@@ -297,6 +316,7 @@ function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSe
   onPause: (id: string) => void;
   onResume: (id: string) => void;
   onArchive: (id: string) => void;
+  onWatchPipeline?: (runId: string, label: string, stepCount: number, pipelineType?: string) => void;
 }) {
   return (
     <div>
@@ -323,10 +343,13 @@ function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSe
           border: '1px dashed rgba(160,160,180,0.2)', borderRadius: 10, fontSize: 13,
         }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div>No {statusFilter !== 'all' && statusFilter} keyword campaigns yet.</div>
+            <div>No {statusFilter !== 'all' && statusFilter} campaigns yet.</div>
             <div style={{ fontSize: 11, color: 'rgba(120,120,140,0.7)' }}>Type in S.E.A.S.O.N. to create one:</div>
             {[
               'rank me for "ottoman beds UK"',
+              'grow traffic for all pages',
+              'fix technical issues',
+              'improve domain authority',
             ].map(cmd => (
               <code key={cmd} style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{cmd}</code>
             ))}
@@ -337,10 +360,12 @@ function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSe
           {campaigns.map(c => (
             <CampaignRow
               key={c.id} campaign={c}
+              pipelineRuns={pipelineRuns.filter((r: any) => r.campaign_id === c.id)}
               onSelect={() => onSelect(c.id)}
               onPause={() => onPause(c.id)}
               onResume={() => onResume(c.id)}
               onArchive={() => onArchive(c.id)}
+              onWatchPipeline={onWatchPipeline}
             />
           ))}
         </div>
@@ -349,16 +374,29 @@ function CampaignsList({ campaigns, loading, statusFilter, setStatusFilter, onSe
   );
 }
 
-function CampaignRow({ campaign, onSelect, onPause, onResume, onArchive }: {
+function CampaignRow({ campaign, pipelineRuns = [], onSelect, onPause, onResume, onArchive, onWatchPipeline }: {
   campaign: SeoCampaign;
+  pipelineRuns?: any[];
   onSelect: () => void;
   onPause: () => void;
   onResume: () => void;
   onArchive: () => void;
+  onWatchPipeline?: (runId: string, label: string, stepCount: number, pipelineType?: string) => void;
 }) {
   const isPaused = campaign.status === 'paused';
   const isActive = campaign.status === 'active';
   const statusHue = STATUS_HUE[campaign.health || campaign.status] || STATUS_HUE.active;
+  const meta = campaignTypeMeta(campaign.campaign_type);
+  const isKeyword = !campaign.campaign_type || campaign.campaign_type === 'keyword_ranking';
+
+  // Title: keyword campaigns show "keyword", others show their goal/title
+  const title = isKeyword
+    ? `"${campaign.keyword}"`
+    : (campaign.goal || meta.label);
+
+  const runStatusColor: Record<string, string> = {
+    running: '#f59e0b', completed: '#34d399', failed: '#f87171', pending: '#94a3b8',
+  };
 
   return (
     <div style={{
@@ -368,18 +406,29 @@ function CampaignRow({ campaign, onSelect, onPause, onResume, onArchive }: {
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={onSelect}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>"{campaign.keyword}"</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14 }}>{meta.icon}</span>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>{title}</div>
+            {/* Goal-type badge — what makes each campaign different */}
+            <span style={{
+              padding: '2px 8px', borderRadius: 4, fontSize: 9, fontWeight: 700,
+              textTransform: 'uppercase', letterSpacing: '0.06em',
+              background: 'hsla(186 60% 50% / 0.12)', color: 'hsl(186 70% 65%)',
+              border: '1px solid hsla(186 60% 50% / 0.25)',
+            }}>{meta.label}</span>
             <StatusBadge value={campaign.status} hue={statusHue} />
             {campaign.health && <StatusBadge value={campaign.health} hue={STATUS_HUE[campaign.health]} />}
           </div>
           <div style={{ fontSize: 11.5, color: 'rgba(150,150,170,0.85)', marginBottom: 6 }}>
-            {campaign.goal || `Rank for "${campaign.keyword}"`}
+            {campaign.goal || (isKeyword ? `Rank for "${campaign.keyword}"` : meta.label)}
           </div>
-          <div style={{ fontSize: 10, color: 'rgba(120,120,140,0.7)', display: 'flex', gap: 12 }}>
+          <div style={{ fontSize: 10, color: 'rgba(120,120,140,0.7)', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <span>Started {new Date(campaign.started_at).toLocaleDateString()}</span>
             {campaign.current_position && (
               <span>Currently at position {Number(campaign.current_position).toFixed(1)}{campaign.target_position && ` → target ${Number(campaign.target_position).toFixed(1)}`}</span>
+            )}
+            {Array.isArray(campaign.target_urls) && campaign.target_urls.length > 0 && (
+              <span>{campaign.target_urls.length} target pages</span>
             )}
             {campaign.last_assessed_at && (
               <span>Last checked {new Date(campaign.last_assessed_at).toLocaleDateString()}</span>
@@ -399,6 +448,29 @@ function CampaignRow({ campaign, onSelect, onPause, onResume, onArchive }: {
           </ActionBtn>
         </div>
       </div>
+
+      {/* Pipeline runs for this campaign — unified for all goal types */}
+      {pipelineRuns.length > 0 && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid rgba(160,160,180,0.12)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {pipelineRuns.slice(0, 3).map((run: any) => (
+            <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10.5 }}>
+              <span style={{
+                padding: '1px 6px', borderRadius: 10, fontSize: 9, fontWeight: 700,
+                background: (runStatusColor[run.status] || '#94a3b8') + '22',
+                color: runStatusColor[run.status] || '#94a3b8',
+              }}>{run.status}</span>
+              <span style={{ flex: 1, color: 'rgba(150,150,170,0.85)' }}>
+                {run.input_text?.slice(0, 40) || 'Pipeline'} · {run.steps_completed || 0}/{run.step_count || 6} steps
+              </span>
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); onWatchPipeline?.(run.id, run.input_text || meta.label, run.step_count || 6, run.pipeline_type); }}
+                style={{ fontSize: 9.5, padding: '3px 8px', borderRadius: 6, border: '1px solid rgba(160,160,180,0.2)', background: 'transparent', color: 'rgba(150,150,170,0.85)', cursor: 'pointer' }}>
+                {run.status === 'running' ? '▶ Watch' : '📄 Results'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
