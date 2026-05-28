@@ -223,7 +223,21 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
     return { urls: [...seen].slice(0, 30), source: "command" };
   }
 
-  // 2. Campaign objective target_urls
+  // 2. THIS run's own campaign target_urls (most specific — preferred).
+  const scopedCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
+  if (scopedCampaignId) {
+    try {
+      const r = await withTimeout(
+        db().from("seo_campaigns").select("target_urls").eq("id", scopedCampaignId).maybeSingle(),
+        "scoped campaign query"
+      );
+      const urls = ((r as any)?.data as any)?.target_urls;
+      if (Array.isArray(urls)) urls.forEach(add);
+      if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "objective target_urls" };
+    } catch { /* fallthrough */ }
+  }
+
+  // 3. Any active campaign's target_urls (fallback when scope lacks campaignId)
   try {
     const r = await withTimeout(
       db().from("seo_campaigns").select("target_urls")
@@ -237,7 +251,7 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
     if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "objective target_urls" };
   } catch { /* fallthrough */ }
 
-  // 3. Site workspace pages
+  // 4. Site workspace pages
   try {
     const r = await withTimeout(
       db().from("dev_pages").select("url").eq("project_id", ctx.projectId)
@@ -248,7 +262,7 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
     if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "site workspace" };
   } catch { /* fallthrough */ }
 
-  // 4. GSC top pages
+  // 5. GSC top pages
   try {
     const r = await withTimeout(
       db().from("project_knowledge").select("field_value")
@@ -931,20 +945,11 @@ Write:
 4. What we need from them (content approvals, developer access, etc.)`
     );
 
-    // Pipeline is the panel that gathered verified facts. Now hand off to the
-    // deep pillar engine. Each deep call is large (~20-40s), so running all 7
-    // inline would blow the step budget. Run only the 2 highest-value pillars
-    // here; the rest are generated on-demand from the campaign drawer.
-    const dpCampaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
-    if (dpCampaignId) {
-      try {
-        const { runDeepPillarAnalysis } = await import("./season-pillar-deep-engine.js");
-        await runDeepPillarAnalysis({ campaignId: dpCampaignId, projectId: ctx.projectId, pillar: "visibility" });
-        await runDeepPillarAnalysis({ campaignId: dpCampaignId, projectId: ctx.projectId, pillar: "query_opportunity" });
-      } catch (e: any) {
-        console.warn(`[traffic-pipeline] deep pillar analysis failed: ${e?.message}`);
-      }
-    }
+    // NOTE: deep pillar analysis is NOT run inline here — it would bloat the
+    // pipeline (each deep call pulls GSC/SerpAPI + a 6000-token LLM response).
+    // The pipeline stays fast and just produces the audit artifacts. Deep
+    // analysis runs separately, on-demand, via the "Generate deep analysis"
+    // button in the campaign drawer.
 
     return {
       ok: true,
