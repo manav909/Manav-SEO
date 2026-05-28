@@ -323,7 +323,7 @@ export async function runDeepPillarAnalysis(opts: {
   campaignId: string;
   pillar: string;
   projectId: string;
-}): Promise<{ success: boolean; report_id?: string; error?: string }> {
+}): Promise<{ success: boolean; report_id?: string; error?: string; pillar_create_error?: string }> {
   const interro = PILLAR_INTERROGATIONS[opts.pillar];
   if (!interro) return { success: false, error: `Unknown pillar: ${opts.pillar}` };
 
@@ -332,10 +332,18 @@ export async function runDeepPillarAnalysis(opts: {
 
   // Ensure the pillar panels exist (idempotent) — so a campaign that ran before
   // pillar creation, or whose creation failed, still gets its panels here.
+  let pillarCreateError = "";
   try {
     const { createTrafficPillars } = await import("./season-traffic-pillars.js");
-    await createTrafficPillars({ campaignId: opts.campaignId, projectId: opts.projectId, targetUrls });
-  } catch { /* non-blocking */ }
+    const cr = await createTrafficPillars({ campaignId: opts.campaignId, projectId: opts.projectId, targetUrls });
+    if (!cr.success && cr.error) {
+      pillarCreateError = cr.error;
+      console.error(`[pillar-deep] createTrafficPillars failed for ${opts.pillar}: ${cr.error}`);
+    }
+  } catch (e: any) {
+    pillarCreateError = e?.message || "exception";
+    console.error(`[pillar-deep] createTrafficPillars threw for ${opts.pillar}: ${e?.message}`);
+  }
 
   const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
   const targetSet = new Set(targetUrls.map(norm));
@@ -521,7 +529,7 @@ Produce the complete JSON report now.`;
       }).eq("id", (panel as any).id);
     }
 
-    return { success: true, report_id: (inserted as any).id };
+    return { success: true, report_id: (inserted as any).id, pillar_create_error: pillarCreateError || undefined };
   } catch (e: any) {
     return { success: false, error: e?.message };
   }

@@ -2824,7 +2824,7 @@ export async function pillarDeepAnalysis(opts: {
   projectId: string;
   campaignId: string;
   pillar?: string;   // omit to run all pillars
-}): Promise<{ success: boolean; report_id?: string; results?: Record<string, string>; error?: string }> {
+}): Promise<{ success: boolean; report_id?: string; results?: Record<string, string>; error?: string; pillar_create_error?: string }> {
   return post(ENGINE, { action: 'bs_pillar_deep_analysis', ...opts });
 }
 
