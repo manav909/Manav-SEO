@@ -90,12 +90,14 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
   try {
     const campaignsResult = await withTimeout(
       db().from("seo_campaigns").select("target_urls")
-        .eq("project_id", ctx.projectId).eq("campaign_type", "traffic_growth")
-        .eq("status", "active").not("target_urls", "is", null),
+        .eq("project_id", ctx.projectId)
+        .eq("status", "active")
+        .not("target_urls", "is", null),
       "seo_campaigns query"
     );
-    const campaigns = campaignsResult ? (campaignsResult as any) : { data: [] };
-    for (const c of (campaigns || []) as any[]) {
+    // withTimeout returns the full Supabase response {data, error} or null
+    const campaignRows = (campaignsResult as any)?.data || [];
+    for (const c of campaignRows as any[]) {
       if (Array.isArray(c.target_urls)) c.target_urls.forEach(add);
     }
     if (seen.size > 0) {
@@ -111,7 +113,8 @@ async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
         .order("priority", { ascending: false }).limit(50),
       "dev_pages query"
     );
-    for (const p of ((pagesResult as any)?.data || []) as any[]) add(p.url);
+    const pageRows = (pagesResult as any)?.data || [];
+    for (const p of pageRows as any[]) add(p.url);
     if (seen.size > 0) {
       return { urls: [...seen].slice(0, 50), source: 'site workspace pages' };
     }
