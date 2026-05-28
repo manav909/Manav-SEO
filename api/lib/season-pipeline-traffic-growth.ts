@@ -54,9 +54,14 @@ async function llm(system: string, user: string, maxTokens = 2500): Promise<stri
     console.error("[traffic-pipeline] ANTHROPIC_API_KEY missing — cannot generate analysis");
     return "";
   }
+  // Hard timeout so a stalled Anthropic API call can't hang the step until
+  // Vercel's 5-minute function timeout. 90s is generous for a 2.5k-token reply.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90000);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method:  "POST",
+      signal:  controller.signal,
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
@@ -77,8 +82,10 @@ async function llm(system: string, user: string, maxTokens = 2500): Promise<stri
     if (!text) console.warn("[traffic-pipeline] LLM returned empty text block");
     return text;
   } catch (e: any) {
-    console.error(`[traffic-pipeline] LLM exception: ${e?.message}`);
+    console.error(`[traffic-pipeline] LLM exception: ${e?.message === undefined ? e : e.message}${controller.signal.aborted ? " (timed out at 90s)" : ""}`);
     return "";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -315,7 +322,10 @@ const stepVisibilityAudit = {
     const campaignId = (ctx.scope?.campaignId || ctx.scope?.campaign_id) as string | undefined;
     if (campaignId) {
       try {
-        await createTrafficPillars({ campaignId, projectId: ctx.projectId, targetUrls });
+        await Promise.race([
+          createTrafficPillars({ campaignId, projectId: ctx.projectId, targetUrls }),
+          new Promise((resolve) => setTimeout(resolve, 10000)),  // never let pillar setup stall the step
+        ]);
       } catch { /* non-blocking */ }
     }
 

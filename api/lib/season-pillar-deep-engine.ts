@@ -43,9 +43,13 @@ async function withTimeout<T>(p: Promise<T>, label = "q", ms = 12000): Promise<T
 /* ─── Deep LLM call — large reasoning budget, JSON output ──────── */
 async function deepLlm(system: string, user: string, maxTokens = 5000): Promise<string> {
   if (!ANTHROPIC_API_KEY) { console.error("[pillar-deep] no API key"); return ""; }
+  // 120s hard cap — deep reports are large but must never hang the invocation.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 120000);
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
@@ -56,7 +60,8 @@ async function deepLlm(system: string, user: string, maxTokens = 5000): Promise<
     if (!r.ok) { console.error(`[pillar-deep] LLM ${r.status}: ${(await r.text().catch(() => "")).slice(0, 300)}`); return ""; }
     const d = await r.json();
     return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-  } catch (e: any) { console.error(`[pillar-deep] exc ${e?.message}`); return ""; }
+  } catch (e: any) { console.error(`[pillar-deep] exc ${e?.message}${controller.signal.aborted ? " (timed out 120s)" : ""}`); return ""; }
+  finally { clearTimeout(timer); }
 }
 
 /* ─── HTML fetch with AbortController hard-kill ─────────────────── */
