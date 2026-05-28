@@ -66,60 +66,68 @@ export default function ObjectivePreviewInline({
       const { supabase: sb } = await import('@/lib/supabase');
       const { data: { user } } = await sb.auth.getUser();
 
-      // Step 1: wire up everything (objective + workspace + pages + data room)
-      const setupR = await fetch('/api/task-engine', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action:          'objective_full_setup',
-          projectId,
-          campaignType:    preview.goalType,
-          title:           preview.title,
-          keyword:         parsedKws[0] || undefined,
-          targetUrls:      parsedUrls.length > 0 ? parsedUrls : undefined,
-          targetLocations: preview.location ? [{ city: preview.location }] : undefined,
-          userId:          user?.id,
-        }),
-      }).then(r => r.json());
-
-      if (!setupR.success) {
-        setError(setupR.error || 'Setup failed');
-        setLaunching(false);
-        return;
-      }
-
-      // Step 2: launch the matching pipeline if one exists for this goal type
       const PIPELINE_MAP: Record<string, string> = {
         traffic_growth: 'traffic_growth',
-        // more goal types will get pipelines as they're built
       };
       const pipelineType = PIPELINE_MAP[preview.goalType];
+
+      // Step 1: wire up objective + workspace + pages (non-blocking if already exists)
+      let campaignId: string | undefined;
+      let siteId: string | undefined;
+      try {
+        const setupR = await fetch('/api/task-engine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action:          'objective_full_setup',
+            projectId,
+            campaignType:    preview.goalType,
+            title:           preview.title,
+            keyword:         parsedKws[0] || undefined,
+            targetUrls:      parsedUrls.length > 0 ? parsedUrls : undefined,
+            targetLocations: preview.location ? [{ city: preview.location }] : undefined,
+            userId:          user?.id,
+          }),
+        }).then(r => r.json());
+        if (setupR.success) {
+          campaignId = setupR.campaign_id;
+          siteId     = setupR.site_id;
+        }
+        // Non-fatal — objective may already exist, pipeline still launches
+      } catch { /* non-blocking */ }
+
+      // Step 2: launch pipeline — always fires regardless of setup result
       if (pipelineType) {
-        try {
-          await fetch('/api/task-engine', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action:       'bs_season_pipeline_launch',
-              projectId,
-              pipelineType,
-              inputText:    preview.title,
-              scope: {
-                keyword:    parsedKws[0] || undefined,
-                targetUrls: parsedUrls.length > 0 ? parsedUrls : undefined,
-                goalType:   preview.goalType,
-                campaignId: setupR.campaign_id,
-                siteId:     setupR.site_id,
-              },
-            }),
-          });
-          // Pipeline launched async — user sees it in SEO Campaigns → Campaigns tab
-        } catch { /* non-blocking — objective still created */ }
+        const pipelineR = await fetch('/api/task-engine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action:       'bs_season_pipeline_launch',
+            projectId,
+            pipelineType,
+            inputText:    preview.title || 'grow traffic',
+            scope: {
+              keyword:    parsedKws[0] || undefined,
+              targetUrls: parsedUrls.length > 0 ? parsedUrls : undefined,
+              goalType:   preview.goalType,
+              campaignId,
+              siteId,
+            },
+          }),
+        }).then(r => r.json());
+
+        if (!pipelineR.success) {
+          setError('Pipeline failed to start: ' + (pipelineR.error || 'unknown error'));
+          setLaunching(false);
+          return;
+        }
+      } else {
+        // No pipeline for this goal type yet — objective still created
       }
 
       setLaunched(true);
       setLaunching(false);
-      onLaunched?.(setupR);
+      onLaunched?.({ campaign_id: campaignId, site_id: siteId });
     } catch (e: any) {
       setError(e?.message || 'Launch failed');
       setLaunching(false);
