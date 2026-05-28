@@ -37,6 +37,7 @@ import Audit          from "./pages/Audit";
 import Admin          from "./pages/Admin";
 import ClientReportView from "./pages/ClientReportView";
 import PMModule       from "./pages/PMModule";
+import Workspace      from "./pages/Workspace";
 import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
@@ -139,6 +140,7 @@ const AppRoutes = () => {
         <Route path="/audit"           element={<B name="audit">          <StaffGuard perm="audit_tools">    <Audit />          </StaffGuard></B>} />
         <Route path="/playground"      element={<B name="playground">     <StaffGuard perm="playground">     <Playground />     </StaffGuard></B>} />
         <Route path="/pm"              element={<B name="pm-module">      <StaffGuard perm="playground">     <PMModule />       </StaffGuard></B>} />
+        <Route path="/workspace"       element={<B name="workspace">      <StaffGuard perm="playground">     <Workspace />      </StaffGuard></B>} />
         <Route path="/site-manager"    element={<B name="site-manager">   <StaffGuard perm="playground">     <SiteManager />    </StaffGuard></B>} />
         <Route path="/system-control"  element={<B name="system-control"> <StaffGuard perm="system_control"> <SystemControl />  </StaffGuard></B>} />
         <Route path="/algorithm-intel" element={<B name="algo-intel">     <StaffGuard perm="algorithm_intel"><AlgorithmIntel /> </StaffGuard></B>} />

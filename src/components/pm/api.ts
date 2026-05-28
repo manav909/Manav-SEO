@@ -4293,3 +4293,31 @@ export async function artifactsPortfolioKpis(opts: { projectIds?: string[] } = {
   if (!r?.success) return { error: r?.error };
   return { kpis: r.kpis };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Quantum Intelligence Workspace — ws_* actions
+═══════════════════════════════════════════════════════════════ */
+export async function wsCreateRun(opts: { projectId: string; campaignId?: string; goal?: string }):
+  Promise<{ success?: boolean; run_id?: string; error?: string }> {
+  return post(ENGINE, { action: 'ws_create_run', ...opts });
+}
+export async function wsRunDeepSteps(opts: { runId: string; projectId: string; campaignId?: string }):
+  Promise<{ success?: boolean; results?: Record<string, string>; error?: string }> {
+  return post(ENGINE, { action: 'ws_run_deep_steps', ...opts });
+}
+export async function wsRunPanel(opts: { runId: string; projectId: string; round: number; manavInput?: string }):
+  Promise<{ success?: boolean; panel_id?: string; output?: any; document_md?: string; error?: string }> {
+  return post(ENGINE, { action: 'ws_run_panel', ...opts });
+}
+export async function wsReleaseToPillars(opts: { runId: string }):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'ws_release_to_pillars', ...opts });
+}
+export async function wsSolvePillar(opts: { runId?: string; projectId: string; campaignId?: string; pillar: string; manavContext?: string; targetUrls?: string[] }):
+  Promise<{ success?: boolean; report_id?: string; error?: string }> {
+  return post(ENGINE, { action: 'ws_solve_pillar', ...opts });
+}
+export async function wsGetRun(opts: { runId?: string; projectId?: string }):
+  Promise<{ success?: boolean; run?: any; steps?: any[]; panel?: any; panel_rounds?: any[]; reports?: any[]; error?: string }> {
+  return post(ENGINE, { action: 'ws_get_run', ...opts });
+}

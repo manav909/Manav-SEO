@@ -1,0 +1,194 @@
+/* ════════════════════════════════════════════════════════════════
+   api/lib/workspace/routes.ts
+
+   Orchestration for the Quantum Intelligence Workspace. Action handlers
+   for the run lifecycle: create run, run deep steps, run panel rounds,
+   submit Manav input, release gate, solve pillars, fetch state.
+
+   Project-agnostic. All ids/urls flow through as data.
+════════════════════════════════════════════════════════════════ */
+
+import { db } from "../db.js";
+import { resolveTargetUrls } from "./shared.js";
+
+const domainOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+
+/* ─── create a workspace run ───────────────────────────────────── */
+export async function wsCreateRun(body: any) {
+  const { projectId, campaignId, goal } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { data, error } = await db().from("workspace_runs").insert({
+    project_id: projectId,
+    campaign_id: campaignId || null,
+    goal: goal || "grow organic traffic",
+    status: "gathering",
+  }).select("id").single();
+  if (error) return { success: false, error: error.message };
+  return { success: true, run_id: (data as any).id };
+}
+
+/* ─── run the deep steps for a run (gather evidence + reports) ──── */
+export async function wsRunDeepSteps(body: any) {
+  const { runId, projectId, campaignId } = body || {};
+  if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
+
+  const { urls: targetUrls } = await resolveTargetUrls(campaignId, projectId);
+  if (!targetUrls.length) return { success: false, error: "No target pages found for this project." };
+
+  const results: Record<string, string> = {};
+
+  // Step 1 — GSC visibility evidence
+  try {
+    const { gatherGscVisibility } = await import("./deep-steps/gsc-visibility.js");
+    const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
+    await upsertStepReport(runId, projectId, "gsc_visibility", evidence, report_md, evidence.worth_deeper);
+    results["gsc_visibility"] = "ok";
+
+    // Step 2 — Competitor intelligence (uses near-ranking queries from step 1)
+    const { gatherCompetitorIntel } = await import("./deep-steps/competitor-intel.js");
+    const projectDomain = domainOf(targetUrls[0] || "");
+    const queries = (evidence.near_ranking || [])
+      .sort((a: any, b: any) => b.impressions - a.impressions)
+      .map((q: any) => ({ query: q.query, position: q.position }));
+    const comp = await gatherCompetitorIntel({ projectId, projectDomain, queries });
+    await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
+    results["competitor_intel"] = "ok";
+  } catch (e: any) {
+    return { success: false, error: `deep steps failed: ${e?.message}`, results };
+  }
+
+  await db().from("workspace_runs").update({ status: "panel_pending" }).eq("id", runId);
+  return { success: true, results };
+}
+
+async function upsertStepReport(runId: string, projectId: string, stepKey: string, evidence: any, reportMd: string, worthDeeper: string[]) {
+  // Replace any prior report for this run+step (idempotent re-runs)
+  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+  await db().from("step_reports").insert({
+    run_id: runId, project_id: projectId, step_key: stepKey,
+    evidence_json: evidence, report_md: reportMd, worth_deeper_json: worthDeeper || [],
+    status: "done",
+  });
+}
+
+/* ─── run a panel round ────────────────────────────────────────── */
+export async function wsRunPanel(body: any) {
+  const { runId, projectId, round, manavInput } = body || {};
+  if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
+  const r = Number(round) || 1;
+
+  let priorOutput: any = undefined;
+  if (r >= 2) {
+    const { data: prev } = await db().from("panel_sessions")
+      .select("scenarios_json, role_questions_json, headline, cross_checks_json")
+      .eq("run_id", runId).order("round", { ascending: false }).limit(1).maybeSingle();
+    if (prev) priorOutput = {
+      headline: (prev as any).headline,
+      scenarios: (prev as any).scenarios_json || [],
+      questions: (prev as any).role_questions_json || [],
+      cross_checks: (prev as any).cross_checks_json || [],
+    };
+  }
+
+  const { runPanelRound, renderPanelDocument } = await import("./panel-engine.js");
+  const res = await runPanelRound({ runId, projectId, round: r, manavInput, priorOutput });
+  if (!res.success || !res.output) return { success: false, error: res.error || "panel failed" };
+
+  const doc = renderPanelDocument(res.output, r, manavInput);
+  const { data, error } = await db().from("panel_sessions").insert({
+    run_id: runId, project_id: projectId, round: r,
+    headline: res.output.headline || null,
+    scenarios_json: res.output.scenarios || [],
+    role_questions_json: res.output.questions || [],
+    cross_checks_json: res.output.cross_checks || [],
+    manav_input_md: manavInput || null,
+    document_md: doc,
+    status: "awaiting_manav",
+  }).select("id").single();
+  if (error) return { success: false, error: error.message };
+
+  await db().from("workspace_runs").update({ status: "panel_review" }).eq("id", runId);
+  return { success: true, panel_id: (data as any).id, output: res.output, document_md: doc };
+}
+
+/* ─── release the gate → pillars may run ───────────────────────── */
+export async function wsReleaseToPillars(body: any) {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+  await db().from("panel_sessions").update({ status: "released" })
+    .eq("run_id", runId).order("round", { ascending: false }).limit(1);
+  await db().from("workspace_runs").update({ status: "pillars" }).eq("id", runId);
+  return { success: true };
+}
+
+/* ─── solve one pillar (Path A from panel, or Path B direct) ───── */
+export async function wsSolvePillar(body: any) {
+  const { runId, projectId, campaignId, pillar, manavContext, targetUrls } = body || {};
+  if (!projectId || !pillar) return { success: false, error: "projectId and pillar required" };
+
+  // Path A: pull this pillar's questions from the latest released panel
+  let panelQuestions: any[] | undefined;
+  if (runId) {
+    const { data: panel } = await db().from("panel_sessions")
+      .select("role_questions_json").eq("run_id", runId).order("round", { ascending: false }).limit(1).maybeSingle();
+    const all = (panel as any)?.role_questions_json || [];
+    panelQuestions = all.filter((q: any) => q.pillar === pillar);
+  }
+
+  const { solvePillar } = await import("./pillar-scientist.js");
+  const res = await solvePillar({
+    projectId, campaignId, pillar,
+    panelQuestions,
+    manavContext,
+    targetUrls: Array.isArray(targetUrls) && targetUrls.length ? targetUrls : undefined,
+    runId,
+    onStatus: async (s: string) => {
+      // best-effort live status on the run row
+      if (runId) await db().from("workspace_runs").update({ pillar_status: `${pillar}: ${s}` }).eq("id", runId).then(() => {}, () => {});
+    },
+  });
+  return res;
+}
+
+/* ─── fetch full run state for the workspace screen ────────────── */
+export async function wsGetRun(body: any) {
+  const { runId, projectId } = body || {};
+  if (!runId && !projectId) return { success: false, error: "runId or projectId required" };
+
+  let run: any;
+  if (runId) {
+    run = (await db().from("workspace_runs").select("*").eq("id", runId).maybeSingle()).data;
+  } else {
+    run = (await db().from("workspace_runs").select("*").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle()).data;
+  }
+  if (!run) return { success: true, run: null, steps: [], panel: null, reports: [] };
+
+  const [steps, panels, reports] = await Promise.all([
+    db().from("step_reports").select("id, step_key, report_md, worth_deeper_json, status, created_at").eq("run_id", run.id).order("created_at"),
+    db().from("panel_sessions").select("*").eq("run_id", run.id).order("round", { ascending: false }),
+    db().from("seo_campaign_reports").select("id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, data_sources, created_at")
+      .eq("campaign_id", run.campaign_id || "00000000-0000-0000-0000-000000000000").eq("report_kind", "deep_analysis").order("created_at", { ascending: false }),
+  ]);
+
+  return {
+    success: true,
+    run,
+    steps: (steps as any).data || [],
+    panel: ((panels as any).data || [])[0] || null,
+    panel_rounds: (panels as any).data || [],
+    reports: (reports as any).data || [],
+  };
+}
+
+/* ─── action router ────────────────────────────────────────────── */
+export async function handleWorkspace(action: string, body: any): Promise<any | null> {
+  switch (action) {
+    case "ws_create_run":          return wsCreateRun(body);
+    case "ws_run_deep_steps":      return wsRunDeepSteps(body);
+    case "ws_run_panel":           return wsRunPanel(body);
+    case "ws_release_to_pillars":  return wsReleaseToPillars(body);
+    case "ws_solve_pillar":        return wsSolvePillar(body);
+    case "ws_get_run":             return wsGetRun(body);
+    default: return null;
+  }
+}

@@ -519,6 +519,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (bsResult !== null) return ok(res, bsResult);
   }
 
+  /* ═══ QUANTUM INTELLIGENCE WORKSPACE — ws_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("ws_")) {
+    const { handleWorkspace } = await import("./lib/workspace/routes.js");
+    const wsResult = await handleWorkspace(action, body);
+    if (wsResult !== null) return ok(res, wsResult);
+  }
+
 
   // ═══ INLINE BDE ACTIONS (override dynamic-import versions below) ═══
 
