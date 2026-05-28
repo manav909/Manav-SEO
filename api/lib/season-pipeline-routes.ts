@@ -566,3 +566,15 @@ export async function bsSeasonPipelineReconcile(body: any): Promise<any> {
     return { success: false, error: e?.message || 'reconcile failed unexpectedly' };
   }
 }
+
+export async function bsSeasonPipelineDelete(body: any): Promise<any> {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: 'runId required' };
+  try {
+    await db().from('season_pipeline_steps').delete().eq('run_id', runId);
+    await db().from('season_pipeline_runs').delete().eq('id', runId);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}

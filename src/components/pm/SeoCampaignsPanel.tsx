@@ -2269,11 +2269,14 @@ function ObjectivesView({
                   </div>
                 )}
               </div>
-              <button type="button"
-                onClick={() => onWatchPipeline?.(run.id, run.input_text || run.pipeline_type, run.step_count || 6)}
-                style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'transparent', color: 'hsl(var(--muted-foreground))', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                {run.status === 'running' ? '▶ Watch live' : '📄 View results'}
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                <button type="button"
+                  onClick={() => onWatchPipeline?.(run.id, run.input_text || run.pipeline_type, run.step_count || 6)}
+                  style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'transparent', color: 'hsl(var(--muted-foreground))', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  {run.status === 'running' ? '▶ Watch live' : '📄 View results'}
+                </button>
+                <PipelineDeleteButton runId={run.id} onDeleted={onRefresh} />
+              </div>
             </div>
           ))}
         </div>
@@ -2795,5 +2798,35 @@ function ObjectiveTargetUrls({ campaignId, targetUrls, onUpdated }: {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Pipeline delete button ───────────────────────────────────────────────────
+function PipelineDeleteButton({ runId, onDeleted }: { runId: string; onDeleted: () => void }) {
+  const [confirm,  setConfirm]  = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
+
+  const del = async () => {
+    setDeleting(true);
+    await fetch('/api/task-engine', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'bs_season_pipeline_delete', runId }),
+    });
+    setDeleting(false);
+    onDeleted();
+  };
+
+  if (!confirm) return (
+    <button type="button" onClick={() => setConfirm(true)}
+      style={{ fontSize: 10, padding: '4px 8px', borderRadius: 8, border: '1px solid hsl(var(--border))', background: 'transparent', color: 'hsl(var(--muted-foreground))', cursor: 'pointer' }}>
+      🗑
+    </button>
+  );
+
+  return (
+    <button type="button" onClick={del} disabled={deleting}
+      style={{ fontSize: 10, padding: '4px 10px', borderRadius: 8, border: '1px solid rgba(248,113,113,0.4)', background: 'rgba(248,113,113,0.1)', color: '#f87171', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+      {deleting ? '…' : 'Confirm delete'}
+    </button>
   );
 }
