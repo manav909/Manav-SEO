@@ -1,528 +1,698 @@
 /* ════════════════════════════════════════════════════════════════
    api/lib/season-pipeline-traffic-growth.ts
 
-   Traffic Growth pipeline — runs when the objective is to increase
-   organic clicks across multiple target pages (not a single keyword).
+   Traffic Growth Pipeline — rebuilt from Senior DMS first principles.
 
-   Scope passed in from objective_full_setup:
-     scope.targetUrls  — the specific pages to grow (may be empty)
-     scope.projectId   — project with GSC/GA4 connected
-     scope.keyword     — optional primary keyword (if specified)
+   DESIGN PHILOSOPHY:
+   This pipeline is launched BECAUSE pages have low or zero traffic.
+   It must produce value with no prior data. Every step fetches what
+   it needs directly (HTML, PSI, GSC) rather than relying on
+   pre-existing baseline captures or audit runs.
 
-   6 steps designed around organic traffic increase:
-
-   1. Traffic Audit      — GSC: which pages are underperforming, position 4-15 quick wins
-   2. Page Health        — CWV + indexability check across target URLs (PSI baseline data)
-   3. Content Gap        — thin content, missing meta, CTR below expected for impressions
-   4. Internal Link Flow — which target pages are receiving low internal PageRank
-   5. Growth Strategy    — AI synthesises findings into a prioritised action plan
-   6. Client Update      — plain-English summary of what we'll do and why
-
-   Each step reads ctx.scope.targetUrls and narrows its analysis to those
-   pages when provided. Falls back to project-wide top pages when not set.
+   6 steps:
+   1. GSC Visibility Audit    — which target pages exist in Google, which are invisible
+   2. On-Page Fundamentals    — fetch HTML for each page, real title/H1/content facts
+   3. Technical Performance   — live PSI call per page, real LCP/TBT/score numbers
+   4. Internal Link Structure — which pages link to target pages, PageRank flow
+   5. Prioritised Action Plan — concrete fixes ranked by impact, with expected outcomes
+   6. Client Brief            — honest summary citing real numbers from this run
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
-import { cacheKnowledge, getKnowledge } from "./season-knowledge-cache.js";
 import type { PipelineDefinition, PipelineStepContext, PipelineStepResult } from "./season-pipeline-runner.js";
 
-/* DB query timeout wrapper — Supabase queries hang silently on connection issues.
-   Race every query against a 12-second timeout. */
-async function withTimeout<T>(promise: Promise<T>, label = 'query', ms = 12000): Promise<T | null> {
-  const timeout = new Promise<null>((_, reject) =>
-    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-  );
-  try {
-    return await Promise.race([promise, timeout]) as T;
-  } catch (e: any) {
+const MODEL             = "claude-sonnet-4-5-20251001";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const PSI_KEY           = process.env.PAGESPEED_API_KEY || "";
+
+/* ─── Timeout wrapper — Supabase and external APIs can hang silently ── */
+async function withTimeout<T>(promise: Promise<T>, label = "query", ms = 12000): Promise<T | null> {
+  return Promise.race([
+    promise,
+    new Promise<null>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]).catch((e) => {
     console.warn(`[traffic-pipeline] ${e.message}`);
     return null;
-  }
-}
-
-const MODEL             = "claude-sonnet-4-6";
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-
-/* ─── LLM helper ─────────────────────────────────────────────── */
-async function llm(system: string, user: string, maxTokens = 2000): Promise<string> {
-  if (!ANTHROPIC_API_KEY) return "";
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL, max_tokens: maxTokens,
-      system, messages: [{ role: "user", content: user }],
-    }),
   });
-  if (!r.ok) return "";
-  const d = await r.json();
-  return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
 }
 
-/* ─── Helper: get target URLs — checks 4 sources in priority order ──────
-   1. Scope (passed at pipeline launch from the SEASON command)
-   2. seo_campaigns.target_urls for any traffic_growth objective on this project
-   3. dev_pages for the site workspace linked to this project
-   4. GSC top pages cache (project_knowledge.gsc_top_pages)
-   Returns deduplicated list, max 50.
-──────────────────────────────────────────────────────────────────── */
+/* ─── LLM call ─────────────────────────────────────────────────── */
+async function llm(system: string, user: string, maxTokens = 2500): Promise<string> {
+  if (!ANTHROPIC_API_KEY) return "";
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:  "POST",
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL, max_tokens: maxTokens,
+        system, messages: [{ role: "user", content: user }],
+      }),
+    });
+    if (!r.ok) return "";
+    const d = await r.json();
+    return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+  } catch { return ""; }
+}
+
+/* ─── Fetch page HTML (15s timeout) ────────────────────────────── */
+async function fetchHtml(url: string): Promise<string> {
+  try {
+    const r = await withTimeout(
+      fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+        redirect: "follow",
+      }).then(r => r.text()),
+      `fetchHtml(${url})`, 15000
+    );
+    return (r as string | null) || "";
+  } catch { return ""; }
+}
+
+/* ─── Extract basic on-page facts from HTML ────────────────────── */
+function extractPageFacts(html: string, url: string): {
+  title: string;
+  h1: string;
+  metaDesc: string;
+  wordCount: number;
+  hasNoindex: boolean;
+  hasCanonical: boolean;
+  canonicalUrl: string;
+  internalLinkCount: number;
+  hasSchema: boolean;
+  loadedOk: boolean;
+} {
+  if (!html) return {
+    title: "", h1: "", metaDesc: "", wordCount: 0,
+    hasNoindex: false, hasCanonical: false, canonicalUrl: "",
+    internalLinkCount: 0, hasSchema: false, loadedOk: false,
+  };
+
+  const title       = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1]?.trim() || "";
+  const h1          = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
+  const metaDesc    = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) || [])[1]?.trim() || "";
+  const hasNoindex  = /noindex/i.test(html.slice(0, 2000));
+  const canonMatch  = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+  const canonicalUrl = canonMatch?.[1] || "";
+  const hasCanonical = !!canonicalUrl;
+  const bodyText    = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const wordCount   = bodyText.split(/\s+/).filter(w => w.length > 2).length;
+  const try_domain  = (url.match(/^https?:\/\/[^/]+/) || [""])[0];
+  const internalLinks = [...html.matchAll(/href=["'](\/[^"']+|https?:\/\/[^"']+)["']/gi)];
+  const internalLinkCount = internalLinks.filter(m => m[1].startsWith("/") || m[1].includes(try_domain)).length;
+  const hasSchema   = /<script[^>]+type=["']application\/ld\+json["']/i.test(html);
+
+  return {
+    title, h1, metaDesc, wordCount, hasNoindex, hasCanonical, canonicalUrl,
+    internalLinkCount, hasSchema, loadedOk: html.length > 500,
+  };
+}
+
+/* ─── PSI call (single URL, mobile strategy) ───────────────────── */
+async function runPsi(url: string): Promise<{
+  lcp: number | null; tbt: number | null; cls: number | null; score: number | null;
+}> {
+  const key = PSI_KEY;
+  if (!key) return { lcp: null, tbt: null, cls: null, score: null };
+  try {
+    const endpoint = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=${encodeURIComponent(url)}&strategy=mobile&key=${key}&fields=lighthouseResult.categories.performance.score,lighthouseResult.audits.largest-contentful-paint.numericValue,lighthouseResult.audits.total-blocking-time.numericValue,lighthouseResult.audits.cumulative-layout-shift.numericValue`;
+    const r = await withTimeout(fetch(endpoint).then(r => r.json()), `PSI(${url})`, 25000);
+    if (!r) return { lcp: null, tbt: null, cls: null, score: null };
+    const lr = (r as any)?.lighthouseResult;
+    return {
+      lcp:   lr?.audits?.["largest-contentful-paint"]?.numericValue ?? null,
+      tbt:   lr?.audits?.["total-blocking-time"]?.numericValue ?? null,
+      cls:   lr?.audits?.["cumulative-layout-shift"]?.numericValue ?? null,
+      score: lr?.categories?.performance?.score != null
+        ? Math.round(lr.categories.performance.score * 100) : null,
+    };
+  } catch { return { lcp: null, tbt: null, cls: null, score: null }; }
+}
+
+/* ─── Resolve target pages — checks 4 sources in priority order ── */
 async function resolveTargetPages(ctx: PipelineStepContext): Promise<{
   urls: string[];
   source: string;
 }> {
   const seen = new Set<string>();
-  const add  = (u: string) => { if (u && u.startsWith('http')) seen.add(u); };
+  const add  = (u: string) => { if (u && u.startsWith("http")) seen.add(u.trim()); };
 
-  // 1. Scope — highest priority (explicit command like "grow traffic for /page1")
+  // 1. Explicit URLs from command
   const fromScope: string[] = Array.isArray(ctx.scope.targetUrls)
-    ? ctx.scope.targetUrls.filter(Boolean)
-    : [];
+    ? ctx.scope.targetUrls.filter(Boolean) : [];
   if (fromScope.length > 0) {
     fromScope.forEach(add);
-    return { urls: [...seen].slice(0, 50), source: 'command' };
+    return { urls: [...seen].slice(0, 30), source: "command" };
   }
 
-  // 2. seo_campaigns.target_urls — objective already has pages defined
+  // 2. Campaign objective target_urls
   try {
-    const campaignsResult = await withTimeout(
+    const r = await withTimeout(
       db().from("seo_campaigns").select("target_urls")
-        .eq("project_id", ctx.projectId)
-        .eq("status", "active")
+        .eq("project_id", ctx.projectId).eq("status", "active")
         .not("target_urls", "is", null),
-      "seo_campaigns query"
+      "campaigns query"
     );
-    // withTimeout returns the full Supabase response {data, error} or null
-    const campaignRows = (campaignsResult as any)?.data || [];
-    for (const c of campaignRows as any[]) {
+    for (const c of ((r as any)?.data || []) as any[]) {
       if (Array.isArray(c.target_urls)) c.target_urls.forEach(add);
     }
-    if (seen.size > 0) {
-      return { urls: [...seen].slice(0, 50), source: 'objective target_urls' };
-    }
-  } catch { /* non-blocking */ }
+    if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "objective target_urls" };
+  } catch { /* fallthrough */ }
 
-  // 3. dev_pages — workspace pages linked to this project
+  // 3. Site workspace pages
   try {
-    const pagesResult = await withTimeout(
-      db().from("dev_pages").select("url")
-        .eq("project_id", ctx.projectId)
-        .order("priority", { ascending: false }).limit(50),
+    const r = await withTimeout(
+      db().from("dev_pages").select("url").eq("project_id", ctx.projectId)
+        .order("priority", { ascending: false }).limit(30),
       "dev_pages query"
     );
-    const pageRows = (pagesResult as any)?.data || [];
-    for (const p of pageRows as any[]) add(p.url);
-    if (seen.size > 0) {
-      return { urls: [...seen].slice(0, 50), source: 'site workspace pages' };
-    }
-  } catch { /* non-blocking */ }
+    for (const p of ((r as any)?.data || []) as any[]) add(p.url);
+    if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "site workspace" };
+  } catch { /* fallthrough */ }
 
-  // 4. GSC top pages cache — last resort
+  // 4. GSC top pages
   try {
-    const gscResult = await withTimeout(
+    const r = await withTimeout(
       db().from("project_knowledge").select("field_value")
         .eq("project_id", ctx.projectId).eq("field_key", "gsc_top_pages").maybeSingle(),
       "gsc_top_pages query"
     );
-    if ((gscResult as any)?.data) {
-      const gscPages = JSON.parse(((gscResult as any).data as any).field_value || "[]");
-      gscPages.forEach((p: any) => add(p.page || p.url || p.dimension || ""));
-    }
-  } catch { /* no cache */ }
+    const pages = JSON.parse(((r as any)?.data as any)?.field_value || "[]");
+    pages.forEach((p: any) => add(p.page || p.url || ""));
+    if (seen.size > 0) return { urls: [...seen].slice(0, 30), source: "GSC top pages" };
+  } catch { /* fallthrough */ }
 
-  return { urls: [...seen].slice(0, 50), source: seen.size > 0 ? 'GSC top pages' : 'none' };
+  return { urls: [], source: "none" };
 }
 
-/* ─── Helper: load GSC metrics for pages from project_knowledge ─ */
+/* ─── Load GSC data (no impression threshold — ALL pages matter) ─ */
 async function loadGscData(projectId: string): Promise<{
   topPages: any[];
-  quickWins: any[];  // position 4-15 with >100 impressions
+  zeroClickPages: any[];      // ranked but no clicks = CTR problem
+  notRankingPages: any[];     // in GSC but position > 50 = visibility problem
+  quickWins: any[];           // positions 4-20 with impressions
 }> {
   try {
-    const { data } = await db().from("project_knowledge")
-      .select("field_key,field_value")
-      .eq("project_id", projectId)
-      .in("field_key", ["gsc_top_pages", "gsc_top_queries"]);
-    const rows = (data || []) as any[];
+    const r = await withTimeout(
+      db().from("project_knowledge").select("field_key,field_value")
+        .eq("project_id", projectId).in("field_key", ["gsc_top_pages","gsc_top_queries"]),
+      "gsc_data query"
+    );
+    const rows = ((r as any)?.data || []) as any[];
     const topPagesRow = rows.find(r => r.field_key === "gsc_top_pages");
     const topPages = topPagesRow ? JSON.parse(topPagesRow.field_value || "[]") : [];
-    const quickWins = topPages.filter((p: any) =>
-      p.position >= 4 && p.position <= 15 && (p.impressions || 0) > 100
-    );
-    return { topPages, quickWins };
+
+    return {
+      topPages,
+      zeroClickPages:  topPages.filter((p: any) => (p.impressions || 0) > 0 && (p.clicks || 0) === 0),
+      notRankingPages: topPages.filter((p: any) => (p.position || 0) > 50),
+      quickWins:       topPages.filter((p: any) => (p.position || 0) >= 4 && (p.position || 0) <= 20),
+    };
   } catch {
-    return { topPages: [], quickWins: [] };
+    return { topPages: [], zeroClickPages: [], notRankingPages: [], quickWins: [] };
   }
 }
 
-/* ─── Helper: load PSI baseline data for target pages ─ */
-async function loadPageHealthData(projectId: string, targetUrls: string[]): Promise<any[]> {
-  if (!targetUrls.length) return [];
-  try {
-    const { data } = await db().from("dev_pages")
-      .select("url,baseline_lcp_ms,baseline_tbt_ms,baseline_score,issues_red,issues_amber,last_audited_at")
-      .eq("project_id", projectId)
-      .in("url", targetUrls.slice(0, 20));
-    return (data || []) as any[];
-  } catch { return []; }
-}
 
 /* ════════════════════════════════════════════════════════════════
-   STEP 1 — Traffic Audit
-   GSC analysis: where are clicks coming from, where are quick wins,
-   which target pages are underperforming vs impressions.
+   STEP 1 — GSC VISIBILITY AUDIT
+   Cross-references target pages against GSC. Identifies which
+   pages are invisible, which rank but don't click, and quick wins.
+   No impression threshold — 0 impressions IS the finding.
 ════════════════════════════════════════════════════════════════ */
-const stepTrafficAudit = {
+const stepVisibilityAudit = {
   id: "traffic_audit",
-  label: "Audit current organic traffic",
-  description: "GSC clicks, impressions, CTR — quick wins at positions 4–15",
+  label: "GSC visibility audit",
+  description: "Cross-reference target pages against GSC data — find invisible pages",
   artifact_kind: "traffic_audit",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const { topPages, quickWins } = await loadGscData(ctx.projectId);
+    const { topPages, zeroClickPages, quickWins } = await loadGscData(ctx.projectId);
 
-    const targetNote = targetUrls.length > 0
-      ? `\n\nFocusing on these ${targetUrls.length} target pages (from ${pageSource}):\n${targetUrls.slice(0,10).map(u => `- ${u}`).join("\n")}`
-      : "\n\nNo specific target pages set — analysing project-wide top pages.";
+    // Cross-reference: which target pages appear in GSC?
+    const gscUrlSet = new Set(topPages.map((p: any) => (p.page || p.url || "").replace(/\/$/, "")));
+    const invisiblePages   = targetUrls.filter(u => !gscUrlSet.has(u.replace(/\/$/, "")));
+    const visiblePages     = targetUrls.filter(u =>  gscUrlSet.has(u.replace(/\/$/, "")));
 
-    const topPagesSummary = topPages.length > 0
-      ? topPages.slice(0, 15).map((p: any) =>
-          `${(p.page||p.url||'').replace(/^https?:\/\/[^/]+/,'') || '/'}: ${p.clicks||0} clicks, ${p.impressions||0} impr, pos ${(p.position||0).toFixed(1)}, CTR ${((p.ctr||0)*100).toFixed(1)}%`
-        ).join("\n")
-      : "No GSC data available — connect GSC in Site Manager to unlock this analysis.";
-
-    const qwSummary = quickWins.length > 0
-      ? `${quickWins.length} quick-win opportunities (positions 4–15):\n` +
-        quickWins.slice(0,8).map((p: any) =>
-          `  pos ${(p.position||0).toFixed(1)} — ${(p.page||p.url||'').replace(/^https?:\/\/[^/]+/,'') || '/'} (${p.impressions||0} impr, ${p.clicks||0} clicks)`
-        ).join("\n")
-      : "No position 4–15 quick wins identified.";
+    const makePageRow = (url: string) => {
+      const slug = url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      const gscData = topPages.find((p: any) => (p.page || p.url || "").replace(/\/$/, "") === url.replace(/\/$/, ""));
+      if (!gscData) return `| ${slug} | NOT IN GSC | — | — | — | 🔴 Invisible |`;
+      const pos   = gscData.position?.toFixed(1) || "—";
+      const impr  = gscData.impressions || 0;
+      const clicks = gscData.clicks || 0;
+      const ctr   = impr > 0 ? ((clicks / impr) * 100).toFixed(1) + "%" : "—";
+      const flag  = clicks === 0 && impr > 0 ? "🟡 Ranked, 0 clicks"
+                  : parseFloat(pos) <= 3 ? "🟢 Top 3"
+                  : parseFloat(pos) <= 20 ? "🟡 Quick win"
+                  : "🔴 Low ranking";
+      return `| ${slug} | ${pos} | ${impr.toLocaleString()} | ${clicks} | ${ctr} | ${flag} |`;
+    };
 
     const analysis = await llm(
-      `You are a Senior SEO Specialist analysing organic traffic data for a growth objective.
-Be specific, data-driven, and honest about gaps. No waffle. Max 400 words.`,
-      `Analyse this organic traffic data for a traffic growth objective.${targetNote}
+      `You are a Senior SEO Analyst writing a GSC visibility audit.
+Be specific and data-driven. Every finding must cite a real number.
+Do not write generic advice. Write about these specific pages.
+Format in clean markdown. 500-700 words.`,
+      `GSC Visibility Audit for ${targetUrls.length} target pages.
+Data source: ${pageSource}
 
-GSC top pages:
-${topPagesSummary}
+TARGET PAGE GSC STATUS:
+| URL | Position | Impressions | Clicks | CTR | Status |
+|---|---|---|---|---|---|
+${targetUrls.slice(0, 20).map(makePageRow).join("\n")}
 
-${qwSummary}
+KEY FINDINGS:
+- Pages invisible to Google (not in GSC): ${invisiblePages.length} of ${targetUrls.length}
+${invisiblePages.slice(0, 5).map(u => `  • ${u.replace(/^https?:\/\/[^/]+/, "") || "/"}`).join("\n")}
 
-Identify:
-1. Which target pages have the most growth potential and why
-2. Which quick-win pages should be prioritised first
-3. Pages with high impressions but poor CTR (title/meta opportunity)
-4. Any target pages not appearing in GSC at all (indexability risk)
+- Pages ranking but not clicking (position found, 0 clicks): ${zeroClickPages.length}
+${zeroClickPages.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impressions`).join("\n")}
 
-Format as markdown with clear sections.`
+- Quick-win pages (position 4-20): ${quickWins.length}
+${quickWins.slice(0, 5).map((p: any) => `  • ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/, "") || "/"} — pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impr, ${p.clicks||0} clicks`).join("\n")}
+
+Write:
+1. Headline finding (1 paragraph — what's the core GSC problem?)
+2. Invisible pages analysis — WHY might these pages be invisible?
+3. Quick-win opportunities with specific expected outcomes
+4. CTR problems — pages ranking but not being clicked (title/meta issue)
+5. Clear priority ranking of these pages`
     );
-
-    const artifact = `## Traffic Audit\n\n${analysis || "GSC data not available. Connect GSC in Site Manager → Settings to enable traffic analysis."}\n\n---\n**Quick wins (pos 4–15):** ${quickWins.length} pages\n**Top pages analysed:** ${Math.min(topPages.length, 15)}\n**Target pages:** ${targetUrls.length > 0 ? targetUrls.length : "all pages"}`;
 
     return {
       ok: true,
-      output: { topPages: topPages.slice(0,15), quickWins: quickWins.slice(0,10), targetUrls },
-      artifact: { kind: "traffic_audit", title: "Traffic Audit", body: artifact },
-      honest_note: topPages.length === 0
-        ? "No GSC data found. Connect GSC to get real traffic analysis."
-        : `Target pages from: ${pageSource}. Analysed ${topPages.length} GSC pages. ${quickWins.length} quick-win opportunities found.`,
+      output: { topPages: topPages.slice(0,20), quickWins: quickWins.slice(0,10), targetUrls, invisiblePages, visiblePages },
+      artifact: {
+        kind: "traffic_audit",
+        title: "GSC Visibility Audit",
+        body: `# GSC Visibility Audit\n\n${analysis}\n\n---\n**Target pages:** ${targetUrls.length} | **Source:** ${pageSource} | **Invisible:** ${invisiblePages.length} | **Quick wins:** ${quickWins.length} | **Zero-click ranked pages:** ${zeroClickPages.length}`,
+      },
+      honest_note: `${targetUrls.length} target pages from ${pageSource}. ${invisiblePages.length} invisible to Google. ${quickWins.length} quick wins at positions 4-20. ${zeroClickPages.length} pages rank but get 0 clicks.`,
     };
   },
 };
 
+
 /* ════════════════════════════════════════════════════════════════
-   STEP 2 — Page Health Check
-   CWV + indexability across target pages. Reads PSI baseline data
-   from dev_pages (already captured — no new PSI calls).
+   STEP 2 — ON-PAGE FUNDAMENTALS
+   Fetches HTML for each target page. Checks title tags, H1s,
+   meta descriptions, word count, canonical, noindex, schema.
+   Works on fresh pages with no prior data — HTML is the source.
 ════════════════════════════════════════════════════════════════ */
-const stepPageHealth = {
+const stepOnPageFundamentals = {
   id: "page_health",
-  label: "Check page health across target URLs",
-  description: "Core Web Vitals, indexability, audit issue counts",
+  label: "On-page fundamentals check",
+  description: "Fetch each target page — title, H1, meta, word count, noindex, schema",
   artifact_kind: "page_health",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const pageData   = await loadPageHealthData(ctx.projectId, targetUrls);
+    const { urls: targetUrls } = await resolveTargetPages(ctx);
 
-    if (!pageData.length) {
+    if (!targetUrls.length) {
       return {
         ok: true,
-        output: { pages: [] },
+        output: { pages: [], issues: [] },
         artifact: {
           kind: "page_health",
-          title: "Page Health",
-          body: "## Page Health\n\nNo baseline data available yet. Run baseline capture in Site Manager → Baseline tab first to populate CWV and audit scores.",
+          title: "On-Page Fundamentals",
+          body: "# On-Page Fundamentals\n\nNo target pages to audit. Add target URLs to the objective in SEO Campaigns → Objectives tab.",
         },
-        honest_note: "No dev_pages baseline data. Run baseline capture in Site Manager.",
+        honest_note: "No target pages set.",
       };
     }
 
-    const badLcp    = pageData.filter(p => p.baseline_lcp_ms > 4000);
-    const redIssues = pageData.filter(p => p.issues_red > 0);
-    const unaudited = pageData.filter(p => !p.last_audited_at);
+    // Fetch and analyse up to 8 pages in parallel (Vercel limit consideration)
+    const toFetch = targetUrls.slice(0, 8);
+    const pageResults = await Promise.all(
+      toFetch.map(async url => {
+        const html = await fetchHtml(url);
+        const facts = extractPageFacts(html, url);
+        return { url, ...facts };
+      })
+    );
 
-    const tableRows = pageData.slice(0, 15).map(p =>
-      `| ${(p.url||'').replace(/^https?:\/\/[^/]+/,'') || '/'} | ${p.baseline_lcp_ms ? (p.baseline_lcp_ms/1000).toFixed(2)+'s' : 'N/A'} | ${p.baseline_score || 'N/A'} | ${p.issues_red || 0} 🔴 ${p.issues_amber || 0} 🟡 |`
-    ).join("\n");
+    // Classify issues
+    const issues: string[] = [];
+    for (const p of pageResults) {
+      const slug = p.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      if (!p.loadedOk)              issues.push(`${slug}: Page failed to load — may be blocked or returning error`);
+      if (p.hasNoindex)             issues.push(`${slug}: Has noindex tag — Google will not index this page`);
+      if (!p.title)                 issues.push(`${slug}: Missing title tag`);
+      if (p.title && p.title.length > 65) issues.push(`${slug}: Title tag too long (${p.title.length} chars)`);
+      if (!p.h1)                    issues.push(`${slug}: Missing H1 tag`);
+      if (!p.metaDesc)              issues.push(`${slug}: Missing meta description`);
+      if (p.wordCount < 300)        issues.push(`${slug}: Thin content (${p.wordCount} words) — may not satisfy search intent`);
+      if (!p.hasSchema)             issues.push(`${slug}: No structured data / schema markup`);
+      if (p.hasCanonical && !p.canonicalUrl.includes(p.url.replace(/^https?:\/\/[^/]+/,"")))
+                                    issues.push(`${slug}: Canonical points elsewhere — may be diluting signals`);
+    }
+
+    const tableRows = pageResults.map(p => {
+      const slug = p.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      const titleStr = p.title ? (p.title.length > 40 ? p.title.slice(0,40)+"…" : p.title) : "❌ MISSING";
+      const h1Str    = p.h1    ? (p.h1.length > 30 ? p.h1.slice(0,30)+"…" : p.h1) : "❌ MISSING";
+      const flags = [
+        p.hasNoindex ? "🚫 noindex" : "",
+        !p.hasSchema ? "no schema" : "",
+        p.wordCount < 300 ? `thin (${p.wordCount}w)` : `${p.wordCount}w`,
+      ].filter(Boolean).join(" · ");
+      return `| ${slug} | ${titleStr} | ${h1Str} | ${p.metaDesc ? "✓" : "❌"} | ${flags} |`;
+    }).join("\n");
 
     const analysis = await llm(
-      "You are a Senior SEO Specialist reviewing page health data. Be concise, max 300 words.",
-      `Review these target pages for a traffic growth objective:
+      `You are a Senior SEO Specialist writing an on-page audit.
+Be specific — cite exact page slugs and exact issues. No generic SEO advice.
+Every recommendation must reference a specific page found in the data.
+600-800 words in clean markdown.`,
+      `On-Page Fundamentals Audit — ${pageResults.length} pages analysed.
 
-| URL | LCP | Score | Issues |
-|---|---|---|---|
+PAGE AUDIT TABLE:
+| URL | Title Tag | H1 | Meta Desc | Notes |
+|---|---|---|---|---|
 ${tableRows}
 
-Summarise:
-1. Pages with poor CWV that will hurt rankings
-2. Pages with most critical issues to fix first
-3. Overall health score for these pages
-Keep it actionable.`
+ISSUES FOUND (${issues.length} total):
+${issues.slice(0, 20).map(i => `• ${i}`).join("\n") || "• No critical issues found"}
+
+Write:
+1. Critical issues summary (noindex, missing titles, missing H1s first)
+2. Page-by-page assessment — what each page has and what it's missing
+3. Content quality assessment — are these pages thin? What should they contain?
+4. Schema / structured data gaps
+5. Specific rewrite recommendations for the worst title tags and meta descriptions`
     );
 
     return {
       ok: true,
-      output: { pages: pageData, badLcp: badLcp.length, redIssues: redIssues.length },
+      output: { pages: pageResults, issues, issueCount: issues.length },
       artifact: {
         kind: "page_health",
-        title: "Page Health Check",
-        body: `## Page Health\n\n${analysis}\n\n---\n**Pages checked:** ${pageData.length} | **Poor LCP (>4s):** ${badLcp.length} | **Critical issues:** ${redIssues.length} | **Not yet audited:** ${unaudited.length}`,
+        title: "On-Page Fundamentals",
+        body: `# On-Page Fundamentals\n\n${analysis}\n\n---\n**Pages audited:** ${pageResults.length} | **Issues found:** ${issues.length} | **Failed to load:** ${pageResults.filter(p => !p.loadedOk).length}`,
       },
-      honest_note: `Checked ${pageData.length} pages. ${badLcp.length} have poor LCP, ${redIssues.length} have critical issues.`,
+      honest_note: `${pageResults.length} pages fetched and analysed. ${issues.length} on-page issues found. ${pageResults.filter(p => p.hasNoindex).length} noindex pages. ${pageResults.filter(p => p.wordCount < 300).length} thin-content pages.`,
     };
   },
 };
 
+
 /* ════════════════════════════════════════════════════════════════
-   STEP 3 — Content Gap Analysis
-   Identifies thin content, missing/duplicate meta, pages with
-   high impressions but low CTR (title optimisation opportunity).
+   STEP 3 — TECHNICAL PERFORMANCE
+   Live PSI call per target page. Real LCP, TBT, performance score.
+   Works on fresh pages — fetches data now, not from stored baseline.
 ════════════════════════════════════════════════════════════════ */
-const stepContentGap = {
+const stepTechnicalPerformance = {
   id: "content_gap",
-  label: "Identify content gaps and CTR opportunities",
-  description: "Thin content, missing meta, title optimisation for CTR",
+  label: "Technical performance audit (PSI)",
+  description: "Live PageSpeed Insights per page — LCP, TBT, performance score",
   artifact_kind: "content_gap",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const trafficData = ctx.prior["traffic_audit"] || {};
-    const topPages: any[]   = trafficData.topPages || [];
-    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const keyword           = ctx.scope.keyword || "";
+    const { urls: targetUrls } = await resolveTargetPages(ctx);
+    const toTest = targetUrls.slice(0, 6); // PSI rate limit consideration
 
-    /* Pages with high impressions but poor CTR — title/meta opportunity */
-    const poorCtr = topPages.filter((p: any) => (p.impressions || 0) > 200 && (p.ctr || 0) < 0.03);
+    // Run PSI sequentially to avoid rate limiting
+    const psiResults: Array<{ url: string; lcp: number | null; tbt: number | null; cls: number | null; score: number | null }> = [];
+    for (const url of toTest) {
+      const r = await runPsi(url);
+      psiResults.push({ url, ...r });
+    }
 
-    /* Load audit findings if available (from Site Manager audits) */
-    const auditFindings = ctx.audit_findings || [];
-    const contentFindings = auditFindings.filter((f: any) =>
-      ["on_page_fundamentals","content_freshness","first_paragraph"].includes(f.audit_kind)
-    );
+    const failed = psiResults.filter(p => p.score === null);
+    const scored = psiResults.filter(p => p.score !== null);
+
+    const lcpRating = (ms: number | null) =>
+      ms === null ? "N/A" : ms < 2500 ? "✅ Good" : ms < 4000 ? "⚠️ Needs work" : "🔴 Poor";
+
+    const tableRows = psiResults.map(p => {
+      const slug  = p.url.replace(/^https?:\/\/[^/]+/, "") || "/";
+      const lcp   = p.lcp   ? `${(p.lcp/1000).toFixed(2)}s` : "—";
+      const tbt   = p.tbt   ? `${Math.round(p.tbt)}ms` : "—";
+      const cls   = p.cls   !== null ? p.cls.toFixed(3) : "—";
+      const score = p.score !== null ? `${p.score}/100` : "N/A";
+      const rating = lcpRating(p.lcp);
+      return `| ${slug} | ${score} | ${lcp} ${rating} | ${tbt} | ${cls} |`;
+    }).join("\n");
 
     const analysis = await llm(
-      "You are a Senior SEO Specialist. Be specific and data-driven. Max 400 words.",
-      `Analyse content gaps for a traffic growth objective.
+      `You are a Senior SEO Technical Specialist interpreting PageSpeed Insights data.
+Be specific — cite real scores and milliseconds. Explain impact on rankings and UX.
+Prioritise by severity. 500-600 words in clean markdown.`,
+      `Technical Performance Audit — Live PSI results for ${psiResults.length} pages.
 
-Target pages (${targetUrls.length}):
-${targetUrls.slice(0,8).map(u => `- ${u.replace(/^https?:\/\/[^/]+/,'') || '/'}`).join("\n")}
+PSI RESULTS TABLE (mobile):
+| URL | Perf Score | LCP | TBT | CLS |
+|---|---|---|---|---|
+${tableRows}
 
-Pages with poor CTR despite impressions (title optimisation opportunity):
-${poorCtr.slice(0,6).map((p: any) =>
-  `- ${(p.page||p.url||'').replace(/^https?:\/\/[^/]+/,'') || '/'}: ${Math.round(p.impressions||0)} impressions, ${((p.ctr||0)*100).toFixed(1)}% CTR`
-).join("\n") || "No poor-CTR pages identified."}
+${failed.length > 0 ? `Pages where PSI could not load (${failed.length}): ${failed.map(p => p.url.replace(/^https?:\/\/[^/]+/,"")||"/").join(", ")}` : "All pages loaded successfully."}
 
-Content audit findings from Site Manager:
-${contentFindings.slice(0,6).map((f: any) => `- ${f.finding_title}`).join("\n") || "No content audit data — run audit in Site Manager."}
-${keyword ? `\nPrimary keyword context: "${keyword}"` : ""}
+Average performance score: ${scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : "N/A"}/100
+Pages with poor LCP (>4s): ${psiResults.filter(p => p.lcp && p.lcp > 4000).length}
+Pages with high TBT (>600ms): ${psiResults.filter(p => p.tbt && p.tbt > 600).length}
 
-Identify:
-1. Pages where title/meta rewrites would lift CTR immediately
-2. Pages with thin or stale content that needs expanding
-3. Missing content opportunities based on the page URLs
-Keep it specific and actionable.`
+Write:
+1. Overall performance health verdict
+2. Page-by-page breakdown — what each score means for that specific page
+3. LCP analysis — what is likely causing slow LCP on the worst pages?
+4. Prioritised fix list — which pages to fix first and what to fix
+5. Expected ranking impact of fixing these issues`
     );
 
     return {
       ok: true,
-      output: { poorCtr: poorCtr.length, contentFindings: contentFindings.length },
+      output: { psiResults, avgScore: scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : null },
       artifact: {
         kind: "content_gap",
-        title: "Content Gap Analysis",
-        body: `## Content Gap Analysis\n\n${analysis || "Run a Site Manager audit on target pages to populate content findings."}\n\n---\n**CTR opportunities:** ${poorCtr.length} pages | **Content findings:** ${contentFindings.length}`,
+        title: "Technical Performance (PSI)",
+        body: `# Technical Performance Audit\n\n${analysis}\n\n---\n**Pages tested:** ${psiResults.length} | **PSI key available:** ${PSI_KEY ? "Yes" : "No — add PAGESPEED_API_KEY to Vercel env"} | **Poor LCP:** ${psiResults.filter(p => p.lcp && p.lcp > 4000).length} pages`,
       },
-      honest_note: `${poorCtr.length} poor-CTR pages identified. ${contentFindings.length} content findings from audit.`,
+      honest_note: PSI_KEY
+        ? `${psiResults.length} pages tested via PSI. ${psiResults.filter(p => p.lcp && p.lcp > 4000).length} with poor LCP. Avg score: ${scored.length > 0 ? Math.round(scored.reduce((s,p) => s + (p.score||0), 0) / scored.length) : "N/A"}/100.`
+        : `No PSI API key in environment. Add PAGESPEED_API_KEY to Vercel env vars to enable live performance testing.`,
     };
   },
 };
 
+
 /* ════════════════════════════════════════════════════════════════
-   STEP 4 — Internal Link Flow
-   Which target pages are receiving poor internal link equity?
-   Simple heuristic: pages not linked from homepage or navigation,
-   or pages with very few inbound internal links.
+   STEP 4 — INTERNAL LINK ANALYSIS
+   Checks which high-traffic pages could be linking to target pages.
+   Uses GSC data to identify authority pages, fetches their HTML
+   to check if they actually link to target pages.
 ════════════════════════════════════════════════════════════════ */
-const stepInternalLinkFlow = {
+const stepInternalLinks = {
   id: "internal_link_flow",
-  label: "Analyse internal link flow to target pages",
-  description: "Internal PageRank distribution to target URLs",
+  label: "Internal link structure",
+  description: "Which authority pages link to target pages — PageRank flow audit",
   artifact_kind: "internal_links",
   continue_on_fail: true,
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
-    const { urls: targetUrls, source: pageSource } = await resolveTargetPages(ctx);
-    const trafficData = ctx.prior["traffic_audit"] || {};
-    const topPages: any[] = trafficData.topPages || [];
+    const { urls: targetUrls } = await resolveTargetPages(ctx);
+    const { topPages } = await loadGscData(ctx.projectId);
 
-    /* Pages that get clicks but don't rank well — may have link equity issues */
-    const underlinked = topPages.filter((p: any) =>
-      (p.position || 0) > 10 && (p.clicks || 0) < 50 && (p.impressions || 0) > 100
-    );
+    // Find the top 5 authority pages (most traffic) to fetch and check
+    const authorityPages = topPages
+      .sort((a: any, b: any) => (b.clicks || 0) - (a.clicks || 0))
+      .slice(0, 5)
+      .filter((p: any) => (p.page || p.url) && (p.clicks || 0) > 0);
+
+    const domain = targetUrls[0] ? (targetUrls[0].match(/^https?:\/\/[^/]+/)?.[0] || "") : "";
+
+    // Fetch authority pages and check which target pages they link to
+    const linkMap: Array<{ authorityPage: string; clicks: number; linksToTargets: string[] }> = [];
+    for (const ap of authorityPages.slice(0, 3)) { // limit fetches
+      const apUrl = ap.page || ap.url || "";
+      if (!apUrl) continue;
+      const html = await fetchHtml(apUrl);
+      if (!html) continue;
+      const links = [...html.matchAll(/href=["']([^"']+)["']/gi)].map(m => m[1]);
+      const linksToTargets = targetUrls.filter(t => {
+        const slug = t.replace(domain, "");
+        return links.some(l => l === slug || l === t || l.endsWith(slug));
+      });
+      linkMap.push({
+        authorityPage: apUrl.replace(domain, "") || "/",
+        clicks: ap.clicks || 0,
+        linksToTargets,
+      });
+    }
+
+    const unlinkedTargets = targetUrls.filter(t => {
+      return !linkMap.some(lm => lm.linksToTargets.includes(t));
+    });
 
     const analysis = await llm(
-      "You are a Senior SEO Specialist. Max 300 words. Be specific.",
-      `Analyse internal linking for a traffic growth objective.
+      `You are a Senior SEO Specialist analysing internal link structure for a traffic growth campaign.
+Be specific — cite exact page slugs. Explain PageRank flow in plain terms.
+Every recommendation must be actionable with specific from/to page pairs.
+500-600 words in clean markdown.`,
+      `Internal Link Audit for ${targetUrls.length} target pages.
 
-Target pages needing traffic growth:
-${targetUrls.slice(0,8).map(u => `- ${u.replace(/^https?:\/\/[^/]+/,'') || '/'}`).join("\n") || "- Not specified"}
+AUTHORITY PAGES (top by clicks):
+${authorityPages.slice(0,5).map((p: any) => `• ${(p.page||p.url||"").replace(domain,"") || "/"} — ${p.clicks||0} clicks/mo, pos ${(p.position||0).toFixed(1)}`).join("\n") || "• No GSC data available — connect GSC for this analysis"}
 
-Pages ranking poorly (pos >10) despite impressions — may need more internal links:
-${underlinked.slice(0,5).map((p: any) =>
-  `- ${(p.page||p.url||'').replace(/^https?:\/\/[^/]+/,'') || '/'} pos ${(p.position||0).toFixed(1)}, ${Math.round(p.impressions||0)} impressions`
-).join("\n") || "- No underlinked patterns identified from GSC data."}
+LINK COVERAGE ANALYSIS:
+${linkMap.map(lm => `• ${lm.authorityPage} (${lm.clicks} clicks): links to ${lm.linksToTargets.length > 0 ? lm.linksToTargets.map(t => t.replace(domain,"")||"/").join(", ") : "NONE of the target pages"}`).join("\n") || "• Could not fetch authority pages"}
 
-Recommend:
-1. Which pages should be linked FROM (high authority internal pages)
-2. Which target pages need the most internal link support
-3. Any quick wins (hub pages that could link to multiple target pages)
-Be practical — specific page-to-page recommendations where possible.`
+TARGET PAGES WITH NO INTERNAL LINKS FROM HIGH-TRAFFIC PAGES (${unlinkedTargets.length}):
+${unlinkedTargets.slice(0,8).map(u => `• ${u.replace(domain,"")||"/"}`).join("\n") || "• All target pages are linked"}
+
+Write:
+1. Internal link health verdict — are target pages isolated from site authority?
+2. Specific linking opportunities — which authority page should link to which target page
+3. Hub page strategy — if category pages exist, how they should distribute authority
+4. Anchor text recommendations for the most important links`
     );
 
     return {
       ok: true,
-      output: { underlinked: underlinked.length },
+      output: { linkMap, unlinkedTargets, authorityPages: authorityPages.slice(0,5) },
       artifact: {
         kind: "internal_links",
-        title: "Internal Link Flow",
-        body: `## Internal Link Flow\n\n${analysis || "No internal link data available."}\n\n---\n**Underlinked target pages:** ${underlinked.length}`,
+        title: "Internal Link Structure",
+        body: `# Internal Link Analysis\n\n${analysis}\n\n---\n**Target pages without links from authority pages:** ${unlinkedTargets.length} of ${targetUrls.length}`,
       },
-      honest_note: `${underlinked.length} pages identified as potentially underlinked based on GSC position vs impressions ratio.`,
+      honest_note: `${unlinkedTargets.length} of ${targetUrls.length} target pages receive no internal links from high-traffic pages. ${authorityPages.length} authority pages checked.`,
     };
   },
 };
 
+
 /* ════════════════════════════════════════════════════════════════
-   STEP 5 — Growth Strategy
-   Synthesises all findings into a prioritised action plan.
-   Week-by-week roadmap for the target pages.
+   STEP 5 — PRIORITISED ACTION PLAN
+   Synthesises all findings into a concrete, ranked action plan.
+   Names specific pages, specific fixes, specific expected impact.
+   No generic advice — everything is grounded in findings above.
 ════════════════════════════════════════════════════════════════ */
-const stepGrowthStrategy = {
+const stepActionPlan = {
   id: "growth_strategy",
-  label: "Build traffic growth strategy",
-  description: "Prioritised action plan from all findings",
+  label: "Prioritised action plan",
+  description: "Concrete fixes ranked by impact — specific pages, specific actions",
   artifact_kind: "strategy",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls } = await resolveTargetPages(ctx);
-    const trafficData    = ctx.prior["traffic_audit"]  || {};
-    const healthData     = ctx.prior["page_health"]    || {};
-    const contentData    = ctx.prior["content_gap"]    || {};
-    const linkData       = ctx.prior["internal_link_flow"] || {};
+    const gscData  = ctx.prior["traffic_audit"]     || {};
+    const onPage   = ctx.prior["page_health"]       || {};
+    const techData = ctx.prior["content_gap"]       || {};
+    const linkData = ctx.prior["internal_link_flow"] || {};
 
-    const strategy = await llm(
-      `You are a Senior SEO Strategist building a traffic growth plan.
-Output a clear, prioritised action plan. Structure: Priority 1 (do this week), Priority 2 (this month), Priority 3 (next quarter).
-Be specific — name the pages, name the fixes. Max 600 words.`,
-      `Build a traffic growth strategy based on these findings:
+    const invisibleCount = (gscData.invisiblePages || []).length;
+    const issueCount     = onPage.issueCount || 0;
+    const avgScore       = techData.avgScore || null;
+    const unlinkedCount  = (linkData.unlinkedTargets || []).length;
+    const quickWins      = gscData.quickWins || [];
 
-TARGET PAGES (${targetUrls.length}):
-${targetUrls.slice(0,8).join(", ")}
+    const plan = await llm(
+      `You are a Senior Digital Marketing Specialist building a traffic growth action plan.
+You are writing this for a client who needs to understand exactly what to do.
+Be brutally specific — name pages, name fixes, name expected outcomes.
+Cite the real numbers from the audit findings.
+No generic SEO advice. Every point must be specific to these pages.
+800-1000 words in clean markdown.`,
+      `Traffic Growth Action Plan — ${targetUrls.length} target pages
 
-TRAFFIC AUDIT:
-- Quick wins at positions 4-15: ${trafficData.quickWins?.length || 0} pages
-- Top pages: ${trafficData.topPages?.length || 0} pages in GSC
+AUDIT FINDINGS SUMMARY:
+• GSC visibility: ${invisibleCount} pages are invisible to Google (not in GSC)
+• Quick wins: ${quickWins.length} pages at positions 4-20 that could move to page 1
+  ${quickWins.slice(0,5).map((p: any) => `  - ${(p.page||p.url||"").replace(/^https?:\/\/[^/]+/,"")||"/"}: pos ${(p.position||0).toFixed(1)}, ${p.impressions||0} impressions`).join("\n")}
+• On-page issues: ${issueCount} issues found (missing titles, H1s, thin content, noindex)
+• Performance: avg score ${avgScore !== null ? avgScore+"/100" : "not tested — no PSI key"} — ${(techData.psiResults||[]).filter((p:any) => p.lcp && p.lcp > 4000).length} pages with poor LCP
+• Internal links: ${unlinkedCount} target pages receive no internal links from high-traffic pages
 
-PAGE HEALTH:
-- Poor LCP (>4s): ${healthData.badLcp || 0} pages
-- Critical audit issues: ${healthData.redIssues || 0} pages
+TARGET PAGES:
+${targetUrls.slice(0,10).map(u => `• ${u.replace(/^https?:\/\/[^/]+/,"")||"/"}`).join("\n")}
 
-CONTENT GAPS:
-- Poor CTR pages (title opportunity): ${contentData.poorCtr || 0}
-- Content findings from audit: ${contentData.contentFindings || 0}
+Write a plan with these exact sections:
+## IMMEDIATE ACTIONS (Week 1) — fixes that take <2 hours each
+## SHORT TERM (Month 1) — content and technical work
+## MEDIUM TERM (Months 2-3) — authority and link building
+## WHAT NOT TO DO — common mistakes for this type of site
 
-INTERNAL LINKS:
-- Underlinked pages: ${linkData.underlinked || 0}
+For each action, state:
+- The specific page or pages affected
+- Exactly what to change
+- Why it will help (cite the specific finding)
+- Estimated time to see results
 
-Output:
-## Priority 1 — This Week (Quick Wins)
-## Priority 2 — This Month (Core Fixes)
-## Priority 3 — Next Quarter (Growth Foundations)
-
-End with an honest estimated traffic uplift range based on the data.`
+End with: **Realistic Traffic Forecast** — honest estimate of traffic change if all actions completed`
     );
 
     return {
       ok: true,
-      output: { strategy },
+      output: { plan, targetCount: targetUrls.length, invisibleCount, quickWinCount: quickWins.length },
       artifact: {
         kind: "strategy",
-        title: "Traffic Growth Strategy",
-        body: `## Traffic Growth Strategy\n\n${strategy || "Could not generate strategy — ensure GSC is connected and Site Manager audit has been run."}`,
+        title: "Traffic Growth Action Plan",
+        body: `# Traffic Growth Action Plan\n\n${plan}`,
       },
-      honest_note: "Strategy synthesised from traffic audit, page health, content gaps, and internal link data.",
+      honest_note: `Plan built from ${targetUrls.length} target pages. ${invisibleCount} invisible to Google, ${quickWins.length} quick wins, ${issueCount} on-page issues, ${unlinkedCount} unlinked pages.`,
     };
   },
 };
 
+
 /* ════════════════════════════════════════════════════════════════
-   STEP 6 — Client Update
-   Plain-English summary of findings and the plan. Written in
-   Manav's voice — honest, specific, no jargon.
+   STEP 6 — CLIENT BRIEF
+   Plain English. Written for the client, not the SEO team.
+   Cites real numbers. Honest about timelines.
 ════════════════════════════════════════════════════════════════ */
-const stepClientUpdate = {
+const stepClientBrief = {
   id: "client_update",
-  label: "Write client traffic growth update",
-  description: "Plain-English summary for the client",
+  label: "Client brief",
+  description: "Plain English summary with real numbers and honest timelines",
   artifact_kind: "client_update",
   handler: async (ctx: PipelineStepContext): Promise<PipelineStepResult> => {
     const { urls: targetUrls } = await resolveTargetPages(ctx);
-    const strategy    = ctx.prior["growth_strategy"]?.strategy || "";
-    const quickWins   = (ctx.prior["traffic_audit"]?.quickWins || []).length;
-    const badLcp      = ctx.prior["page_health"]?.badLcp || 0;
+    const gscData  = ctx.prior["traffic_audit"]      || {};
+    const onPage   = ctx.prior["page_health"]        || {};
+    const techData = ctx.prior["content_gap"]        || {};
+    const plan     = ctx.prior["growth_strategy"]?.plan || "";
 
-    const update = await llm(
-      `You are writing a client update for an SEO traffic growth campaign.
-Write in a professional but plain tone. Honest about timelines. No jargon.
-Max 250 words.`,
-      `Write a client update for a traffic growth SEO campaign.
+    const brief = await llm(
+      `You are writing a client brief for an SEO traffic growth campaign.
+The client is a business owner, not an SEO expert.
+Write in plain English. Be honest about what was found and what will happen.
+Cite real numbers. Never overpromise timelines.
+300-400 words. Professional but conversational tone.`,
+      `Write a client brief for a traffic growth SEO campaign.
 
-Target pages: ${targetUrls.length > 0 ? targetUrls.slice(0,5).map(u => u.replace(/^https?:\/\/[^/]+/,'') || '/').join(", ") : "your key product/category pages"}
-Quick win opportunities found: ${quickWins}
-Pages with slow load times: ${badLcp}
+Site: ${targetUrls[0] ? (targetUrls[0].match(/^https?:\/\/[^/]+/)?.[0] || "their website") : "their website"}
+Target pages: ${targetUrls.length} pages
+Pages invisible to Google: ${(gscData.invisiblePages||[]).length}
+Quick-win opportunities: ${(gscData.quickWins||[]).length} pages at positions 4-20
+On-page issues found: ${onPage.issueCount || 0}
+Average performance score: ${techData.avgScore !== null && techData.avgScore !== undefined ? techData.avgScore+"/100" : "not tested"}
 
-Strategy summary:
-${strategy.slice(0, 800)}
+Action plan summary (first 500 chars):
+${plan.slice(0, 500)}
 
-Write a brief client-facing update covering:
-1. What we found (1-2 sentences)
-2. What we're doing first and why
-3. What they can expect in 30/60/90 days
-Keep it confident but honest about timelines.`
+Write:
+1. What we found (2-3 sentences with real numbers)
+2. What we're doing first and why (most impactful actions)
+3. What they should expect in 30 / 60 / 90 days (honest ranges)
+4. What we need from them (content approvals, developer access, etc.)`
     );
 
     return {
       ok: true,
-      output: { update },
+      output: { brief },
       artifact: {
         kind: "client_update",
-        title: "Client Update — Traffic Growth",
-        body: `## Client Update\n\n${update || "Client update could not be generated."}`,
+        title: "Client Brief — Traffic Growth",
+        body: `# Client Brief\n\n${brief}`,
       },
-      honest_note: "Client update written from strategy and findings.",
+      honest_note: `Brief written from real audit findings across ${targetUrls.length} target pages.`,
     };
   },
 };
+
 
 /* ════════════════════════════════════════════════════════════════
    Export pipeline definition
@@ -530,14 +700,14 @@ Keep it confident but honest about timelines.`
 export function buildTrafficGrowthPipeline(): PipelineDefinition {
   return {
     type: "traffic_growth" as any,
-    llm_call_cap: 20,
+    llm_call_cap: 25,
     steps: [
-      stepTrafficAudit,
-      stepPageHealth,
-      stepContentGap,
-      stepInternalLinkFlow,
-      stepGrowthStrategy,
-      stepClientUpdate,
+      stepVisibilityAudit,
+      stepOnPageFundamentals,
+      stepTechnicalPerformance,
+      stepInternalLinks,
+      stepActionPlan,
+      stepClientBrief,
     ],
   };
 }
