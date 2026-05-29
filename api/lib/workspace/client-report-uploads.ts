@@ -171,17 +171,39 @@ export async function clientReportUploadAttachment(opts: {
       contentType: ct, cacheControl: "3600", upsert: false,
     });
     if (upErr) {
-      // Bucket not yet created? Surface a friendly error.
-      if (/Bucket not found|not.found/i.test(upErr.message || "")) {
-        return { success: false, error: `Storage bucket '${BUCKET}' not found — run the Build 10b migration in Supabase first.` };
+      // Always log the FULL error server-side so the Vercel logs have the
+      // unguessed signal — past attempts to be clever with friendly-error
+      // regexes have hidden the real cause.
+      console.error(`[workspace/client-report-upload] storage upload failed for path=${storagePath} ct=${ct} size=${buffer.length}:`, JSON.stringify({
+        message: upErr.message,
+        name: (upErr as any).name,
+        status: (upErr as any).status,
+        statusCode: (upErr as any).statusCode,
+        error: (upErr as any).error,
+        details: (upErr as any).details,
+        hint: (upErr as any).hint,
+        stack: (upErr as any).stack ? String((upErr as any).stack).split("\n").slice(0, 4) : undefined,
+      }));
+
+      const msg = String(upErr.message || "");
+      // Specific known causes get an actionable hint appended; the user
+      // still sees the underlying message so we don't lie about what's
+      // happening.
+      if (/Bucket not found|not.found/i.test(msg)) {
+        return { success: false, error: `Storage bucket '${BUCKET}' not found. Run the Build 10b migration in Supabase. (raw: ${msg})` };
       }
-      // Storage RLS not configured — by default a private bucket has no
-      // write policies, so service_role inserts get denied. Direct the
-      // operator to the patch migration that adds the policies.
-      if (/row.level security|new row violates|policy/i.test(upErr.message || "")) {
-        return { success: false, error: `Storage RLS is blocking the upload. Run workspace-build10b-policies-patch.sql in Supabase to add the four bucket policies (service_role SELECT/INSERT/UPDATE/DELETE for '${BUCKET}').` };
+      if (/row.level security|new row violates row.level/i.test(msg)) {
+        return { success: false, error: `Storage RLS is denying this upload. Verify policies on '${BUCKET}' bucket grant service_role SELECT/INSERT/UPDATE/DELETE with bucket_id = '${BUCKET}'. (raw: ${msg})` };
       }
-      return { success: false, error: `Storage upload failed: ${upErr.message}` };
+      if (/duplicate|already exists/i.test(msg)) {
+        return { success: false, error: `A file already exists at this path. Try again — the path includes a fresh UUID, so this should be transient. (raw: ${msg})` };
+      }
+      if (/payload too large|too large|413/i.test(msg)) {
+        return { success: false, error: `File too large for the storage backend's per-request limit. (raw: ${msg})` };
+      }
+      // Unknown cause — surface the verbatim message so we can diagnose
+      // properly instead of mislabeling it.
+      return { success: false, error: `Storage upload failed: ${msg}` };
     }
   } catch (e: any) {
     return { success: false, error: `Storage upload exception: ${e?.message}` };
