@@ -246,11 +246,12 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 240_000);
+    let stopReason = "";
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", signal: controller.signal,
         headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: userContent }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: "user", content: userContent }] }),
       });
       if (!r.ok) {
         const t = await r.text().catch(() => "");
@@ -259,14 +260,19 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
       }
       const d = await r.json();
       raw = (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+      stopReason = String(d?.stop_reason || "");
     } catch (e: any) {
       console.error(`[workspace/client-report-pdf] exc ${e?.message}${controller.signal.aborted ? " (timeout 240000ms)" : ""}`);
       return { success: false, error: "Client Report generation timed out or failed. Try removing attachments and retrying." };
     } finally { clearTimeout(timer); }
+    if (stopReason === "max_tokens") {
+      console.error(`[workspace/client-report-pdf] truncated at max_tokens — raw length ${raw.length}`);
+      return { success: false, error: "Report was cut off mid-generation (hit token ceiling). Shorten your context box, remove some attachments, or ask the model for a tighter format like 'one-page exec summary'." };
+    }
   } else {
     raw = await llm({
       system, user: userPrompt,
-      maxTokens: 8000, timeoutMs: 240_000, label: "client-report",
+      maxTokens: 16000, timeoutMs: 240_000, label: "client-report",
     });
   }
 
@@ -282,21 +288,46 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
       clean = clean.slice(first);
       try { parsed = JSON.parse(clean); }
       catch {
-        // Try one repair: trim to last brace
-        const last = clean.lastIndexOf("}");
-        if (last > 0) { try { parsed = JSON.parse(clean.slice(0, last + 1)); } catch { /* fall through */ } }
+        // Try a more thorough repair sequence
+        const tryRepair = (s: string): any => {
+          // Step 1: trim to last brace
+          const last = s.lastIndexOf("}");
+          if (last > 0) {
+            try { return JSON.parse(s.slice(0, last + 1)); } catch { /* keep trying */ }
+          }
+          // Step 2: balance braces — count opens vs closes and append missing closes
+          const opens = (s.match(/\{/g) || []).length;
+          const closes = (s.match(/\}/g) || []).length;
+          if (opens > closes) {
+            // Try closing the body_md string before adding braces (most common truncation point)
+            const candidates = [
+              s + '"' + "}".repeat(opens - closes),
+              s + "}".repeat(opens - closes),
+              s.replace(/"[^"]*$/, '"') + "}".repeat(opens - closes),  // close last unterminated string
+            ];
+            for (const c of candidates) {
+              try { return JSON.parse(c); } catch { /* keep trying */ }
+            }
+          }
+          return null;
+        };
+        parsed = tryRepair(clean);
       }
     }
   } catch { /* fall through */ }
 
-  // Graceful fallback if model produced prose
-  if (!parsed || !parsed.body_md) {
-    parsed = {
-      title: `Client Report · ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`,
-      summary: "Generated client report",
-      body_md: raw,
-      operator_notes: "Note: model did not produce structured JSON output; the body is the model's raw response. Review carefully before sending.",
-    };
+  // If we couldn't parse the JSON and the response looks truncated (no closing
+  // brace, or very long with prose at the end), refuse honestly rather than
+  // pretending mangled text is a successful report. This is what was wrong
+  // when you got the cut-off "and fixing it is This the unformatted completely"
+  // output — silently treating truncation as success.
+  if (!parsed || !parsed.body_md || typeof parsed.body_md !== "string" || parsed.body_md.length < 50) {
+    const looksTruncated = raw.length > 2000 && !raw.trim().endsWith("}");
+    console.error(`[workspace/client-report] could not parse response. raw length: ${raw.length}, looksTruncated: ${looksTruncated}, head: ${raw.slice(0, 200)}, tail: ${raw.slice(-200)}`);
+    if (looksTruncated) {
+      return { success: false, error: "Report appears to have been cut off mid-generation. Try a tighter context (e.g. 'one-page exec summary' instead of a long-form report), or remove some attachments to leave more room for output." };
+    }
+    return { success: false, error: "Model did not return a valid client report structure. Check Vercel logs for the raw output, then try again with a slightly different context." };
   }
 
   await status("saving");
