@@ -318,7 +318,7 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
     title: reportTitle,
     summary: parsed.summary ? String(parsed.summary).slice(0, 500) : null,
     body_md: bodyWithNotes,
-    confidence_rating: 0.9,
+    confidence_rating: "high",
     generated_by: "manual",
     data_sources: ["pillar findings", "panel discussion", "step evidence", opts.referenceText ? "operator-pasted reference" : null, (opts.attachmentIds?.length ? `${opts.attachmentIds.length} attachment(s)` : null)].filter(Boolean),
     llm_calls_used: 1,
