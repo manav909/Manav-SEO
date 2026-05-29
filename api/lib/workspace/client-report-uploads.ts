@@ -185,16 +185,9 @@ export async function clientReportUploadAttachment(opts: {
         stack: (upErr as any).stack ? String((upErr as any).stack).split("\n").slice(0, 4) : undefined,
       }));
 
-      // Probe: ask Postgres what role this connection is actually using.
-      // If RLS is denying us as 'anon' instead of 'service_role', that's
-      // the smoking gun for an env var problem, regardless of what we
-      // think we configured. The rpc may not exist on every project — if
-      // it fails, log a hint to add it. Either way the probe is
-      // diagnostic only, never thrown.
+      // Diagnostic: surface env-var state + the role claim of the key
+      // actually in use. Pure-JS, no DB calls — can't throw.
       try {
-        const { data: roleProbe } = await db().rpc("current_role_probe").catch(() => ({ data: null }));
-        // If the RPC doesn't exist, try a direct SELECT through the API
-        const { data: jwtProbe, error: jwtErr } = await db().from("workspace_runs").select("project_id").limit(1);
         const keyVarsPresent = {
           SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
           SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -202,19 +195,31 @@ export async function clientReportUploadAttachment(opts: {
           SUPABASE_ANON_KEY: !!process.env.SUPABASE_ANON_KEY,
           VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY,
         };
-        // Decode the actual key in use to surface its role claim (the JWT
-        // payload is base64; we read the role field only — no secrets logged)
-        const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
-        const actualKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+        const actualKey =
+          process.env.SUPABASE_SERVICE_KEY
+          || process.env.SUPABASE_SERVICE_ROLE_KEY
+          || process.env.SUPABASE_SECRET_KEY
+          || process.env.SUPABASE_ANON_KEY
+          || process.env.VITE_SUPABASE_ANON_KEY
+          || "";
+        // Decode the JWT's middle segment to read its 'role' claim.
+        // No secrets logged — only the role field.
         let keyRole = "unknown";
+        let keyLen = actualKey.length;
+        let keyHead = actualKey ? actualKey.slice(0, 12) : "(empty)";
         try {
-          const payload = actualKey.split(".")[1];
-          if (payload) {
-            const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
-            keyRole = decoded.role || "no-role-claim";
+          const parts = actualKey.split(".");
+          if (parts.length === 3) {
+            const padded = parts[1] + "===".slice((parts[1].length + 3) % 4);
+            const decoded = JSON.parse(Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+            keyRole = String(decoded?.role || "no-role-claim");
+          } else {
+            keyRole = "not-a-jwt";
           }
-        } catch { /* not a JWT */ }
-        console.error(`[workspace/client-report-upload] DIAGNOSTIC: keyVarsPresent=${JSON.stringify(keyVarsPresent)} keyInUseRoleClaim=${keyRole} workspace_runs_read_works=${!jwtErr}`);
+        } catch (jwtErr: any) {
+          keyRole = `decode-error: ${jwtErr?.message}`;
+        }
+        console.error(`[workspace/client-report-upload] DIAGNOSTIC: keyVarsPresent=${JSON.stringify(keyVarsPresent)} keyInUseRoleClaim=${keyRole} keyLen=${keyLen} keyHead=${keyHead}`);
       } catch (probeErr: any) {
         console.error(`[workspace/client-report-upload] diagnostic probe threw: ${probeErr?.message}`);
       }
