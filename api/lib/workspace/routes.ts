@@ -271,11 +271,16 @@ export async function wsGetRun(body: any) {
   }
   if (!run) return { success: true, run: null, steps: [], panel: null, reports: [] };
 
+  // Pillar reports for this run. Workspace runs often have no campaign_id, so
+  // we can't filter on it — match by project, the deep_analysis kind, and the
+  // run's start window. (Reports written before this run existed are excluded.)
+  const runStart = run.created_at || new Date(0).toISOString();
   const [steps, panels, reports] = await Promise.all([
     db().from("step_reports").select("id, step_key, report_md, worth_deeper_json, status, created_at").eq("run_id", run.id).order("created_at"),
     db().from("panel_sessions").select("*").eq("run_id", run.id).order("round", { ascending: false }),
     db().from("seo_campaign_reports").select("id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, data_sources, created_at")
-      .eq("campaign_id", run.campaign_id || "00000000-0000-0000-0000-000000000000").eq("report_kind", "deep_analysis").order("created_at", { ascending: false }),
+      .eq("project_id", run.project_id).in("report_kind", ["deep_analysis", "manual_refresh"]).gte("created_at", runStart)
+      .order("created_at", { ascending: false }),
   ]);
 
   return {
