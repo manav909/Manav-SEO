@@ -69,10 +69,10 @@ export async function runPanelRound(opts: {
 
 Goal: ${goal}
 ${framing ? `\nHow to frame this goal:\n${framing}\n` : ""}
-Your job is NOT to gather data or guess. It is to FRAME the problem for a team of scientist-analysts (the pillars) who will answer with deep verified data. Produce:
+Your job is NOT to gather data or guess. It is to FRAME the problem for the analyst pillars who will answer with deep, sourced data. Produce:
 1. SCENARIOS — the distinct, realistic paths to the goal that THIS project's evidence actually supports (e.g. recover near-ranking pages, fix indexation, capture untapped query clusters, displace specific competitors, convert existing traffic). Each grounded in specific evidence. No generic playbook items.
 2. QUESTIONS — for each scenario, the sharp questions each relevant role needs answered. Tag every question with the asking role and the pillar that must answer it (visibility, query_opportunity, on_page_health, technical_performance, internal_links, engagement, monitoring).
-3. CROSS-CHECKS — angles the panel wants the scientists to verify before trusting a conclusion.
+3. CROSS-CHECKS — angles the panel wants verified before trusting any conclusion.
 
 RULES: Every scenario and question must trace to a fact in the evidence. No assumptions, no fluff. If evidence is thin for a scenario, say what must be verified. Be specific to this project's actual data, never generic.
 
@@ -103,32 +103,55 @@ Respond with ONLY valid JSON, no prose, no fences:
 
 /* Render the panel discussion to a downloadable document. */
 export function renderPanelDocument(o: PanelOutput, round: number, manavInput?: string): string {
+  const roleLabel: Record<string, string> = { client: "Client", dms: "SEO Lead", writer: "Writer", brand: "Brand", pm: "PM", investor: "Investor", dev: "Dev" };
+  const pillarLabel: Record<string, string> = {
+    visibility: "Visibility", query_opportunity: "Query Opportunity", on_page_health: "On-Page Health",
+    technical_performance: "Technical Performance", internal_links: "Internal Links", engagement: "Engagement", monitoring: "Monitoring",
+  };
   const L: string[] = [];
-  L.push(`# Panel Discussion Document${round > 1 ? ` — Round ${round}` : ""}`);
+  L.push(`# Panel Discussion${round > 1 ? ` — Round ${round}` : ""}`);
   L.push("");
-  L.push(`> ${o.headline || ""}`);
+  if (o.headline) { L.push(`> ${o.headline}`); L.push(""); }
+
+  L.push(`## Scenarios on the table`);
   L.push("");
-  L.push(`## Scenarios`);
   (o.scenarios || []).forEach((s, i) => {
     L.push(`### ${i + 1}. ${s.title}`);
-    L.push(s.description || "");
-    if (s.traffic_lever) L.push(`- **Traffic lever:** ${s.traffic_lever}`);
-    if (s.evidence_basis) L.push(`- **Evidence basis:** ${s.evidence_basis}`);
+    if (s.description) { L.push(""); L.push(s.description); }
+    if (s.traffic_lever) { L.push(""); L.push(`**How it would move traffic.** ${s.traffic_lever}`); }
+    if (s.evidence_basis) { L.push(""); L.push(`**What the evidence shows.** ${s.evidence_basis}`); }
     L.push("");
   });
-  L.push(`## Questions for the scientists (by role → pillar)`);
-  const byRole: Record<string, PanelQuestion[]> = {};
-  (o.questions || []).forEach(q => { (byRole[q.role] = byRole[q.role] || []).push(q); });
-  for (const role of Object.keys(byRole)) {
-    L.push(`### ${role.toUpperCase()}`);
-    for (const q of byRole[role]) L.push(`- **[${q.pillar}]** ${q.question}${q.why ? ` _(${q.why})_` : ""}`);
+
+  // Questions grouped by PILLAR (which scientist must answer them), with the
+  // asking role shown as a quiet metadata tag — not a screaming heading.
+  const byPillar: Record<string, PanelQuestion[]> = {};
+  (o.questions || []).forEach(q => { (byPillar[q.pillar] = byPillar[q.pillar] || []).push(q); });
+  if (Object.keys(byPillar).length) {
+    L.push(`## Questions to investigate`);
     L.push("");
+    for (const pk of Object.keys(byPillar)) {
+      L.push(`### ${pillarLabel[pk] || pk}`);
+      for (const q of byPillar[pk]) {
+        L.push(`- ${q.question} _(asked by ${roleLabel[q.role] || q.role}${q.why ? ` — ${q.why}` : ""})_`);
+      }
+      L.push("");
+    }
   }
+
   if ((o.cross_checks || []).length) {
-    L.push(`## Cross-checks to verify`);
+    L.push(`## Cross-checks`);
+    L.push("");
     for (const c of o.cross_checks) L.push(`- ${c}`);
     L.push("");
   }
-  if (manavInput) { L.push(`## Manav's input (incorporated)`); L.push(manavInput); L.push(""); }
+
+  if (manavInput) {
+    L.push(`## Operator input (incorporated)`);
+    L.push("");
+    L.push(manavInput);
+    L.push("");
+  }
+
   return L.join("\n");
 }

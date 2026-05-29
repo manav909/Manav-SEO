@@ -385,7 +385,7 @@ export async function solvePillar(opts: {
       const fresh = await gatherVisibilityData(opts.projectId, targetUrls);
       block = fresh.block; provenance = fresh.provenance;
     } else {
-      return { success: false, error: `No evidence found for ${opts.pillar}. Run the deep steps first (Deep Steps tab) so the scientist has verified data — the steps are the gatherers; pillars solve on their output.` };
+      return { success: false, error: `No evidence found for ${opts.pillar}. Run the deep steps first (Deep Steps tab) so the pillar has verified data to work from — the steps are the gatherers; pillars analyse on their output.` };
     }
   }
 
@@ -395,12 +395,12 @@ export async function solvePillar(opts: {
     ? pillarQs.map(q => `  - [asked by ${q.role}] ${q.question}${q.why ? ` (why: ${q.why})` : ""}`)
     : interro.default_questions.map(q => `  - ${q}`);
 
-  await status("Investigating with verified tools");
-  const system = `You are a ${interro.expert_role}. You answer questions about the "${opts.pillar}" pillar with the rigour of an experimental scientist working in a lab.
+  await status("Analysing the evidence");
+  const system = `You are a ${interro.expert_role}. Produce a calm, professional analysis of the "${opts.pillar}" pillar for a senior stakeholder audience. No theatrical framing — never use words like "scientist", "lab", or "experiment" in your output. Just clear, rigorous, decision-ready findings.
 
-YOU HAVE A REAL TOOLKIT. Do not just summarise the evidence dossier — use the tools to actually verify the specific claims your answers will make. For every figure you cite, you must have either (a) found it in the provided evidence with its source labelled, or (b) called a tool to fetch it and recorded what the tool returned. No exceptions.
+YOU HAVE A REAL TOOLKIT. Use it to verify the specific claims your answers will make. For every figure you cite, you must have either (a) found it in the provided evidence with its source labelled, or (b) called a tool to fetch it and recorded what the tool returned. No exceptions, no inventions.
 
-When to use which tool (these are the rules of the lab):
+When to use which tool:
 - A specific page's on-page state → fetch_page(url).
 - A specific query's SERP / competitors / PAA → fetch_serp(query).
 - A specific GSC number for a query or page → get_gsc_for_query_or_page.
@@ -408,29 +408,42 @@ When to use which tool (these are the rules of the lab):
 - A specific page's Core Web Vitals → get_crux_for_page(url).
 - Movement over time → get_snapshot_history.
 - Cross-reference what another pillar found → read_other_pillar_report(pillar).
-- Any URL the operator has named in their context — fetch_page(url) works on any URL.
+- Any URL the operator has named in their context → fetch_page(url) works on any URL.
 
-Budgets and discipline:
-- You have at most ${MAX_TOOL_CALLS} tool calls. Use them on the highest-leverage verifications. Do not call tools for things already plainly answered by the evidence. Do not loop on the same query/url.
-- A null/no-data result from a tool is itself a verified fact — record it honestly and use it.
-- If a tool returns an error, recover: try a different angle or proceed without that data, but never invent the missing number.
+WHEN YOUR PRIMARY TOOL RETURNS NO DATA — do NOT just explain the absence. Before declaring a gap unresolvable, you MUST attempt at least 3 alternative verifications using your other tools:
+- Try the same tool with adjacent inputs (other URLs, broader query, longer time window).
+- Use a different tool that can substitute (e.g. if CrUX is null, fetch_page can surface HTML proxy signals: byte size, script counts, image dimensions).
+- Cross-reference a sibling pillar's report for related findings.
+Only after these are exhausted may you flag the residual gap as an open question.
 
-ABSOLUTE RULES for the final answer:
-- Every claim must cite its source inline, e.g. "13 of 17 pages invisible (source: GSC top pages)" or "competitor maxandlily.com has 1758 words vs this page's 320 (source: fetch_page)". Never state a number without its source.
-- Forecasts are CEILINGS and MUST use THIS site's own CTR curve (sum-of-clicks / sum-of-impressions per position) from the evidence. State the curve value you used.
-- Tag each insight with the stakeholder roles it serves: client, dms, writer, brand, pm, investor.
-- Honest and specific. No fluff. If something genuinely cannot be answered with the tools available, list it under open_questions with the role you'd ask.
+Budgets: at most ${MAX_TOOL_CALLS} tool calls per pillar. Spend them on high-leverage verifications. A null/no-data result is a verified fact — record it and use it. Errors: recover, never invent.
 
-WHEN YOU ARE DONE USING TOOLS, your FINAL message MUST be valid JSON only (no prose, no fences):
+OUTPUT RULES:
+- Every claim cites its source inline, e.g. "13 of 17 pages invisible (source: GSC top pages)". Never state a number without its source.
+- Forecasts are CEILINGS and MUST use THIS site's own impression-weighted CTR curve from the evidence (sum(clicks)/sum(impressions) per position). State the curve value used.
+- Tag each finding with the roles it serves: client, dms, writer, brand, pm, investor. (These are metadata for filtering — do not prefix every sentence with role names in prose.)
+- Open questions are framed as "what we still want to verify" — neutral, not as imperatives to named people.
+- Be specific. No fluff, no generic advice, no theatre.
+
+WHEN DONE USING TOOLS, produce ONLY this JSON (no prose, no fences):
 {
-  "headline": "one-sentence verdict citing the key sourced number",
+  "headline": "one-sentence finding citing the key sourced number",
+  "priority_actions": [
+    {"title":"short imperative, e.g. 'Rewrite title on /castle-bunk-bed'","detail":"one-sentence why with sourced figures","roles":["client","dms"],"effort":"low|medium|high","priority":1,"confidence":"high|medium|low"}
+  ],
+  "headline_findings": [
+    "one-sentence finding with sourced figures",
+    "another sourced one-sentence finding"
+  ],
   "state_of_play": "2-3 sentence factual summary with sources",
   "answers": [
     {"question":"the panel question or default","roles":["client","dms"],"answer":"sourced answer","evidence":"the specific sourced figures","action":"what to do","impact":"ceiling, with the CTR-curve value used","effort":"low|medium|high","priority":1,"confidence":"high|medium|low"}
   ],
-  "open_questions": ["what still needs verification, honestly"],
-  "ninety_day_plan": "prioritised week1 / month1 / quarter1 sequence grounded in the answers"
-}`;
+  "open_questions": ["what we still want to verify, honestly"],
+  "ninety_day_plan": "prioritised week1 / month1 / quarter1 sequence grounded in the priority_actions"
+}
+
+priority_actions = the 3-5 things to do next, ordered. answers = the detailed findings with evidence. headline_findings = 3-4 one-line takeaways. These are different fields with different purposes.`;
 
   let userPrompt = `PILLAR: ${opts.pillar}\nData sources available: ${interro.data_sources.join(", ")}\nTarget pages: ${targetUrls.length}\n\nEVIDENCE FROM THE DEEP STEPS (already verified and sourced):\n\n${block}\n\nQUESTIONS TO SOLVE:\n${questions.join("\n")}\n`;
   if (opts.manavContext) userPrompt += `\nADDITIONAL CONTEXT FROM THE OPERATOR — address this too (URLs they name here can be inspected with fetch_page):\n"""\n${opts.manavContext}\n"""\n`;
@@ -501,7 +514,7 @@ WHEN YOU ARE DONE USING TOOLS, your FINAL message MUST be valid JSON only (no pr
       panel_id: (panel as any)?.id || null,
       pillar: opts.pillar,
       report_kind: "deep_analysis",
-      title: (parsed.headline ? String(parsed.headline).slice(0, 200) : "") || `${opts.pillar} analysis`,
+      title: `${humanPillar(opts.pillar)} — Findings · ${new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}`,
       summary: parsed.state_of_play ? String(parsed.state_of_play).slice(0, 500) : null,
       body_md: md,
       confidence_rating: avgConfidence(parsed.answers),
@@ -538,35 +551,85 @@ WHEN YOU ARE DONE USING TOOLS, your FINAL message MUST be valid JSON only (no pr
 }
 
 function renderPillarReport(pillar: string, interro: Interrogation, p: any, provenance: SourcedFact[]): string {
-  const roleLabel: Record<string, string> = { client: "CLIENT", dms: "SPECIALIST", writer: "WRITER", brand: "BRAND", pm: "PM", investor: "INVESTOR", dev: "DEV" };
+  const roleLabel: Record<string, string> = { client: "Client", dms: "SEO Lead", writer: "Writer", brand: "Brand", pm: "PM", investor: "Investor", dev: "Dev" };
+  const renderRoles = (rs?: string[]) => (rs || []).map(r => roleLabel[r] || r).join(" · ");
   const L: string[] = [];
-  L.push(`# ${pillar.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())} — Scientist Solution`);
+  L.push(`# ${humanPillar(pillar)} — Findings & Recommendations`);
   L.push("");
-  if (p._raw) { L.push(`**Analyst:** ${interro.expert_role}`); L.push(""); L.push(p._raw); return L.join("\n"); }
-  L.push(`> ${p.headline || ""}`);
-  L.push("");
-  L.push(`**Analyst:** ${interro.expert_role}`);
-  L.push(`**Data sources:** ${interro.data_sources.join(", ")}`);
-  L.push("");
-  if (p.state_of_play) { L.push(`## State of play`); L.push(p.state_of_play); L.push(""); }
-  const answers = (p.answers || []).slice().sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5));
-  L.push(`## Solved questions (${answers.length})`);
-  L.push("");
-  for (const a of answers) {
-    const tags = (a.roles || []).map((r: string) => `[${roleLabel[r] || r.toUpperCase()}]`).join(" ");
-    L.push(`### ${tags} ${a.question || ""}`);
-    if (a.answer) L.push(`- **Answer:** ${a.answer}`);
-    if (a.evidence) L.push(`- **Evidence:** ${a.evidence}`);
-    if (a.action) L.push(`- **Action:** ${a.action}`);
-    if (a.impact) L.push(`- **Impact:** ${a.impact}`);
-    L.push(`- **Effort:** ${a.effort || "—"} · **Priority:** ${a.priority || "—"} · **Confidence:** ${a.confidence || "—"}`);
+  if (p._raw) { L.push(p._raw); return L.join("\n"); }
+  if (p.headline) { L.push(`> ${p.headline}`); L.push(""); }
+
+  // 1. WHAT TO DO — top of report, the actionable list
+  const actions = (p.priority_actions || []).slice().sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5));
+  if (actions.length) {
+    L.push(`## What to do`);
+    L.push("");
+    actions.forEach((a: any, i: number) => {
+      L.push(`**${i + 1}. ${a.title || ""}**${a.roles?.length ? ` — _${renderRoles(a.roles)}_` : ""}`);
+      if (a.detail) L.push(a.detail);
+      L.push(`_Effort: ${a.effort || "—"} · Confidence: ${a.confidence || "—"}_`);
+      L.push("");
+    });
+  }
+
+  // 2. WHAT WE FOUND — headline findings (one-liners)
+  const findings = p.headline_findings || [];
+  if (findings.length) {
+    L.push(`## What we found`);
+    L.push("");
+    for (const f of findings) L.push(`- ${f}`);
     L.push("");
   }
-  if ((p.open_questions || []).length) { L.push(`## Open questions (need verification)`); for (const q of p.open_questions) L.push(`- ${q}`); L.push(""); }
-  if (p.ninety_day_plan) { L.push(`## 90-day plan`); L.push(p.ninety_day_plan); L.push(""); }
-  L.push(`## Provenance`);
+
+  // 3. CONTEXT
+  if (p.state_of_play) { L.push(`## Context`); L.push(p.state_of_play); L.push(""); }
+
+  // 4. DETAILED FINDINGS — answers with evidence inline (still scannable)
+  const answers = (p.answers || []).slice().sort((a: any, b: any) => (a.priority || 5) - (b.priority || 5));
+  if (answers.length) {
+    L.push(`## Detailed findings`);
+    L.push("");
+    for (const a of answers) {
+      L.push(`### ${a.question || ""}`);
+      if (a.roles?.length) L.push(`_Relevant to: ${renderRoles(a.roles)}_`);
+      if (a.answer) { L.push(""); L.push(a.answer); }
+      if (a.evidence) { L.push(""); L.push(`**Evidence.** ${a.evidence}`); }
+      if (a.action) { L.push(""); L.push(`**Recommendation.** ${a.action}`); }
+      if (a.impact) { L.push(""); L.push(`**Expected impact.** ${a.impact}`); }
+      L.push("");
+      L.push(`_Effort: ${a.effort || "—"} · Priority: ${a.priority || "—"} · Confidence: ${a.confidence || "—"}_`);
+      L.push("");
+    }
+  }
+
+  // 5. STILL TO VERIFY (no imperatives, no naming roles as commands)
+  if ((p.open_questions || []).length) {
+    L.push(`## Still to verify`);
+    L.push("");
+    for (const q of p.open_questions) L.push(`- ${q}`);
+    L.push("");
+  }
+
+  // 6. 90-DAY PLAN
+  if (p.ninety_day_plan) { L.push(`## 90-day plan`); L.push(""); L.push(p.ninety_day_plan); L.push(""); }
+
+  // 7. APPENDIX — sources (was "Provenance")
+  L.push(`## Sources used`);
   for (const f of provenance) L.push(`- ${f.source}: ${typeof f.value === "number" ? f.value : JSON.stringify(f.value)}${f.note ? ` (${f.note})` : ""} — ${new Date(f.fetched_at).toLocaleString()}`);
   return L.join("\n");
+}
+
+function humanPillar(key: string): string {
+  const m: Record<string, string> = {
+    visibility: "Visibility",
+    query_opportunity: "Query Opportunity",
+    on_page_health: "On-Page Health",
+    technical_performance: "Technical Performance",
+    internal_links: "Internal Links",
+    engagement: "Engagement",
+    monitoring: "Monitoring",
+  };
+  return m[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function avgConfidence(answers: any[]): string {

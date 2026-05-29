@@ -13,11 +13,11 @@ import { SimpleMarkdown } from '@/components/pm/SeoCampaignsPanel';
 import { downloadStakeholderReport, openStakeholderReport } from '@/lib/reportExport';
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
-  wsGoalCatalog, wsComposeConfig,
+  wsGoalCatalog, wsComposeConfig, wsCancelRun, wsPollStatus,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
-  Send, Download, Copy, Check, ArrowRight, Sparkles, ExternalLink,
+  Send, Download, Copy, Check, ArrowRight, Sparkles, ExternalLink, X,
 } from 'lucide-react';
 
 const PILLARS = ['visibility', 'query_opportunity', 'on_page_health', 'technical_performance', 'internal_links', 'engagement', 'monitoring'];
@@ -53,6 +53,10 @@ export default function Workspace() {
   const [customLabel, setCustomLabel] = useState('');
   const [config, setConfig] = useState<any>(null);
   const [showPicker, setShowPicker] = useState(false);
+  // Solve-all queue state — surfaces which pillars are queued, running, done
+  const [queue, setQueue] = useState<{ done: string[]; running: string | null; pending: string[] } | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string>('');
+  const cancelRef = React.useRef(false);
 
   useEffect(() => { wsGoalCatalog().then((r) => { if (r.success) setCatalog(r); }); }, []);
 
@@ -128,17 +132,51 @@ export default function Workspace() {
 
   const solveAll = async () => {
     if (!selectedProjectId) return;
-    // Solve only the pillars this run's goal engages (from config), else all 7.
+    // Build the queue: pillars from run config (or all 7), excluding already-solved
     const target: string[] = (run?.run_config?.pillars && run.run_config.pillars.length) ? run.run_config.pillars : PILLARS;
-    for (const p of target) {
-      if (reports.find((r) => r.pillar === p)) continue;  // skip already-solved
-      setPillarBusy(p);
-      const r = await wsSolvePillar({ runId: run?.id, projectId: selectedProjectId, campaignId: run?.campaign_id, pillar: p });
-      if (!r.success) toast({ title: `${PILLAR_LABEL[p]} failed`, description: r.error, variant: 'destructive' });
-      await load();
+    const todo = target.filter(p => !reports.find((r) => r.pillar === p));
+    if (!todo.length) { toast({ title: 'All pillars already solved' }); return; }
+
+    cancelRef.current = false;
+    setQueue({ done: [], running: null, pending: todo });
+
+    // Live polling — every 2s we read pillar_status off the run row and surface it
+    let pollHandle: any = null;
+    const startPolling = () => {
+      if (!run?.id) return;
+      pollHandle = setInterval(async () => {
+        if (cancelRef.current) return;
+        const r = await wsPollStatus({ runId: run.id });
+        if (r.pillar_status) setLiveStatus(r.pillar_status);
+      }, 2000);
+    };
+    startPolling();
+
+    try {
+      for (let i = 0; i < todo.length; i++) {
+        if (cancelRef.current) { toast({ title: 'Stopped', description: `Cancelled before ${PILLAR_LABEL[todo[i]] || todo[i]}.` }); break; }
+        const p = todo[i];
+        setQueue({ done: todo.slice(0, i), running: p, pending: todo.slice(i + 1) });
+        setPillarBusy(p);
+        setLiveStatus(`${p}: starting`);
+        const r = await wsSolvePillar({ runId: run?.id, projectId: selectedProjectId, campaignId: run?.campaign_id, pillar: p });
+        if (!r.success) toast({ title: `${PILLAR_LABEL[p]} failed`, description: r.error, variant: 'destructive' });
+        await load();
+      }
+      if (!cancelRef.current) toast({ title: 'All pillars solved' });
+    } finally {
+      if (pollHandle) clearInterval(pollHandle);
+      setPillarBusy('');
+      setQueue(null);
+      setLiveStatus('');
+      cancelRef.current = false;
     }
-    setPillarBusy('');
-    toast({ title: 'Pillars solved', description: 'Reports ready in Documents.' });
+  };
+
+  const cancelAll = async () => {
+    cancelRef.current = true;
+    if (run?.id) { try { await wsCancelRun({ runId: run.id }); } catch { /* non-fatal */ } }
+    toast({ title: 'Cancelling', description: 'The currently-running pillar will finish; no more will start.' });
   };
 
   if (!selectedProjectId) {
@@ -318,16 +356,47 @@ export default function Workspace() {
           <div style={{ ...card }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>Pillar scientists</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>Pillar findings</div>
                 <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 2 }}>
-                  Each scientist solves its panel questions with deep, fully-sourced data. {run?.status !== 'pillars' && panel ? 'Release the panel (Panel tab) to feed them questions — or solve directly.' : 'You can also run any pillar directly (Path B).'}
+                  Each pillar answers its assigned panel questions with deep, fully-sourced data. {run?.status !== 'pillars' && panel ? 'Release the panel (Panel tab) to feed them questions — or solve directly.' : 'You can also run any pillar directly (Path B).'}
                 </div>
               </div>
-              <button onClick={solveAll} disabled={!!pillarBusy} style={primaryBtn(!!pillarBusy)}>
-                <FlaskConical size={13} /> {pillarBusy ? 'Solving…' : 'Solve all'}
-              </button>
+              {queue ? (
+                <button onClick={cancelAll} style={{ ...primaryBtn(false), background: 'hsla(0 70% 55% / 0.12)', borderColor: 'hsla(0 70% 55% / 0.4)', color: 'hsl(0 70% 65%)' }}>
+                  <X size={13} /> Stop
+                </button>
+              ) : (
+                <button onClick={solveAll} disabled={!!pillarBusy} style={primaryBtn(!!pillarBusy)}>
+                  <FlaskConical size={13} /> {pillarBusy ? 'Solving…' : 'Solve all'}
+                </button>
+              )}
             </div>
-            {run?.pillar_status && <div style={{ fontSize: 11, color: CYAN, marginTop: 8 }}>Working: {run.pillar_status}</div>}
+            {queue && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: 'rgba(150,160,180,0.7)', marginBottom: 8 }}>
+                  {queue.done.length} done · {queue.running ? '1 running' : 'idle'} · {queue.pending.length} pending
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {queue.done.map((p) => (
+                    <span key={p} style={{ ...chip(false), color: 'hsl(152 70% 65%)', borderColor: 'hsla(152 70% 50% / 0.35)', background: 'hsla(152 70% 50% / 0.12)' }}>✓ {PILLAR_LABEL[p]}</span>
+                  ))}
+                  {queue.running && (
+                    <span style={{ ...chip(true), display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      <Loader2 size={11} className="animate-spin" /> {PILLAR_LABEL[queue.running]}
+                    </span>
+                  )}
+                  {queue.pending.map((p) => (
+                    <span key={p} style={chip(false)}>{PILLAR_LABEL[p]}</span>
+                  ))}
+                </div>
+                {liveStatus && (
+                  <div style={{ fontSize: 11, color: CYAN, marginTop: 10, fontFamily: 'SF Mono, Menlo, monospace' }}>{liveStatus}</div>
+                )}
+              </div>
+            )}
+            {!queue && run?.pillar_status && run.pillar_status !== 'CANCEL_REQUESTED' && (
+              <div style={{ fontSize: 11, color: CYAN, marginTop: 8 }}>Last: {run.pillar_status}</div>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 10 }}>
             {PILLARS.map((p) => {
@@ -363,13 +432,28 @@ export default function Workspace() {
           </div>
           <SectionHeading title="Step evidence reports" />
           {steps.length === 0 && <Empty />}
-          {steps.map((s) => <DocCard key={s.id} title={s.step_key} body={s.report_md} kind="Deep Step Evidence" onExport={exportReport} onOpen={openReport} />)}
+          {steps.map((s) => {
+            const stepName: Record<string, string> = {
+              gsc_visibility: "GSC Visibility & Indexation", competitor_intel: "Competitor Intelligence",
+              query_landscape: "Query Landscape & Untapped", onpage_audit: "On-Page Audit",
+              core_web_vitals: "Core Web Vitals (field)", internal_link_graph: "Internal Link Graph",
+              engagement_value: "Engagement & Conversion Value", trajectory: "Trajectory",
+            };
+            const dateStr = new Date(s.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+            const label = `${stepName[s.step_key] || s.step_key} — Evidence · ${dateStr}`;
+            return <DocCard key={s.id} title={label} body={s.report_md} kind="Evidence Report" onExport={exportReport} onOpen={openReport} />;
+          })}
           <SectionHeading title="Panel discussion" />
           {!panel && <Empty />}
-          {panel && <DocCard title={`Panel Discussion — Round ${panel.round}`} body={panel.document_md} kind="Panel Discussion" onExport={exportReport} onOpen={openReport} />}
-          <SectionHeading title="Pillar solutions" />
+          {panel && <DocCard
+            title={`Panel Discussion — Round ${panel.round} · ${new Date(panel.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`}
+            body={panel.document_md} kind="Panel Discussion" onExport={exportReport} onOpen={openReport} />}
+          <SectionHeading title="Pillar findings" />
           {reports.length === 0 && <Empty />}
-          {reports.map((r) => <DocCard key={r.id} title={r.title || r.pillar} body={r.body_md} kind="Pillar Solution" onExport={exportReport} onOpen={openReport} />)}
+          {reports.map((r) => {
+            const label = r.title || `${PILLAR_LABEL[r.pillar] || r.pillar} — Findings · ${new Date(r.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`;
+            return <DocCard key={r.id} title={label} body={r.body_md} kind="Findings & Recommendations" onExport={exportReport} onOpen={openReport} />;
+          })}
         </div>
       )}
     </div>

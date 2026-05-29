@@ -4329,3 +4329,11 @@ export async function wsGetRun(opts: { runId?: string; projectId?: string }):
   Promise<{ success?: boolean; run?: any; steps?: any[]; panel?: any; panel_rounds?: any[]; reports?: any[]; error?: string }> {
   return post(ENGINE, { action: 'ws_get_run', ...opts });
 }
+export async function wsCancelRun(opts: { runId: string }):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'ws_cancel_run', ...opts });
+}
+export async function wsPollStatus(opts: { runId: string }):
+  Promise<{ success?: boolean; pillar_status?: string | null; error?: string }> {
+  return post(ENGINE, { action: 'ws_poll_status', ...opts });
+}

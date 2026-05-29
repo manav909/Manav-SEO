@@ -229,6 +229,22 @@ export async function wsReleaseToPillars(body: any) {
   return { success: true };
 }
 
+/* ─── cancel an in-flight solve-all by setting a flag on the run ───── */
+export async function wsCancelRun(body: any) {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+  await db().from("workspace_runs").update({ pillar_status: "CANCEL_REQUESTED" }).eq("id", runId);
+  return { success: true };
+}
+
+/* ─── lightweight poll of pillar_status only (for live solve-all UI) ── */
+export async function wsPollStatus(body: any) {
+  const { runId } = body || {};
+  if (!runId) return { success: false, error: "runId required" };
+  const { data } = await db().from("workspace_runs").select("pillar_status").eq("id", runId).maybeSingle();
+  return { success: true, pillar_status: (data as any)?.pillar_status || null };
+}
+
 /* ─── solve one pillar (Path A from panel, or Path B direct) ───── */
 export async function wsSolvePillar(body: any) {
   const { runId, projectId, campaignId, pillar, manavContext, targetUrls } = body || {};
@@ -303,6 +319,8 @@ export async function handleWorkspace(action: string, body: any): Promise<any | 
     case "ws_run_panel":           return wsRunPanel(body);
     case "ws_release_to_pillars":  return wsReleaseToPillars(body);
     case "ws_solve_pillar":        return wsSolvePillar(body);
+    case "ws_cancel_run":          return wsCancelRun(body);
+    case "ws_poll_status":         return wsPollStatus(body);
     case "ws_get_run":             return wsGetRun(body);
     default: return null;
   }

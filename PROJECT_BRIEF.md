@@ -1,6 +1,6 @@
 # PROJECT_BRIEF — SEO Season · Quantum Intelligence Workspace
 
-_Last updated: 2026-05-28 (Build 3a shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
+_Last updated: 2026-05-28 (Build 3b + 4 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
 
 ---
 
@@ -86,3 +86,7 @@ Re-upload this + ARCHITECTURE.md at session start. Re-clone repo; git pull main;
 
 
 Build 3a — Pillars with a real toolkit [SHIPPED 2026-05-28]: solvePillar is now an Anthropic tool-use loop. Per-pillar declared toolkit (UNIVERSAL_TOOLS = fetch_page + read_other_pillar_report, plus pillar-specific: fetch_serp, get_gsc_for_query_or_page, get_ga4_for_page, get_crux_for_page, get_snapshot_history). Budgets: 8 target tool calls / 12 hard cap / 180s wall-time per pillar. Status updates show each tool call live ('tool 3/8: fetch_page(...)').
+
+Build 3b — Solve-all visibility + Stop [SHIPPED 2026-05-29]: Live queue UI (done/running/pending chips), 2s polling of pillar_status surfaces "tool 3/8: fetch_page(...)" as the loop runs, Stop button cancels remaining pillars (in-flight one finishes). New routes: ws_cancel_run, ws_poll_status.
+
+Build 4 — Report readability + tone [SHIPPED 2026-05-29]: Decision-first pillar schema (priority_actions field added at top, separate from answers). Pillar prompts rewritten — "scientist/lab" stripped from all output, calmer professional tone. New "exhaust alternatives" rule: when primary tool returns null, scientist must try ≥3 alternative verifications (adjacent inputs, substitute tools, sibling pillar reports) before declaring a gap. Pillar renderer redesigned: "What to do" → "What we found" → "Context" → "Detailed findings" → "Still to verify" → "90-day plan" → "Sources used". Role chips moved from screaming caps prefixes to quiet metadata tags. Panel renderer regrouped questions by pillar (with asking role as quiet tag) instead of role-grouped. Self-identifying document titles in collapsed DocCard rows ("On-Page Health — Findings · 29 May"). 'Pillar findings' replaces 'Pillar scientists' in UI section heading. Branded HTML export inherits the new structure via mdToHtml. NOT YET done: stakeholder export reportExport.ts could surface priority_actions even more prominently visually in HTML (today renders sections as-is). After running, judge whether priority_actions visibility is enough; if not, separate styling pass.
