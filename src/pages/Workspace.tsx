@@ -56,6 +56,13 @@ export default function Workspace() {
   // Solve-all queue state — surfaces which pillars are queued, running, done
   const [queue, setQueue] = useState<{ done: string[]; running: string | null; pending: string[] } | null>(null);
   const [liveStatus, setLiveStatus] = useState<string>('');
+  // Sticky error surface — toasts can be missed. Any operation that fails sets
+  // this, rendered as a dismissible banner near the top of the page.
+  const [lastError, setLastError] = useState<{ where: string; message: string } | null>(null);
+  const reportError = (where: string, message: string) => {
+    setLastError({ where, message });
+    toast({ title: where, description: message, variant: 'destructive' });
+  };
   const cancelRef = React.useRef(false);
 
   useEffect(() => { wsGoalCatalog().then((r) => { if (r.success) setCatalog(r); }); }, []);
@@ -92,12 +99,12 @@ export default function Workspace() {
     const stepOverrides = (config?.steps || []).map((s: any) => ({ key: s.key, enabled: s.enabled, depth: s.depth }));
     setBusy('Creating run');
     const cr = await wsCreateRun({ projectId: selectedProjectId, goalIds: selectedGoals, customLabel: customLabel || undefined, stepOverrides });
-    if (!cr.success || !cr.run_id) { toast({ title: 'Could not start run', description: cr.error, variant: 'destructive' }); setBusy(''); return; }
+    if (!cr.success || !cr.run_id) { reportError('Could not start run', cr.error || 'unknown error'); setBusy(''); return; }
     setShowPicker(false);
     setBusy('Deep steps gathering verified evidence — full GSC + live-crawl + SerpAPI pass');
     const ds = await wsRunDeepSteps({ runId: cr.run_id, projectId: selectedProjectId });
     setBusy('');
-    if (!ds.success) { toast({ title: 'Deep steps failed', description: ds.error, variant: 'destructive' }); }
+    if (!ds.success) { reportError('Deep steps failed', ds.error || 'unknown error'); }
     else { toast({ title: 'Evidence gathered', description: 'Step reports ready. Review, then run the panel.' }); }
     await load();
   };
@@ -107,7 +114,7 @@ export default function Workspace() {
     setBusy(round === 1 ? 'Panel discussing the evidence (round 1)' : 'Panel re-discussing with your input (round 2)');
     const r = await wsRunPanel({ runId: run.id, projectId: selectedProjectId!, round, manavInput: round >= 2 ? manavInput : undefined });
     setBusy('');
-    if (!r.success) toast({ title: 'Panel failed', description: r.error, variant: 'destructive' });
+    if (!r.success) reportError('Panel failed', r.error || 'unknown error');
     else { toast({ title: `Panel round ${round} complete`, description: 'Review each role\'s questions, then add input or release to pillars.' }); setManavInput(''); }
     await load();
     setSection('panel');
@@ -128,7 +135,7 @@ export default function Workspace() {
     setPillarBusy(pillar);
     const r = await wsSolvePillar({ runId: run?.id, projectId: selectedProjectId, campaignId: run?.campaign_id, pillar });
     setPillarBusy('');
-    if (!r.success) toast({ title: `${PILLAR_LABEL[pillar]} failed`, description: r.error, variant: 'destructive' });
+    if (!r.success) reportError(`${PILLAR_LABEL[pillar]} failed`, r.error || 'unknown error');
     else toast({ title: `${PILLAR_LABEL[pillar]} solved`, description: 'Report ready in Documents.' });
     await load();
   };
@@ -163,7 +170,7 @@ export default function Workspace() {
         setPillarBusy(p);
         setLiveStatus(`${p}: starting`);
         const r = await wsSolvePillar({ runId: run?.id, projectId: selectedProjectId, campaignId: run?.campaign_id, pillar: p });
-        if (!r.success) toast({ title: `${PILLAR_LABEL[p]} failed`, description: r.error, variant: 'destructive' });
+        if (!r.success) reportError(`${PILLAR_LABEL[p]} failed`, r.error || 'unknown error');
         await load();
       }
       if (!cancelRef.current) toast({ title: 'All pillars solved' });
@@ -187,7 +194,7 @@ export default function Workspace() {
     setBusy('Taking pillar questions to the panel for a fresh round');
     const r = await wsTakeEscalationsToPanel({ runId: run.id, projectId: selectedProjectId });
     setBusy('');
-    if (!r.success) toast({ title: 'Could not run panel', description: r.error, variant: 'destructive' });
+    if (!r.success) reportError('Could not run panel', r.error || 'unknown error');
     else { toast({ title: 'Panel round started', description: 'Review the new round in the Panel tab.' }); setSection('panel'); }
     await load();
   };
@@ -250,6 +257,18 @@ export default function Workspace() {
         <div style={{ ...card, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10, borderColor: 'hsla(186 80% 55% / 0.3)' }}>
           <Loader2 size={15} className="animate-spin" style={{ color: CYAN }} />
           <span style={{ fontSize: 12.5 }}>{busy}…</span>
+        </div>
+      )}
+
+      {lastError && (
+        <div style={{ ...card, marginBottom: 16, borderColor: 'hsla(0 70% 55% / 0.45)', background: 'linear-gradient(180deg, hsla(0 70% 55% / 0.08), rgba(15,16,24,0.7))' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'hsl(0 70% 70%)', marginBottom: 4 }}>{lastError.where}</div>
+              <div style={{ fontSize: 12, color: 'rgba(225,228,238,0.85)', lineHeight: 1.5 }}>{lastError.message}</div>
+            </div>
+            <button onClick={() => setLastError(null)} style={{ ...iconBtn(), borderColor: 'hsla(0 70% 55% / 0.3)' }} title="Dismiss"><X size={12} /></button>
+          </div>
         </div>
       )}
 

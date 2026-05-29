@@ -88,16 +88,40 @@ Respond with ONLY valid JSON, no prose, no fences:
   if (opts.round >= 2 && opts.priorOutput) {
     user += `\nThis is ROUND 2. Here is the panel's round-1 output — BUILD ON IT, do not discard it:\n${JSON.stringify(opts.priorOutput, null, 2)}\n`;
   }
+
+  // Detect escalation-mode input: the operator passed the pillars' escalations
+  // (the wsTakeEscalationsToPanel route prepends a recognisable header). In
+  // that case the panel's job changes — discuss + route the escalated
+  // questions, do NOT invent fresh scenarios from raw evidence.
+  const isEscalationMode = !!opts.manavInput && /pillar analyses have surfaced questions/i.test(opts.manavInput);
+
   if (opts.round >= 2 && opts.manavInput) {
-    user += `\nManav (the operator and a panel member) has added the following context/scenarios/data. Incorporate it: refine existing scenarios, add new ones it implies, and add or adjust questions accordingly:\n"""\n${opts.manavInput}\n"""\n`;
+    if (isEscalationMode) {
+      user += `\nESCALATION ROUND. The pillars (analysts) have done their work and surfaced specific questions that need this panel's judgement. Your job in this round is NOT to invent new traffic scenarios — it is to:\n` +
+        `  1) Discuss each escalated question in the context of the project's goal and the round-1 scenarios.\n` +
+        `  2) For each, decide whether the panel can answer it directly here (because it's a judgement call — brand voice, client priority, trade-off) — OR whether it needs to go back to a pillar for re-investigation with a sharper framing.\n` +
+        `  3) Produce refined scenarios only where the escalation genuinely changes the picture; otherwise keep round-1 scenarios as-is.\n` +
+        `  4) Produce one QUESTION entry per escalated item, routed to the role(s) best placed to answer (or back to the pillar with a sharper framing in the 'why' field).\n\n` +
+        `The operator's input (the escalations):\n"""\n${opts.manavInput}\n"""\n`;
+    } else {
+      user += `\nThe operator (a panel member) has added the following context/scenarios/data. Incorporate it: refine existing scenarios, add new ones it implies, and add or adjust questions accordingly:\n"""\n${opts.manavInput}\n"""\n`;
+    }
   }
   user += `\nProduce the panel output as JSON now.`;
 
   const raw = await llm({ system, user, maxTokens: 7000, timeoutMs: 120000, label: "panel" });
   if (!raw) return { success: false, error: "Panel discussion returned empty (LLM timeout or error)." };
   const output = parseJsonResponse<PanelOutput>(raw);
-  if (!output || !Array.isArray(output.scenarios)) return { success: false, error: "Panel output could not be parsed." };
-
+  if (!output) return { success: false, error: "Panel output could not be parsed as JSON." };
+  // Normalise: missing arrays are valid (especially in escalation rounds where
+  // there may be no new scenarios, just routed questions). Reject only if the
+  // whole structure is empty.
+  output.scenarios = Array.isArray(output.scenarios) ? output.scenarios : [];
+  output.questions = Array.isArray(output.questions) ? output.questions : [];
+  output.cross_checks = Array.isArray(output.cross_checks) ? output.cross_checks : [];
+  if (!output.scenarios.length && !output.questions.length) {
+    return { success: false, error: "Panel produced no scenarios or questions — likely the model didn't follow the JSON schema." };
+  }
   return { success: true, output };
 }
 
