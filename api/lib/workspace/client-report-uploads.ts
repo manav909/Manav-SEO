@@ -171,9 +171,7 @@ export async function clientReportUploadAttachment(opts: {
       contentType: ct, cacheControl: "3600", upsert: false,
     });
     if (upErr) {
-      // Always log the FULL error server-side so the Vercel logs have the
-      // unguessed signal — past attempts to be clever with friendly-error
-      // regexes have hidden the real cause.
+      // Log the full error server-side regardless of category.
       console.error(`[workspace/client-report-upload] storage upload failed for path=${storagePath} ct=${ct} size=${buffer.length}:`, JSON.stringify({
         message: upErr.message,
         name: (upErr as any).name,
@@ -185,51 +183,12 @@ export async function clientReportUploadAttachment(opts: {
         stack: (upErr as any).stack ? String((upErr as any).stack).split("\n").slice(0, 4) : undefined,
       }));
 
-      // Diagnostic: surface env-var state + the role claim of the key
-      // actually in use. Pure-JS, no DB calls — can't throw.
-      try {
-        const keyVarsPresent = {
-          SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
-          SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-          SUPABASE_SECRET_KEY: !!process.env.SUPABASE_SECRET_KEY,
-          SUPABASE_ANON_KEY: !!process.env.SUPABASE_ANON_KEY,
-          VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY,
-        };
-        const actualKey =
-          process.env.SUPABASE_SERVICE_KEY
-          || process.env.SUPABASE_SERVICE_ROLE_KEY
-          || process.env.SUPABASE_SECRET_KEY
-          || process.env.SUPABASE_ANON_KEY
-          || process.env.VITE_SUPABASE_ANON_KEY
-          || "";
-        // Decode the JWT's middle segment to read its 'role' claim.
-        // No secrets logged — only the role field.
-        let keyRole = "unknown";
-        let keyLen = actualKey.length;
-        let keyHead = actualKey ? actualKey.slice(0, 12) : "(empty)";
-        try {
-          const parts = actualKey.split(".");
-          if (parts.length === 3) {
-            const padded = parts[1] + "===".slice((parts[1].length + 3) % 4);
-            const decoded = JSON.parse(Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
-            keyRole = String(decoded?.role || "no-role-claim");
-          } else {
-            keyRole = "not-a-jwt";
-          }
-        } catch (jwtErr: any) {
-          keyRole = `decode-error: ${jwtErr?.message}`;
-        }
-        console.error(`[workspace/client-report-upload] DIAGNOSTIC: keyVarsPresent=${JSON.stringify(keyVarsPresent)} keyInUseRoleClaim=${keyRole} keyLen=${keyLen} keyHead=${keyHead}`);
-      } catch (probeErr: any) {
-        console.error(`[workspace/client-report-upload] diagnostic probe threw: ${probeErr?.message}`);
-      }
-
       const msg = String(upErr.message || "");
       if (/Bucket not found|not.found/i.test(msg)) {
         return { success: false, error: `Storage bucket '${BUCKET}' not found. Run the Build 10b migration in Supabase. (raw: ${msg})` };
       }
       if (/row.level security|new row violates row.level/i.test(msg)) {
-        return { success: false, error: `Storage RLS is denying this upload. Check Vercel function logs for the DIAGNOSTIC line — it shows which env vars are present and the role claim of the key actually in use. If keyInUseRoleClaim is 'anon', the SUPABASE_SERVICE_KEY env var is missing or wrong. (raw: ${msg})` };
+        return { success: false, error: `Storage RLS is still denying uploads. Easiest fix: in Supabase, make the '${BUCKET}' bucket public (storage.buckets.public = true). UUID-based paths keep files unguessable. (raw: ${msg})` };
       }
       if (/duplicate|already exists/i.test(msg)) {
         return { success: false, error: `A file already exists at this path. Try again — the path includes a fresh UUID, so this should be transient. (raw: ${msg})` };
