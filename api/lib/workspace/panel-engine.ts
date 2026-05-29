@@ -252,7 +252,32 @@ async function dispatchPanelTool(name: string, input: any, ctx: PanelToolCtx, st
 const PANEL_MAX_TOOL_CALLS      = 5;
 const PANEL_MAX_TOOL_CALLS_HARD = 8;
 const PANEL_MAX_LOOP_TURNS      = PANEL_MAX_TOOL_CALLS_HARD + 3;
-const PANEL_TOTAL_BUDGET_MS     = 180_000;
+const PANEL_TOTAL_BUDGET_MS     = 270_000;  // 4.5 min wall-time (allows ~one 4-min LLM call + tool dispatches)
+
+/* Compact a step's full report_md down to the panel's actual needs: the
+   step name, top-level headlines, "what we found" / state-of-play, and the
+   worth_deeper flags. Drops markdown table rows (per-page detail) — the
+   pillars get the full evidence verbatim; the panel only needs the picture. */
+function skimStepReportForPanel(md: string, maxLen = 6000): string {
+  if (!md) return "";
+  const lines = md.split("\n");
+  const kept: string[] = [];
+  let inTable = false, droppedTableRows = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith("|") && t.endsWith("|")) { inTable = true; droppedTableRows++; continue; }
+    if (inTable && t === "") {
+      inTable = false;
+      if (droppedTableRows > 2) kept.push(`_…(${droppedTableRows} table rows omitted from panel view; full detail in pillar evidence)…_`);
+      droppedTableRows = 0;
+      continue;
+    }
+    inTable = false;
+    kept.push(line);
+    if (kept.join("\n").length > maxLen) { kept.push("_…(truncated for panel context)…_"); break; }
+  }
+  return kept.join("\n");
+}
 
 async function loadStepEvidence(runId: string): Promise<{ reports: string; goal: string; framing: string }> {
   const { data: run } = await db().from("workspace_runs").select("goal, run_config").eq("id", runId).maybeSingle();
@@ -264,7 +289,7 @@ async function loadStepEvidence(runId: string): Promise<{ reports: string; goal:
   const latest: Record<string, any> = {};
   for (const s of ((steps || []) as any[])) { if (!latest[s.step_key]) latest[s.step_key] = s; }
   const reports = Object.values(latest).map((s: any) =>
-    `### Evidence: ${s.step_key}${(s.version || 1) > 1 ? ` (v${s.version})` : ""}\n${s.report_md || ""}\n\nFlagged for deeper investigation:\n${(s.worth_deeper_json || []).map((w: string) => `- ${w}`).join("\n") || "- (none)"}`
+    `### Evidence: ${s.step_key}${(s.version || 1) > 1 ? ` (v${s.version})` : ""}\n${skimStepReportForPanel(s.report_md || "")}\n\nFlagged for deeper investigation:\n${(s.worth_deeper_json || []).map((w: string) => `- ${w}`).join("\n") || "- (none)"}`
   ).join("\n\n---\n\n");
   return {
     reports,
@@ -336,7 +361,7 @@ ${isEscalationMode ? `\nESCALATION ROUND. The pillars have done their first pass
 
   let userPrompt = projectContext + `VERIFIED EVIDENCE FROM THE DEEP STEPS (latest version of each step):\n\n${reports}\n\n`;
   if (opts.round >= 2 && opts.priorOutput) {
-    userPrompt += `\nPrior round output — BUILD ON IT, do not discard:\n${JSON.stringify(opts.priorOutput, null, 2)}\n`;
+    userPrompt += `\nPrior round output — BUILD ON IT, do not discard:\n${JSON.stringify(opts.priorOutput)}\n`;
   }
   if (opts.manavInput) {
     userPrompt += `\nOperator input for this round:\n"""\n${opts.manavInput}\n"""\n`;
@@ -360,7 +385,7 @@ ${isEscalationMode ? `\nESCALATION ROUND. The pillars have done their first pass
     const turnTools = remaining > 0 ? PANEL_TOOL_DEFS : [];
     const res = await llmWithTools({
       system, messages, tools: turnTools,
-      maxTokens: 8000, timeoutMs: 150000, label: `panel-r${opts.round}`,
+      maxTokens: 8000, timeoutMs: 300_000, label: `panel-r${opts.round}`,
     });
     if (!res) return { success: false, error: "Panel returned empty (LLM timeout or error)." };
 
