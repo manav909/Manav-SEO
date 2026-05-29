@@ -280,6 +280,10 @@ Respond with ONLY valid JSON (no prose, no fences):
       confidence_rating: avgConfidence(parsed.answers),
       generated_by: "manual",
       data_sources: interro.data_sources,
+      // Schema-confirmed NOT NULL counters — set explicitly so the insert
+      // succeeds whether or not the column carries a DB-side default.
+      llm_calls_used: 1,
+      web_searches_used: 0,
     };
     let { data: inserted, error } = await db().from("seo_campaign_reports").insert(row).select("id").single();
     if (error && /report_kind/i.test(error.message || "")) {
