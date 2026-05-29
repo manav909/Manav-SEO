@@ -1,6 +1,6 @@
 # PROJECT_BRIEF — SEO Season · Quantum Intelligence Workspace
 
-_Last updated: 2026-05-28 (Build 2 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
+_Last updated: 2026-05-28 (Build 3a shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
 
 ---
 
@@ -83,3 +83,6 @@ Client: grounded forecast from OWN CTR curve. DMS: verified competitor compariso
 
 ## 9. SESSION RITUAL
 Re-upload this + ARCHITECTURE.md at session start. Re-clone repo; git pull main; build+verify in working dir; Manav deploys. Never claim done without end-to-end verification. When a DB write fails silently, get the EXACT error (toast or direct SQL insert test) before theorizing — that single fact ends guessing (lesson: project_id NOT NULL + report_kind/generated_by CHECK constraints caused days of blind patching).
+
+
+Build 3a — Pillars with a real toolkit [SHIPPED 2026-05-28]: solvePillar is now an Anthropic tool-use loop. Per-pillar declared toolkit (UNIVERSAL_TOOLS = fetch_page + read_other_pillar_report, plus pillar-specific: fetch_serp, get_gsc_for_query_or_page, get_ga4_for_page, get_crux_for_page, get_snapshot_history). Budgets: 8 target tool calls / 12 hard cap / 180s wall-time per pillar. Status updates show each tool call live ('tool 3/8: fetch_page(...)').

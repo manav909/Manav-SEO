@@ -97,3 +97,50 @@ export function parseJsonResponse<T = any>(raw: string): T | null {
   try { return JSON.parse(clean) as T; } catch { /* try repair */ }
   try { return JSON.parse(repairTruncatedJson(clean)) as T; } catch { return null; }
 }
+
+/* ════════════ Tool-use LLM call ═════════════════════════════════
+   Single round-trip of an Anthropic Messages API call that can include tool
+   definitions. Returns the full content blocks and stop_reason so the caller
+   can implement a tool-use loop (model requests tool → caller executes →
+   feeds tool_result back → model continues).
+══════════════════════════════════════════════════════════════════ */
+export interface ToolUseLlmResult {
+  content: Array<any>;     // raw content blocks (text, tool_use, ...)
+  stop_reason: string;     // "end_turn" | "tool_use" | "max_tokens" | "stop_sequence"
+  usage?: { input_tokens?: number; output_tokens?: number };
+}
+
+export async function llmWithTools(opts: {
+  system: string;
+  messages: Array<{ role: "user" | "assistant"; content: any }>;
+  tools?: Array<{ name: string; description: string; input_schema: any }>;
+  maxTokens?: number;
+  timeoutMs?: number;
+  label?: string;
+}): Promise<ToolUseLlmResult | null> {
+  const { system, messages, tools, maxTokens = 6000, timeoutMs = 120000, label = "llm-tools" } = opts;
+  if (!ANTHROPIC_API_KEY) { console.error(`[workspace/${label}] ANTHROPIC_API_KEY missing`); return null; }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const body: any = { model: MODEL, max_tokens: maxTokens, system, messages };
+    if (tools && tools.length) body.tools = tools;
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST", signal: controller.signal,
+      headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      console.error(`[workspace/${label}] LLM ${r.status}: ${t.slice(0, 400)}`);
+      return null;
+    }
+    const d = await r.json();
+    return { content: d?.content || [], stop_reason: d?.stop_reason || "end_turn", usage: d?.usage };
+  } catch (e: any) {
+    console.error(`[workspace/${label}] exc ${e?.message}${controller.signal.aborted ? ` (timeout ${timeoutMs}ms)` : ""}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}

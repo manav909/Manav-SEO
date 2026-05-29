@@ -155,5 +155,26 @@ export async function resolveTargetUrls(campaignId: string | undefined, projectI
   return { urls, source: "GSC top pages (no campaign targets found)" };
 }
 
+/* ─── CrUX field data (small, project-agnostic wrapper) ──────── */
+export async function fetchCrux(url: string, ms = 12000): Promise<{ url: string; lcp_ms: number | null; cls: number | null; inp_ms: number | null } | null> {
+  const key = process.env.PAGESPEED_API_KEY || "";
+  if (!key) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const r = await fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${key}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({ url, formFactor: "PHONE" }),
+    }).then(x => x.json());
+    const m = (r as any)?.record?.metrics; if (!m) return null;
+    return {
+      url,
+      lcp_ms: m.largest_contentful_paint?.percentiles?.p75 ?? null,
+      cls: m.cumulative_layout_shift?.percentiles?.p75 ?? null,
+      inp_ms: m.interaction_to_next_paint?.percentiles?.p75 ?? null,
+    };
+  } catch { return null; } finally { clearTimeout(timer); }
+}
+
 /* re-export the shared external loaders for convenience */
 export { ga4PullPageMetrics, fetchSerpFeatures };
