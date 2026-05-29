@@ -13,7 +13,7 @@ import { SimpleMarkdown } from '@/components/pm/SeoCampaignsPanel';
 import { downloadStakeholderReport, openStakeholderReport } from '@/lib/reportExport';
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
-  wsGoalCatalog, wsComposeConfig, wsCancelRun, wsPollStatus,
+  wsGoalCatalog, wsComposeConfig, wsCancelRun, wsPollStatus, wsTakeEscalationsToPanel,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
@@ -81,6 +81,9 @@ export default function Workspace() {
   const steps: any[] = state?.steps || [];
   const panel = state?.panel;
   const reports: any[] = state?.reports || [];
+  // Total escalations across all current pillar reports — used to enable the
+  // "Take to panel" button on the Pillars section.
+  const totalEscalations: number = reports.reduce((n, r) => n + (Array.isArray(r.escalations_json) ? r.escalations_json.length : 0), 0);
 
   /* ── lifecycle actions ── */
   const startRun = async () => {
@@ -177,6 +180,16 @@ export default function Workspace() {
     cancelRef.current = true;
     if (run?.id) { try { await wsCancelRun({ runId: run.id }); } catch { /* non-fatal */ } }
     toast({ title: 'Cancelling', description: 'The currently-running pillar will finish; no more will start.' });
+  };
+
+  const takeEscalationsToPanel = async () => {
+    if (!run?.id || !selectedProjectId) return;
+    setBusy('Taking pillar questions to the panel for a fresh round');
+    const r = await wsTakeEscalationsToPanel({ runId: run.id, projectId: selectedProjectId });
+    setBusy('');
+    if (!r.success) toast({ title: 'Could not run panel', description: r.error, variant: 'destructive' });
+    else { toast({ title: 'Panel round started', description: 'Review the new round in the Panel tab.' }); setSection('panel'); }
+    await load();
   };
 
   if (!selectedProjectId) {
@@ -366,9 +379,16 @@ export default function Workspace() {
                   <X size={13} /> Stop
                 </button>
               ) : (
-                <button onClick={solveAll} disabled={!!pillarBusy} style={primaryBtn(!!pillarBusy)}>
-                  <FlaskConical size={13} /> {pillarBusy ? 'Solving…' : 'Solve all'}
-                </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {totalEscalations > 0 && (
+                    <button onClick={takeEscalationsToPanel} disabled={!!busy} style={{ ...primaryBtn(!!busy), background: 'hsla(38 90% 55% / 0.12)', borderColor: 'hsla(38 90% 55% / 0.4)', color: 'hsl(38 90% 65%)' }} title={`${totalEscalations} question(s) flagged for the panel across solved pillars`}>
+                      <Users size={13} /> Take {totalEscalations} to panel
+                    </button>
+                  )}
+                  <button onClick={solveAll} disabled={!!pillarBusy} style={primaryBtn(!!pillarBusy)}>
+                    <FlaskConical size={13} /> {pillarBusy ? 'Solving…' : 'Solve all'}
+                  </button>
+                </div>
               )}
             </div>
             {queue && (
@@ -406,7 +426,14 @@ export default function Workspace() {
                   <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>{PILLAR_LABEL[p]}</div>
                   {rep ? (
                     <>
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'hsla(152 70% 50% / 0.18)', color: 'hsl(152 70% 60%)' }}>✓ SOLVED</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'hsla(152 70% 50% / 0.18)', color: 'hsl(152 70% 60%)' }}>✓ SOLVED</span>
+                        {Array.isArray(rep.escalations_json) && rep.escalations_json.length > 0 && (
+                          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'hsla(38 90% 55% / 0.15)', color: 'hsl(38 90% 65%)' }} title="Questions for the panel">
+                            {rep.escalations_json.length} for panel
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontSize: 10.5, color: 'rgba(170,180,195,0.85)', margin: '8px 0' }}>{rep.title}</div>
                       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                         <button onClick={() => setSection('documents')} style={linkBtn()}>Read in Documents →</button>

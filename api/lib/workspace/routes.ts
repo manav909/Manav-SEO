@@ -245,7 +245,57 @@ export async function wsPollStatus(body: any) {
   return { success: true, pillar_status: (data as any)?.pillar_status || null };
 }
 
-/* ─── solve one pillar (Path A from panel, or Path B direct) ───── */
+/* ─── take pillars' escalations to the panel for round N+1 ─────
+   Gathers escalations across all pillar reports for this run, formats them
+   as the operator's input to the next panel round, then runs the panel. */
+export async function wsTakeEscalationsToPanel(body: any) {
+  const { runId, projectId, additionalContext } = body || {};
+  if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
+
+  const { data: run } = await db().from("workspace_runs").select("created_at").eq("id", runId).maybeSingle();
+  if (!run) return { success: false, error: "run not found" };
+  const runStart = (run as any).created_at || new Date(0).toISOString();
+
+  const { data: reports } = await db().from("seo_campaign_reports")
+    .select("pillar, escalations_json, created_at")
+    .eq("project_id", projectId).gte("created_at", runStart)
+    .in("report_kind", ["deep_analysis", "manual_refresh"]).order("created_at", { ascending: false });
+
+  // Take the latest report per pillar so a re-solved pillar's escalations win
+  const seen = new Set<string>();
+  const escalations: Array<{ pillar: string; question: string; to_roles: string[]; why?: string }> = [];
+  for (const r of (reports || []) as any[]) {
+    if (seen.has(r.pillar)) continue;
+    seen.add(r.pillar);
+    const list = Array.isArray(r.escalations_json) ? r.escalations_json : [];
+    for (const e of list) if (e && e.question) escalations.push({ pillar: r.pillar, question: e.question, to_roles: e.to_roles || [], why: e.why });
+  }
+
+  if (!escalations.length && !additionalContext) {
+    return { success: false, error: "No escalations across pillars yet. Solve pillars first, then take their escalations here." };
+  }
+
+  // Format as Manav-input for the next panel round
+  const grouped: Record<string, typeof escalations> = {};
+  for (const e of escalations) { (grouped[e.pillar] = grouped[e.pillar] || []).push(e); }
+  let manavInput = `The pillar analyses have surfaced questions that need this panel's judgement. Discuss each in context of the goal and assign answers to the relevant role(s) — or, where appropriate, refine the framing back to a pillar for re-investigation.\n\n`;
+  for (const p of Object.keys(grouped)) {
+    manavInput += `### From ${p.replace(/_/g, ' ')}:\n`;
+    for (const e of grouped[p]) {
+      const roles = (e.to_roles || []).join(", ") || "panel";
+      manavInput += `- ${e.question} (for ${roles}${e.why ? ` — ${e.why}` : ""})\n`;
+    }
+    manavInput += `\n`;
+  }
+  if (additionalContext) manavInput += `\nAdditional operator context:\n${additionalContext}\n`;
+
+  // Determine next round number
+  const { data: existing } = await db().from("panel_sessions").select("round").eq("run_id", runId).order("round", { ascending: false }).limit(1).maybeSingle();
+  const nextRound = (((existing as any)?.round) || 1) + 1;
+
+  // Run the panel with this input
+  return wsRunPanel({ runId, projectId, round: nextRound, manavInput });
+}
 export async function wsSolvePillar(body: any) {
   const { runId, projectId, campaignId, pillar, manavContext, targetUrls } = body || {};
   if (!projectId || !pillar) return { success: false, error: "projectId and pillar required" };
@@ -294,7 +344,7 @@ export async function wsGetRun(body: any) {
   const [steps, panels, reports] = await Promise.all([
     db().from("step_reports").select("id, step_key, report_md, worth_deeper_json, status, created_at").eq("run_id", run.id).order("created_at"),
     db().from("panel_sessions").select("*").eq("run_id", run.id).order("round", { ascending: false }),
-    db().from("seo_campaign_reports").select("id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, data_sources, created_at")
+    db().from("seo_campaign_reports").select("id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, data_sources, escalations_json, created_at")
       .eq("project_id", run.project_id).in("report_kind", ["deep_analysis", "manual_refresh"]).gte("created_at", runStart)
       .order("created_at", { ascending: false }),
   ]);
@@ -318,6 +368,7 @@ export async function handleWorkspace(action: string, body: any): Promise<any | 
     case "ws_run_deep_steps":      return wsRunDeepSteps(body);
     case "ws_run_panel":           return wsRunPanel(body);
     case "ws_release_to_pillars":  return wsReleaseToPillars(body);
+    case "ws_take_escalations_to_panel": return wsTakeEscalationsToPanel(body);
     case "ws_solve_pillar":        return wsSolvePillar(body);
     case "ws_cancel_run":          return wsCancelRun(body);
     case "ws_poll_status":         return wsPollStatus(body);

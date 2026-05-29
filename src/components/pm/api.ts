@@ -4337,3 +4337,7 @@ export async function wsPollStatus(opts: { runId: string }):
   Promise<{ success?: boolean; pillar_status?: string | null; error?: string }> {
   return post(ENGINE, { action: 'ws_poll_status', ...opts });
 }
+export async function wsTakeEscalationsToPanel(opts: { runId: string; projectId: string; additionalContext?: string }):
+  Promise<{ success?: boolean; panel_id?: string; output?: any; document_md?: string; error?: string }> {
+  return post(ENGINE, { action: 'ws_take_escalations_to_panel', ...opts });
+}

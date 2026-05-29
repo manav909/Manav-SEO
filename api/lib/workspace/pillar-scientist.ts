@@ -21,7 +21,7 @@ import { db } from "../db.js";
 import { llmWithTools, parseJsonResponse } from "./llm.js";
 import {
   loadGsc, siteCtrCurve, fetchPageFacts, resolveTargetUrls,
-  fetchSerpFeatures, fetchCrux, ga4PullPageMetrics, type SourcedFact,
+  fetchSerpFeatures, fetchCrux, ga4PullPageMetrics, fetchHtml, type SourcedFact,
 } from "./shared.js";
 
 const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
@@ -44,7 +44,7 @@ const UNIVERSAL_TOOLS = ["fetch_page", "read_other_pillar_report"];
 
 const INTERROGATIONS: Record<string, Interrogation> = {
   visibility: {
-    expert_role: "Senior Technical SEO scientist specialising in indexation, crawl and visibility",
+    expert_role: "Senior Technical SEO specialist (indexation, crawl, visibility)",
     data_sources: ["GSC pages", "GSC query-page pairs", "this site's CTR curve", "live HTML crawl", "SerpAPI"],
     step_keys: ["gsc_visibility", "competitor_intel"],
     default_questions: [
@@ -56,7 +56,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
     tools: [...UNIVERSAL_TOOLS, "fetch_serp", "get_gsc_for_query_or_page"],
   },
   query_opportunity: {
-    expert_role: "Senior SEO scientist specialising in query intent and SERP positioning",
+    expert_role: "Senior SEO specialist (query intent and SERP positioning)",
     data_sources: ["GSC query-page pairs", "SerpAPI", "this site's CTR curve"],
     step_keys: ["query_landscape", "gsc_visibility", "competitor_intel"],
     default_questions: [
@@ -68,7 +68,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
     tools: [...UNIVERSAL_TOOLS, "fetch_serp", "get_gsc_for_query_or_page"],
   },
   on_page_health: {
-    expert_role: "Senior On-Page SEO and content-quality scientist",
+    expert_role: "Senior On-Page SEO and content-quality specialist",
     data_sources: ["live HTML crawl", "competitor pages"],
     step_keys: ["onpage_audit", "competitor_intel"],
     default_questions: [
@@ -77,21 +77,21 @@ const INTERROGATIONS: Record<string, Interrogation> = {
       "Separate the instant mechanical fixes (title rewrites) from the content-investment projects.",
       "Which single page, fully optimised, would benefit most given its impression volume?",
     ],
-    tools: [...UNIVERSAL_TOOLS, "fetch_serp", "get_gsc_for_query_or_page", "get_ga4_for_page"],
+    tools: [...UNIVERSAL_TOOLS, "fetch_serp", "get_gsc_for_query_or_page", "get_ga4_for_page", "inspect_html_performance_signals"],
   },
   technical_performance: {
-    expert_role: "Senior Web Performance scientist specialising in Core Web Vitals",
-    data_sources: ["CrUX field data"],
+    expert_role: "Senior Web Performance specialist (Core Web Vitals)",
+    data_sources: ["CrUX field data", "HTML performance signals"],
     step_keys: ["core_web_vitals"],
     default_questions: [
       "Which pages fail Google's CWV thresholds (LCP>2.5s, CLS>0.1, INP>200ms) and by how much, from real field data?",
       "Which pages lack field data and is that a traffic-volume fact rather than a performance verdict?",
       "Which fix addresses the most failing commercially-important pages at once?",
     ],
-    tools: [...UNIVERSAL_TOOLS, "get_crux_for_page", "get_ga4_for_page"],
+    tools: [...UNIVERSAL_TOOLS, "get_crux_for_page", "get_ga4_for_page", "inspect_html_performance_signals"],
   },
   internal_links: {
-    expert_role: "Senior SEO scientist specialising in site architecture and PageRank flow",
+    expert_role: "Senior SEO specialist (site architecture and internal linking)",
     data_sources: ["live HTML crawl", "GSC authority signal"],
     step_keys: ["internal_link_graph", "gsc_visibility"],
     default_questions: [
@@ -102,7 +102,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
     tools: [...UNIVERSAL_TOOLS, "get_gsc_for_query_or_page"],
   },
   engagement: {
-    expert_role: "Senior Analytics and CRO scientist",
+    expert_role: "Senior Analytics and CRO specialist",
     data_sources: ["GA4 (28 days)"],
     step_keys: ["engagement_value"],
     default_questions: [
@@ -113,7 +113,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
     tools: [...UNIVERSAL_TOOLS, "get_ga4_for_page", "get_gsc_for_query_or_page"],
   },
   monitoring: {
-    expert_role: "Senior SEO performance scientist tracking trajectory vs goal",
+    expert_role: "Senior SEO performance specialist (trajectory vs goal)",
     data_sources: ["metrics_snapshots", "GSC", "GA4"],
     step_keys: ["trajectory", "gsc_visibility"],
     default_questions: [
@@ -166,6 +166,11 @@ const TOOL_DEFS: Record<string, { name: string; description: string; input_schem
     description: "Read another solved pillar's report from this same run (for cross-reference). Valid pillar names: visibility, query_opportunity, on_page_health, technical_performance, internal_links, engagement, monitoring. Returns the body markdown if that pillar has been solved, else null.",
     input_schema: { type: "object", properties: { pillar: { type: "string", description: "Pillar name to read." } }, required: ["pillar"] },
   },
+  inspect_html_performance_signals: {
+    name: "inspect_html_performance_signals",
+    description: "Fetch a page's HTML and extract deterministic performance proxy signals when CrUX field data is unavailable: total HTML bytes, count of render-blocking scripts in <head>, count of external scripts, count of stylesheets, count of inline scripts, presence and dimensions of likely LCP image candidate, count of images, viewport meta present, lazy-load attribute usage. Use this when get_crux_for_page returns null to do real performance analysis from observable HTML.",
+    input_schema: { type: "object", properties: { url: { type: "string", description: "Absolute URL to inspect." } }, required: ["url"] },
+  },
 };
 
 /* Build the tool list the model sees for this pillar — filtered allowlist. */
@@ -193,6 +198,14 @@ async function dispatchTool(name: string, input: any, ctx: ToolCtx): Promise<{ t
     if (name === "fetch_page") {
       const url = String(input?.url || "").trim();
       if (!/^https?:\/\//.test(url)) return { text: "ERROR: 'url' must be an absolute https:// URL.", is_error: true };
+      const host = domainOf(url);
+      // Reject placeholder hosts that the model sometimes synthesises instead
+      // of using the real project domain. The model will see this error and
+      // retry with the correct host (which is also stated explicitly in the
+      // prompt's project context block).
+      if (/^(www\.)?example\.(com|org|net)$/i.test(host) || /^example$/i.test(host) || /^test\./i.test(host)) {
+        return { text: `ERROR: '${host}' is a placeholder hostname, not the project's real domain. Use the project domain stated in the PROJECT CONTEXT at the top of your prompt.`, is_error: true };
+      }
       const f = await fetchPageFacts(url);
       ctx.provenance.push({ value: url, source: "live HTML crawl", fetched_at: now() });
       return { text: JSON.stringify(f) };
@@ -234,9 +247,9 @@ async function dispatchTool(name: string, input: any, ctx: ToolCtx): Promise<{ t
     }
     if (name === "get_crux_for_page") {
       const url = String(input?.url || "").trim();
-      if (!/^https?:\/\//.test(url)) return { text: "ERROR: 'url' must be an absolute https:// URL.", is_error: true };
+      if (!/^https?:\/\//.test(url)) return { text: "ERROR: 'url' must be an absolute URL — a page URL like https://example.com/page, OR an origin like https://www.example.com (for domain-wide field data).", is_error: true };
       const c = await fetchCrux(url);
-      if (!c) return { text: JSON.stringify({ note: "No CrUX field data — page lacks sufficient real-user Chrome traffic (a fact about volume, not performance)." }) };
+      if (!c) return { text: JSON.stringify({ note: "No CrUX field data at this level. If a page-level lookup returned null, retry with the project's origin (e.g. https://www.<projectDomain>) — origin-level returns aggregate field data when individual pages lack traffic volume." }) };
       ctx.provenance.push({ value: url, source: "CrUX field data", fetched_at: now() });
       return { text: JSON.stringify(c) };
     }
@@ -267,6 +280,55 @@ async function dispatchTool(name: string, input: any, ctx: ToolCtx): Promise<{ t
       if (!data) return { text: JSON.stringify({ note: `Pillar '${target}' has not been solved in this run yet.` }) };
       ctx.provenance.push({ value: target, source: `sibling pillar (${target})`, fetched_at: now() });
       return { text: JSON.stringify({ title: (data as any).title, body_md: (data as any).body_md }) };
+    }
+    if (name === "inspect_html_performance_signals") {
+      const url = String(input?.url || "").trim();
+      if (!/^https?:\/\//.test(url)) return { text: "ERROR: 'url' must be an absolute https:// URL.", is_error: true };
+      const host = domainOf(url);
+      if (/^(www\.)?example\.(com|org|net)$/i.test(host)) return { text: `ERROR: '${host}' is a placeholder. Use the project's real domain from PROJECT CONTEXT.`, is_error: true };
+      const html = await fetchHtml(url);
+      if (!html || html.length < 300) return { text: JSON.stringify({ note: "Fetch failed or page returned almost no HTML — cannot inspect performance signals.", url, bytes: html?.length || 0 }) };
+      const bytes = html.length;
+      // Head extraction — render-blocking signals live in <head>
+      const headMatch = html.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+      const headHtml = headMatch ? headMatch[1] : html.slice(0, 8000);
+      // Render-blocking scripts in head = external <script src=...> WITHOUT async/defer
+      const headScripts = Array.from(headHtml.matchAll(/<script\b[^>]*\bsrc=["'][^"']+["'][^>]*>/gi));
+      const renderBlocking = headScripts.filter(s => !/\b(async|defer)\b/i.test(s[0])).length;
+      const externalScriptsTotal = Array.from(html.matchAll(/<script\b[^>]*\bsrc=["'][^"']+["'][^>]*>/gi)).length;
+      const inlineScripts = Array.from(html.matchAll(/<script\b(?![^>]*\bsrc=)[^>]*>/gi)).length;
+      const stylesheets = Array.from(html.matchAll(/<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi)).length;
+      const inlineStyles = Array.from(html.matchAll(/<style\b[^>]*>/gi)).length;
+      const viewport = /<meta[^>]+name=["']viewport["']/i.test(headHtml);
+      // Images — total count + LCP candidate (first large <img> with width/height attrs OR a hero/banner class)
+      const imgs = Array.from(html.matchAll(/<img\b[^>]*>/gi)).map(m => m[0]);
+      const lazyCount = imgs.filter(t => /\bloading=["']lazy["']/i.test(t)).length;
+      const eagerCount = imgs.length - lazyCount;
+      const firstImg = imgs[0] || "";
+      const firstImgSrc = (firstImg.match(/\bsrc=["']([^"']+)["']/i) || [])[1] || null;
+      const firstImgWidth = (firstImg.match(/\bwidth=["']?(\d+)/i) || [])[1] || null;
+      const firstImgHeight = (firstImg.match(/\bheight=["']?(\d+)/i) || [])[1] || null;
+      const firstImgEager = !/\bloading=["']lazy["']/i.test(firstImg);
+      const preloadCount = Array.from(html.matchAll(/<link\b[^>]*\brel=["']preload["'][^>]*>/gi)).length;
+      const out = {
+        url,
+        page_bytes: bytes,
+        page_kb: Math.round(bytes / 1024),
+        render_blocking_scripts_in_head: renderBlocking,
+        external_scripts_total: externalScriptsTotal,
+        inline_scripts: inlineScripts,
+        stylesheets_external: stylesheets,
+        inline_styles: inlineStyles,
+        viewport_meta_present: viewport,
+        images_total: imgs.length,
+        images_lazy: lazyCount,
+        images_eager: eagerCount,
+        likely_lcp_candidate: firstImgSrc ? { src: firstImgSrc, width: firstImgWidth, height: firstImgHeight, eager_loaded: firstImgEager } : null,
+        preload_directives: preloadCount,
+        notes: "Heuristic signals derived from raw HTML. Render-blocking scripts in <head> without async/defer are the most common LCP killer; large unsized eager images are the second. Compare across pages to find outliers.",
+      };
+      ctx.provenance.push({ value: url, source: "HTML performance signals", fetched_at: now() });
+      return { text: JSON.stringify(out) };
     }
     return { text: `ERROR: unknown tool '${name}'.`, is_error: true };
   } catch (e: any) {
@@ -440,12 +502,28 @@ WHEN DONE USING TOOLS, produce ONLY this JSON (no prose, no fences):
     {"question":"the panel question or default","roles":["client","dms"],"answer":"sourced answer","evidence":"the specific sourced figures","action":"what to do","impact":"ceiling, with the CTR-curve value used","effort":"low|medium|high","priority":1,"confidence":"high|medium|low"}
   ],
   "open_questions": ["what we still want to verify, honestly"],
+  "escalations": [
+    {"question":"a specific question that needs human judgement or another role's input — distinct from a verification gap","to_roles":["client","brand"],"why":"why this question can't be answered with data alone and needs that role's input"}
+  ],
   "ninety_day_plan": "prioritised week1 / month1 / quarter1 sequence grounded in the priority_actions"
 }
 
-priority_actions = the 3-5 things to do next, ordered. answers = the detailed findings with evidence. headline_findings = 3-4 one-line takeaways. These are different fields with different purposes.`;
+ABOUT 'escalations': use sparingly and only for genuine judgement questions that the data simply cannot answer (e.g. brand voice for a rewrite, client priority among equally-sized opportunities, PM trade-off between two valid paths). Do NOT escalate things you could have verified with another tool call. If unsure whether something is an escalation or a data gap, treat it as an open_question instead.
 
-  let userPrompt = `PILLAR: ${opts.pillar}\nData sources available: ${interro.data_sources.join(", ")}\nTarget pages: ${targetUrls.length}\n\nEVIDENCE FROM THE DEEP STEPS (already verified and sourced):\n\n${block}\n\nQUESTIONS TO SOLVE:\n${questions.join("\n")}\n`;
+priority_actions = the 3-5 things to do next, ordered. answers = the detailed findings with evidence. headline_findings = 3-4 one-line takeaways. open_questions = data gaps we'd want to verify. escalations = questions that need a specific role's judgement. These are different fields with different purposes.`;
+
+  // Project context block — states the project's real domain and the
+  // canonical target URLs explicitly so the model never has to synthesise
+  // hostnames when calling fetch_page (root cause of past placeholder
+  // hallucinations).
+  const projectDomain = domainOf(targetUrls[0] || "") || "(unknown)";
+  const projectContext =
+    `PROJECT CONTEXT (use these exact values when calling tools):\n` +
+    `- Project domain: ${projectDomain}\n` +
+    `- Target pages (full URLs):\n${targetUrls.slice(0, 30).map(u => `  ${u}`).join("\n")}\n` +
+    `When you call fetch_page or any URL-taking tool, use the full URLs above — never synthesise hostnames, never use placeholder domains like example.com.\n\n`;
+
+  let userPrompt = projectContext + `PILLAR: ${opts.pillar}\nData sources available: ${interro.data_sources.join(", ")}\nTarget pages: ${targetUrls.length}\n\nEVIDENCE FROM THE DEEP STEPS (already verified and sourced):\n\n${block}\n\nQUESTIONS TO SOLVE:\n${questions.join("\n")}\n`;
   if (opts.manavContext) userPrompt += `\nADDITIONAL CONTEXT FROM THE OPERATOR — address this too (URLs they name here can be inspected with fetch_page):\n"""\n${opts.manavContext}\n"""\n`;
   userPrompt += `\nInvestigate with the tools as needed, then produce the JSON solution. Cite a source inline for every figure.`;
 
@@ -524,8 +602,17 @@ priority_actions = the 3-5 things to do next, ordered. answers = the detailed fi
       // succeeds whether or not the column carries a DB-side default.
       llm_calls_used: 1,
       web_searches_used: 0,
+      // Escalations: structured questions back to specific roles, surfaced
+      // by the UI and used to seed panel round N+1.
+      escalations_json: Array.isArray(parsed.escalations) ? parsed.escalations : [],
     };
     let { data: inserted, error } = await db().from("seo_campaign_reports").insert(row).select("id").single();
+    if (error && /escalations_json/i.test(error.message || "")) {
+      // Column not yet migrated — retry without it. Report still writes.
+      const { escalations_json, ...rest } = row;
+      const retry = await db().from("seo_campaign_reports").insert(rest).select("id").single();
+      inserted = retry.data; error = retry.error;
+    }
     if (error && /report_kind/i.test(error.message || "")) {
       const retry = await db().from("seo_campaign_reports").insert({ ...row, report_kind: "manual_refresh" }).select("id").single();
       inserted = retry.data; error = retry.error;
@@ -607,6 +694,20 @@ function renderPillarReport(pillar: string, interro: Interrogation, p: any, prov
     L.push(`## Still to verify`);
     L.push("");
     for (const q of p.open_questions) L.push(`- ${q}`);
+    L.push("");
+  }
+
+  // 6. QUESTIONS BACK TO THE PANEL — escalations needing judgement
+  const escalations = (p.escalations || []).filter((e: any) => e && e.question);
+  if (escalations.length) {
+    L.push(`## Questions back to the panel`);
+    L.push("");
+    L.push(`_These need a specific role's judgement — not more data. Take them to the panel for round N+1._`);
+    L.push("");
+    for (const e of escalations) {
+      const r = (e.to_roles || []).map((x: string) => roleLabel[x] || x).join(" · ") || "panel";
+      L.push(`- **${e.question}** — _for ${r}._${e.why ? ` ${e.why}` : ""}`);
+    }
     L.push("");
   }
 
