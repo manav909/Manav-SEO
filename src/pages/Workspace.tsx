@@ -14,6 +14,7 @@ import { downloadStakeholderReport, openStakeholderReport } from '@/lib/reportEx
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
   wsGoalCatalog, wsComposeConfig, wsCancelRun, wsPollStatus, wsTakeEscalationsToPanel,
+  wsSolveClientReport,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
@@ -24,6 +25,7 @@ const PILLARS = ['visibility', 'query_opportunity', 'on_page_health', 'technical
 const PILLAR_LABEL: Record<string, string> = {
   visibility: 'Visibility', query_opportunity: 'Query Opportunity', on_page_health: 'On-Page Health',
   technical_performance: 'Technical Performance', internal_links: 'Internal Links', engagement: 'Engagement', monitoring: 'Monitoring',
+  client_report: 'Client Report',
 };
 const ROLE_LABEL: Record<string, string> = {
   client: 'Client', dms: 'Senior SEO', writer: 'Content Writer', brand: 'Brand', pm: 'PM', investor: 'Investor',
@@ -63,6 +65,15 @@ export default function Workspace() {
     setLastError({ where, message });
     toast({ title: where, description: message, variant: 'destructive' });
   };
+
+  // Client Report state — context + optional reference paste + mode.
+  // Persists in component state across re-solves so the operator can iterate
+  // without retyping the brief every time.
+  const [crOpen, setCrOpen] = useState(false);
+  const [crContext, setCrContext] = useState('');
+  const [crReferenceText, setCrReferenceText] = useState('');
+  const [crReferenceMode, setCrReferenceMode] = useState<'template' | 'data' | 'both'>('both');
+  const [crBusy, setCrBusy] = useState(false);
   const cancelRef = React.useRef(false);
 
   useEffect(() => { wsGoalCatalog().then((r) => { if (r.success) setCatalog(r); }); }, []);
@@ -197,6 +208,36 @@ export default function Workspace() {
     if (!r.success) reportError('Could not run panel', r.error || 'unknown error');
     else { toast({ title: 'Panel round started', description: 'Review the new round in the Panel tab.' }); setSection('panel'); }
     await load();
+  };
+
+  const solveClientReport = async () => {
+    if (!run?.id || !selectedProjectId) { reportError('Client Report', 'No active run. Start a workspace run first.'); return; }
+    if (!crContext.trim()) { reportError('Client Report', 'Add your context — at minimum, the client name and what they want.'); return; }
+    setCrBusy(true);
+    setLiveStatus('client_report: starting');
+    // Live status poll while the call runs
+    let poll: any = null;
+    if (run?.id) {
+      poll = setInterval(async () => {
+        const r = await wsPollStatus({ runId: run.id });
+        if (r.pillar_status) setLiveStatus(r.pillar_status);
+      }, 2000);
+    }
+    try {
+      const r = await wsSolveClientReport({
+        runId: run.id, projectId: selectedProjectId, campaignId: run.campaign_id,
+        manavContext: crContext,
+        referenceText: crReferenceText.trim() ? crReferenceText : undefined,
+        referenceMode: crReferenceText.trim() ? crReferenceMode : undefined,
+      });
+      if (!r.success) reportError('Client Report failed', r.error || 'unknown error');
+      else { toast({ title: 'Client Report generated', description: 'Available in Documents.' }); setSection('documents'); }
+      await load();
+    } finally {
+      if (poll) clearInterval(poll);
+      setLiveStatus('');
+      setCrBusy(false);
+    }
   };
 
   if (!selectedProjectId) {
@@ -469,6 +510,126 @@ export default function Workspace() {
                 </div>
               );
             })}
+          </div>
+
+          {/* Client Report — specialist communication pillar, separate card */}
+          <div style={{ ...card, marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Send size={14} style={{ color: CYAN }} /> Client Report
+                  <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: 'hsla(186 80% 55% / 0.12)', color: CYAN, letterSpacing: '0.05em' }}>SPECIALIST</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'rgba(150,160,180,0.7)', marginTop: 4 }}>
+                  Turns the workspace's verified evidence into a client-ready report shaped to what THIS client wants. Source-traced, no invention.
+                </div>
+              </div>
+              <button onClick={() => setCrOpen(!crOpen)} style={iconBtn()} title={crOpen ? 'Hide form' : 'Show form'}>
+                <ChevronRight size={14} style={{ transform: crOpen ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }} />
+              </button>
+            </div>
+
+            {crOpen && (
+              <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
+                    Your context for this report <span style={{ color: 'hsl(0 70% 65%)', textTransform: 'none', letterSpacing: 0, fontWeight: 400, marginLeft: 4 }}>required</span>
+                  </label>
+                  <textarea
+                    value={crContext}
+                    onChange={(e) => setCrContext(e.target.value)}
+                    placeholder={`Write what THIS client wants in THIS report. Examples:
+- Client name and main contact.
+- Send-by date.
+- Tone (e.g. practical, non-technical; or technical and detailed).
+- Format (e.g. executive summary + 3 priorities + next month's plan).
+- Emphasis (specific topics the client has been asking about).
+- Leave out (things already covered elsewhere; sensitive topics; etc.).`}
+                    rows={8}
+                    style={{
+                      width: '100%', padding: 10, fontSize: 12, lineHeight: 1.5,
+                      background: 'rgba(15,16,24,0.6)', border: '1px solid hsla(220 14% 30% / 0.5)',
+                      borderRadius: 6, color: 'rgba(225,228,238,0.95)', fontFamily: 'inherit', resize: 'vertical',
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
+                    Reference material (optional)
+                  </label>
+                  <textarea
+                    value={crReferenceText}
+                    onChange={(e) => setCrReferenceText(e.target.value)}
+                    placeholder={`Paste a sample report's content, client brief, additional data — anything in plain text or markdown. Leave blank if not needed.
+
+(PDF / DOCX / XLSX upload coming in Build 10b — for now, paste the extracted text.)`}
+                    rows={6}
+                    style={{
+                      width: '100%', padding: 10, fontSize: 12, lineHeight: 1.5,
+                      background: 'rgba(15,16,24,0.6)', border: '1px solid hsla(220 14% 30% / 0.5)',
+                      borderRadius: 6, color: 'rgba(225,228,238,0.95)', fontFamily: 'inherit', resize: 'vertical',
+                    }}
+                  />
+                  {crReferenceText.trim().length > 0 && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.7)' }}>Use this reference as:</span>
+                      {[
+                        { v: 'template' as const, label: 'Structural template' },
+                        { v: 'data' as const, label: 'Additional data' },
+                        { v: 'both' as const, label: 'Both' },
+                      ].map(opt => (
+                        <button
+                          key={opt.v}
+                          onClick={() => setCrReferenceMode(opt.v)}
+                          style={{
+                            fontSize: 10.5, padding: '4px 10px', borderRadius: 4,
+                            border: crReferenceMode === opt.v ? `1px solid ${CYAN}` : '1px solid hsla(220 14% 30% / 0.5)',
+                            background: crReferenceMode === opt.v ? 'hsla(186 80% 55% / 0.15)' : 'transparent',
+                            color: crReferenceMode === opt.v ? CYAN : 'rgba(180,190,205,0.8)',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.6)', flex: 1 }}>
+                    Re-solving creates a new report each time — earlier versions stay in Documents so you can compare drafts.
+                  </div>
+                  <button onClick={solveClientReport} disabled={crBusy || !crContext.trim()} style={primaryBtn(crBusy || !crContext.trim())}>
+                    {crBusy ? <><Loader2 size={13} className="animate-spin" /> Generating…</> : <><Send size={13} /> Generate report</>}
+                  </button>
+                </div>
+                {crBusy && liveStatus && (
+                  <div style={{ fontSize: 11, color: CYAN, fontFamily: 'SF Mono, Menlo, monospace' }}>{liveStatus}</div>
+                )}
+              </div>
+            )}
+
+            {/* Show existing client reports inline so the operator can see what's been generated */}
+            {reports.filter(r => r.pillar === 'client_report').length > 0 && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid hsla(220 14% 30% / 0.3)' }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>
+                  Generated client reports in this run ({reports.filter(r => r.pillar === 'client_report').length})
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {reports.filter(r => r.pillar === 'client_report').map((r) => (
+                    <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 5 }}>
+                      <div style={{ fontSize: 11.5 }}>
+                        <span style={{ fontWeight: 700 }}>{r.title}</span>
+                        <span style={{ color: 'rgba(150,160,180,0.5)', marginLeft: 8 }}>{new Date(r.created_at).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                      </div>
+                      <button onClick={() => setSection('documents')} style={linkBtn()}>Open →</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

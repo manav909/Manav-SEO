@@ -4341,3 +4341,7 @@ export async function wsTakeEscalationsToPanel(opts: { runId: string; projectId:
   Promise<{ success?: boolean; panel_id?: string; output?: any; document_md?: string; error?: string }> {
   return post(ENGINE, { action: 'ws_take_escalations_to_panel', ...opts });
 }
+export async function wsSolveClientReport(opts: { runId: string; projectId: string; campaignId?: string; manavContext: string; referenceText?: string; referenceMode?: 'template' | 'data' | 'both' }):
+  Promise<{ success?: boolean; report_id?: string; error?: string }> {
+  return post(ENGINE, { action: 'ws_solve_client_report', ...opts });
+}

@@ -328,6 +328,31 @@ export async function wsTakeEscalationsToPanel(body: any) {
   // Run the panel with this input
   return wsRunPanel({ runId, projectId, round: nextRound, manavInput });
 }
+/* ─── solve the Client Report pillar — context + optional reference paste ───
+   This is the communication-purpose pillar. Reads workspace evidence and the
+   operator's per-report instructions to produce a client-ready deliverable. */
+export async function wsSolveClientReport(body: any) {
+  const { runId, projectId, campaignId, manavContext, referenceText, referenceMode } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!runId) return { success: false, error: "runId required — Client Report draws on a workspace run." };
+  if (!manavContext || String(manavContext).trim().length < 5) {
+    return { success: false, error: "Provide context — at minimum, the client's name and what they want in this report." };
+  }
+
+  const { solveClientReport } = await import("./client-report.js");
+  const onStatus = async (s: string) => {
+    try { await db().from("workspace_runs").update({ pillar_status: s }).eq("id", runId); } catch { /* non-fatal */ }
+  };
+  return solveClientReport({
+    runId, projectId, campaignId,
+    manavContext: String(manavContext),
+    referenceText: referenceText ? String(referenceText) : undefined,
+    referenceMode: (referenceMode === "template" || referenceMode === "data" || referenceMode === "both") ? referenceMode : undefined,
+    onStatus,
+  });
+}
+
+/* ─── solve one pillar (Path A from panel, or Path B direct) ───── */
 export async function wsSolvePillar(body: any) {
   const { runId, projectId, campaignId, pillar, manavContext, targetUrls } = body || {};
   if (!projectId || !pillar) return { success: false, error: "projectId and pillar required" };
@@ -418,6 +443,7 @@ export async function handleWorkspace(action: string, body: any): Promise<any | 
     case "ws_release_to_pillars":  return wsReleaseToPillars(body);
     case "ws_take_escalations_to_panel": return wsTakeEscalationsToPanel(body);
     case "ws_solve_pillar":        return wsSolvePillar(body);
+    case "ws_solve_client_report": return wsSolveClientReport(body);
     case "ws_cancel_run":          return wsCancelRun(body);
     case "ws_poll_status":         return wsPollStatus(body);
     case "ws_get_run":             return wsGetRun(body);
