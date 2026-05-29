@@ -10,13 +10,14 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useProject } from '@/contexts/ProjectContext';
 import { useToast } from '@/hooks/use-toast';
 import { SimpleMarkdown } from '@/components/pm/SeoCampaignsPanel';
+import { downloadStakeholderReport, openStakeholderReport } from '@/lib/reportExport';
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
   wsGoalCatalog, wsComposeConfig,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
-  Send, Download, Copy, Check, ArrowRight, Sparkles,
+  Send, Download, Copy, Check, ArrowRight, Sparkles, ExternalLink,
 } from 'lucide-react';
 
 const PILLARS = ['visibility', 'query_opportunity', 'on_page_health', 'technical_performance', 'internal_links', 'engagement', 'monitoring'];
@@ -33,17 +34,12 @@ type Section = 'pipeline' | 'panel' | 'pillars' | 'documents';
 const CYAN = 'hsl(186 80% 55%)';
 const card: React.CSSProperties = { background: 'linear-gradient(180deg, rgba(26,27,39,0.9), rgba(15,16,24,0.7))', border: '1px solid rgba(160,160,180,0.15)', borderRadius: 12, padding: 16 };
 
-function downloadMd(title: string, md: string) {
-  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `${(title || 'document').replace(/[^a-z0-9-_]/gi, '_').slice(0, 80)}.md`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+function humanTitle(s: string): string {
+  return (s || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 export default function Workspace() {
-  const { selectedProjectId } = useProject();
+  const { selectedProjectId, selectedProject } = useProject();
   const { toast } = useToast();
   const [section, setSection] = useState<Section>('pipeline');
   const [state, setState] = useState<any>(null);
@@ -155,6 +151,16 @@ export default function Workspace() {
     { id: 'pillars', label: 'Pillars', icon: FlaskConical, count: reports.length },
     { id: 'documents', label: 'Documents', icon: FileText, count: steps.length + (panel ? 1 : 0) + reports.length },
   ];
+
+  // Cover-page metadata shared by every export from this run.
+  const exportMetaBase = {
+    project: selectedProject?.name || undefined,
+    goal: run?.goal || undefined,
+  };
+  const exportReport = (title: string, kind: string, body: string, generatedAt?: string) =>
+    downloadStakeholderReport(body || '', { title: humanTitle(title), kind, ...exportMetaBase, generatedAt });
+  const openReport = (title: string, kind: string, body: string, generatedAt?: string) =>
+    openStakeholderReport(body || '', { title: humanTitle(title), kind, ...exportMetaBase, generatedAt });
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0b12', color: 'rgba(225,228,238,0.95)', padding: '28px 32px' }}>
@@ -285,7 +291,7 @@ export default function Workspace() {
           {steps.length === 0 ? (
             <div style={{ ...card, color: 'rgba(150,160,180,0.7)', fontSize: 12.5 }}>No evidence yet. Configure goals above and click <strong style={{ color: CYAN }}>Start run</strong>.</div>
           ) : steps.map((s) => (
-            <StepCard key={s.id} step={s} />
+            <StepCard key={s.id} step={s} onExport={exportReport} onOpen={openReport} />
           ))}
           {steps.length > 0 && (
             <button onClick={() => runPanel(1)} disabled={!!busy} style={{ ...primaryBtn(!!busy), alignSelf: 'flex-start' }}>
@@ -302,6 +308,7 @@ export default function Workspace() {
           onRunRound1={() => runPanel(1)} onRunRound2={() => runPanel(2)}
           onRelease={release}
           manavInput={manavInput} setManavInput={setManavInput}
+          onExport={exportReport} onOpen={openReport}
         />
       )}
 
@@ -356,13 +363,13 @@ export default function Workspace() {
           </div>
           <SectionHeading title="Step evidence reports" />
           {steps.length === 0 && <Empty />}
-          {steps.map((s) => <DocCard key={s.id} title={s.step_key} body={s.report_md} />)}
+          {steps.map((s) => <DocCard key={s.id} title={s.step_key} body={s.report_md} kind="Deep Step Evidence" onExport={exportReport} onOpen={openReport} />)}
           <SectionHeading title="Panel discussion" />
           {!panel && <Empty />}
-          {panel && <DocCard title={`Panel — round ${panel.round}`} body={panel.document_md} />}
+          {panel && <DocCard title={`Panel Discussion — Round ${panel.round}`} body={panel.document_md} kind="Panel Discussion" onExport={exportReport} onOpen={openReport} />}
           <SectionHeading title="Pillar solutions" />
           {reports.length === 0 && <Empty />}
-          {reports.map((r) => <DocCard key={r.id} title={r.title || r.pillar} body={r.body_md} />)}
+          {reports.map((r) => <DocCard key={r.id} title={r.title || r.pillar} body={r.body_md} kind="Pillar Solution" onExport={exportReport} onOpen={openReport} />)}
         </div>
       )}
     </div>
@@ -370,7 +377,7 @@ export default function Workspace() {
 }
 
 /* ─── sub-components ─── */
-function StepCard({ step }: { step: any }) {
+function StepCard({ step, onExport, onOpen }: { step: any; onExport: (title: string, kind: string, body: string, generatedAt?: string) => void; onOpen: (title: string, kind: string, body: string, generatedAt?: string) => void }) {
   const [open, setOpen] = useState(false);
   const rawStatus = (step.status || 'done').toLowerCase();
   const isFailed = rawStatus.startsWith('failed');
@@ -391,7 +398,8 @@ function StepCard({ step }: { step: any }) {
           {isFailed && <span style={{ fontSize: 10, color: 'rgba(190,200,215,0.7)', marginLeft: 4 }} title={step.status}>{step.status.replace(/^failed:\s*/, '').slice(0, 80)}</span>}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <button onClick={(e) => { e.stopPropagation(); downloadMd(step.step_key, step.report_md); }} style={iconBtn()} title="Download .md"><Download size={12} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onOpen(step.step_key, 'Deep Step Evidence', step.report_md, step.created_at); }} style={iconBtn()} title="Open as branded report"><ExternalLink size={12} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onExport(step.step_key, 'Deep Step Evidence', step.report_md, step.created_at); }} style={iconBtn()} title="Download branded report"><Download size={12} /></button>
           <ChevronRight size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .2s', color: 'rgba(150,160,180,0.7)' }} />
         </div>
       </div>
@@ -403,7 +411,7 @@ function StepCard({ step }: { step: any }) {
   );
 }
 
-function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavInput, setManavInput }: any) {
+function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavInput, setManavInput, onExport, onOpen }: any) {
   if (!panel) {
     return (
       <div style={{ ...card, color: 'rgba(150,160,180,0.75)', fontSize: 12.5 }}>
@@ -424,7 +432,8 @@ function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavI
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Panel discussion — round {panel.round}</div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => downloadMd(`panel-round-${panel.round}`, panel.document_md)} style={iconBtn()} title="Download"><Download size={12} /></button>
+            <button onClick={() => onOpen(`Panel Discussion — Round ${panel.round}`, 'Panel Discussion', panel.document_md, panel.created_at)} style={iconBtn()} title="Open as branded report"><ExternalLink size={12} /></button>
+            <button onClick={() => onExport(`Panel Discussion — Round ${panel.round}`, 'Panel Discussion', panel.document_md, panel.created_at)} style={iconBtn()} title="Download branded report"><Download size={12} /></button>
           </div>
         </div>
         {panel.headline && <div style={{ fontSize: 12.5, color: 'rgba(190,200,215,0.9)', marginTop: 8, fontStyle: 'italic' }}>{panel.headline}</div>}
@@ -484,7 +493,7 @@ function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavI
   );
 }
 
-function DocCard({ title, body }: { title: string; body: string }) {
+function DocCard({ title, body, kind, onExport, onOpen }: { title: string; body: string; kind: string; onExport: (t: string, k: string, b: string) => void; onOpen: (t: string, k: string, b: string) => void }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   return (
@@ -492,8 +501,9 @@ function DocCard({ title, body }: { title: string; body: string }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
         <span style={{ fontSize: 12.5, fontWeight: 700 }}>{(title || '').replace(/_/g, ' ')}</span>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(body || '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }} style={iconBtn()} title="Copy">{copied ? <Check size={12} color="#34d399" /> : <Copy size={12} />}</button>
-          <button onClick={(e) => { e.stopPropagation(); downloadMd(title, body); }} style={iconBtn()} title="Download .md"><Download size={12} /></button>
+          <button onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(body || '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }} style={iconBtn()} title="Copy markdown">{copied ? <Check size={12} color="#34d399" /> : <Copy size={12} />}</button>
+          <button onClick={(e) => { e.stopPropagation(); onOpen(title, kind, body); }} style={iconBtn()} title="Open as branded report"><ExternalLink size={12} /></button>
+          <button onClick={(e) => { e.stopPropagation(); onExport(title, kind, body); }} style={iconBtn()} title="Download branded report"><Download size={12} /></button>
           <ChevronRight size={14} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .2s', color: 'rgba(150,160,180,0.7)' }} />
         </div>
       </div>
