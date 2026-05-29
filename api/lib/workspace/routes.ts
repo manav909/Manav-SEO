@@ -144,38 +144,67 @@ export async function wsRunDeepSteps(body: any) {
   return { success: true, results };
 }
 
-async function upsertStepReport(runId: string, projectId: string, stepKey: string, evidence: any, reportMd: string, worthDeeper: string[]) {
-  // Replace any prior report for this run+step (idempotent re-runs)
-  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
-  await db().from("step_reports").insert({
+async function nextStepVersion(runId: string, stepKey: string): Promise<number> {
+  const { data } = await db().from("step_reports")
+    .select("version").eq("run_id", runId).eq("step_key", stepKey)
+    .order("version", { ascending: false }).limit(1).maybeSingle();
+  return ((data as any)?.version || 0) + 1;
+}
+
+async function upsertStepReport(runId: string, projectId: string, stepKey: string, evidence: any, reportMd: string, worthDeeper: string[], triggeredBy = "initial") {
+  // Versioned: append a new row at version = max+1. Older versions preserved
+  // as evidence history. Reads filter to latest per (run_id, step_key).
+  const version = await nextStepVersion(runId, stepKey);
+  const row: any = {
     run_id: runId, project_id: projectId, step_key: stepKey,
     evidence_json: evidence, report_md: reportMd, worth_deeper_json: worthDeeper || [],
-    status: "done",
-  });
+    status: "done", version, triggered_by: triggeredBy,
+  };
+  let { error } = await db().from("step_reports").insert(row);
+  if (error && /version|triggered_by/i.test(error.message || "")) {
+    // Column not yet migrated — fall back to pre-versioned overwrite so the
+    // step still writes evidence (graceful for pre-migration deploys).
+    await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+    delete row.version; delete row.triggered_by;
+    await db().from("step_reports").insert(row);
+  }
 }
 
 /* Persist a failed step so the failure is visible (UI + queryable). */
-async function recordStepFailure(runId: string, projectId: string, stepKey: string, error: string) {
-  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+async function recordStepFailure(runId: string, projectId: string, stepKey: string, error: string, triggeredBy = "initial") {
   const md = `# ${stepKey} — FAILED\n\n_${new Date().toLocaleString()}_\n\n**Error:** ${error}\n\nThis step did not write evidence. The pillar(s) that depend on it will surface the gap honestly rather than synthesise.`;
   try {
-    await db().from("step_reports").insert({
+    const version = await nextStepVersion(runId, stepKey);
+    const row: any = {
       run_id: runId, project_id: projectId, step_key: stepKey,
       evidence_json: { step_key: stepKey, generated_at: new Date().toISOString(), error },
       report_md: md, worth_deeper_json: [], status: `failed: ${(error || "").slice(0, 200)}`,
-    });
+      version, triggered_by: triggeredBy,
+    };
+    let { error: ins } = await db().from("step_reports").insert(row);
+    if (ins && /version|triggered_by/i.test(ins.message || "")) {
+      await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+      delete row.version; delete row.triggered_by;
+      await db().from("step_reports").insert(row);
+    }
   } catch (e: any) { console.error(`[workspace] recordStepFailure ${stepKey} ${e?.message}`); }
 }
 
 /* Persist a skipped (disabled-by-config) step so the UI shows it explicitly. */
 async function recordStepSkipped(runId: string, projectId: string, stepKey: string) {
-  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
   try {
-    await db().from("step_reports").insert({
+    const version = await nextStepVersion(runId, stepKey);
+    const row: any = {
       run_id: runId, project_id: projectId, step_key: stepKey,
       evidence_json: { step_key: stepKey, skipped: true }, report_md: `_${stepKey} was disabled in the run config and did not execute._`,
-      worth_deeper_json: [], status: "skipped",
-    });
+      worth_deeper_json: [], status: "skipped", version, triggered_by: "initial",
+    };
+    let { error: ins } = await db().from("step_reports").insert(row);
+    if (ins && /version|triggered_by/i.test(ins.message || "")) {
+      await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+      delete row.version; delete row.triggered_by;
+      await db().from("step_reports").insert(row);
+    }
   } catch (e: any) { console.error(`[workspace] recordStepSkipped ${stepKey} ${e?.message}`); }
 }
 
@@ -199,7 +228,10 @@ export async function wsRunPanel(body: any) {
   }
 
   const { runPanelRound, renderPanelDocument } = await import("./panel-engine.js");
-  const res = await runPanelRound({ runId, projectId, round: r, manavInput, priorOutput });
+  const onStatus = async (s: string) => {
+    try { await db().from("workspace_runs").update({ pillar_status: s }).eq("id", runId); } catch { /* non-fatal */ }
+  };
+  const res = await runPanelRound({ runId, projectId, round: r, manavInput, priorOutput, onStatus });
   if (!res.success || !res.output) return { success: false, error: res.error || "panel failed" };
 
   const doc = renderPanelDocument(res.output, r, manavInput);
@@ -341,18 +373,34 @@ export async function wsGetRun(body: any) {
   // we can't filter on it — match by project, the deep_analysis kind, and the
   // run's start window. (Reports written before this run existed are excluded.)
   const runStart = run.created_at || new Date(0).toISOString();
-  const [steps, panels, reports] = await Promise.all([
-    db().from("step_reports").select("id, step_key, report_md, worth_deeper_json, status, created_at").eq("run_id", run.id).order("created_at"),
+  // Pull ALL step report rows (incl. older versions) — UI uses latest per
+  // (step_key) for the main card, and the full history for the version list.
+  const [allSteps, panels, reports] = await Promise.all([
+    db().from("step_reports").select("id, step_key, report_md, worth_deeper_json, status, created_at, version, triggered_by").eq("run_id", run.id).order("step_key").order("version", { ascending: false }),
     db().from("panel_sessions").select("*").eq("run_id", run.id).order("round", { ascending: false }),
     db().from("seo_campaign_reports").select("id, pillar, report_kind, title, summary, body_md, confidence_rating, generated_by, data_sources, escalations_json, created_at")
       .eq("project_id", run.project_id).in("report_kind", ["deep_analysis", "manual_refresh"]).gte("created_at", runStart)
       .order("created_at", { ascending: false }),
   ]);
 
+  // Build "latest per step" + attach all_versions for history-on-demand UI.
+  const allStepRows = ((allSteps as any).data || []) as any[];
+  const latestPerStep: Record<string, any> = {};
+  const versionsByStep: Record<string, any[]> = {};
+  for (const r of allStepRows) {
+    const v = r.version ?? 1;  // pre-migration rows are treated as v1
+    if (!versionsByStep[r.step_key]) versionsByStep[r.step_key] = [];
+    versionsByStep[r.step_key].push({ id: r.id, version: v, triggered_by: r.triggered_by || "initial", created_at: r.created_at, status: r.status });
+    if (!latestPerStep[r.step_key] || (latestPerStep[r.step_key].version ?? 1) < v) {
+      latestPerStep[r.step_key] = { ...r, version: v };
+    }
+  }
+  const steps = Object.values(latestPerStep).map((s: any) => ({ ...s, all_versions: versionsByStep[s.step_key] || [] }));
+
   return {
     success: true,
     run,
-    steps: (steps as any).data || [],
+    steps,
     panel: ((panels as any).data || [])[0] || null,
     panel_rounds: (panels as any).data || [],
     reports: (reports as any).data || [],

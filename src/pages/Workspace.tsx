@@ -530,6 +530,9 @@ function StepCard({ step, onExport, onOpen }: { step: any; onExport: (title: str
           <Activity size={14} style={{ color: isFailed ? 'hsl(0 70% 65%)' : CYAN }} />
           <span style={{ fontSize: 13, fontWeight: 700 }}>{step.step_key.replace(/_/g, ' ')}</span>
           <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: badgeColor.bg, color: badgeColor.fg }}>{badge}</span>
+          {(step.version || 1) > 1 && (
+            <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: 'hsla(186 80% 55% / 0.15)', color: CYAN }} title={`Extended by ${step.triggered_by || 'panel'}`}>v{step.version}</span>
+          )}
           {isFailed && <span style={{ fontSize: 10, color: 'rgba(190,200,215,0.7)', marginLeft: 4 }} title={step.status}>{step.status.replace(/^failed:\s*/, '').slice(0, 80)}</span>}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -541,7 +544,22 @@ function StepCard({ step, onExport, onOpen }: { step: any; onExport: (title: str
       {(step.worth_deeper_json || []).length > 0 && !open && (
         <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.65)', marginTop: 6 }}>{(step.worth_deeper_json || []).length} item(s) flagged for the panel.</div>
       )}
-      {open && <div style={{ marginTop: 12, maxHeight: 500, overflowY: 'auto', paddingRight: 4 }}><SimpleMarkdown text={step.report_md || ''} /></div>}
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          {Array.isArray(step.all_versions) && step.all_versions.length > 1 && (
+            <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.7)', marginBottom: 10, padding: '6px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 6 }}>
+              <span style={{ fontWeight: 700, color: CYAN }}>Evidence history:</span>{' '}
+              {step.all_versions.map((v: any, i: number) => (
+                <span key={v.id} style={{ marginLeft: i === 0 ? 6 : 4 }}>
+                  v{v.version}{v.triggered_by && v.triggered_by !== 'initial' ? ` · ${v.triggered_by}` : ''} · {new Date(v.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                  {i < step.all_versions.length - 1 && <span style={{ color: 'rgba(150,160,180,0.4)', margin: '0 6px' }}>·</span>}
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ maxHeight: 500, overflowY: 'auto', paddingRight: 4 }}><SimpleMarkdown text={step.report_md || ''} /></div>
+        </div>
+      )}
     </div>
   );
 }

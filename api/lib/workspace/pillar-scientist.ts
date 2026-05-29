@@ -341,12 +341,18 @@ async function dispatchTool(name: string, input: any, ctx: ToolCtx): Promise<{ t
    builds on them rather than re-gathering. Returns the concatenated sourced
    evidence blocks + a provenance note. */
 async function loadStepEvidenceForPillar(runId: string, stepKeys: string[]): Promise<{ block: string; provenance: SourcedFact[]; found: string[] }> {
+  // Read latest version per (run_id, step_key). Pre-migration rows treated
+  // as v1 — equal-version rows broken by created_at desc.
   const { data } = await db().from("step_reports")
-    .select("step_key, report_md").eq("run_id", runId).in("step_key", stepKeys);
-  const rows = (data || []) as any[];
-  const found = rows.map(r => r.step_key);
-  const block = rows.map(r => `## Evidence: ${r.step_key}\n${r.report_md || ""}`).join("\n\n");
-  const provenance: SourcedFact[] = rows.map(r => ({ value: r.step_key, source: "deep step evidence", fetched_at: new Date().toISOString() }));
+    .select("step_key, report_md, version, created_at").eq("run_id", runId).in("step_key", stepKeys)
+    .order("step_key").order("version", { ascending: false }).order("created_at", { ascending: false });
+  const rows = ((data || []) as any[]);
+  const latestByKey: Record<string, any> = {};
+  for (const r of rows) { if (!latestByKey[r.step_key]) latestByKey[r.step_key] = r; }
+  const latest = Object.values(latestByKey);
+  const found = latest.map((r: any) => r.step_key);
+  const block = latest.map((r: any) => `## Evidence: ${r.step_key}${r.version > 1 ? ` (v${r.version})` : ""}\n${r.report_md || ""}`).join("\n\n");
+  const provenance: SourcedFact[] = latest.map((r: any) => ({ value: r.step_key, source: `deep step evidence${r.version > 1 ? ` (v${r.version})` : ""}`, fetched_at: new Date().toISOString() }));
   return { block, provenance, found };
 }
 
