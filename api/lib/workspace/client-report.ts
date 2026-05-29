@@ -178,59 +178,82 @@ export async function solveClientReport(opts: ClientReportOpts): Promise<ClientR
   if (opts.attachmentIds && opts.attachmentIds.length) {
     await status(`loading ${opts.attachmentIds.length} attachment(s)`);
     const atts = await clientReportLoadAttachments(opts.attachmentIds);
+    let attachmentIndex = 0;
     for (const a of atts) {
+      attachmentIndex++;
       if (a.parse_status !== "ok" && a.parse_status !== "scanned_pdf") {
         // Skip failed parses but log to operator notes via prompt
-        referenceBlock += `\n\n## Attachment: ${a.file_name} (could not be parsed)\n\n_Status: ${a.parse_status}${a.parse_note ? ` — ${a.parse_note}` : ""}_\n`;
+        referenceBlock += `\n\n## Attachment (could not be parsed)\n\n_Status: ${a.parse_status}${a.parse_note ? ` — ${a.parse_note}` : ""}_\n`;
         continue;
       }
       if (a.pdf_base64) {
         pdfAttachments.push({ file_name: a.file_name, pdf_base64: a.pdf_base64 });
-        referenceBlock += `\n\n## Attachment: ${a.file_name} (PDF — attached as document below)\n\n_Treat the attached PDF as additional reference material the operator has provided. The same rule applies: cite this attachment inline when its facts are used; never invent details._\n`;
+        referenceBlock += `\n\n## Attached document (PDF — included below)\n\n_This attached document records the activity / work completed for this client. When referring to it in the report, use neutral phrasing such as "per the activity log", "from the work completed this period", or "from the records of work delivered" — do NOT cite the filename or call it "the attached PDF" by name._\n`;
       } else if (a.extracted_text) {
         const cap = 12000;
         const text = a.extracted_text.length > cap
           ? a.extracted_text.slice(0, cap) + `\n\n_…(truncated; ${a.extracted_text.length - cap} chars omitted)…_`
           : a.extracted_text;
-        referenceBlock += `\n\n## Attachment: ${a.file_name} (extracted ${a.content_type})\n\n_Treat this attachment as additional reference material the operator has provided. Cite it inline when used._\n\n\`\`\`\n${text}\n\`\`\`\n`;
+        referenceBlock += `\n\n## Attached document (extracted content)\n\n_This attached document records the activity / work completed for this client. When referring to it in the report, use neutral phrasing such as "per the activity log", "from the work completed this period", or "from the records of work delivered" — do NOT cite the filename or call it "the attachment" by name._\n\n\`\`\`\n${text}\n\`\`\`\n`;
       }
     }
   }
 
   await status("composing the client deliverable");
 
-  const system = `You are a Senior Client Communications specialist preparing a report for a client. You do not investigate — the workspace pillars and panel have already done that. Your job is to communicate the findings to this specific client, in the shape this specific client wants.
+  const system = `You are a Senior Client Communications specialist preparing a report for a client. You communicate already-completed work; you do not investigate or expand scope.
 
 PROJECT CONTEXT (use these exact facts; do not invent project details):
 - Domain: ${ctx.project_domain || "(see evidence)"}
 - Goal of this engagement: ${ctx.goal}
 - Pages in scope: ${ctx.target_urls.length}
 
-ABSOLUTE RULES — non-negotiable:
-- Every figure, claim, or recommendation in your report must trace to a specific source in the workspace evidence, the operator's pasted reference, or an attached file. Cite the source inline, e.g. "(source: On-Page Health pillar)" or "(source: attached PDF '<file_name>')".
-- Never invent numbers, never paraphrase a finding into a stronger claim than the evidence supports.
-- If the operator's context asks you to communicate something the evidence does not support, DO NOT write it as fact. Either omit it or flag it transparently as "unverified — please confirm with [source]".
-- This report will be read by a real client who is making real decisions. Stakes are high. Soft, accurate, transparent beats bold and unverified.
+═══════════════════ STRICT SCOPE RULES — ABSOLUTE ═══════════════════
 
-SHAPE — read the operator's context carefully and produce the report in the shape they request:
-- If they specify a format (executive summary, monthly review, audit recap, etc.), use that format.
-- If they paste reference material or attach a file with mode=template, match the reference's structure.
-- If they don't specify, default to: (1) brief executive summary, (2) what we found (3-5 sourced headline findings), (3) what we recommend (3-5 prioritised actions with effort + impact), (4) what's next (90-day plan), (5) appendix of sources.
+1. THE OPERATOR'S CONTEXT IS THE EXCLUSIVE GATE FOR WHAT GOES IN THIS REPORT.
+   - Only include topics, sections, and points the operator's context explicitly asks for.
+   - If the operator asked for "what we did this week + next steps", you write ONLY that. You do NOT add a Technical Performance section, a Visibility analysis, a 90-day plan, or anything else not in the context — even if the workspace has rich findings on those topics.
+   - If the operator's context is silent on a topic, that topic is OUT OF SCOPE for this report. Omit it entirely. Do not mention it. Do not flag it as missing.
+   - When in doubt about whether something is asked for, leave it out.
 
-TONE — match what the operator specifies. If unspecified, use a calm, professional, advisor-to-client register. Avoid jargon when the operator says the client isn't technical. Never use words like "scientist" or "lab" — this is a client deliverable, not an internal artifact.
+2. THE ATTACHED DOCUMENT(S) ARE THE PRIMARY SOURCE OF "WHAT WAS DONE".
+   - When the operator's context asks about work completed, activity delivered, links built, tasks done, hours spent, deliverables shipped — the answer comes from the attached document(s), not from workspace findings.
+   - Workspace pillar findings / panel / step evidence describe the SITE'S CURRENT STATE and ANALYSIS. They do NOT describe "work the agency did this period". Do not conflate them.
+   - If the attached document doesn't contain the activity detail the operator asked for, say so honestly in operator_notes (not in the body) and either omit the section or write only what's verifiable.
 
-OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
+3. SOURCE EVERY CLAIM, BUT DO NOT NAME FILENAMES OR INTERNAL TERMS IN THE OUTPUT.
+   - Every figure or statement must trace to a real source. Never invent.
+   - When citing an attached document, use neutral phrasing: "per the activity log", "from the work completed this period", "as recorded in this week's delivery", "from our work records" — NEVER "(source: attached PDF 'xyz.pdf')", never call out filenames, never reference "the attachment" by name.
+   - When citing workspace data (only if the operator's context explicitly asks for analytical input), use natural language like "our analysis shows...", "from the current site review...", "based on our checks of the site...".
+   - Never use internal vocabulary in the report body: words like "pillar", "scientist", "panel", "lab", "workspace", "deep step", "GSC" (use "Google Search Console"), "step evidence" should not appear.
+
+4. NEVER STRETCH THE EVIDENCE.
+   - If a claim cannot be grounded in either the operator's context, the attached document, or (only if the operator asks for it) the workspace analysis — DO NOT WRITE IT.
+   - If a number would need extrapolation or assumption to be stated, either state it conservatively with appropriate hedging or omit it.
+
+═══════════════════ TONE & SHAPE ═══════════════════
+
+- Match the tone the operator specifies. If unspecified: calm, professional, advisor-to-client.
+- Match the format the operator specifies. If unspecified: ask yourself "what would a thoughtful agency lead send for this exact situation" and produce that — no more, no less.
+- This is a real document going to a real client. Conservative and accurate beats bold and questionable.
+
+═══════════════════ OUTPUT FORMAT ═══════════════════
+
+Respond with ONLY this JSON (no prose around it, no fences):
 {
-  "title": "Self-identifying title for the report (e.g. 'Q2 SEO Review for <client>')",
+  "title": "Self-identifying title for the report (use the client name + period if the operator provides them)",
   "summary": "1-2 sentence framing of what this report covers",
-  "body_md": "the full report as markdown — this is what the client reads. Use whatever heading structure the operator's context implies. Be thorough but not bloated. Source every claim inline.",
-  "operator_notes": "any honest concerns: claims you couldn't ground, places the operator should verify before sending, anything that needed softening because the evidence was thin. This is for the operator's eyes only — do not include in the body."
+  "body_md": "the full report as markdown — what the client reads. Section headings only for what the operator's context asks for.",
+  "operator_notes": "honest concerns visible to the operator only: things the operator's context asked for that the attached document didn't fully support; claims you softened or omitted; anything to verify before sending. Never copied into the body."
 }`;
 
-  let userPrompt = `OPERATOR CONTEXT — what this client wants in this report:\n"""\n${opts.manavContext.trim()}\n"""\n`;
+  let userPrompt = `OPERATOR CONTEXT — this is the ONLY gate for what goes in the report. Include exactly what is asked here, nothing more.\n"""\n${opts.manavContext.trim()}\n"""\n`;
   if (referenceBlock) userPrompt += referenceBlock;
 
-  userPrompt += `\n\n## Workspace evidence — PILLAR FINDINGS (primary source)\n\n${pillarsBlock}\n\n## Panel discussion context\n\n${panelBlock}\n\n## Raw step evidence (for verification of specific figures)\n\n${stepsBlock}\n\n---\n\nProduce the client report now as JSON. Source every claim. Be honest in operator_notes about anything you couldn't ground.`;
+  // Workspace data is provided as optional context the model may CONSULT
+  // only if the operator's context explicitly asks for analysis or
+  // current-state input. It is NOT material for the report by default.
+  userPrompt += `\n\n═══════════════════ OPTIONAL CONTEXT (not for the report unless operator's context asks for it) ═══════════════════\n\nThe following workspace data describes the site's current analytical state. DO NOT include any of it in the report unless the operator's context above explicitly asks for analytical input, current-state observations, or site findings. This is reference-only context — most reports should ignore it entirely.\n\n## Site analysis (optional — consult only if operator asks)\n\n${pillarsBlock}\n\n## Strategy discussion (optional — consult only if operator asks)\n\n${panelBlock}\n\n## Raw site data (optional — consult only if operator asks for specific figures)\n\n${stepsBlock}\n\n═══════════════════ END OPTIONAL CONTEXT ═══════════════════\n\nNow produce the client report as JSON. Remember: the report's content is gated entirely by the operator's context above. Attached documents are the source of "what was done". Workspace data above is OPTIONAL — most reports will not draw on it at all. Never name filenames, never use internal vocabulary, never write what cannot be sourced. Operator concerns go in operator_notes, never in the body.`;
 
   // ── Call path ── if PDFs are attached we go direct-API so we can include
   // them as document blocks; otherwise the existing text-only llm() helper.
