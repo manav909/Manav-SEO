@@ -185,15 +185,46 @@ export async function clientReportUploadAttachment(opts: {
         stack: (upErr as any).stack ? String((upErr as any).stack).split("\n").slice(0, 4) : undefined,
       }));
 
+      // Probe: ask Postgres what role this connection is actually using.
+      // If RLS is denying us as 'anon' instead of 'service_role', that's
+      // the smoking gun for an env var problem, regardless of what we
+      // think we configured. The rpc may not exist on every project — if
+      // it fails, log a hint to add it. Either way the probe is
+      // diagnostic only, never thrown.
+      try {
+        const { data: roleProbe } = await db().rpc("current_role_probe").catch(() => ({ data: null }));
+        // If the RPC doesn't exist, try a direct SELECT through the API
+        const { data: jwtProbe, error: jwtErr } = await db().from("workspace_runs").select("project_id").limit(1);
+        const keyVarsPresent = {
+          SUPABASE_SERVICE_KEY: !!process.env.SUPABASE_SERVICE_KEY,
+          SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+          SUPABASE_SECRET_KEY: !!process.env.SUPABASE_SECRET_KEY,
+          SUPABASE_ANON_KEY: !!process.env.SUPABASE_ANON_KEY,
+          VITE_SUPABASE_ANON_KEY: !!process.env.VITE_SUPABASE_ANON_KEY,
+        };
+        // Decode the actual key in use to surface its role claim (the JWT
+        // payload is base64; we read the role field only — no secrets logged)
+        const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+        const actualKey = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
+        let keyRole = "unknown";
+        try {
+          const payload = actualKey.split(".")[1];
+          if (payload) {
+            const decoded = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+            keyRole = decoded.role || "no-role-claim";
+          }
+        } catch { /* not a JWT */ }
+        console.error(`[workspace/client-report-upload] DIAGNOSTIC: keyVarsPresent=${JSON.stringify(keyVarsPresent)} keyInUseRoleClaim=${keyRole} workspace_runs_read_works=${!jwtErr}`);
+      } catch (probeErr: any) {
+        console.error(`[workspace/client-report-upload] diagnostic probe threw: ${probeErr?.message}`);
+      }
+
       const msg = String(upErr.message || "");
-      // Specific known causes get an actionable hint appended; the user
-      // still sees the underlying message so we don't lie about what's
-      // happening.
       if (/Bucket not found|not.found/i.test(msg)) {
         return { success: false, error: `Storage bucket '${BUCKET}' not found. Run the Build 10b migration in Supabase. (raw: ${msg})` };
       }
       if (/row.level security|new row violates row.level/i.test(msg)) {
-        return { success: false, error: `Storage RLS is denying this upload. Verify policies on '${BUCKET}' bucket grant service_role SELECT/INSERT/UPDATE/DELETE with bucket_id = '${BUCKET}'. (raw: ${msg})` };
+        return { success: false, error: `Storage RLS is denying this upload. Check Vercel function logs for the DIAGNOSTIC line — it shows which env vars are present and the role claim of the key actually in use. If keyInUseRoleClaim is 'anon', the SUPABASE_SERVICE_KEY env var is missing or wrong. (raw: ${msg})` };
       }
       if (/duplicate|already exists/i.test(msg)) {
         return { success: false, error: `A file already exists at this path. Try again — the path includes a fresh UUID, so this should be transient. (raw: ${msg})` };
@@ -201,8 +232,6 @@ export async function clientReportUploadAttachment(opts: {
       if (/payload too large|too large|413/i.test(msg)) {
         return { success: false, error: `File too large for the storage backend's per-request limit. (raw: ${msg})` };
       }
-      // Unknown cause — surface the verbatim message so we can diagnose
-      // properly instead of mislabeling it.
       return { success: false, error: `Storage upload failed: ${msg}` };
     }
   } catch (e: any) {
