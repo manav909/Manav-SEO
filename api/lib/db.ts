@@ -2,7 +2,24 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 function makeClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "https://placeholder.supabase.co";
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "placeholder";
+  // Try every common name for the service-role key. Falling back to an anon
+  // key silently caused Build 10b storage uploads to be denied by RLS
+  // because anon-key requests are authenticated as 'anon', not 'service_role'
+  // — and the policies (correctly) only grant service_role. If we have to
+  // fall back, log loudly so the failure mode is visible.
+  const serviceKey =
+    process.env.SUPABASE_SERVICE_KEY
+    || process.env.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.SUPABASE_SECRET_KEY
+    || "";
+  const anonKey =
+    process.env.SUPABASE_ANON_KEY
+    || process.env.VITE_SUPABASE_ANON_KEY
+    || "";
+  const key = serviceKey || anonKey || "placeholder";
+  if (!serviceKey && anonKey) {
+    console.warn("[db] SUPABASE_SERVICE_KEY (or SUPABASE_SERVICE_ROLE_KEY / SUPABASE_SECRET_KEY) is not set — falling back to anon key. Storage uploads and any operation that depends on service_role RLS bypass will fail. Set the service-role key in your Vercel env vars.");
+  }
   return createClient(url, key);
 }
 
