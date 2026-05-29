@@ -372,13 +372,23 @@ export default function Workspace() {
 /* ─── sub-components ─── */
 function StepCard({ step }: { step: any }) {
   const [open, setOpen] = useState(false);
+  const rawStatus = (step.status || 'done').toLowerCase();
+  const isFailed = rawStatus.startsWith('failed');
+  const isSkipped = rawStatus === 'skipped';
+  const badge = isFailed ? 'FAILED' : isSkipped ? 'SKIPPED' : 'DONE';
+  const badgeColor = isFailed
+    ? { bg: 'hsla(0 70% 55% / 0.18)', fg: 'hsl(0 70% 65%)' }
+    : isSkipped
+    ? { bg: 'rgba(160,160,180,0.18)', fg: 'rgba(180,190,205,0.85)' }
+    : { bg: 'hsla(152 70% 50% / 0.18)', fg: 'hsl(152 70% 60%)' };
   return (
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Activity size={14} style={{ color: CYAN }} />
+          <Activity size={14} style={{ color: isFailed ? 'hsl(0 70% 65%)' : CYAN }} />
           <span style={{ fontSize: 13, fontWeight: 700 }}>{step.step_key.replace(/_/g, ' ')}</span>
-          <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: 'hsla(152 70% 50% / 0.18)', color: 'hsl(152 70% 60%)' }}>DONE</span>
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 7px', borderRadius: 4, background: badgeColor.bg, color: badgeColor.fg }}>{badge}</span>
+          {isFailed && <span style={{ fontSize: 10, color: 'rgba(190,200,215,0.7)', marginLeft: 4 }} title={step.status}>{step.status.replace(/^failed:\s*/, '').slice(0, 80)}</span>}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <button onClick={(e) => { e.stopPropagation(); downloadMd(step.step_key, step.report_md); }} style={iconBtn()} title="Download .md"><Download size={12} /></button>

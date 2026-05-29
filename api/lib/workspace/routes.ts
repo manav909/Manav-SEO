@@ -76,41 +76,75 @@ export async function wsRunDeepSteps(body: any) {
     // Step — GSC visibility (run if enabled or no config)
     let nearRanking: any[] = [];
     if (isEnabled("gsc_visibility")) {
-      const { gatherGscVisibility } = await import("./deep-steps/gsc-visibility.js");
-      const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
-      await upsertStepReport(runId, projectId, "gsc_visibility", evidence, report_md, evidence.worth_deeper);
-      results["gsc_visibility"] = "ok";
-      nearRanking = evidence.near_ranking || [];
+      try {
+        const { gatherGscVisibility } = await import("./deep-steps/gsc-visibility.js");
+        const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
+        await upsertStepReport(runId, projectId, "gsc_visibility", evidence, report_md, evidence.worth_deeper);
+        results["gsc_visibility"] = "ok";
+        nearRanking = evidence.near_ranking || [];
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "gsc_visibility", e?.message || String(e));
+        results["gsc_visibility"] = `failed: ${e?.message}`;
+      }
+    } else {
+      await recordStepSkipped(runId, projectId, "gsc_visibility");
     }
 
     // Step — Competitor intelligence (uses near-ranking queries from visibility)
     if (isEnabled("competitor_intel")) {
-      const { gatherCompetitorIntel } = await import("./deep-steps/competitor-intel.js");
-      const projectDomain = domainOf(targetUrls[0] || "");
-      const queries = nearRanking
-        .sort((a: any, b: any) => b.impressions - a.impressions)
-        .map((q: any) => ({ query: q.query, position: q.position }));
-      const comp = await gatherCompetitorIntel({ projectId, projectDomain, queries });
-      await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
-      results["competitor_intel"] = "ok";
+      try {
+        const { gatherCompetitorIntel } = await import("./deep-steps/competitor-intel.js");
+        const projectDomain = domainOf(targetUrls[0] || "");
+        const queries = nearRanking
+          .sort((a: any, b: any) => b.impressions - a.impressions)
+          .map((q: any) => ({ query: q.query, position: q.position }));
+        const comp = await gatherCompetitorIntel({ projectId, projectDomain, queries });
+        await upsertStepReport(runId, projectId, "competitor_intel", comp.evidence, comp.report_md, comp.evidence.worth_deeper);
+        results["competitor_intel"] = "ok";
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "competitor_intel", e?.message || String(e));
+        results["competitor_intel"] = `failed: ${e?.message}`;
+      }
+    } else {
+      await recordStepSkipped(runId, projectId, "competitor_intel");
     }
 
     // Remaining full-depth steps — each gated by the run config. Imported lazily.
-    const TS = await import("./deep-steps/traffic-steps.js");
-    const runStep = async (key: string, fn: (o: any) => Promise<{ evidence: any; report_md: string }>) => {
-      if (!isEnabled(key)) return;
-      try {
-        const { evidence, report_md } = await fn({ projectId, targetUrls });
-        await upsertStepReport(runId, projectId, key, evidence, report_md, evidence.worth_deeper || []);
-        results[key] = "ok";
-      } catch (e: any) { results[key] = `failed: ${e?.message}`; }
-    };
-    await runStep("query_landscape", TS.gatherQueryLandscape);
-    await runStep("onpage_audit", TS.gatherOnpageAudit);
-    await runStep("core_web_vitals", TS.gatherCoreWebVitals);
-    await runStep("internal_link_graph", TS.gatherInternalLinkGraph);
-    await runStep("engagement_value", TS.gatherEngagementValue);
-    await runStep("trajectory", TS.gatherTrajectory);
+    // Every failure is now persisted to step_reports with the real error so it
+    // is visible in the UI and queryable, instead of being silently swallowed.
+    let TS: any;
+    try { TS = await import("./deep-steps/traffic-steps.js"); }
+    catch (e: any) {
+      const msg = `traffic-steps module failed to load: ${e?.message}`;
+      for (const k of ["query_landscape", "onpage_audit", "core_web_vitals", "internal_link_graph", "engagement_value", "trajectory"]) {
+        await recordStepFailure(runId, projectId, k, msg);
+        results[k] = `failed: ${msg}`;
+      }
+      TS = null;
+    }
+    if (TS) {
+      const runStep = async (key: string, fn: (o: any) => Promise<{ evidence: any; report_md: string }>) => {
+        if (!isEnabled(key)) { await recordStepSkipped(runId, projectId, key); return; }
+        if (typeof fn !== "function") {
+          await recordStepFailure(runId, projectId, key, `gatherer export missing on traffic-steps module`);
+          results[key] = `failed: gatherer missing`; return;
+        }
+        try {
+          const { evidence, report_md } = await fn({ projectId, targetUrls });
+          await upsertStepReport(runId, projectId, key, evidence, report_md, evidence.worth_deeper || []);
+          results[key] = "ok";
+        } catch (e: any) {
+          await recordStepFailure(runId, projectId, key, e?.message || String(e));
+          results[key] = `failed: ${e?.message}`;
+        }
+      };
+      await runStep("query_landscape", TS.gatherQueryLandscape);
+      await runStep("onpage_audit", TS.gatherOnpageAudit);
+      await runStep("core_web_vitals", TS.gatherCoreWebVitals);
+      await runStep("internal_link_graph", TS.gatherInternalLinkGraph);
+      await runStep("engagement_value", TS.gatherEngagementValue);
+      await runStep("trajectory", TS.gatherTrajectory);
+    }
   } catch (e: any) {
     return { success: false, error: `deep steps failed: ${e?.message}`, results };
   }
@@ -127,6 +161,31 @@ async function upsertStepReport(runId: string, projectId: string, stepKey: strin
     evidence_json: evidence, report_md: reportMd, worth_deeper_json: worthDeeper || [],
     status: "done",
   });
+}
+
+/* Persist a failed step so the failure is visible (UI + queryable). */
+async function recordStepFailure(runId: string, projectId: string, stepKey: string, error: string) {
+  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+  const md = `# ${stepKey} — FAILED\n\n_${new Date().toLocaleString()}_\n\n**Error:** ${error}\n\nThis step did not write evidence. The pillar(s) that depend on it will surface the gap honestly rather than synthesise.`;
+  try {
+    await db().from("step_reports").insert({
+      run_id: runId, project_id: projectId, step_key: stepKey,
+      evidence_json: { step_key: stepKey, generated_at: new Date().toISOString(), error },
+      report_md: md, worth_deeper_json: [], status: `failed: ${(error || "").slice(0, 200)}`,
+    });
+  } catch (e: any) { console.error(`[workspace] recordStepFailure ${stepKey} ${e?.message}`); }
+}
+
+/* Persist a skipped (disabled-by-config) step so the UI shows it explicitly. */
+async function recordStepSkipped(runId: string, projectId: string, stepKey: string) {
+  await db().from("step_reports").delete().eq("run_id", runId).eq("step_key", stepKey);
+  try {
+    await db().from("step_reports").insert({
+      run_id: runId, project_id: projectId, step_key: stepKey,
+      evidence_json: { step_key: stepKey, skipped: true }, report_md: `_${stepKey} was disabled in the run config and did not execute._`,
+      worth_deeper_json: [], status: "skipped",
+    });
+  } catch (e: any) { console.error(`[workspace] recordStepSkipped ${stepKey} ${e?.message}`); }
 }
 
 /* ─── run a panel round ────────────────────────────────────────── */
