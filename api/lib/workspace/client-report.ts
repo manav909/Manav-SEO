@@ -22,8 +22,11 @@
 import { db } from "../db.js";
 import { llm } from "./llm.js";
 import { resolveTargetUrls } from "./shared.js";
+import { clientReportLoadAttachments } from "./client-report-uploads.js";
 
 const norm = (u: string) => (u || "").replace(/\/$/, "").toLowerCase();
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const MODEL = "claude-sonnet-4-6";
 
 interface ClientReportOpts {
   runId?: string;
@@ -36,6 +39,9 @@ interface ClientReportOpts {
       data) and how to use it. */
   referenceText?: string;
   referenceMode?: "template" | "data" | "both";
+  /** Optional uploaded file attachment ids. PDFs are attached as native
+      document blocks; DOCX/XLSX/CSV are passed as extracted markdown text. */
+  attachmentIds?: string[];
   /** Optional status callback for live UI updates during the call. */
   onStatus?: (s: string) => Promise<void>;
 }
@@ -163,7 +169,32 @@ export async function solveClientReport(opts: ClientReportOpts): Promise<ClientR
     const role = mode === "template" ? "Use this reference as the STRUCTURAL TEMPLATE — match its sections, tone, and shape. Fill it with facts drawn from this workspace's evidence, never with facts from the reference unless the operator has explicitly noted them as the client's own data."
       : mode === "data" ? "Use this reference as AN ADDITIONAL SOURCE OF FACTS — treat its claims as verified data the client has provided (e.g. client survey results, third-party audit findings, internal metrics). Cite this reference inline alongside workspace sources when used."
       : "Use this reference BOTH as structural template AND as an additional source of facts. Honor its shape; treat its claims as additional verified data from the client. Cite this reference inline when its facts are used.";
-    referenceBlock = `\n\n## Reference material the operator has provided\n\n_${role}_\n\n\`\`\`\n${opts.referenceText.slice(0, 8000)}\n\`\`\`\n`;
+    referenceBlock = `\n\n## Reference material the operator has provided (pasted text)\n\n_${role}_\n\n\`\`\`\n${opts.referenceText.slice(0, 8000)}\n\`\`\`\n`;
+  }
+
+  // Uploaded attachments — DOCX/XLSX/CSV become text blocks; PDFs are attached
+  // as native Anthropic document blocks (handled in the API call below).
+  const pdfAttachments: Array<{ file_name: string; pdf_base64: string }> = [];
+  if (opts.attachmentIds && opts.attachmentIds.length) {
+    await status(`loading ${opts.attachmentIds.length} attachment(s)`);
+    const atts = await clientReportLoadAttachments(opts.attachmentIds);
+    for (const a of atts) {
+      if (a.parse_status !== "ok" && a.parse_status !== "scanned_pdf") {
+        // Skip failed parses but log to operator notes via prompt
+        referenceBlock += `\n\n## Attachment: ${a.file_name} (could not be parsed)\n\n_Status: ${a.parse_status}${a.parse_note ? ` — ${a.parse_note}` : ""}_\n`;
+        continue;
+      }
+      if (a.pdf_base64) {
+        pdfAttachments.push({ file_name: a.file_name, pdf_base64: a.pdf_base64 });
+        referenceBlock += `\n\n## Attachment: ${a.file_name} (PDF — attached as document below)\n\n_Treat the attached PDF as additional reference material the operator has provided. The same rule applies: cite this attachment inline when its facts are used; never invent details._\n`;
+      } else if (a.extracted_text) {
+        const cap = 12000;
+        const text = a.extracted_text.length > cap
+          ? a.extracted_text.slice(0, cap) + `\n\n_…(truncated; ${a.extracted_text.length - cap} chars omitted)…_`
+          : a.extracted_text;
+        referenceBlock += `\n\n## Attachment: ${a.file_name} (extracted ${a.content_type})\n\n_Treat this attachment as additional reference material the operator has provided. Cite it inline when used._\n\n\`\`\`\n${text}\n\`\`\`\n`;
+      }
+    }
   }
 
   await status("composing the client deliverable");
@@ -176,14 +207,14 @@ PROJECT CONTEXT (use these exact facts; do not invent project details):
 - Pages in scope: ${ctx.target_urls.length}
 
 ABSOLUTE RULES — non-negotiable:
-- Every figure, claim, or recommendation in your report must trace to a specific source in the workspace evidence or the operator's reference material. Cite the source inline, e.g. "(source: On-Page Health pillar)" or "(source: GSC Visibility step v2)".
+- Every figure, claim, or recommendation in your report must trace to a specific source in the workspace evidence, the operator's pasted reference, or an attached file. Cite the source inline, e.g. "(source: On-Page Health pillar)" or "(source: attached PDF '<file_name>')".
 - Never invent numbers, never paraphrase a finding into a stronger claim than the evidence supports.
 - If the operator's context asks you to communicate something the evidence does not support, DO NOT write it as fact. Either omit it or flag it transparently as "unverified — please confirm with [source]".
 - This report will be read by a real client who is making real decisions. Stakes are high. Soft, accurate, transparent beats bold and unverified.
 
 SHAPE — read the operator's context carefully and produce the report in the shape they request:
 - If they specify a format (executive summary, monthly review, audit recap, etc.), use that format.
-- If they paste reference material with mode=template, match the reference's structure.
+- If they paste reference material or attach a file with mode=template, match the reference's structure.
 - If they don't specify, default to: (1) brief executive summary, (2) what we found (3-5 sourced headline findings), (3) what we recommend (3-5 prioritised actions with effort + impact), (4) what's next (90-day plan), (5) appendix of sources.
 
 TONE — match what the operator specifies. If unspecified, use a calm, professional, advisor-to-client register. Avoid jargon when the operator says the client isn't technical. Never use words like "scientist" or "lab" — this is a client deliverable, not an internal artifact.
@@ -201,10 +232,43 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
 
   userPrompt += `\n\n## Workspace evidence — PILLAR FINDINGS (primary source)\n\n${pillarsBlock}\n\n## Panel discussion context\n\n${panelBlock}\n\n## Raw step evidence (for verification of specific figures)\n\n${stepsBlock}\n\n---\n\nProduce the client report now as JSON. Source every claim. Be honest in operator_notes about anything you couldn't ground.`;
 
-  const raw = await llm({
-    system, user: userPrompt,
-    maxTokens: 8000, timeoutMs: 240_000, label: "client-report",
-  });
+  // ── Call path ── if PDFs are attached we go direct-API so we can include
+  // them as document blocks; otherwise the existing text-only llm() helper.
+  let raw = "";
+  if (pdfAttachments.length) {
+    if (!ANTHROPIC_API_KEY) return { success: false, error: "ANTHROPIC_API_KEY missing." };
+    const userContent: any[] = [];
+    // Document blocks first (Anthropic recommends docs before text)
+    for (const p of pdfAttachments) {
+      userContent.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: p.pdf_base64 }, title: p.file_name });
+    }
+    userContent.push({ type: "text", text: userPrompt });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 240_000);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: controller.signal,
+        headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({ model: MODEL, max_tokens: 8000, system, messages: [{ role: "user", content: userContent }] }),
+      });
+      if (!r.ok) {
+        const t = await r.text().catch(() => "");
+        console.error(`[workspace/client-report-pdf] LLM ${r.status}: ${t.slice(0, 400)}`);
+        return { success: false, error: `LLM call with PDF attachment failed (${r.status}). Check Vercel logs.` };
+      }
+      const d = await r.json();
+      raw = (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+    } catch (e: any) {
+      console.error(`[workspace/client-report-pdf] exc ${e?.message}${controller.signal.aborted ? " (timeout 240000ms)" : ""}`);
+      return { success: false, error: "Client Report generation timed out or failed. Try removing attachments and retrying." };
+    } finally { clearTimeout(timer); }
+  } else {
+    raw = await llm({
+      system, user: userPrompt,
+      maxTokens: 8000, timeoutMs: 240_000, label: "client-report",
+    });
+  }
 
   if (!raw) return { success: false, error: "Client Report generation returned empty (LLM timeout or error). Try with a tighter context or shorter reference material." };
 
@@ -256,7 +320,7 @@ OUTPUT FORMAT: respond with ONLY this JSON (no prose around it, no fences):
     body_md: bodyWithNotes,
     confidence_rating: 0.9,
     generated_by: "manual",
-    data_sources: ["pillar findings", "panel discussion", "step evidence", opts.referenceText ? "operator-provided reference" : null].filter(Boolean),
+    data_sources: ["pillar findings", "panel discussion", "step evidence", opts.referenceText ? "operator-pasted reference" : null, (opts.attachmentIds?.length ? `${opts.attachmentIds.length} attachment(s)` : null)].filter(Boolean),
     llm_calls_used: 1,
     web_searches_used: 0,
     escalations_json: [],

@@ -14,11 +14,11 @@ import { downloadStakeholderReport, openStakeholderReport } from '@/lib/reportEx
 import {
   wsCreateRun, wsRunDeepSteps, wsRunPanel, wsReleaseToPillars, wsSolvePillar, wsGetRun,
   wsGoalCatalog, wsComposeConfig, wsCancelRun, wsPollStatus, wsTakeEscalationsToPanel,
-  wsSolveClientReport,
+  wsSolveClientReport, wsCrUploadAttachment, wsCrListAttachments, wsCrRemoveAttachment,
 } from '@/components/pm/api';
 import {
   Activity, Users, FlaskConical, FileText, Play, ChevronRight, Loader2,
-  Send, Download, Copy, Check, ArrowRight, Sparkles, ExternalLink, X,
+  Send, Download, Copy, Check, ArrowRight, Sparkles, ExternalLink, X, Upload, Paperclip,
 } from 'lucide-react';
 
 const PILLARS = ['visibility', 'query_opportunity', 'on_page_health', 'technical_performance', 'internal_links', 'engagement', 'monitoring'];
@@ -74,6 +74,10 @@ export default function Workspace() {
   const [crReferenceText, setCrReferenceText] = useState('');
   const [crReferenceMode, setCrReferenceMode] = useState<'template' | 'data' | 'both'>('both');
   const [crBusy, setCrBusy] = useState(false);
+  // Uploaded reference attachments for the Client Report. Loaded from server,
+  // refreshed after each upload/remove.
+  const [crAttachments, setCrAttachments] = useState<Array<{ id: string; file_name: string; size_bytes: number; parse_status: string; parse_note?: string; created_at: string }>>([]);
+  const [crUploading, setCrUploading] = useState(false);
   const cancelRef = React.useRef(false);
 
   useEffect(() => { wsGoalCatalog().then((r) => { if (r.success) setCatalog(r); }); }, []);
@@ -228,7 +232,8 @@ export default function Workspace() {
         runId: run.id, projectId: selectedProjectId, campaignId: run.campaign_id,
         manavContext: crContext,
         referenceText: crReferenceText.trim() ? crReferenceText : undefined,
-        referenceMode: crReferenceText.trim() ? crReferenceMode : undefined,
+        referenceMode: (crReferenceText.trim() || crAttachments.length) ? crReferenceMode : undefined,
+        attachmentIds: crAttachments.length ? crAttachments.map(a => a.id) : undefined,
       });
       if (!r.success) reportError('Client Report failed', r.error || 'unknown error');
       else { toast({ title: 'Client Report generated', description: 'Available in Documents.' }); setSection('documents'); }
@@ -239,6 +244,43 @@ export default function Workspace() {
       setCrBusy(false);
     }
   };
+
+  const refreshCrAttachments = React.useCallback(async () => {
+    if (!selectedProjectId) return;
+    const r = await wsCrListAttachments({ projectId: selectedProjectId, runId: run?.id });
+    if (r.success && Array.isArray(r.attachments)) setCrAttachments(r.attachments as any);
+  }, [selectedProjectId, run?.id]);
+
+  const uploadCrFile = async (file: File) => {
+    if (!selectedProjectId) { reportError('Upload', 'No active project.'); return; }
+    if (file.size > 10 * 1024 * 1024) { reportError('Upload', `${file.name} is ${Math.round(file.size / 1024 / 1024)}MB — limit is 10MB.`); return; }
+    setCrUploading(true);
+    setLiveStatus(`uploading ${file.name}`);
+    try {
+      const r = await wsCrUploadAttachment({ projectId: selectedProjectId, runId: run?.id, file });
+      if (!r.success) {
+        reportError('Upload failed', r.error || 'unknown error');
+      } else if (r.parse_status && r.parse_status !== 'ok') {
+        toast({ title: 'Uploaded with a parse warning', description: `${file.name}: ${r.parse_status}${r.parse_note ? ` — ${r.parse_note}` : ''}` });
+      } else {
+        toast({ title: 'Attachment uploaded', description: file.name });
+      }
+      await refreshCrAttachments();
+    } finally {
+      setCrUploading(false);
+      setLiveStatus('');
+    }
+  };
+
+  const removeCrAttachment = async (attachmentId: string) => {
+    if (!selectedProjectId) return;
+    const r = await wsCrRemoveAttachment({ projectId: selectedProjectId, attachmentId });
+    if (!r.success) reportError('Could not remove attachment', r.error || 'unknown error');
+    await refreshCrAttachments();
+  };
+
+  // Load attachments when the run loads or changes
+  React.useEffect(() => { refreshCrAttachments(); }, [refreshCrAttachments]);
 
   if (!selectedProjectId) {
     return <div style={{ padding: 40, color: 'rgba(180,190,205,0.7)' }}>Select a project to open its workspace.</div>;
@@ -558,22 +600,94 @@ export default function Workspace() {
                   <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
                     Reference material (optional)
                   </label>
+
+                  {/* File upload — drag/drop or click to pick. Multiple files supported. */}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      const files = Array.from(e.dataTransfer.files || []);
+                      for (const f of files) await uploadCrFile(f);
+                    }}
+                    style={{
+                      padding: '14px 12px', border: '1px dashed hsla(186 80% 55% / 0.35)',
+                      borderRadius: 6, background: 'rgba(186, 230, 240, 0.02)', marginBottom: 10,
+                      display: 'flex', alignItems: 'center', gap: 10,
+                    }}
+                  >
+                    <Upload size={16} style={{ color: CYAN, flexShrink: 0 }} />
+                    <div style={{ flex: 1, fontSize: 11.5, color: 'rgba(180,190,205,0.85)', lineHeight: 1.45 }}>
+                      Drop files here, or pick — PDF, DOCX, XLSX, CSV. Max 10MB each.
+                      <div style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.6)', marginTop: 2 }}>
+                        PDFs are passed to the model natively; DOCX/XLSX/CSV are parsed server-side into readable text.
+                      </div>
+                    </div>
+                    <label style={{
+                      fontSize: 11, padding: '6px 12px', borderRadius: 5,
+                      border: '1px solid hsla(186 80% 55% / 0.4)', color: CYAN, cursor: 'pointer',
+                      background: crUploading ? 'rgba(150,150,150,0.1)' : 'transparent', opacity: crUploading ? 0.6 : 1,
+                    }}>
+                      {crUploading ? 'Uploading…' : 'Pick file'}
+                      <input
+                        type="file"
+                        multiple
+                        accept=".pdf,.docx,.xlsx,.xls,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
+                        disabled={crUploading}
+                        onChange={async (e) => {
+                          const files = Array.from(e.target.files || []);
+                          for (const f of files) await uploadCrFile(f);
+                          e.target.value = '';  // reset so re-picking same file fires onChange
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  </div>
+
+                  {/* Attached files list */}
+                  {crAttachments.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+                      {crAttachments.map(a => {
+                        const sizeKb = Math.round(a.size_bytes / 1024);
+                        const sizeLabel = sizeKb > 1024 ? `${(sizeKb / 1024).toFixed(1)}MB` : `${sizeKb}KB`;
+                        const ok = a.parse_status === 'ok';
+                        return (
+                          <div key={a.id} style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '6px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 5,
+                            border: ok ? '1px solid hsla(152 70% 50% / 0.18)' : '1px solid hsla(38 90% 55% / 0.25)',
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, flex: 1, minWidth: 0 }}>
+                              <Paperclip size={11} style={{ color: ok ? 'hsl(152 70% 60%)' : 'hsl(38 90% 65%)', flexShrink: 0 }} />
+                              <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.file_name}</span>
+                              <span style={{ color: 'rgba(150,160,180,0.55)', fontSize: 10.5 }}>{sizeLabel}</span>
+                              {!ok && <span style={{ color: 'hsl(38 90% 65%)', fontSize: 10.5 }} title={a.parse_note || ''}>· {a.parse_status}</span>}
+                            </div>
+                            <button onClick={() => removeCrAttachment(a.id)} style={{ ...iconBtn(), padding: 4 }} title="Remove">
+                              <X size={11} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Paste textarea — alternative or supplement to file upload */}
                   <textarea
                     value={crReferenceText}
                     onChange={(e) => setCrReferenceText(e.target.value)}
-                    placeholder={`Paste a sample report's content, client brief, additional data — anything in plain text or markdown. Leave blank if not needed.
-
-(PDF / DOCX / XLSX upload coming in Build 10b — for now, paste the extracted text.)`}
-                    rows={6}
+                    placeholder={`...or paste reference content directly here (plain text or markdown). Leave blank if uploading files only.`}
+                    rows={5}
                     style={{
                       width: '100%', padding: 10, fontSize: 12, lineHeight: 1.5,
                       background: 'rgba(15,16,24,0.6)', border: '1px solid hsla(220 14% 30% / 0.5)',
                       borderRadius: 6, color: 'rgba(225,228,238,0.95)', fontFamily: 'inherit', resize: 'vertical',
                     }}
                   />
-                  {crReferenceText.trim().length > 0 && (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center' }}>
-                      <span style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.7)' }}>Use this reference as:</span>
+
+                  {/* Mode selector — applies to ALL reference material (uploaded + pasted) */}
+                  {(crReferenceText.trim().length > 0 || crAttachments.length > 0) && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 10.5, color: 'rgba(150,160,180,0.7)' }}>Use reference material as:</span>
                       {[
                         { v: 'template' as const, label: 'Structural template' },
                         { v: 'data' as const, label: 'Additional data' },

@@ -332,7 +332,7 @@ export async function wsTakeEscalationsToPanel(body: any) {
    This is the communication-purpose pillar. Reads workspace evidence and the
    operator's per-report instructions to produce a client-ready deliverable. */
 export async function wsSolveClientReport(body: any) {
-  const { runId, projectId, campaignId, manavContext, referenceText, referenceMode } = body || {};
+  const { runId, projectId, campaignId, manavContext, referenceText, referenceMode, attachmentIds } = body || {};
   if (!projectId) return { success: false, error: "projectId required" };
   if (!runId) return { success: false, error: "runId required — Client Report draws on a workspace run." };
   if (!manavContext || String(manavContext).trim().length < 5) {
@@ -348,8 +348,32 @@ export async function wsSolveClientReport(body: any) {
     manavContext: String(manavContext),
     referenceText: referenceText ? String(referenceText) : undefined,
     referenceMode: (referenceMode === "template" || referenceMode === "data" || referenceMode === "both") ? referenceMode : undefined,
+    attachmentIds: Array.isArray(attachmentIds) ? attachmentIds.filter(Boolean).map(String) : undefined,
     onStatus,
   });
+}
+
+/* ─── Upload a reference attachment (PDF / DOCX / XLSX / CSV) ──────── */
+export async function wsCrUploadAttachment(body: any) {
+  const { projectId, runId, fileName, contentType, fileB64 } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!fileB64) return { success: false, error: "fileB64 required" };
+  const { clientReportUploadAttachment } = await import("./client-report-uploads.js");
+  return clientReportUploadAttachment({ projectId, runId, fileName, contentType, fileB64 });
+}
+
+export async function wsCrListAttachments(body: any) {
+  const { projectId, runId } = body || {};
+  if (!projectId) return { success: false, error: "projectId required" };
+  const { clientReportListAttachments } = await import("./client-report-uploads.js");
+  return clientReportListAttachments({ projectId, runId });
+}
+
+export async function wsCrRemoveAttachment(body: any) {
+  const { attachmentId, projectId } = body || {};
+  if (!attachmentId || !projectId) return { success: false, error: "attachmentId and projectId required" };
+  const { clientReportRemoveAttachment } = await import("./client-report-uploads.js");
+  return clientReportRemoveAttachment({ attachmentId, projectId });
 }
 
 /* ─── solve one pillar (Path A from panel, or Path B direct) ───── */
@@ -444,6 +468,9 @@ export async function handleWorkspace(action: string, body: any): Promise<any | 
     case "ws_take_escalations_to_panel": return wsTakeEscalationsToPanel(body);
     case "ws_solve_pillar":        return wsSolvePillar(body);
     case "ws_solve_client_report": return wsSolveClientReport(body);
+    case "ws_cr_upload_attachment": return wsCrUploadAttachment(body);
+    case "ws_cr_list_attachments":  return wsCrListAttachments(body);
+    case "ws_cr_remove_attachment": return wsCrRemoveAttachment(body);
     case "ws_cancel_run":          return wsCancelRun(body);
     case "ws_poll_status":         return wsPollStatus(body);
     case "ws_get_run":             return wsGetRun(body);

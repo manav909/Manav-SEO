@@ -4341,7 +4341,33 @@ export async function wsTakeEscalationsToPanel(opts: { runId: string; projectId:
   Promise<{ success?: boolean; panel_id?: string; output?: any; document_md?: string; error?: string }> {
   return post(ENGINE, { action: 'ws_take_escalations_to_panel', ...opts });
 }
-export async function wsSolveClientReport(opts: { runId: string; projectId: string; campaignId?: string; manavContext: string; referenceText?: string; referenceMode?: 'template' | 'data' | 'both' }):
+export async function wsSolveClientReport(opts: { runId: string; projectId: string; campaignId?: string; manavContext: string; referenceText?: string; referenceMode?: 'template' | 'data' | 'both'; attachmentIds?: string[] }):
   Promise<{ success?: boolean; report_id?: string; error?: string }> {
   return post(ENGINE, { action: 'ws_solve_client_report', ...opts });
+}
+export async function wsCrUploadAttachment(opts: { projectId: string; runId?: string; file: File }):
+  Promise<{ success?: boolean; attachment_id?: string; parse_status?: string; parse_note?: string; extracted_text_preview?: string; size_bytes?: number; error?: string }> {
+  // Browser-side: convert the File to base64 (no data: prefix) before sending.
+  const fileB64 = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => { const s = String(fr.result || ""); const i = s.indexOf(","); resolve(i >= 0 ? s.slice(i + 1) : s); };
+    fr.onerror = () => reject(new Error("Could not read file."));
+    fr.readAsDataURL(opts.file);
+  });
+  return post(ENGINE, {
+    action: 'ws_cr_upload_attachment',
+    projectId: opts.projectId,
+    runId: opts.runId,
+    fileName: opts.file.name,
+    contentType: opts.file.type,
+    fileB64,
+  });
+}
+export async function wsCrListAttachments(opts: { projectId: string; runId?: string }):
+  Promise<{ success?: boolean; attachments?: any[]; error?: string }> {
+  return post(ENGINE, { action: 'ws_cr_list_attachments', ...opts });
+}
+export async function wsCrRemoveAttachment(opts: { projectId: string; attachmentId: string }):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'ws_cr_remove_attachment', ...opts });
 }
