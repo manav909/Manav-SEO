@@ -175,6 +175,12 @@ export async function clientReportUploadAttachment(opts: {
       if (/Bucket not found|not.found/i.test(upErr.message || "")) {
         return { success: false, error: `Storage bucket '${BUCKET}' not found — run the Build 10b migration in Supabase first.` };
       }
+      // Storage RLS not configured — by default a private bucket has no
+      // write policies, so service_role inserts get denied. Direct the
+      // operator to the patch migration that adds the policies.
+      if (/row.level security|new row violates|policy/i.test(upErr.message || "")) {
+        return { success: false, error: `Storage RLS is blocking the upload. Run workspace-build10b-policies-patch.sql in Supabase to add the four bucket policies (service_role SELECT/INSERT/UPDATE/DELETE for '${BUCKET}').` };
+      }
       return { success: false, error: `Storage upload failed: ${upErr.message}` };
     }
   } catch (e: any) {
