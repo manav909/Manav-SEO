@@ -408,7 +408,12 @@ export default function Workspace() {
                     <>
                       <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: 'hsla(152 70% 50% / 0.18)', color: 'hsl(152 70% 60%)' }}>✓ SOLVED</span>
                       <div style={{ fontSize: 10.5, color: 'rgba(170,180,195,0.85)', margin: '8px 0' }}>{rep.title}</div>
-                      <button onClick={() => setSection('documents')} style={linkBtn()}>Read in Documents →</button>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <button onClick={() => setSection('documents')} style={linkBtn()}>Read in Documents →</button>
+                        <button onClick={() => solve(p)} disabled={pillarBusy === p} style={{ ...linkBtn(), color: 'rgba(180,190,205,0.7)' }} title="Run this pillar again (replaces the existing report)">
+                          {pillarBusy === p ? 'Re-solving…' : 'Re-solve'}
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <button onClick={() => solve(p)} disabled={pillarBusy === p} style={{ ...primaryBtn(pillarBusy === p), width: '100%', justifyContent: 'center', marginTop: 4 }}>
