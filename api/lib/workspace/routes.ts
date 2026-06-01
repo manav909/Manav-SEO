@@ -214,6 +214,9 @@ export async function wsRunPanel(body: any) {
   if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
   const r = Number(round) || 1;
 
+  // Diagnostic — confirm manavInput is being received from the client.
+  console.error(`[workspace/panel-r${r}] received manavInput: ${manavInput ? `len=${String(manavInput).length} preview="${String(manavInput).slice(0, 120).replace(/\n/g, " ")}"` : "(none)"}`);
+
   let priorOutput: any = undefined;
   if (r >= 2) {
     const { data: prev } = await db().from("panel_sessions")
@@ -332,7 +335,7 @@ export async function wsTakeEscalationsToPanel(body: any) {
    This is the communication-purpose pillar. Reads workspace evidence and the
    operator's per-report instructions to produce a client-ready deliverable. */
 export async function wsSolveClientReport(body: any) {
-  const { runId, projectId, campaignId, manavContext, referenceText, referenceMode, attachmentIds } = body || {};
+  const { runId, projectId, campaignId, manavContext, referenceText, referenceMode, attachmentIds, mode } = body || {};
   if (!projectId) return { success: false, error: "projectId required" };
   if (!runId) return { success: false, error: "runId required — Client Report draws on a workspace run." };
   if (!manavContext || String(manavContext).trim().length < 5) {
@@ -349,6 +352,7 @@ export async function wsSolveClientReport(body: any) {
     referenceText: referenceText ? String(referenceText) : undefined,
     referenceMode: (referenceMode === "template" || referenceMode === "data" || referenceMode === "both") ? referenceMode : undefined,
     attachmentIds: Array.isArray(attachmentIds) ? attachmentIds.filter(Boolean).map(String) : undefined,
+    mode: (mode === "comprehensive" || mode === "strict") ? mode : "strict",
     onStatus,
   });
 }

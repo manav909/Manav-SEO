@@ -364,7 +364,12 @@ ${isEscalationMode ? `\nESCALATION ROUND. The pillars have done their first pass
     userPrompt += `\nPrior round output — BUILD ON IT, do not discard:\n${JSON.stringify(opts.priorOutput)}\n`;
   }
   if (opts.manavInput) {
-    userPrompt += `\nOperator input for this round:\n"""\n${opts.manavInput}\n"""\n`;
+    // Make the operator input authoritative — not just additional context.
+    // The earlier "Operator input for this round: …" framing was easy for the
+    // model to treat as ambient context. Phrasing it as PRIMARY FRAMING +
+    // explicit incorporation instructions forces the panel to react to it.
+    userPrompt += `\n═══════════════════ OPERATOR FRAMING — PRIMARY INPUT ═══════════════════\n\nThe operator has provided the following input. This is AUTHORITATIVE framing for this panel round. You MUST:\n  1. Build your scenarios around what the operator has said (target keywords, hypotheses, constraints, data they have).\n  2. Reference the operator's input by name in the relevant scenario descriptions and questions ("As the operator notes, …" / "Given the operator's target keyword X, …").\n  3. Treat any specific keywords/targets/data the operator names as the primary subject of investigation — pillars must investigate THOSE first, not generic site-wide analysis.\n  4. If the operator asks a specific question or raises a scenario, your output must include a corresponding scenario or pillar question that directly addresses it.\n\nOperator input:\n"""\n${opts.manavInput}\n"""\n\n═══════════════════ END OPERATOR FRAMING ═══════════════════\n`;
+    console.error(`[workspace/panel-r${opts.round}] applied operator input to prompt: len=${opts.manavInput.length}`);
   }
   userPrompt += `\nInvestigate with tools if material gaps remain, then produce the JSON output.`;
 
