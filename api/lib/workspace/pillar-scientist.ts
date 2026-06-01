@@ -46,7 +46,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
   visibility: {
     expert_role: "Senior Technical SEO specialist (indexation, crawl, visibility)",
     data_sources: ["GSC pages", "GSC query-page pairs", "this site's CTR curve", "live HTML crawl", "SerpAPI"],
-    step_keys: ["gsc_visibility", "competitor_intel"],
+    step_keys: ["gsc_visibility", "competitor_intel", "target_keyword_baseline"],
     default_questions: [
       "Which target pages are invisible to Google and what is each one's verified indexation state (reachable / noindex / canonicalised)?",
       "For near-ranking pages, what specifically do the competitors ranking above have that this page lacks?",
@@ -58,7 +58,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
   query_opportunity: {
     expert_role: "Senior SEO specialist (query intent and SERP positioning)",
     data_sources: ["GSC query-page pairs", "SerpAPI", "this site's CTR curve"],
-    step_keys: ["query_landscape", "gsc_visibility", "competitor_intel"],
+    step_keys: ["query_landscape", "gsc_visibility", "competitor_intel", "target_keyword_baseline"],
     default_questions: [
       "Which queries rank via the wrong page (cannibalisation), and which page should own each?",
       "Which high-impression, low-CTR queries signal a title/meta or intent mismatch, and what's the fix?",
@@ -70,7 +70,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
   on_page_health: {
     expert_role: "Senior On-Page SEO and content-quality specialist",
     data_sources: ["live HTML crawl", "competitor pages"],
-    step_keys: ["onpage_audit", "competitor_intel"],
+    step_keys: ["onpage_audit", "competitor_intel", "target_keyword_baseline"],
     default_questions: [
       "Which pages have title/meta/H1/schema/word-count deficits, with the actual values?",
       "Which thin pages are thin relative to the competitor depth for their target query?",
@@ -93,7 +93,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
   internal_links: {
     expert_role: "Senior SEO specialist (site architecture and internal linking)",
     data_sources: ["live HTML crawl", "GSC authority signal"],
-    step_keys: ["internal_link_graph", "gsc_visibility"],
+    step_keys: ["internal_link_graph", "gsc_visibility", "target_keyword_baseline"],
     default_questions: [
       "Which target pages receive no internal links from the site's highest-authority pages?",
       "What is the single highest-leverage internal link to add (from which authority page to which target), and why?",
@@ -115,7 +115,7 @@ const INTERROGATIONS: Record<string, Interrogation> = {
   monitoring: {
     expert_role: "Senior SEO performance specialist (trajectory vs goal)",
     data_sources: ["metrics_snapshots", "GSC", "GA4"],
-    step_keys: ["trajectory", "gsc_visibility"],
+    step_keys: ["trajectory", "gsc_visibility", "target_keyword_baseline"],
     default_questions: [
       "What is the verified organic trajectory (clicks/impressions/position/sessions) over the available history?",
       "Is the campaign on track to the goal in the timeframe; if off-trajectory, what is the corrective priority?",
@@ -521,12 +521,25 @@ priority_actions = the 3-5 things to do next, ordered. answers = the detailed fi
   // Project context block — states the project's real domain and the
   // canonical target URLs explicitly so the model never has to synthesise
   // hostnames when calling fetch_page (root cause of past placeholder
-  // hallucinations).
+  // hallucinations). Also includes operator-supplied target keywords if
+  // any — pillars must analyze against them, not just the site's existing
+  // GSC footprint.
   const projectDomain = domainOf(targetUrls[0] || "") || "(unknown)";
+  let targetKeywords: string[] = [];
+  if (opts.runId) {
+    try {
+      const { data: runRow } = await db().from("workspace_runs").select("target_keywords_json").eq("id", opts.runId).maybeSingle();
+      if (Array.isArray((runRow as any)?.target_keywords_json)) targetKeywords = (runRow as any).target_keywords_json;
+    } catch { /* column may not exist pre-Build 10f migration */ }
+  }
+  const targetKeywordsLine = targetKeywords.length
+    ? `- OPERATOR TARGET KEYWORDS (authoritative — analyze against these specifically):\n${targetKeywords.map(k => `    • "${k}"`).join("\n")}\n  When the operator has supplied target keywords, your analysis must address THESE specifically — not just generic site-wide visibility. The target_keyword_baseline evidence (in the step evidence below) has feasibility verdicts and adjacent-query findings per keyword; use them. If GSC suggests a better adjacent target, surface that as a comparison alongside the operator's keyword — never as a quiet substitution.\n`
+    : "";
   const projectContext =
     `PROJECT CONTEXT (use these exact values when calling tools):\n` +
     `- Project domain: ${projectDomain}\n` +
     `- Target pages (full URLs):\n${targetUrls.slice(0, 30).map(u => `  ${u}`).join("\n")}\n` +
+    targetKeywordsLine +
     `When you call fetch_page or any URL-taking tool, use the full URLs above — never synthesise hostnames, never use placeholder domains like example.com.\n\n`;
 
   let userPrompt = projectContext + `PILLAR: ${opts.pillar}\nData sources available: ${interro.data_sources.join(", ")}\nTarget pages: ${targetUrls.length}\n\nEVIDENCE FROM THE DEEP STEPS (already verified and sourced):\n\n${block}\n\nQUESTIONS TO SOLVE:\n${questions.join("\n")}\n`;

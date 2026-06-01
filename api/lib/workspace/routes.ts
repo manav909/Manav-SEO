@@ -30,19 +30,30 @@ export async function wsGoalCatalog() {
 
 /* ─── preview a composed run config (no run created yet) ───────── */
 export async function wsComposeConfig(body: any) {
-  const { goalIds, customNeeds, customLabel } = body || {};
-  const config = composeRunConfig({ goalIds, customNeeds, customLabel });
+  const { goalIds, customNeeds, customLabel, hasTargetKeywords } = body || {};
+  const config = composeRunConfig({ goalIds, customNeeds, customLabel, hasTargetKeywords: !!hasTargetKeywords });
   return { success: true, config };
 }
 
 /* ─── create a workspace run with selected goals + config ──────── */
 export async function wsCreateRun(body: any) {
-  const { projectId, campaignId, goalIds, customNeeds, customLabel, stepOverrides } = body || {};
+  const { projectId, campaignId, goalIds, customNeeds, customLabel, stepOverrides, targetKeywords } = body || {};
   if (!projectId) return { success: false, error: "projectId required" };
+
+  // Normalize target_keywords — accept array or comma-separated string;
+  // trim, dedupe, drop empties, cap at 25 keywords (anything more is
+  // pathological and would explode SerpAPI cost in the baseline step).
+  const normalizedKeywords: string[] = (() => {
+    if (!targetKeywords) return [];
+    const arr = Array.isArray(targetKeywords) ? targetKeywords : String(targetKeywords).split(/[,\n]/);
+    const cleaned = arr.map((k: any) => String(k || "").trim()).filter((k: string) => k.length >= 2 && k.length <= 200);
+    return Array.from(new Set(cleaned)).slice(0, 25);
+  })();
+  const hasTargetKeywords = normalizedKeywords.length > 0;
 
   // Compose the config from the selected goals, then apply any step overrides
   // (enabled/depth toggles the operator set in the UI).
-  const config = composeRunConfig({ goalIds, customNeeds, customLabel });
+  const config = composeRunConfig({ goalIds, customNeeds, customLabel, hasTargetKeywords });
   if (Array.isArray(stepOverrides)) {
     for (const ov of stepOverrides) {
       const s = config.steps.find(x => x.key === ov.key);
@@ -50,16 +61,29 @@ export async function wsCreateRun(body: any) {
     }
   }
 
-  const { data, error } = await db().from("workspace_runs").insert({
+  const insertRow: any = {
     project_id: projectId,
     campaign_id: campaignId || null,
     goal: config.composed_goal,
     goal_ids: config.goal_ids,
     run_config: config,
     status: "gathering",
-  }).select("id").single();
+  };
+  if (hasTargetKeywords) insertRow.target_keywords_json = normalizedKeywords;
+
+  let { data, error } = await db().from("workspace_runs").insert(insertRow).select("id").single();
+  // Graceful fallback if Build 10f migration hasn't been applied yet —
+  // retry without the target_keywords_json column, surface a clear note.
+  if (error && /target_keywords_json/i.test(error.message || "")) {
+    delete insertRow.target_keywords_json;
+    const retry = await db().from("workspace_runs").insert(insertRow).select("id").single();
+    data = retry.data; error = retry.error;
+    if (!error) {
+      console.warn("[workspace/create_run] target_keywords supplied but target_keywords_json column missing — run Build 10f migration. Keywords will not flow to steps for this run.");
+    }
+  }
   if (error) return { success: false, error: error.message };
-  return { success: true, run_id: (data as any).id, config };
+  return { success: true, run_id: (data as any).id, config, target_keywords: normalizedKeywords };
 }
 
 /* ─── run the deep steps for a run (gather evidence + reports) ──── */
@@ -68,8 +92,15 @@ export async function wsRunDeepSteps(body: any) {
   if (!runId || !projectId) return { success: false, error: "runId and projectId required" };
 
   // Load the run's composed config to know which steps are enabled.
-  const { data: runRow } = await db().from("workspace_runs").select("run_config").eq("id", runId).maybeSingle();
+  // Also pull target_keywords_json if present (Build 10f) so the keyword
+  // baseline step + downstream steps can use it.
+  const { data: runRow } = await db().from("workspace_runs")
+    .select("run_config, target_keywords_json")
+    .eq("id", runId).maybeSingle();
   const config = (runRow as any)?.run_config || null;
+  const targetKeywords: string[] = Array.isArray((runRow as any)?.target_keywords_json)
+    ? ((runRow as any).target_keywords_json as string[])
+    : [];
   const isEnabled = (key: string) => {
     if (!config || !Array.isArray(config.steps)) return true;  // no config → run the slice's defaults
     const s = config.steps.find((x: any) => x.key === key);
@@ -136,6 +167,27 @@ export async function wsRunDeepSteps(body: any) {
     await runStep("internal_link_graph", gatherInternalLinkGraph);
     await runStep("engagement_value", gatherEngagementValue);
     await runStep("trajectory", gatherTrajectory);
+
+    // ── target_keyword_baseline ── runs only when target_keywords are set
+    // AND the step is enabled. Comes LAST among deep steps because it
+    // benefits from gsc_visibility's near_ranking data as adjacency context.
+    if (targetKeywords.length && isEnabled("target_keyword_baseline")) {
+      try {
+        const { gatherTargetKeywordBaseline } = await import("./deep-steps/target-keyword-baseline.js");
+        const { evidence, report_md } = await gatherTargetKeywordBaseline({
+          projectId, targetUrls, targetKeywords, gscNearRanking: nearRanking,
+        });
+        await upsertStepReport(runId, projectId, "target_keyword_baseline", evidence, report_md, evidence.worth_deeper || []);
+        results["target_keyword_baseline"] = "ok";
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "target_keyword_baseline", e?.message || String(e));
+        results["target_keyword_baseline"] = `failed: ${e?.message}`;
+      }
+    } else if (isEnabled("target_keyword_baseline") && !targetKeywords.length) {
+      // Step is configured to run but no keywords supplied — skip with a
+      // clear note in the operator-visible report.
+      await recordStepSkipped(runId, projectId, "target_keyword_baseline");
+    }
   } catch (e: any) {
     return { success: false, error: `deep steps failed: ${e?.message}`, results };
   }

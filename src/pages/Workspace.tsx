@@ -55,6 +55,9 @@ export default function Workspace() {
   const [customLabel, setCustomLabel] = useState('');
   const [config, setConfig] = useState<any>(null);
   const [showPicker, setShowPicker] = useState(false);
+  // Operator-supplied target keywords — the keywords they want to rank for.
+  // Comma- or newline-separated input; normalized to an array before sending.
+  const [targetKeywordsInput, setTargetKeywordsInput] = useState('');
   // Solve-all queue state — surfaces which pillars are queued, running, done
   const [queue, setQueue] = useState<{ done: string[]; running: string | null; pending: string[] } | null>(null);
   const [liveStatus, setLiveStatus] = useState<string>('');
@@ -89,8 +92,9 @@ export default function Workspace() {
   // Recompute the config preview whenever goal selection changes
   useEffect(() => {
     if (!selectedGoals.length && !customLabel) { setConfig(null); return; }
-    wsComposeConfig({ goalIds: selectedGoals, customLabel: customLabel || undefined }).then((r) => { if (r.success) setConfig(r.config); });
-  }, [selectedGoals, customLabel]);
+    const hasTargetKeywords = !!targetKeywordsInput.trim();
+    wsComposeConfig({ goalIds: selectedGoals, customLabel: customLabel || undefined, hasTargetKeywords }).then((r) => { if (r.success) setConfig(r.config); });
+  }, [selectedGoals, customLabel, targetKeywordsInput]);
 
   const toggleGoal = (id: string) => setSelectedGoals((g) => g.includes(id) ? g.filter((x) => x !== id) : [...g, id]);
   const toggleStep = (key: string) => setConfig((c: any) => c ? { ...c, steps: c.steps.map((s: any) => s.key === key ? { ...s, enabled: !s.enabled } : s) } : c);
@@ -117,7 +121,10 @@ export default function Workspace() {
     if (!selectedGoals.length && !customLabel) { toast({ title: 'Pick a goal first', description: 'Select one or more goals (or name a custom goal) to configure the run.' }); setShowPicker(true); return; }
     const stepOverrides = (config?.steps || []).map((s: any) => ({ key: s.key, enabled: s.enabled, depth: s.depth }));
     setBusy('Creating run');
-    const cr = await wsCreateRun({ projectId: selectedProjectId, goalIds: selectedGoals, customLabel: customLabel || undefined, stepOverrides });
+    const targetKeywords = targetKeywordsInput.trim()
+      ? targetKeywordsInput.split(/[,\n]/).map(k => k.trim()).filter(Boolean)
+      : undefined;
+    const cr = await wsCreateRun({ projectId: selectedProjectId, goalIds: selectedGoals, customLabel: customLabel || undefined, stepOverrides, targetKeywords });
     if (!cr.success || !cr.run_id) { reportError('Could not start run', cr.error || 'unknown error'); setBusy(''); return; }
     setShowPicker(false);
     setBusy('Deep steps gathering verified evidence — full GSC + live-crawl + SerpAPI pass');
@@ -437,6 +444,31 @@ export default function Workspace() {
                     style={{ width: '100%', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12 }} />
                 </div>
 
+                {/* Target keywords — operator-supplied keywords the analysis
+                    should investigate as authoritative goals. The system will
+                    cross-check them against GSC, surface better-intent
+                    adjacents, and produce honest feasibility verdicts. */}
+                <div style={{ marginTop: 14, padding: 12, borderRadius: 8, background: 'rgba(186, 230, 240, 0.04)', border: '1px solid hsla(186 80% 55% / 0.18)' }}>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
+                    Target keywords for this run <span style={{ textTransform: 'none', letterSpacing: 0, fontWeight: 400, color: 'rgba(150,160,180,0.65)' }}>· optional</span>
+                  </label>
+                  <div style={{ fontSize: 11, color: 'rgba(160,170,185,0.75)', marginBottom: 8, lineHeight: 1.5 }}>
+                    Add the specific keywords this client wants to rank for. The workspace will investigate each one — current GSC position (if any), live SERP, who actually ranks, adjacent queries the site already has impressions on, and an honest feasibility verdict. Cross-checked against GSC; if there's a better-intent target already in your existing footprint, you'll see it called out. Leave blank for a general site-wide analysis.
+                  </div>
+                  <textarea
+                    value={targetKeywordsInput}
+                    onChange={(e) => setTargetKeywordsInput(e.target.value)}
+                    placeholder={`One per line, or comma-separated. Examples:\nbest running shoes for flat feet\nrunning shoes under 100\nminimalist running shoes`}
+                    rows={4}
+                    style={{ width: '100%', padding: 10, fontSize: 12, lineHeight: 1.5, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', borderRadius: 6, color: 'inherit', fontFamily: 'inherit', resize: 'vertical' }}
+                  />
+                  {targetKeywordsInput.trim() && (
+                    <div style={{ fontSize: 10.5, color: CYAN, marginTop: 6 }}>
+                      {targetKeywordsInput.split(/[,\n]/).map(k => k.trim()).filter(Boolean).length} keyword(s) — the workspace will add a Target Keyword Baseline step and pass them to the panel + pillars as authoritative input.
+                    </div>
+                  )}
+                </div>
+
                 {/* computed config: steps + dependencies */}
                 {config && (
                   <div style={{ marginTop: 14 }}>
@@ -505,7 +537,7 @@ export default function Workspace() {
               </div>
               <textarea
                 value={manavInput} onChange={(e) => setManavInput(e.target.value)}
-                placeholder="e.g. Target keywords: 'kids bunk beds', 'wooden bunk beds for adults'. Client cares most about the bunk-bed range. Scenarios to test: pushing for featured snippets vs. building topic clusters. Competitor data I have…"
+                placeholder="e.g. Target keywords: 'running shoes under 100', 'flat-foot running shoes'. Client cares most about the trail-running range. Scenarios to test: pushing for featured snippets vs. building topic clusters. Competitor data I have…"
                 style={{ width: '100%', minHeight: 90, padding: 10, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12, resize: 'vertical' }}
               />
               <button onClick={() => runPanel(1)} disabled={!!busy} style={{ ...primaryBtn(!!busy), alignSelf: 'flex-start', marginTop: 10 }}>
@@ -1001,7 +1033,7 @@ function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavI
         </div>
         <textarea
           value={manavInput} onChange={(e) => setManavInput(e.target.value)}
-          placeholder="e.g. Target keywords for this run: 'kids bunk beds', 'wooden bunk beds for adults'. We just launched 5 new product pages not in this set. The client cares most about the bunk-bed range. Here's competitor data I have…"
+          placeholder="e.g. Target keywords for this run: 'running shoes under 100', 'flat-foot running shoes'. We just launched 5 new product pages not in this set. The client cares most about the trail-running range. Here's competitor data I have…"
           style={{ width: '100%', minHeight: 90, padding: 10, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12, resize: 'vertical' }}
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>

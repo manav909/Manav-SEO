@@ -38,12 +38,23 @@ export interface StepDef {
   sources: string[];          // DataSource ids it draws on
   depth_levels: string[];     // e.g. ["standard", "deep"]
   default_depth: string;
+  /** If true, this step runs only when the run has non-empty target_keywords.
+      It's still listed in the computed config (so the UI can show it) but
+      composeRunConfig will mark it disabled when no targets are present. */
+  conditional_on_target_keywords?: boolean;
 }
 
 export const STEP_DEFS: Record<string, StepDef> = {
   gsc_visibility:        { key: "gsc_visibility",        label: "GSC Visibility & Indexation", sources: ["gsc", "crawl"],          depth_levels: ["standard", "deep"], default_depth: "deep" },
   competitor_intel:      { key: "competitor_intel",      label: "Competitor Intelligence",     sources: ["serpapi", "crawl"],      depth_levels: ["standard", "deep"], default_depth: "deep" },
   query_landscape:       { key: "query_landscape",       label: "Query Landscape & Untapped",  sources: ["gsc", "serpapi"],        depth_levels: ["standard", "deep"], default_depth: "standard" },
+  /* Build 10f — runs only when target_keywords_json is non-empty on the run.
+     Investigates each operator-supplied keyword for: current GSC position
+     (if any impressions exist), SerpAPI top-10 composition, GSC adjacent-
+     intent siblings the site already has visibility on, and a feasibility
+     verdict. Output is the foundation for honest "can we rank for X?"
+     answers in the panel + pillars. */
+  target_keyword_baseline: { key: "target_keyword_baseline", label: "Target Keyword Baseline & Feasibility", sources: ["gsc", "serpapi", "crawl"], depth_levels: ["standard"], default_depth: "standard", conditional_on_target_keywords: true },
   onpage_audit:          { key: "onpage_audit",          label: "On-Page Audit",               sources: ["crawl"],                 depth_levels: ["standard", "deep"], default_depth: "standard" },
   core_web_vitals:       { key: "core_web_vitals",       label: "Core Web Vitals (field)",     sources: ["crux"],                  depth_levels: ["standard"],         default_depth: "standard" },
   internal_link_graph:   { key: "internal_link_graph",   label: "Internal Link Graph",         sources: ["crawl", "gsc"],          depth_levels: ["standard", "deep"], default_depth: "standard" },
@@ -66,9 +77,9 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   keyword_ranking: {
     id: "keyword_ranking", label: "Keyword Ranking",
     description: "Rank specific keywords higher on the SERP.",
-    needs: ["gsc_visibility", "competitor_intel", "query_landscape", "onpage_audit", "internal_link_graph", "trajectory"],
+    needs: ["gsc_visibility", "competitor_intel", "query_landscape", "onpage_audit", "internal_link_graph", "trajectory", "target_keyword_baseline"],
     pillars: ["visibility", "query_opportunity", "on_page_health", "internal_links", "monitoring"],
-    panel_framing: "Focus on closing the gap to page 1 for target keywords: what competitors ranking above have, on-page deficits, internal anchor + authority flow to the target page, the keyword's recent trajectory, and the fastest ranking levers.",
+    panel_framing: "Focus on closing the gap to page 1 for target keywords: what competitors ranking above have, on-page deficits, internal anchor + authority flow to the target page, the keyword's recent trajectory, and the fastest ranking levers. When operator-supplied target keywords exist, also cross-check them against GSC visibility — surface better-intent adjacent keywords the site already ranks for, and produce an honest feasibility verdict per target.",
   },
   page_growth: {
     id: "page_growth", label: "Page Growth",
@@ -80,9 +91,9 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   traffic_growth: {
     id: "traffic_growth", label: "Traffic Growth",
     description: "Grow organic traffic, optionally by type (commercial / informational / local / branded).",
-    needs: ["gsc_visibility", "query_landscape", "competitor_intel", "onpage_audit", "core_web_vitals", "internal_link_graph", "engagement_value", "trajectory"],
+    needs: ["gsc_visibility", "query_landscape", "competitor_intel", "onpage_audit", "core_web_vitals", "internal_link_graph", "engagement_value", "trajectory", "target_keyword_baseline"],
     pillars: ["visibility", "query_opportunity", "on_page_health", "technical_performance", "internal_links", "engagement", "monitoring"],
-    panel_framing: "Find every realistic path to more traffic for this site and industry: quick-win recovery, untapped query clusters, competitor displacement, indexation fixes, and converting existing traffic. Size each with the site's own CTR curve.",
+    panel_framing: "Find every realistic path to more traffic for this site and industry: quick-win recovery, untapped query clusters, competitor displacement, indexation fixes, and converting existing traffic. Size each with the site's own CTR curve. When operator-supplied target keywords exist, evaluate them honestly (current rank, feasibility, better adjacent options in GSC).",
   },
   conversion: {
     id: "conversion", label: "Conversion",
@@ -101,7 +112,7 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   topical_authority: {
     id: "topical_authority", label: "Topical / Content Authority",
     description: "Own a topic cluster through comprehensive, authoritative content.",
-    needs: ["query_landscape", "competitor_intel", "onpage_audit", "internal_link_graph", "gsc_visibility", "trajectory"],
+    needs: ["query_landscape", "competitor_intel", "onpage_audit", "internal_link_graph", "gsc_visibility", "trajectory", "target_keyword_baseline"],
     pillars: ["query_opportunity", "on_page_health", "internal_links", "visibility", "monitoring"],
     panel_framing: "Map the topic's query space, find coverage gaps vs. competitors, see which cluster pages are already surfacing vs. invisible, design the cluster + internal linking to own it, and track cluster momentum.",
   },
@@ -123,6 +134,11 @@ export function composeRunConfig(opts: {
   goalIds?: string[];
   customNeeds?: string[];        // StepDef keys, for a custom goal
   customLabel?: string;
+  /** Whether the operator has provided target_keywords for this run.
+      Steps marked conditional_on_target_keywords are auto-disabled when false,
+      but still listed in the config so the UI shows what would unlock by
+      adding keywords. */
+  hasTargetKeywords?: boolean;
 }): RunConfig {
   const goalIds = (opts.goalIds || []).filter(id => GOAL_DEFS[id]);
   const goals = goalIds.map(id => GOAL_DEFS[id]);
@@ -134,7 +150,16 @@ export function composeRunConfig(opts: {
 
   const steps = [...needKeys].map(k => {
     const d = STEP_DEFS[k];
-    return { key: k, label: d.label, depth: d.default_depth, enabled: true, sources: d.sources };
+    // Conditional steps default to disabled when their condition isn't met.
+    const conditionalDisabled = d.conditional_on_target_keywords && !opts.hasTargetKeywords;
+    return {
+      key: k,
+      label: d.label,
+      depth: d.default_depth,
+      enabled: !conditionalDisabled,
+      sources: d.sources,
+      conditional_on_target_keywords: !!d.conditional_on_target_keywords,
+    };
   });
 
   // Union of dependencies across all selected steps

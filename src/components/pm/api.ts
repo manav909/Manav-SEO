@@ -4301,11 +4301,11 @@ export async function wsGoalCatalog():
   Promise<{ success?: boolean; goals?: any[]; steps?: any[]; sources?: any[]; error?: string }> {
   return post(ENGINE, { action: 'ws_goal_catalog' });
 }
-export async function wsComposeConfig(opts: { goalIds?: string[]; customNeeds?: string[]; customLabel?: string }):
+export async function wsComposeConfig(opts: { goalIds?: string[]; customNeeds?: string[]; customLabel?: string; hasTargetKeywords?: boolean }):
   Promise<{ success?: boolean; config?: any; error?: string }> {
   return post(ENGINE, { action: 'ws_compose_config', ...opts });
 }
-export async function wsCreateRun(opts: { projectId: string; campaignId?: string; goalIds?: string[]; customNeeds?: string[]; customLabel?: string; stepOverrides?: Array<{ key: string; enabled?: boolean; depth?: string }> }):
+export async function wsCreateRun(opts: { projectId: string; campaignId?: string; goalIds?: string[]; customNeeds?: string[]; customLabel?: string; stepOverrides?: Array<{ key: string; enabled?: boolean; depth?: string }>; targetKeywords?: string[] }):
   Promise<{ success?: boolean; run_id?: string; config?: any; error?: string }> {
   return post(ENGINE, { action: 'ws_create_run', ...opts });
 }
@@ -4341,7 +4341,7 @@ export async function wsTakeEscalationsToPanel(opts: { runId: string; projectId:
   Promise<{ success?: boolean; panel_id?: string; output?: any; document_md?: string; error?: string }> {
   return post(ENGINE, { action: 'ws_take_escalations_to_panel', ...opts });
 }
-export async function wsSolveClientReport(opts: { runId: string; projectId: string; campaignId?: string; manavContext: string; referenceText?: string; referenceMode?: 'template' | 'data' | 'both'; attachmentIds?: string[] }):
+export async function wsSolveClientReport(opts: { runId: string; projectId: string; campaignId?: string; manavContext: string; referenceText?: string; referenceMode?: 'template' | 'data' | 'both'; attachmentIds?: string[]; mode?: 'strict' | 'comprehensive' }):
   Promise<{ success?: boolean; report_id?: string; error?: string }> {
   return post(ENGINE, { action: 'ws_solve_client_report', ...opts });
 }

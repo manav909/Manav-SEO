@@ -279,9 +279,10 @@ function skimStepReportForPanel(md: string, maxLen = 6000): string {
   return kept.join("\n");
 }
 
-async function loadStepEvidence(runId: string): Promise<{ reports: string; goal: string; framing: string }> {
-  const { data: run } = await db().from("workspace_runs").select("goal, run_config").eq("id", runId).maybeSingle();
+async function loadStepEvidence(runId: string): Promise<{ reports: string; goal: string; framing: string; targetKeywords: string[] }> {
+  const { data: run } = await db().from("workspace_runs").select("goal, run_config, target_keywords_json").eq("id", runId).maybeSingle();
   const cfg = (run as any)?.run_config || null;
+  const targetKeywords: string[] = Array.isArray((run as any)?.target_keywords_json) ? (run as any).target_keywords_json : [];
   // Latest version per step (versioned step_reports introduced in Build 6).
   const { data: steps } = await db().from("step_reports")
     .select("step_key, report_md, worth_deeper_json, version, created_at").eq("run_id", runId)
@@ -295,6 +296,7 @@ async function loadStepEvidence(runId: string): Promise<{ reports: string; goal:
     reports,
     goal: (run as any)?.goal || "grow organic traffic",
     framing: cfg?.panel_framing || "",
+    targetKeywords,
   };
 }
 
@@ -309,7 +311,7 @@ export async function runPanelRound(opts: {
 }): Promise<{ success: boolean; output?: PanelOutput; provenance?: SourcedFact[]; error?: string }> {
   const status = async (s: string) => { try { await opts.onStatus?.(`panel:r${opts.round} ${s}`); } catch { /* non-fatal */ } };
 
-  const { reports, goal, framing } = await loadStepEvidence(opts.runId);
+  const { reports, goal, framing, targetKeywords } = await loadStepEvidence(opts.runId);
   if (!reports.trim()) return { success: false, error: "No step evidence found for this run." };
 
   // Project context — domain + canonical target URLs, so the panel never
@@ -320,13 +322,20 @@ export async function runPanelRound(opts: {
     ? `PROJECT CONTEXT (use these exact values when calling tools):\n- Project domain: ${projectDomain}\n- Target pages (full URLs):\n${targetUrls.slice(0, 30).map(u => `  ${u}`).join("\n")}\nWhen any tool takes a URL, use the actual URLs above — never synthesise hostnames, never use placeholder domains like example.com.\n\n`
     : "";
 
+  // Target keywords — authoritative framing if the operator supplied them.
+  // The panel must build scenarios + questions around these, cross-check
+  // against GSC visibility, and produce honest feasibility judgments.
+  const targetKeywordsBlock = targetKeywords.length
+    ? `\nOPERATOR-SUPPLIED TARGET KEYWORDS (authoritative — build scenarios + questions around these):\n${targetKeywords.map(k => `  • "${k}"`).join("\n")}\n\nIMPORTANT framing for these keywords:\n- These are the keywords the operator wants to rank for. Treat them as primary subjects of investigation.\n- The target_keyword_baseline step has already evaluated each one — current GSC position, SERP composition, adjacent GSC queries, feasibility verdict. Use those findings.\n- DO NOT silently ignore the operator's keywords in favor of the site's existing GSC footprint. If GSC suggests a better adjacent target, surface that as a comparison alongside the operator's keyword — never as a quiet substitution.\n- Produce honest feasibility judgments per keyword: "feasible to push to page 1 in 3 months", "would need new content + 8 backlinks, 6-9 month play", "adjacent query 'X' is a better-intent target — recommend pivot", etc.\n- Each pillar should investigate against these keywords, not just generic site-wide analysis.\n`
+    : "";
+
   const isEscalationMode = !!opts.manavInput && /pillar analyses have surfaced questions/i.test(opts.manavInput);
 
   const roleList = STAKEHOLDER_ROLES.join(", ");
   const system = `You are facilitating a panel of senior stakeholders analysing how to achieve a specific goal for a website. The panel roles: ${roleList}.
 
 Goal: ${goal}
-${framing ? `\nHow to frame this goal:\n${framing}\n` : ""}
+${framing ? `\nHow to frame this goal:\n${framing}\n` : ""}${targetKeywordsBlock}
 YOU HAVE A REAL TOOLKIT. Use it to make sure the dossier is COMPLETE before you frame questions for the analyst pillars. Real money will be spent on what the pillars do — your job is to ensure they investigate on a fully-grounded, fully-sourced foundation, not a thin one.
 
 When to use which tool:
