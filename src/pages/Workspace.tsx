@@ -73,6 +73,10 @@ export default function Workspace() {
   const [crContext, setCrContext] = useState('');
   const [crReferenceText, setCrReferenceText] = useState('');
   const [crReferenceMode, setCrReferenceMode] = useState<'template' | 'data' | 'both'>('both');
+  // Report scoping mode — strict keeps the report bounded to context +
+  // attachments only; comprehensive lets it draw freely on the full
+  // workspace analysis to fulfil what the context asks for.
+  const [crMode, setCrMode] = useState<'strict' | 'comprehensive'>('strict');
   const [crBusy, setCrBusy] = useState(false);
   // Uploaded reference attachments for the Client Report. Loaded from server,
   // refreshed after each upload/remove.
@@ -234,6 +238,7 @@ export default function Workspace() {
         referenceText: crReferenceText.trim() ? crReferenceText : undefined,
         referenceMode: (crReferenceText.trim() || crAttachments.length) ? crReferenceMode : undefined,
         attachmentIds: crAttachments.length ? crAttachments.map(a => a.id) : undefined,
+        mode: crMode,
       });
       if (!r.success) reportError('Client Report failed', r.error || 'unknown error');
       else { toast({ title: 'Client Report generated', description: 'Available in Documents.' }); setSection('documents'); }
@@ -381,17 +386,40 @@ export default function Workspace() {
             {showPicker && catalog && (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>Goals (select one or more)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 8 }}>
                   {catalog.goals.map((g: any) => {
                     const on = selectedGoals.includes(g.id);
+                    const needCount = Array.isArray(g.needs) ? g.needs.length : 0;
+                    // Resolve step labels from the catalog's step_defs for tooltip
+                    const stepDefs: any[] = catalog.steps || [];
+                    const needLabels: string[] = (g.needs || []).map((k: string) => {
+                      const def = stepDefs.find((s: any) => s.key === k);
+                      return def?.label || k;
+                    });
                     return (
-                      <button key={g.id} onClick={() => toggleGoal(g.id)} style={{
-                        textAlign: 'left', padding: 10, borderRadius: 9, cursor: 'pointer',
-                        border: `1px solid ${on ? 'hsla(186 80% 55% / 0.5)' : 'rgba(160,160,180,0.18)'}`,
-                        background: on ? 'hsla(186 80% 55% / 0.1)' : 'transparent', color: 'inherit',
-                      }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: on ? CYAN : 'inherit' }}>{on ? '✓ ' : ''}{g.label}</div>
+                      <button key={g.id} onClick={() => toggleGoal(g.id)}
+                        title={needLabels.length ? `Steps: ${needLabels.join(', ')}` : ''}
+                        style={{
+                          textAlign: 'left', padding: 10, borderRadius: 9, cursor: 'pointer',
+                          border: `1px solid ${on ? 'hsla(186 80% 55% / 0.5)' : 'rgba(160,160,180,0.18)'}`,
+                          background: on ? 'hsla(186 80% 55% / 0.1)' : 'transparent', color: 'inherit',
+                        }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: on ? CYAN : 'inherit' }}>{on ? '✓ ' : ''}{g.label}</div>
+                          {needCount > 0 && (
+                            <span style={{
+                              fontSize: 9.5, padding: '2px 6px', borderRadius: 4,
+                              background: on ? 'hsla(186 80% 55% / 0.2)' : 'rgba(160,160,180,0.15)',
+                              color: on ? CYAN : 'rgba(170,180,195,0.8)', fontWeight: 700, flexShrink: 0,
+                            }}>{needCount} steps</span>
+                          )}
+                        </div>
                         <div style={{ fontSize: 10.5, color: 'rgba(160,170,185,0.7)', marginTop: 3 }}>{g.description}</div>
+                        {needLabels.length > 0 && (
+                          <div style={{ fontSize: 9.5, color: 'rgba(140,150,165,0.65)', marginTop: 4, lineHeight: 1.45 }}>
+                            {needLabels.slice(0, 4).join(' · ')}{needLabels.length > 4 ? ` · +${needLabels.length - 4} more` : ''}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -404,12 +432,25 @@ export default function Workspace() {
                 {/* computed config: steps + dependencies */}
                 {config && (
                   <div style={{ marginTop: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>Computed run — steps (toggle / shown depth)</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'rgba(150,160,180,0.6)', marginBottom: 8 }}>Computed run — steps</div>
+                    {/* Scope summary: how many of total steps the selected goals pull in */}
+                    {(() => {
+                      const enabled = config.steps.filter((s: any) => s.enabled).length;
+                      const total = config.steps.length;
+                      return (
+                        <div style={{ fontSize: 11.5, color: 'rgba(180,190,205,0.85)', marginBottom: 10, padding: '8px 10px', background: 'rgba(186, 230, 240, 0.04)', borderRadius: 5, border: '1px solid hsla(186 80% 55% / 0.15)' }}>
+                          {enabled} of {total} steps will run based on the selected goal{selectedGoals.length === 1 ? '' : 's'}. Click any step to toggle it — useful if you want to force a step the goal didn't pull in (e.g. add trajectory to a ranking run), or skip a step you don't need this time.
+                        </div>
+                      );
+                    })()}
                     {config.steps.map((s: any) => (
-                      <div key={s.key} onClick={() => toggleStep(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', opacity: s.enabled ? 1 : 0.45 }}>
-                        <span style={{ width: 16, height: 16, borderRadius: 4, border: `1px solid ${s.enabled ? CYAN : 'rgba(160,160,180,0.35)'}`, background: s.enabled ? 'hsla(186 80% 55% / 0.25)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: CYAN }}>{s.enabled ? '✓' : ''}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>{s.label}</span>
-                        <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(160,160,180,0.15)', color: 'rgba(170,180,195,0.8)' }}>{s.depth}</span>
+                      <div key={s.key} onClick={() => toggleStep(s.key)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer' }}>
+                        <span style={{ width: 16, height: 16, borderRadius: 4, border: `1px solid ${s.enabled ? CYAN : 'rgba(160,160,180,0.35)'}`, background: s.enabled ? 'hsla(186 80% 55% / 0.25)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: CYAN, flexShrink: 0 }}>{s.enabled ? '✓' : ''}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: s.enabled ? 'rgba(225,228,238,0.95)' : 'rgba(150,160,180,0.55)', textDecoration: s.enabled ? 'none' : 'line-through' }}>{s.label}</span>
+                        <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(160,160,180,0.15)', color: 'rgba(170,180,195,0.8)', opacity: s.enabled ? 1 : 0.5 }}>{s.depth}</span>
+                        {!s.enabled && (
+                          <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 4, background: 'rgba(160,160,180,0.08)', color: 'rgba(150,160,180,0.55)', fontStyle: 'italic' }}>not in goal scope — click to add</span>
+                        )}
                       </div>
                     ))}
                     {/* dependency surfacing */}
@@ -573,6 +614,40 @@ export default function Workspace() {
 
             {crOpen && (
               <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* Report scoping mode — strict vs comprehensive */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
+                    Report mode
+                  </label>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[
+                      { v: 'strict' as const, title: 'Strict', desc: 'Context + attachments only. Workspace is locked away. Use when the client asked for something specific and you do not want scope creep.' },
+                      { v: 'comprehensive' as const, title: 'Comprehensive', desc: 'Context + attachments + full workspace analysis used freely to fulfil what your context asks for. Use for analytical reports, monthly reviews, audit recaps.' },
+                    ].map(opt => {
+                      const active = crMode === opt.v;
+                      return (
+                        <button
+                          key={opt.v}
+                          onClick={() => setCrMode(opt.v)}
+                          style={{
+                            flex: '1 1 240px', textAlign: 'left', padding: '10px 12px', borderRadius: 6,
+                            border: active ? `1px solid ${CYAN}` : '1px solid hsla(220 14% 30% / 0.5)',
+                            background: active ? 'hsla(186 80% 55% / 0.10)' : 'rgba(15,16,24,0.4)',
+                            color: 'rgba(225,228,238,0.95)', cursor: 'pointer',
+                          }}
+                        >
+                          <div style={{ fontSize: 12.5, fontWeight: 700, color: active ? CYAN : 'rgba(225,228,238,0.95)', marginBottom: 3 }}>
+                            {opt.title}
+                          </div>
+                          <div style={{ fontSize: 11, lineHeight: 1.45, color: 'rgba(160,170,185,0.85)' }}>
+                            {opt.desc}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'rgba(170,180,195,0.85)', display: 'block', marginBottom: 6 }}>
                     Your context for this report <span style={{ color: 'hsl(0 70% 65%)', textTransform: 'none', letterSpacing: 0, fontWeight: 400, marginLeft: 4 }}>required</span>
