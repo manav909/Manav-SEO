@@ -130,11 +130,19 @@ export default function Workspace() {
 
   const runPanel = async (round: number) => {
     if (!run) return;
-    setBusy(round === 1 ? 'Panel discussing the evidence (round 1)' : 'Panel re-discussing with your input (round 2)');
-    const r = await wsRunPanel({ runId: run.id, projectId: selectedProjectId!, round, manavInput: round >= 2 ? manavInput : undefined });
+    // Use operator input on every round if the textarea has content. Earlier
+    // version gated this to round>=2 which silently dropped input on round 1.
+    const input = manavInput && manavInput.trim() ? manavInput : undefined;
+    const busyLabel = input
+      ? `Panel discussing with your input (round ${round})`
+      : round === 1
+        ? 'Panel discussing the evidence (round 1)'
+        : `Panel re-discussing with your input (round ${round})`;
+    setBusy(busyLabel);
+    const r = await wsRunPanel({ runId: run.id, projectId: selectedProjectId!, round, manavInput: input });
     setBusy('');
     if (!r.success) reportError('Panel failed', r.error || 'unknown error');
-    else { toast({ title: `Panel round ${round} complete`, description: 'Review each role\'s questions, then add input or release to pillars.' }); setManavInput(''); }
+    else { toast({ title: `Panel round ${round} complete`, description: input ? 'Your input was incorporated. Review the discussion, then add more input or release to pillars.' : 'Review each role\'s questions, then add input or release to pillars.' }); setManavInput(''); }
     await load();
     setSection('panel');
   };
@@ -488,9 +496,22 @@ export default function Workspace() {
             <StepCard key={s.id} step={s} onExport={exportReport} onOpen={openReport} />
           ))}
           {steps.length > 0 && (
-            <button onClick={() => runPanel(1)} disabled={!!busy} style={{ ...primaryBtn(!!busy), alignSelf: 'flex-start' }}>
-              <Users size={13} /> Convene panel (round 1) <ChevronRight size={13} />
-            </button>
+            <div style={{ ...card, borderColor: 'hsla(38 90% 55% / 0.35)', background: 'linear-gradient(180deg, hsla(38 90% 55% / 0.05), rgba(15,16,24,0.7))', marginTop: 6 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={13} style={{ color: 'hsl(38 90% 60%)' }} /> Your input for the panel (optional)
+              </div>
+              <div style={{ fontSize: 11, color: 'rgba(170,180,195,0.7)', marginBottom: 8 }}>
+                Add target keywords, scenarios, context, or your own data BEFORE convening the panel. Your input goes into the panel's prompt — they react to it, build scenarios around it, and assign investigation questions accordingly. Leave blank if the verified evidence above is enough.
+              </div>
+              <textarea
+                value={manavInput} onChange={(e) => setManavInput(e.target.value)}
+                placeholder="e.g. Target keywords: 'kids bunk beds', 'wooden bunk beds for adults'. Client cares most about the bunk-bed range. Scenarios to test: pushing for featured snippets vs. building topic clusters. Competitor data I have…"
+                style={{ width: '100%', minHeight: 90, padding: 10, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12, resize: 'vertical' }}
+              />
+              <button onClick={() => runPanel(1)} disabled={!!busy} style={{ ...primaryBtn(!!busy), alignSelf: 'flex-start', marginTop: 10 }}>
+                <Users size={13} /> Convene panel (round 1) {manavInput.trim() ? 'with my input' : ''} <ChevronRight size={13} />
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -976,11 +997,11 @@ function PanelSection({ panel, busy, onRunRound1, onRunRound2, onRelease, manavI
           <Sparkles size={13} style={{ color: 'hsl(38 90% 60%)' }} /> Your input (Manav)
         </div>
         <div style={{ fontSize: 11, color: 'rgba(170,180,195,0.7)', marginBottom: 8 }}>
-          Add scenarios, context, corrections, or your own data. Then either re-run the panel with your input (round 2), or release directly to the pillars.
+          Add scenarios, target keywords, context, corrections, or your own data. Your input becomes part of the panel's prompt for the next round it runs — so the panel can react to it, build scenarios around it, and ask the pillars to investigate it. Then either re-run the panel with your input (round {(panel.round || 1) + 1}), or release directly to the pillars.
         </div>
         <textarea
           value={manavInput} onChange={(e) => setManavInput(e.target.value)}
-          placeholder="e.g. We just launched 5 new product pages not in this set. The client cares most about the bunk-bed range. Here's competitor data I have…"
+          placeholder="e.g. Target keywords for this run: 'kids bunk beds', 'wooden bunk beds for adults'. We just launched 5 new product pages not in this set. The client cares most about the bunk-bed range. Here's competitor data I have…"
           style={{ width: '100%', minHeight: 90, padding: 10, borderRadius: 8, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(160,160,180,0.2)', color: 'inherit', fontSize: 12, resize: 'vertical' }}
         />
         <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
