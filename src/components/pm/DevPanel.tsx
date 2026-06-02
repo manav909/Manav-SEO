@@ -438,9 +438,23 @@ export default function DevPanel({ projectId }: { projectId: string }) {
       if (result.ok && result.data?.tasks) {
         const loadedTasks = result.data.tasks;
 
+        // Diagnostic — when this conversation's "old tasks from other project"
+        // bug bites, this log tells us exactly what came back.
+        // eslint-disable-next-line no-console
+        console.log(`[DevPanel] loaded ${loadedTasks.length} tasks for projectId=${projectId}; project_ids in result: ${Array.from(new Set(loadedTasks.map(t => (t as any).project_id || '(none)'))).join(', ')}`);
+
+        // Defensive client-side filter — even if the server returns tasks with
+        // wrong project_id (data drift from older audits), we render only the
+        // ones matching the currently selected project.
+        const filtered = loadedTasks.filter(t => !(t as any).project_id || (t as any).project_id === projectId);
+        if (filtered.length !== loadedTasks.length) {
+          // eslint-disable-next-line no-console
+          console.warn(`[DevPanel] dropped ${loadedTasks.length - filtered.length} tasks with mismatched project_id`);
+        }
+
         // Auto-reset stale 'running' tasks — anything stuck running for > 2 min
         // was almost certainly a timeout. Reset to failed so the user can retry.
-        for (const task of loadedTasks) {
+        for (const task of filtered) {
           if (task.status === 'running' && task.executed_at) {
             const ageMs = Date.now() - new Date(task.executed_at).getTime();
             if (ageMs > 120_000) {
@@ -457,10 +471,10 @@ export default function DevPanel({ projectId }: { projectId: string }) {
           }
         }
 
-        setTasks(loadedTasks);
+        setTasks(filtered);
         // Infer CMS from task metadata if not yet set
         if (!cms) {
-          const taskWithCms = loadedTasks.find(t => t.cms_platform);
+          const taskWithCms = filtered.find(t => t.cms_platform);
           if (taskWithCms?.cms_platform) {
             setCms({ platform: taskWithCms.cms_platform, seoPlugin: '', confidence: 0, adminPath: '' });
           }
@@ -472,6 +486,22 @@ export default function DevPanel({ projectId }: { projectId: string }) {
       setLoading(false);
     }
   }, [projectId, cms]);
+
+  // When projectId changes (operator switched projects), wipe ALL local state
+  // that's project-scoped so we don't display stale content during the brief
+  // window before loadTasks resolves with new data. This was the root cause
+  // of "alpha tasks visible under Akantus" — prior project's tasks lingered
+  // in `tasks` until the next API call returned.
+  useEffect(() => {
+    setTasks([]);
+    setCms(null);
+    setSelected(null);
+    setTargetUrl('');
+    setUploadUrl('');
+    setError('');
+    setShowUpload(false);
+    setUploadPreview(null);
+  }, [projectId]);
 
   useEffect(() => { loadTasks(); }, [loadTasks]);
 
@@ -494,10 +524,29 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     }
   }, [projectId]);
 
-  // Upload handler — auto-detects format, routes to correct parser
+  // Upload handler — auto-detects format (including PDF), routes to correct parser
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // PDF: read as base64, send to server for native Anthropic document parsing
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    if (isPdf) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result;
+        if (typeof result !== 'string') { setError('Could not read the PDF.'); return; }
+        // Strip the data URL prefix → pure base64
+        const base64 = result.includes(',') ? result.slice(result.indexOf(',') + 1) : result;
+        uploadPdfAudit(base64, file.name);
+      };
+      reader.onerror = () => setError('Could not read the PDF.');
+      reader.readAsDataURL(file);
+      e.target.value = '';
+      return;
+    }
+
+    // Text formats (md, csv, json, txt, html): existing path
     const reader = new FileReader();
     reader.onload = (event) => {
       const fileContent = event.target?.result;
@@ -516,6 +565,35 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     reader.onerror = () => setError('Could not read the file. Try again.');
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  // PDF parser — server receives base64 + sends to Anthropic as native document block
+  const uploadPdfAudit = async (pdfBase64: string, fileName: string) => {
+    setParsing(true);
+    setError('');
+    try {
+      const resolvedUrl = uploadUrl || targetUrl || '';
+      const result = await callApi<{ findings_extracted: number; tasks_created: number; findings: any[] }>(
+        'dev_parse_any_audit',
+        { pdfBase64, fileName, targetUrl: resolvedUrl, projectId },
+        90000  // PDFs can take longer to parse natively
+      );
+      if (!result.ok) {
+        setError(result.error ?? 'Could not parse this PDF. Try exporting as CSV or markdown.');
+        return;
+      }
+      const data = (result as any).data;
+      if (data?.findings_extracted) {
+        const red   = (data.findings || []).filter((f: any) => f.severity === 'red').length;
+        const amber = (data.findings || []).filter((f: any) => f.severity === 'amber').length;
+        setUploadPreview({ total: data.findings_extracted, red, amber });
+      }
+      callApi<{ cms: CmsInfo }>('dev_detect_cms', { projectId, url: resolvedUrl })
+        .then(r => { if (r.ok && r.data?.cms) setCms(r.data.cms); }).catch(() => {});
+      setShowUpload(false);
+      setUploadPreview(null);
+      await loadTasks();
+    } finally { setParsing(false); }
   };
 
   // Original parser — SEO Season .md format only
@@ -701,12 +779,12 @@ export default function DevPanel({ projectId }: { projectId: string }) {
             <>
               <p className="text-sm font-medium">Upload any audit file</p>
               <div className="flex flex-wrap justify-center gap-1.5 mt-2">
-                {['SEO Season .md','Screaming Frog CSV','Ahrefs export','Semrush CSV','Sitebulb JSON','Lighthouse JSON','Manual notes','Any format'].map(fmt => (
+                {['SEO Season .md','Screaming Frog CSV','Ahrefs export','Semrush CSV','Sitebulb JSON','Lighthouse JSON','PDF audit report','Manual notes','Any format'].map(fmt => (
                   <span key={fmt} className="text-[10px] px-2 py-0.5 rounded-full border border-border text-muted-foreground">{fmt}</span>
                 ))}
               </div>
               <p className="text-[11px] text-muted-foreground mt-3">
-                SEO Season audits are parsed directly. All other formats are interpreted by AI.
+                SEO Season audits are parsed directly. PDFs are read natively by AI. All other formats are interpreted by AI.
               </p>
             </>
           )}
@@ -714,7 +792,7 @@ export default function DevPanel({ projectId }: { projectId: string }) {
         <input
           ref={fileRef}
           type="file"
-          accept=".md,.txt,.csv,.json,.xml,.html,text/plain,text/markdown,text/csv,application/json"
+          accept=".md,.txt,.csv,.json,.xml,.html,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf"
           className="hidden"
           onChange={handleFileSelect}
         />

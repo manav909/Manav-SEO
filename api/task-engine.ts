@@ -5516,20 +5516,18 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   if (action === 'dev_parse_any_audit') {
     /* Universal audit parser — accepts any file format from any tool.
        Screaming Frog CSV, Ahrefs export, Lighthouse JSON, SEMrush,
-       Sitebulb, manual notes, or any custom structure.
-       Uses Claude to extract findings into the standard format. */
-    const { fileContent, fileName, targetUrl: auditUrl, projectId: pid } = body;
-    if (!fileContent) return ok(res, { error: 'fileContent required' });
+       Sitebulb, manual notes, PDF reports, or any custom structure.
+       Uses Claude to extract findings into the standard format.
+       PDFs go natively as Anthropic document blocks. */
+    const { fileContent, fileName, targetUrl: auditUrl, projectId: pid, pdfBase64 } = body;
+    if (!fileContent && !pdfBase64) return ok(res, { error: 'fileContent or pdfBase64 required' });
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
     const nl = '\n';
 
-    // Truncate very large files — send first 40KB which covers all findings
-    const sample = (typeof fileContent === 'string' ? fileContent : JSON.stringify(fileContent)).slice(0, 40000);
-
     const system = [
       'You are an expert SEO analyst. You receive audit data in ANY format — CSV, JSON, markdown,',
-      'plain text, or a custom structure from any SEO tool (Screaming Frog, Ahrefs, SEMrush,',
+      'plain text, PDF, or a custom structure from any SEO tool (Screaming Frog, Ahrefs, SEMrush,',
       'Sitebulb, Google Lighthouse, manual notes, custom exports, etc.).',
       '',
       'Extract every issue, finding, or recommendation into this exact JSON structure.',
@@ -5554,17 +5552,40 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
       '- Normalise severity: any "error/critical/high" → red; "warning/medium" → amber; "pass/info/low" → green',
     ].join(nl);
 
-    const userMsg = [
-      fileName ? 'File: ' + fileName : '',
-      auditUrl ? 'Site/URL context: ' + auditUrl : '',
-      '',
-      'Audit data:',
-      sample,
-    ].filter(Boolean).join(nl);
+    // Build messages — PDF path uses Anthropic native document block,
+    // text path uses the existing string-content shape.
+    let messages: any[];
+    if (pdfBase64) {
+      messages = [{
+        role: 'user',
+        content: [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 }, title: fileName || 'audit.pdf' },
+          { type: 'text', text: [
+            fileName ? 'File: ' + fileName : '',
+            auditUrl ? 'Site/URL context: ' + auditUrl : '',
+            '',
+            'Extract every finding from the attached PDF audit report into the JSON array structure described in the system prompt.',
+          ].filter(Boolean).join(nl) }
+        ],
+      }];
+    } else {
+      // Truncate very large text files — send first 40KB which covers all findings
+      const sample = (typeof fileContent === 'string' ? fileContent : JSON.stringify(fileContent)).slice(0, 40000);
+      const userMsg = [
+        fileName ? 'File: ' + fileName : '',
+        auditUrl ? 'Site/URL context: ' + auditUrl : '',
+        '',
+        'Audit data:',
+        sample,
+      ].filter(Boolean).join(nl);
+      messages = [{ role: 'user', content: userMsg }];
+    }
 
+    // PDFs need a longer timeout — native parsing on the server side takes longer
+    const timeoutMs = pdfBase64 ? 75000 : 45000;
     const aiRes = await fetchAnthropicWithTimeout(
-      { model: 'claude-sonnet-4-6', max_tokens: 4000, system, messages: [{ role: 'user', content: userMsg }] },
-      ANTHROPIC_API_KEY, 45000
+      { model: 'claude-sonnet-4-6', max_tokens: 4000, system, messages },
+      ANTHROPIC_API_KEY, timeoutMs
     );
 
     if (!aiRes.ok) return ok(res, { error: aiRes.error || 'AI parsing failed' });
