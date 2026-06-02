@@ -5519,7 +5519,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
        Sitebulb, manual notes, PDF reports, or any custom structure.
        Uses Claude to extract findings into the standard format.
        PDFs go natively as Anthropic document blocks. */
-    const { fileContent, fileName, targetUrl: auditUrl, projectId: pid, pdfBase64 } = body;
+    const { fileContent, fileName, targetUrl: auditUrl, projectId: pid, pdfBase64, auditSiteId } = body;
     if (!fileContent && !pdfBase64) return ok(res, { error: 'fileContent or pdfBase64 required' });
 
     const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
