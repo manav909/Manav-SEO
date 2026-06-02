@@ -14,7 +14,10 @@
 const MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
-/** Call the model with a hard timeout. Returns text or "" on any failure. */
+/** Call the model with a hard timeout. Returns text or "" on any failure.
+    Retries on Anthropic overload responses (529/503/429 or "overloaded_error")
+    up to 3 attempts with backoff so transient infra blips don't surface to
+    the operator. */
 export async function llm(opts: {
   system: string;
   user: string;
@@ -27,32 +30,54 @@ export async function llm(opts: {
     console.error(`[workspace/${label}] ANTHROPIC_API_KEY missing`);
     return "";
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-    });
-    if (!r.ok) {
+
+  const RETRYABLE_HTTP = new Set([429, 503, 529]);
+  const MAX_ATTEMPTS = 3;
+  const BACKOFFS_MS = [1000, 4000];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "x-api-key": ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        clearTimeout(timer);
+        return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
+      }
       const t = await r.text().catch(() => "");
+      const isOverload = RETRYABLE_HTTP.has(r.status) || /overload/i.test(t);
+      if (isOverload && attempt < MAX_ATTEMPTS) {
+        console.warn(`[workspace/${label}] attempt ${attempt}/${MAX_ATTEMPTS} got HTTP ${r.status} (overloaded). Retrying after ${BACKOFFS_MS[attempt - 1]}ms…`);
+        clearTimeout(timer);
+        continue;
+      }
       console.error(`[workspace/${label}] LLM ${r.status}: ${t.slice(0, 300)}`);
+      clearTimeout(timer);
       return "";
+    } catch (e: any) {
+      const isTimeout = controller.signal.aborted;
+      clearTimeout(timer);
+      // Timeouts aren't overloads — don't retry them; they'd just hit the same wall.
+      if (isTimeout || attempt === MAX_ATTEMPTS) {
+        console.error(`[workspace/${label}] exc ${e?.message}${isTimeout ? ` (timeout ${timeoutMs}ms)` : ""}`);
+        return "";
+      }
+      console.warn(`[workspace/${label}] attempt ${attempt}/${MAX_ATTEMPTS} threw: ${(e?.message || "unknown").slice(0, 80)}. Retrying…`);
     }
-    const d = await r.json();
-    return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-  } catch (e: any) {
-    console.error(`[workspace/${label}] exc ${e?.message}${controller.signal.aborted ? ` (timeout ${timeoutMs}ms)` : ""}`);
-    return "";
-  } finally {
-    clearTimeout(timer);
   }
+  return "";
 }
 
 /** Repair a JSON string truncated at the token limit: trim to the last clean
@@ -120,27 +145,48 @@ export async function llmWithTools(opts: {
 }): Promise<ToolUseLlmResult | null> {
   const { system, messages, tools, maxTokens = 6000, timeoutMs = 120000, label = "llm-tools" } = opts;
   if (!ANTHROPIC_API_KEY) { console.error(`[workspace/${label}] ANTHROPIC_API_KEY missing`); return null; }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const body: any = { model: MODEL, max_tokens: maxTokens, system, messages };
-    if (tools && tools.length) body.tools = tools;
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", signal: controller.signal,
-      headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
+
+  const RETRYABLE_HTTP = new Set([429, 503, 529]);
+  const MAX_ATTEMPTS = 3;
+  const BACKOFFS_MS = [1000, 4000];
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const body: any = { model: MODEL, max_tokens: maxTokens, system, messages };
+      if (tools && tools.length) body.tools = tools;
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST", signal: controller.signal,
+        headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        clearTimeout(timer);
+        return { content: d?.content || [], stop_reason: d?.stop_reason || "end_turn", usage: d?.usage };
+      }
       const t = await r.text().catch(() => "");
+      const isOverload = RETRYABLE_HTTP.has(r.status) || /overload/i.test(t);
+      if (isOverload && attempt < MAX_ATTEMPTS) {
+        console.warn(`[workspace/${label}] attempt ${attempt}/${MAX_ATTEMPTS} got HTTP ${r.status} (overloaded). Retrying after ${BACKOFFS_MS[attempt - 1]}ms…`);
+        clearTimeout(timer);
+        continue;
+      }
       console.error(`[workspace/${label}] LLM ${r.status}: ${t.slice(0, 400)}`);
+      clearTimeout(timer);
       return null;
+    } catch (e: any) {
+      const isTimeout = controller.signal.aborted;
+      clearTimeout(timer);
+      if (isTimeout || attempt === MAX_ATTEMPTS) {
+        console.error(`[workspace/${label}] exc ${e?.message}${isTimeout ? ` (timeout ${timeoutMs}ms)` : ""}`);
+        return null;
+      }
+      console.warn(`[workspace/${label}] attempt ${attempt}/${MAX_ATTEMPTS} threw: ${(e?.message || "unknown").slice(0, 80)}. Retrying…`);
     }
-    const d = await r.json();
-    return { content: d?.content || [], stop_reason: d?.stop_reason || "end_turn", usage: d?.usage };
-  } catch (e: any) {
-    console.error(`[workspace/${label}] exc ${e?.message}${controller.signal.aborted ? ` (timeout ${timeoutMs}ms)` : ""}`);
-    return null;
-  } finally {
-    clearTimeout(timer);
   }
+  return null;
 }

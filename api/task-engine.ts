@@ -233,27 +233,58 @@ async function fetchAnthropicWithTimeout(
   apiKey: string,
   timeoutMs: number,
 ): Promise<{ ok: boolean; text: string; error?: string }> {
-  try {
-    const resp: Response = await Promise.race([
-      fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify(payload),
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('AI timed out after ' + Math.round(timeoutMs/1000) + 's. Click Retry.')), timeoutMs)
-      ),
-    ]);
-    const data = await resp.json().catch(() => ({})) as any;
-    if (!resp.ok || data?.error) return { ok: false, text: '', error: data?.error?.message || 'HTTP ' + resp.status };
-    return { ok: true, text: (data?.content?.[0]?.text || '').trim() };
-  } catch (e: any) {
-    return { ok: false, text: '', error: e?.message || 'Request failed' };
+  // Anthropic returns 529 (overloaded), 503 (unavailable), or 429 (rate limited)
+  // when their infra is under pressure or this account is hitting limits. The
+  // operator shouldn't have to retry by hand for transient infrastructure
+  // states — three attempts with backoff (1s, 4s) absorbs most overload blips.
+  const RETRYABLE_HTTP = new Set([429, 503, 529]);
+  const MAX_ATTEMPTS = 3;
+  const BACKOFFS_MS = [1000, 4000];   // delay BEFORE attempts 2 and 3
+
+  let lastError = 'Request failed';
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
+    }
+    try {
+      const resp: Response = await Promise.race([
+        fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify(payload),
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI timed out after ' + Math.round(timeoutMs/1000) + 's. Click Retry.')), timeoutMs)
+        ),
+      ]);
+      const data = await resp.json().catch(() => ({})) as any;
+      if (resp.ok && !data?.error) {
+        return { ok: true, text: (data?.content?.[0]?.text || '').trim() };
+      }
+      // Non-OK: should we retry?
+      const errMsg = data?.error?.message || ('HTTP ' + resp.status);
+      const errType = String(data?.error?.type || '').toLowerCase();
+      const isOverload = RETRYABLE_HTTP.has(resp.status) || /overload/i.test(errMsg) || errType === 'overloaded_error';
+      lastError = errMsg;
+      if (!isOverload || attempt === MAX_ATTEMPTS) {
+        return { ok: false, text: '', error: errMsg };
+      }
+      console.warn(`[anthropic] attempt ${attempt}/${MAX_ATTEMPTS} got ${resp.status} (${errMsg.slice(0, 80)}). Retrying after ${BACKOFFS_MS[attempt - 1]}ms…`);
+      // fall through to retry loop
+    } catch (e: any) {
+      lastError = e?.message || 'Request failed';
+      // Timeouts are not infra overloads — don't retry the slow path repeatedly
+      if (/timed out/i.test(lastError) || attempt === MAX_ATTEMPTS) {
+        return { ok: false, text: '', error: lastError };
+      }
+      console.warn(`[anthropic] attempt ${attempt}/${MAX_ATTEMPTS} threw: ${lastError.slice(0, 80)}. Retrying after ${BACKOFFS_MS[attempt - 1]}ms…`);
+    }
   }
+  return { ok: false, text: '', error: lastError };
 }
 
 

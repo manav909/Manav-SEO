@@ -775,27 +775,46 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
   const AI_TIMEOUT_MS = 45000; // 45s — Promise.race makes this reliable
   const maxTokens = model === MODEL_FAST ? 2000 : 4000;
 
+  // Inner retry helper — retries on 529/503/429 + 'overloaded_error' with
+  // exponential backoff. Other errors return immediately so we don't waste
+  // time retrying bad requests / auth failures.
+  const fetchWithRetry = async (): Promise<Response> => {
+    const RETRYABLE_HTTP = new Set([429, 503, 529]);
+    const MAX_ATTEMPTS = 3;
+    const BACKOFFS_MS = [1000, 4000];
+    let lastResp: Response | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      if (attempt > 1) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
+      const resp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({ model, max_tokens: maxTokens, system: sys, messages: [{ role: 'user', content: usr }] }),
+      }, AI_TIMEOUT_MS);
+      lastResp = resp;
+      if (resp.ok || !RETRYABLE_HTTP.has(resp.status)) return resp;
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[dev-engine/callAI] attempt ${attempt}/${MAX_ATTEMPTS} got HTTP ${resp.status} (likely overloaded). Retrying after ${BACKOFFS_MS[attempt - 1]}ms…`);
+      }
+    }
+    return lastResp!;
+  };
+
   try {
-    const resp = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: maxTokens,
-        system: sys,
-        messages: [{ role: 'user', content: usr }],
-      }),
-    }, AI_TIMEOUT_MS);
+    const resp = await fetchWithRetry();
     llmCalls++;
     const data = await resp.json() as any;
 
     if (data?.error) {
+      const isOverload = /overload/i.test(data.error?.message || '') || String(data.error?.type || '').toLowerCase() === 'overloaded_error';
+      const friendly = isOverload
+        ? `Anthropic is overloaded right now — we tried 3 times with backoff and it's still busy. Wait 30-60 seconds and click Retry.`
+        : `AI service error: ${data.error?.message || 'unknown'}. Retry in a moment.`;
       return {
-        analysis:     `AI service error: ${data.error?.message || 'unknown'}. Retry in a moment.`,
+        analysis:     friendly,
         fixCode:      '',
         fixLanguage:  'text',
         paaQuestions: [],
