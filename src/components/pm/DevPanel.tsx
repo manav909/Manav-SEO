@@ -513,13 +513,15 @@ export default function DevPanel({ projectId }: { projectId: string }) {
     };
   }, []);
 
-  // Reload a single task and update the list + selected
+  // Reload tasks after a single-task update — applies the same defensive
+  // project filter as loadTasks so it doesn't undo the main filter's work.
   const reloadTask = useCallback(async (taskId: string) => {
     const result = await callApi<{ tasks: DevTask[] }>('dev_get_tasks', { projectId });
     if (result.ok && result.data?.tasks) {
       const updated = result.data.tasks;
-      setTasks(updated);
-      const refreshed = updated.find(t => t.id === taskId);
+      const filtered = updated.filter(t => !(t as any).project_id || (t as any).project_id === projectId);
+      setTasks(filtered);
+      const refreshed = filtered.find(t => t.id === taskId);
       if (refreshed) setSelected(refreshed);
     }
   }, [projectId]);
@@ -891,6 +893,9 @@ export default function DevPanel({ projectId }: { projectId: string }) {
               {openCritical > 0 && (
                 <span className="ml-2 text-red-400 font-medium">{openCritical} critical open</span>
               )}
+              {/* Diagnostic — visible confirmation of which project is being filtered.
+                  Helps diagnose "wrong tasks visible" without needing DevTools. */}
+              <span className="ml-2 opacity-50 font-mono">· filtered to project {projectId ? projectId.slice(0, 8) : '(none)'}…</span>
             </div>
             <div className="flex gap-1.5">
               <button
