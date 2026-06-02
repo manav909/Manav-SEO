@@ -1910,7 +1910,40 @@ function classifyFinding(f: AuditFinding, opts: { projectId: string; campaignId?
       description: 'No meta description found. This affects CTR from search results.',
       priority: 20 };
 
-  return null;
+  // ─── Generic fallback ─────────────────────────────────────────
+  // If no specific classifier matched, preserve the finding as a generic
+  // task so the operator can see it in the Developer tab. Previously this
+  // returned null and silently dropped the finding — meaning any finding
+  // from a PDF/CSV/JSON audit whose title didn't match the 12 narrow regex
+  // patterns above just disappeared. That broke uploads from any audit
+  // tool that doesn't use SEO Season's specific wording.
+  //
+  // Bucket by audit_kind into a sensible category. Use the finding title
+  // itself as the task title (truncated) so the operator can act on it.
+  const kindToCategory: Record<string, string> = {
+    performance: 'performance',
+    indexability: 'indexing',
+    on_page_fundamentals: 'on_page',
+    schema: 'schema',
+    content_quality: 'content',
+    backlinks: 'other',
+    technical: 'other',
+    mobile: 'performance',
+    security: 'other',
+    other: 'other',
+  };
+  // Use a stable task_type derived from audit_kind + title hash so dedupe
+  // works across re-uploads but different findings don't collapse.
+  const titleHash = String(f.finding_title || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40).replace(/^_+|_+$/g, '') || 'finding';
+  return {
+    ...base,
+    phase: 'phase_2',
+    category: (kindToCategory[(f as any).audit_kind || 'other'] as DevTask['category']) || 'other',
+    task_type: `generic_${titleHash}`,
+    title: String(f.finding_title || 'Audit finding').slice(0, 120),
+    description: String(f.finding_detail || f.finding_title || 'Imported from uploaded audit. Review and apply the appropriate fix.').slice(0, 1000),
+    priority: 50,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
