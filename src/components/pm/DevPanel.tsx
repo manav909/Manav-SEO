@@ -423,6 +423,9 @@ export default function DevPanel({ projectId }: { projectId: string }) {
   const [uploadUrl,     setUploadUrl]     = useState('');
   const [uploadPreview, setUploadPreview] = useState<{total:number;red:number;amber:number}|null>(null);
   const [showSafety,  setShowSafety]  = useState(false);
+  // Wipe modal — destructive action, requires explicit confirmation.
+  const [showWipe,    setShowWipe]    = useState(false);
+  const [wiping,      setWiping]      = useState(false);
   const [elapsedSec,  setElapsedSec]  = useState(0);
   const [runStarted,  setRunStarted]  = useState<number | null>(null);
   const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -525,6 +528,31 @@ export default function DevPanel({ projectId }: { projectId: string }) {
       if (refreshed) setSelected(refreshed);
     }
   }, [projectId]);
+
+  // Wipe tasks for the current project. Soft = pending/failed/skipped only
+  // (preserves executed work). Hard = everything regardless of status, for
+  // when wrong tasks got saved under the wrong project_id and need
+  // clearing completely.
+  const wipeTasks = async (mode: 'soft' | 'hard') => {
+    if (!projectId || wiping) return;
+    setWiping(true);
+    setError('');
+    try {
+      const result = await callApi<{ deleted: number; mode: string }>('dev_wipe_project_tasks', { projectId, mode });
+      if (!result.ok) {
+        setError(result.error ?? 'Wipe failed.');
+        return;
+      }
+      const deleted = result.data?.deleted ?? 0;
+      // eslint-disable-next-line no-console
+      console.log(`[DevPanel] wiped ${deleted} tasks (mode=${mode}) for projectId=${projectId}`);
+      setShowWipe(false);
+      setSelected(null);
+      await loadTasks();
+    } finally {
+      setWiping(false);
+    }
+  };
 
   // Upload handler — auto-detects format (including PDF), routes to correct parser
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -833,6 +861,43 @@ export default function DevPanel({ projectId }: { projectId: string }) {
         />
       )}
 
+      {showWipe && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => !wiping && setShowWipe(false)}>
+          <div className="max-w-md w-full rounded-2xl border border-red-500/40 bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="text-lg font-semibold mb-1">Wipe tasks for this project?</div>
+            <div className="text-xs text-muted-foreground mb-4">
+              Project: <span className="font-mono">{projectId.slice(0, 8)}…</span> · {tasks.length} task{tasks.length === 1 ? '' : 's'} currently loaded
+            </div>
+            <div className="text-sm text-muted-foreground mb-4 leading-relaxed">
+              Use this if the wrong tasks got saved under this project. <strong className="text-foreground">Soft wipe</strong> removes only pending/failed/skipped tasks — preserves any work you've already executed. <strong className="text-foreground">Hard wipe</strong> removes ALL tasks for this project regardless of status. Both are scoped to <em>this project only</em>; other projects are unaffected.
+            </div>
+            <div className="flex gap-2 justify-end flex-wrap">
+              <button
+                onClick={() => setShowWipe(false)}
+                disabled={wiping}
+                className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => wipeTasks('soft')}
+                disabled={wiping}
+                className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-400 bg-amber-500/5 hover:bg-amber-500/10 transition-colors disabled:opacity-40"
+              >
+                {wiping ? 'Wiping…' : 'Soft wipe (safe)'}
+              </button>
+              <button
+                onClick={() => wipeTasks('hard')}
+                disabled={wiping}
+                className="text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 bg-red-500/5 hover:bg-red-500/10 transition-colors disabled:opacity-40"
+              >
+                {wiping ? 'Wiping…' : 'Hard wipe (all tasks)'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-400 mb-4 flex items-center justify-between">
           <span>{error}</span>
@@ -903,8 +968,18 @@ export default function DevPanel({ projectId }: { projectId: string }) {
                 onClick={loadTasks}
                 disabled={loading}
                 className="text-xs px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                title="Refresh"
               >
                 ↻
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowWipe(true)}
+                disabled={loading || tasks.length === 0}
+                className="text-xs px-2 py-1 rounded-lg border border-red-500/30 text-red-400/80 hover:text-red-400 hover:border-red-500/50 transition-colors disabled:opacity-40"
+                title="Wipe tasks for this project — use when wrong tasks got saved here"
+              >
+                Wipe
               </button>
               <button
                 type="button"

@@ -5747,6 +5747,33 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     }
   }
 
+  if (action === 'dev_wipe_project_tasks') {
+    /* Wipe tasks for a project. Soft mode (default) deletes pending/failed/
+       skipped only — preserves executed work. Hard mode deletes EVERYTHING
+       for the project regardless of status — for when wrong tasks were
+       saved under the wrong project_id and need to be cleared completely. */
+    const { projectId, mode } = body;
+    if (!projectId) return ok(res, { error: 'projectId required' });
+    const hard = mode === 'hard';
+    try {
+      const { db: getDb } = await import('./lib/db.js');
+      const allowedStatuses = ['pending', 'failed', 'skipped'];
+      // Count first so we can report what was actually removed.
+      let countQ = getDb().from('dev_tasks').select('id', { count: 'exact', head: true }).eq('project_id', projectId);
+      if (!hard) countQ = countQ.in('status', allowedStatuses);
+      const { count, error: countErr } = await countQ;
+      if (countErr) return ok(res, { error: countErr.message });
+
+      let delQ = getDb().from('dev_tasks').delete().eq('project_id', projectId);
+      if (!hard) delQ = delQ.in('status', allowedStatuses);
+      const { error: delErr } = await delQ;
+      if (delErr) return ok(res, { error: delErr.message });
+      return ok(res, { success: true, deleted: count || 0, mode: hard ? 'hard' : 'soft' });
+    } catch (e: any) {
+      return ok(res, { error: e?.message });
+    }
+  }
+
   if (action === 'dev_execute_task') {
     /* Synchronous execution — do the work, then return the completed task.
        Vercel terminates Lambda after res.json() so fire-and-forget does
