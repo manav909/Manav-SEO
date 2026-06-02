@@ -240,8 +240,13 @@ function cmsAdminPath(p: CmsPlatform): string {
 // Returns empty string on any failure, caller handles gracefully.
 // ─────────────────────────────────────────────────────────────
 
-export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string; headers?: Record<string,string> }> {
+export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ html: string; fetchedOk: boolean; errorMsg?: string; headers?: Record<string,string>; fetchedVia?: 'direct' | 'jina' }> {
   if (!url) return { html: '', fetchedOk: false, errorMsg: 'No URL provided' };
+
+  // ── Attempt 1: direct fetch with browser-like headers ─────────
+  let directErr: string | undefined;
+  let directStatus: number | undefined;
+  let directHeaders: Record<string,string> = {};
   try {
     const res = await fetchWithTimeout(url, {
       headers: {
@@ -251,21 +256,54 @@ export async function fetchPageHtml(url: string, timeoutMs = 20000): Promise<{ h
       },
       redirect: 'follow',
     }, timeoutMs);
-    // Capture response headers — they often reveal CMS even when page is blocked
-    const headers: Record<string,string> = {};
-    res.headers.forEach((v, k) => { headers[k.toLowerCase()] = v; });
-    if (!res.ok) {
-      return { html: '', fetchedOk: false, errorMsg: `HTTP ${res.status}`, headers };
+    res.headers.forEach((v, k) => { directHeaders[k.toLowerCase()] = v; });
+    if (res.ok) {
+      const raw = await res.text();
+      return { html: raw.slice(0, 120_000), fetchedOk: true, headers: directHeaders, fetchedVia: 'direct' };
     }
-    const raw = await res.text();
-    return { html: raw.slice(0, 120_000), fetchedOk: true, headers };
+    directStatus = res.status;
+    directErr = `HTTP ${res.status}`;
   } catch (e: any) {
-    const isTimeout = (e as any)?.isTimeout;
-    const msg = isTimeout
+    directErr = (e as any)?.isTimeout
       ? `Page fetch timed out after ${timeoutMs}ms`
       : (e?.message || 'Fetch failed');
-    return { html: '', fetchedOk: false, errorMsg: msg };
   }
+
+  // ── Attempt 2: Jina Reader proxy fallback ──────────────────────
+  // Some sites block server-side fetches via Cloudflare, bot protection,
+  // or geo rules. Jina renders the page through a real browser proxy and
+  // returns its content as markdown/HTML. Used elsewhere in the codebase
+  // (api/task-engine.ts fetchUrl), so we know it works in this env.
+  // We return whatever HTML Jina extracted so downstream code can still
+  // inspect script tags, images, schema, etc. — though Jina's output is
+  // simpler markup than the original site.
+  try {
+    const u = url.startsWith('http') ? url : 'https://' + url;
+    const jr = await fetchWithTimeout('https://r.jina.ai/' + u, {
+      headers: { 'Accept': 'text/html', 'X-Return-Format': 'html', 'X-Timeout': '15' },
+    }, Math.min(timeoutMs, 18000));
+    if (jr.ok) {
+      const jhtml = await jr.text();
+      if (jhtml && jhtml.length > 200) {
+        // Tag the headers so callers know this came from Jina (some signals
+        // like a CMS-revealing 'Server: Apache/...' header won't be present).
+        return {
+          html: jhtml.slice(0, 120_000),
+          fetchedOk: true,
+          headers: { ...directHeaders, 'x-fetched-via': 'jina' },
+          fetchedVia: 'jina',
+        };
+      }
+    }
+  } catch { /* Jina also failed — fall through to honest error */ }
+
+  // ── Both failed — give the operator an honest, specific diagnosis ─
+  const honestMsg = directStatus === 403 || directStatus === 503
+    ? `Site is blocking automated requests (HTTP ${directStatus} — Cloudflare or similar bot protection). The fallback proxy also failed.`
+    : directStatus
+    ? `Site returned HTTP ${directStatus} to both direct fetch and the proxy fallback.`
+    : `Could not reach the site (${directErr}). The fallback proxy also failed.`;
+  return { html: '', fetchedOk: false, errorMsg: honestMsg, headers: directHeaders };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -541,10 +579,10 @@ export async function executeDevTask(task: DevTask): Promise<void> {
       // PATH B fallback: page not available, proceed with patterns
       result = await executeWithAuditData(task, cms);
     } else {
-      // PATH C fallback: page required but not available
-      // Generate a diagnostic guide + manual instructions instead of a code patch
+      // PATH C fallback: page required but not available (both direct fetch
+      // and the Jina proxy failed — see fetchError for the specific cause)
       result = {
-        analysis: `Could not fetch the live page (${fetchError || 'server did not respond'}). This task requires reading the actual HTML to identify specific blocking scripts. The Fix Code section contains a step-by-step guide to find and fix the blocking scripts yourself using Chrome DevTools.`,
+        analysis: `Could not fetch the live page for automatic analysis: ${fetchError || 'both direct fetch and the proxy fallback failed'}. This task identifies blocking scripts that need the actual HTML to pinpoint specifically. The Fix Code section provides a step-by-step Chrome DevTools guide you can run yourself — opens the page in your browser (which is not blocked), then walks through finding and fixing the blocking scripts.`,
         fixCode: buildManualDiagnosticGuide(task, cms),
         fixLanguage: 'text',
         paaQuestions: [],
