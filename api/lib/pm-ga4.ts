@@ -177,6 +177,23 @@ async function getAccessToken(projectId: string): Promise<{
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
+      // Detect invalid_grant — refresh token is dead (revoked, expired,
+      // password changed, client secret rotated). The token will NEVER
+      // succeed again; reconnection is required. Mark the integration so
+      // the UI shows a clear "Reconnect" prompt instead of repeatedly
+      // hammering Google with a known-bad token.
+      const isInvalidGrant = res.status === 400 && /invalid_grant/i.test(errText);
+      if (isInvalidGrant) {
+        try {
+          await db().from("project_integrations").update({
+            access_token: null,
+            access_token_exp: null,
+            last_error: "Refresh token revoked or expired. Reconnect Google Analytics 4 to restore the link.",
+            connection_state: "needs_reconnect",
+          }).eq("project_id", projectId).eq("provider", "ga4");
+        } catch { /* graceful — column may not exist on older schema */ }
+        return { error: "Google Analytics 4 connection has expired. Disconnect and reconnect the integration to restore access. (Refresh tokens expire after 6 months of inactivity, on password change, or if access was revoked from the Google account.)" };
+      }
       return { error: `Token refresh failed: ${errText.slice(0, 200)}` };
     }
     const tk = await res.json() as any;
@@ -635,22 +652,37 @@ export async function ga4Status(projectId: string): Promise<{
   lastPullStatus?: string;
   lastPullError?: string;
   connectedAt?: string;
+  connectionState?: string;
+  lastError?: string;
 }> {
   if (!projectId) return { success: false, connected: false };
   try {
-    const { data: row } = await db().from("project_integrations").select(
-      "resource_id,resource_label,last_pull_at,last_pull_status,last_pull_error,connected_at"
-    ).eq("project_id", projectId).eq("provider", "ga4").maybeSingle();
+    // Try the richer column set first; fall back if the columns don't yet
+    // exist (Build 10h migration not applied).
+    let row: any = null;
+    try {
+      const { data } = await db().from("project_integrations").select(
+        "resource_id,resource_label,last_pull_at,last_pull_status,last_pull_error,connected_at,connection_state,last_error"
+      ).eq("project_id", projectId).eq("provider", "ga4").maybeSingle();
+      row = data;
+    } catch {
+      const { data } = await db().from("project_integrations").select(
+        "resource_id,resource_label,last_pull_at,last_pull_status,last_pull_error,connected_at"
+      ).eq("project_id", projectId).eq("provider", "ga4").maybeSingle();
+      row = data;
+    }
     if (!row) return { success: true, connected: false };
     return {
       success: true,
       connected: true,
-      resourceId:     (row as any).resource_id || undefined,
-      resourceLabel:  (row as any).resource_label || undefined,
-      lastPullAt:     (row as any).last_pull_at || undefined,
-      lastPullStatus: (row as any).last_pull_status || undefined,
-      lastPullError:  (row as any).last_pull_error || undefined,
-      connectedAt:    (row as any).connected_at || undefined,
+      resourceId:     row.resource_id || undefined,
+      resourceLabel:  row.resource_label || undefined,
+      lastPullAt:     row.last_pull_at || undefined,
+      lastPullStatus: row.last_pull_status || undefined,
+      lastPullError:  row.last_pull_error || undefined,
+      connectedAt:    row.connected_at || undefined,
+      connectionState: row.connection_state || undefined,
+      lastError:       row.last_error || undefined,
     };
   } catch {
     return { success: false, connected: false };

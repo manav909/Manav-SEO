@@ -811,7 +811,7 @@ async function callAI(task: DevTask, sys: string, usr: string, model = MODEL): P
     if (data?.error) {
       const isOverload = /overload/i.test(data.error?.message || '') || String(data.error?.type || '').toLowerCase() === 'overloaded_error';
       const friendly = isOverload
-        ? `Anthropic is overloaded right now — we tried 3 times with backoff and it's still busy. Wait 30-60 seconds and click Retry.`
+        ? `Anthropic is overloaded right now — we tried 3 times with backoff and the service is still busy. Wait 30-60 seconds and click Retry.`
         : `AI service error: ${data.error?.message || 'unknown'}. Retry in a moment.`;
       return {
         analysis:     friendly,

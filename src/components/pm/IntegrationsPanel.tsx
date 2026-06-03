@@ -264,6 +264,20 @@ function ProviderRow({ projectId, provider }: { projectId: string; provider: Pro
               )}
             </div>
           )}
+          {/* Needs-reconnect banner — surfaces when Google has revoked the
+              refresh token. Tells the operator exactly what to do (disconnect
+              then reconnect) and explains the most common causes. */}
+          {status?.connected && status.connectionState === 'needs_reconnect' && (
+            <div className="mt-2 rounded-lg border border-red-500/40 bg-red-500/5 p-2.5 text-[11px] text-red-300 leading-relaxed">
+              <div className="font-semibold text-red-200 flex items-center gap-1.5 mb-1">
+                <AlertCircle className="h-3.5 w-3.5" /> Connection expired — reconnect required
+              </div>
+              {status.lastError || 'Google has revoked the refresh token. The connection cannot be restored automatically.'}
+              <div className="mt-1.5 text-red-300/70">
+                Common causes: 6+ months of no activity, password change on the Google account, or access revoked from myaccount.google.com → Security → Third-party apps. Click <strong>Disconnect</strong> below, then <strong>Connect</strong> again to restore.
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
           {!status?.connected ? (

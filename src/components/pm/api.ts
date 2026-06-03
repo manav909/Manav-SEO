@@ -575,6 +575,10 @@ interface GscStatus {
   lastPullStatus?: string;
   lastPullError?: string;
   connectedAt?:  string;
+  /** "needs_reconnect" when Google has revoked the refresh token. */
+  connectionState?: string;
+  /** Operator-visible message explaining the state. */
+  lastError?: string;
 }
 
 /* Get current GSC connection status for a project. */
@@ -592,6 +596,8 @@ export async function gscStatus(projectId: string): Promise<{
       lastPullStatus: r.lastPullStatus,
       lastPullError:  r.lastPullError,
       connectedAt:    r.connectedAt,
+      connectionState: r.connectionState,
+      lastError:       r.lastError,
     },
   };
 }
@@ -650,6 +656,10 @@ interface Ga4Status {
   lastPullStatus?: string;
   lastPullError?: string;
   connectedAt?:  string;
+  /** "needs_reconnect" when Google has revoked the refresh token. */
+  connectionState?: string;
+  /** Operator-visible message explaining the state. */
+  lastError?: string;
 }
 
 export async function ga4Status(projectId: string): Promise<{
@@ -666,6 +676,8 @@ export async function ga4Status(projectId: string): Promise<{
       lastPullStatus: r.lastPullStatus,
       lastPullError:  r.lastPullError,
       connectedAt:    r.connectedAt,
+      connectionState: r.connectionState,
+      lastError:       r.lastError,
     },
   };
 }
