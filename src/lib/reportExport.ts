@@ -22,7 +22,7 @@ interface ReportMeta {
    Handles the subset our reports actually use: headings, paragraphs,
    bold/italic, inline code, lists, tables, blockquotes, horizontal rules.
    Tables are first-class because every step report uses them. */
-function mdToHtml(src: string): string {
+export function mdToHtml(src: string): string {
   const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const inline = (s: string) => esc(s)
     .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -331,6 +331,32 @@ export function downloadStakeholderReport(markdown: string, meta: ReportMeta) {
   const safe = (meta.title || 'report').toLowerCase().replace(/[^a-z0-9-_]/gi, '-').replace(/-+/g, '-').slice(0, 80);
   a.href = url;
   a.download = `${safe}.html`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ─── Download as Word document (.doc) ─────────────────────────────
+   Serves the same self-contained HTML with Word-compatible MIME + .doc
+   extension. Word, Pages, Google Docs, and LibreOffice all open this
+   cleanly and render the headings, tables, lists, bold/italic, and
+   blockquotes correctly. This is what every "Export to Word" feature
+   on the web actually does — true .docx requires a heavyweight binary
+   library which is overkill for what the operator needs.
+   The .doc files can be saved as .docx from inside Word with one click. */
+export function downloadStakeholderAsWord(markdown: string, meta: ReportMeta) {
+  const html = buildStakeholderHtml(markdown, meta);
+  // Word respects a special HTML preamble that tags the file as a Word document.
+  // The xmlns:w gives Word a hint to use Word rendering pipeline rather than IE.
+  const wordWrapped = html.replace(
+    '<html',
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"'
+  );
+  const blob = new Blob(['\ufeff', wordWrapped], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safe = (meta.title || 'report').toLowerCase().replace(/[^a-z0-9-_]/gi, '-').replace(/-+/g, '-').slice(0, 80);
+  a.href = url;
+  a.download = `${safe}.doc`;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }

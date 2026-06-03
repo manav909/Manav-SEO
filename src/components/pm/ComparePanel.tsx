@@ -10,11 +10,12 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, FileText, Upload, ArrowRight, Search, Download, X, Sparkles, AlertCircle } from 'lucide-react';
+import { Loader2, FileText, Upload, ArrowRight, Search, Download, X, Sparkles, AlertCircle, Users, FileDown, ExternalLink } from 'lucide-react';
 import {
-  compareListDocs, compareRun, fileToAdHocRef,
-  type CompareItem, type CompareSourceRef,
+  compareListDocs, compareRun, compareLenses, fileToAdHocRef,
+  type CompareItem, type CompareSourceRef, type CompareLens, type CompareSelectedLens,
 } from '@/components/pm/api';
+import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
 import { useToast } from '@/hooks/use-toast';
 
 type SideState =
@@ -40,6 +41,12 @@ export default function ComparePanel({ projectId }: Props) {
   const [loadingList, setLoadingList] = useState(false);
   const [context, setContext] = useState('');
 
+  // Lens picker state (Build 11.1)
+  const [lensCatalog, setLensCatalog] = useState<CompareLens[]>([]);
+  const [pickedLensIds, setPickedLensIds] = useState<Set<string>>(new Set());
+  const [customLens, setCustomLens] = useState('');
+  const totalLensesPicked = pickedLensIds.size + (customLens.trim().length >= 5 ? 1 : 0);
+
   const [sideA, setSideA] = useState<SideState>({ mode: 'pick', picked: null });
   const [sideB, setSideB] = useState<SideState>({ mode: 'pick', picked: null });
 
@@ -56,10 +63,17 @@ export default function ComparePanel({ projectId }: Props) {
     } finally { setLoadingList(false); }
   }, [projectId]);
 
-  // Reset everything when project changes
+  // Lens catalog loads once and is reused across projects.
+  useEffect(() => {
+    compareLenses().then(r => { if (r.success && Array.isArray(r.lenses)) setLensCatalog(r.lenses); });
+  }, []);
+
+  // Reset everything when project changes (including lens selection so
+  // the previous project's reader framing does not leak into the next).
   useEffect(() => {
     setItems([]); setSideA({ mode: 'pick', picked: null }); setSideB({ mode: 'pick', picked: null });
     setResult(null); setError(''); setContext('');
+    setPickedLensIds(new Set()); setCustomLens('');
     loadList();
   }, [projectId, loadList]);
 
@@ -96,7 +110,18 @@ export default function ComparePanel({ projectId }: Props) {
         ? await fileToAdHocRef(sideB.file)
         : refToSource(sideB)!;
 
-      const r = await compareRun({ projectId, docA, docB, context: context.trim() || undefined });
+      // Assemble lenses payload: preset ids + optional custom free-text.
+      const lenses: CompareSelectedLens[] = [];
+      pickedLensIds.forEach(id => lenses.push({ kind: 'preset', id }));
+      const customTrimmed = customLens.trim();
+      if (customTrimmed.length >= 5) lenses.push({ kind: 'custom', description: customTrimmed });
+      if (lenses.length > 5) {
+        setError('At most 5 lenses can be selected at once. Trim the selection and re-run.');
+        setRunning(false);
+        return;
+      }
+
+      const r = await compareRun({ projectId, docA, docB, context: context.trim() || undefined, lenses: lenses.length ? lenses : undefined });
       if (!r.success) { setError(r.error || 'Comparison failed.'); return; }
       setResult({ title: r.title, body_md: r.body_md, comparison_id: r.comparison_id });
       if (r.error) toast({ title: 'Comparison ready', description: r.error });
@@ -108,13 +133,33 @@ export default function ComparePanel({ projectId }: Props) {
     } finally { setRunning(false); }
   };
 
-  const downloadAsDocx = () => {
+  // Export metadata shared by every download/open from this comparison.
+  // ComparePanel does not have project name in props; we keep meta minimal
+  // but informative — the title carries the doc-vs-doc context already.
+  const exportMeta = (): { title: string; kind: string; generatedAt: string } => ({
+    title: result?.title || 'Comparison',
+    kind: 'Document Comparison',
+    generatedAt: new Date().toISOString(),
+  });
+
+  const downloadAsWord = () => {
     if (!result?.body_md) return;
-    const fileName = (result.title || 'comparison').replace(/[^\w-]+/g, '_').slice(0, 60) + '.md';
-    const blob = new Blob([result.body_md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = fileName;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+    downloadStakeholderAsWord(result.body_md, exportMeta());
+    toast({ title: 'Word document downloaded', description: 'Open with Microsoft Word, Pages, or Google Docs.' });
+  };
+
+  const downloadAsHtml = () => {
+    if (!result?.body_md) return;
+    downloadStakeholderReport(result.body_md, exportMeta());
+    toast({ title: 'HTML document downloaded' });
+  };
+
+  const openAsPdfPrintable = () => {
+    if (!result?.body_md) return;
+    openStakeholderReport(result.body_md, exportMeta());
+    // The browser opens the formatted HTML in a new tab; operator uses
+    // File → Print → Save as PDF (Cmd-P / Ctrl-P) for a polished PDF.
+    toast({ title: 'Opened in new tab', description: 'Use File → Print → Save as PDF for a polished PDF.' });
   };
 
   const copyToClipboard = async () => {
@@ -140,6 +185,67 @@ export default function ComparePanel({ projectId }: Props) {
       <div className="grid md:grid-cols-2 gap-4">
         <SidePicker label="Document A" side="A" state={sideA} setState={setSideA} items={filtered} loading={loadingList} search={search} setSearch={setSearch} />
         <SidePicker label="Document B" side="B" state={sideB} setState={setSideB} items={filtered} loading={loadingList} search={search} setSearch={setSearch} />
+      </div>
+
+      {/* Stakeholder lens picker (Build 11.1) — multi-select checklist
+          of preset readers, plus a free-text "custom reader" input. The
+          model produces ONE merged action list with each item tagged by
+          which lens(es) demanded it. Up to 5 lenses; soft-warn over 3. */}
+      <div className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <Users className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Stakeholder lenses <span className="font-normal text-muted-foreground text-xs">· optional</span></h3>
+        </div>
+        <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+          Pick the readers this comparison is for. The action list will be tailored to their concerns and each action tagged with which lens(es) demanded it. Leave empty for a neutral comparison. Up to 5 at once.
+        </p>
+        {lensCatalog.length === 0 ? (
+          <div className="text-xs text-muted-foreground">Loading lenses…</div>
+        ) : (
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-1.5 mb-3">
+            {lensCatalog.map(lens => {
+              const picked = pickedLensIds.has(lens.id);
+              return (
+                <button
+                  key={lens.id}
+                  type="button"
+                  onClick={() => {
+                    const next = new Set(pickedLensIds);
+                    if (picked) next.delete(lens.id);
+                    else next.add(lens.id);
+                    setPickedLensIds(next);
+                  }}
+                  className={`text-left text-[11px] px-2.5 py-1.5 rounded-lg border transition-colors flex items-center gap-2 ${
+                    picked
+                      ? 'border-primary/50 bg-primary/10 text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground'
+                  }`}
+                >
+                  <span className={`inline-block w-3 h-3 rounded border ${picked ? 'border-primary bg-primary/30' : 'border-border'} flex items-center justify-center text-[9px] leading-none`}>
+                    {picked ? '✓' : ''}
+                  </span>
+                  <span className="truncate">{lens.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div>
+          <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Custom reader (free-text)</label>
+          <input
+            value={customLens}
+            onChange={e => setCustomLens(e.target.value)}
+            placeholder='e.g. "a regulatory compliance officer who needs to verify GDPR claims" — describe a reader not in the preset list'
+            className="w-full mt-1 text-[11px] px-2.5 py-1.5 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground/60"
+          />
+        </div>
+        {totalLensesPicked > 0 && (
+          <div className={`text-[10px] mt-2 ${totalLensesPicked > 3 ? 'text-amber-400' : 'text-muted-foreground'}`}>
+            {totalLensesPicked} lens{totalLensesPicked === 1 ? '' : 'es'} selected
+            {totalLensesPicked > 3 && ' — that is a lot of concerns to balance in one comparison; consider running multiple comparisons instead'}
+            {totalLensesPicked > 5 && ' (only the first 5 will be used)'}
+          </div>
+        )}
       </div>
 
       {/* Optional context */}
@@ -188,16 +294,39 @@ export default function ComparePanel({ projectId }: Props) {
         <div className="rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h3 className="text-sm font-semibold">{result.title || 'Comparison result'}</h3>
-            <div className="flex gap-2">
-              <button onClick={copyToClipboard} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted">Copy</button>
-              <button onClick={downloadAsDocx} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted flex items-center gap-1.5">
-                <Download className="h-3 w-3" /> Download .md
+            <div className="flex gap-1.5 flex-wrap">
+              <button
+                onClick={downloadAsWord}
+                className="text-xs px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 flex items-center gap-1.5 font-medium"
+                title="Download a .doc file that opens cleanly in Microsoft Word, Pages, or Google Docs"
+              >
+                <FileDown className="h-3 w-3" /> Word
               </button>
+              <button
+                onClick={openAsPdfPrintable}
+                className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted flex items-center gap-1.5"
+                title="Open the formatted document in a new tab; use Cmd/Ctrl-P → Save as PDF for a polished PDF"
+              >
+                <ExternalLink className="h-3 w-3" /> Open as PDF
+              </button>
+              <button
+                onClick={downloadAsHtml}
+                className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted flex items-center gap-1.5"
+                title="Download as a self-contained HTML file"
+              >
+                <Download className="h-3 w-3" /> HTML
+              </button>
+              <button onClick={copyToClipboard} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted">Copy raw</button>
             </div>
           </div>
-          <div className="prose prose-sm prose-invert max-w-none whitespace-pre-wrap text-foreground/90 leading-relaxed font-mono text-[12px]">
-            {result.body_md}
-          </div>
+          {/* Properly rendered preview — markdown converted to HTML.
+              The 'compare-preview' classes style headings, tables, lists,
+              and blockquotes so the in-app preview reads like the final
+              document, not like raw markdown source. */}
+          <div
+            className="compare-preview prose prose-sm prose-invert max-w-none text-foreground/90"
+            dangerouslySetInnerHTML={{ __html: mdToHtml(result.body_md || '') }}
+          />
           {result.comparison_id && (
             <div className="mt-3 text-[10px] text-muted-foreground">
               Saved as workspace artifact · id <span className="font-mono">{result.comparison_id.slice(0, 8)}…</span> · also available in the Documents tab.
@@ -205,6 +334,30 @@ export default function ComparePanel({ projectId }: Props) {
           )}
         </div>
       )}
+
+      {/* In-app preview styling — overrides Tailwind defaults so tables
+          look like tables, headings stack with visible hierarchy, and
+          lens tags stay readable. Scoped to .compare-preview only so it
+          does not affect the rest of the app. */}
+      <style>{`
+        .compare-preview h1 { font-size: 18px; font-weight: 700; margin: 0 0 12px; color: hsl(var(--foreground)); border-bottom: 1px solid hsl(var(--border)); padding-bottom: 8px; }
+        .compare-preview h2 { font-size: 15px; font-weight: 600; margin: 20px 0 10px; color: hsl(var(--foreground)); }
+        .compare-preview h3 { font-size: 13px; font-weight: 600; margin: 16px 0 8px; color: hsl(var(--foreground)); }
+        .compare-preview p { margin: 0 0 10px; line-height: 1.6; }
+        .compare-preview ul, .compare-preview ol { margin: 0 0 12px; padding-left: 20px; }
+        .compare-preview li { margin: 4px 0; line-height: 1.55; }
+        .compare-preview strong { color: hsl(var(--foreground)); font-weight: 600; }
+        .compare-preview em { color: hsl(var(--muted-foreground)); font-style: italic; }
+        .compare-preview table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 11.5px; }
+        .compare-preview th, .compare-preview td { border: 1px solid hsl(var(--border)); padding: 6px 10px; text-align: left; vertical-align: top; }
+        .compare-preview th { background: hsl(var(--muted) / 0.5); font-weight: 600; }
+        .compare-preview tr:nth-child(even) td { background: hsl(var(--muted) / 0.15); }
+        .compare-preview blockquote { border-left: 3px solid hsl(var(--primary) / 0.4); padding: 4px 0 4px 12px; margin: 12px 0; color: hsl(var(--muted-foreground)); }
+        .compare-preview hr { border: none; border-top: 1px solid hsl(var(--border)); margin: 16px 0; }
+        .compare-preview code { background: hsl(var(--muted) / 0.5); padding: 1px 4px; border-radius: 3px; font-size: 11px; }
+        .compare-preview pre { background: hsl(var(--muted) / 0.3); padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 11px; line-height: 1.5; margin: 10px 0; }
+        .compare-preview pre code { background: transparent; padding: 0; }
+      `}</style>
     </div>
   );
 }
