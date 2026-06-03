@@ -324,6 +324,9 @@ async function buildBacklinkBrief(opts: {
   inputs: BacklinkBriefInputs;
   audit: any;
   opportunities: any;
+  /** Build 12.4 — progress hook called at synthesis sub-stages.
+      Receives a free-text stage label. Optional; no-op when omitted. */
+  onProgress?: (stage: string, detail?: { sections_done?: number; sections_total?: number }) => Promise<void> | void;
 }): Promise<{ brief_md: string; title: string; llm_calls: number }> {
   const inputs = opts.inputs;
   const audit = opts.audit;
@@ -348,74 +351,191 @@ async function buildBacklinkBrief(opts: {
 
   const lensBlock = `\nREADERS OF THIS BRIEF (tailor tone, depth, and emphasis):\n${resolvedLenses.map((l, i) => `  ${i + 1}. ${l.label} — ${l.role}.\n     Concerns: ${l.priorities}`).join("\n")}\n\nLENS RULES:\n- Tag each tactical recommendation with which lens(es) demanded it.\n- When two lenses imply different framing, present both, do not average.\n- The Senior DMS lens (if selected) is the quality gate — its priorities override others when there is a conflict over factual accuracy or strategic soundness.\n`;
 
-  const system = `You are a senior digital marketing strategist preparing a client-ready Backlink Strategy Brief.
+  /* ─── Build 12.4: SECTION-BY-SECTION SYNTHESIS ──────────────
+     Original single-call synthesis hit 14k output tokens and routinely
+     timed out or returned malformed JSON. Replaced with:
 
-The reader is a senior practitioner OR a client. Match their level of sophistication — never patronise but never lose them in jargon.
+       Pass 1 (FRAMING): one call ~3000 tokens for title, exec summary,
+         current state, 90-day plan, what-not-to-do, caveats, op notes.
 
-This brief must reflect 2026 SEO and AI-search dynamics, not 2018 link-building tactics. Specifically:
-- AI Overviews (Google) and LLM-search (ChatGPT, Claude, Gemini, Perplexity) now cite specific authoritative sources for answers. Getting cited there matters as much as ranking on the classic SERP.
-- Topic relevance and entity association are now first-class — a relevant link from a topically-aligned site outweighs a higher-DA link from a tangentially-related site.
-- E-E-A-T signals are interpreted across the web — what the client publishes, who quotes them, what schema they expose. Backlink strategy interacts with content strategy and structured data.
-- Pure-quantity link building is dead. Pure-quality is the only path. Toxic and PBN-style links actively harm.
-${lensBlock}
+       Pass 2 (SECTIONS): six parallel calls, one per category, each
+         ~1500 tokens. Each receives the framing exec_summary so all
+         sections share a coherent north star.
+
+     Total wall time: typically 30-50s (vs 120-240s before).
+     Total LLM calls for synthesis: 7 (was 1). Smaller calls are cheaper
+     per-token and far less likely to truncate.
+     Reliability: a single section failure no longer kills the whole brief. */
+
+  const sharedContextBlock = `
+2026 SEO + AI-SEARCH CONTEXT:
+- AI Overviews and LLM-search (ChatGPT, Claude, Gemini, Perplexity) cite specific authoritative sources. Getting cited there matters as much as ranking.
+- Topic relevance and entity association beat raw DA. A topically-aligned link from a smaller site outweighs a higher-DA link from a tangentially-related one.
+- E-E-A-T signals are interpreted across the web — what the client publishes, who quotes them, the schema they expose.
+- Quantity link building is dead. Toxic and PBN links actively harm.
+
+ABSOLUTE RULES:
+- Never invent publication names, journalist names, specific URLs, or tools. If you cannot name honestly, leave example_targets empty.
+- Use ranges, not point estimates ("3-7 high-quality links per quarter is realistic at this budget tier", never "you will get exactly 12 links").
+- Mark speculative opportunities as speculative.
+- Do not use internal vocabulary ("pillar", "step report", "workspace").
+${lensBlock}`;
+
+  const auditDigest = JSON.stringify(audit, null, 2);
+  const inputsDigest = JSON.stringify({ ...inputs, lenses: undefined }, null, 2);
+  // Pre-bucket opportunities by category so each section call only sees
+  // its own raw research lane output. Cuts each section call's input size
+  // from ~all opportunities to ~7-10 items.
+  const oppsAll: any[] = Array.isArray(opps?.opportunities) ? opps.opportunities : [];
+  const oppsByCategory: Record<string, any[]> = {};
+  for (const o of oppsAll) {
+    const cat = o.category || "other";
+    if (!oppsByCategory[cat]) oppsByCategory[cat] = [];
+    oppsByCategory[cat].push(o);
+  }
+
+  /* ─── PASS 1: FRAMING ─────────────────────────────────────── */
+  const framingSystem = `You are a senior digital marketing strategist preparing the FRAMING SECTIONS of a client-ready Backlink Strategy Brief. The opportunity sections will be written in a separate pass — your job is the strategic frame around them.
+
+${sharedContextBlock}
+
 OUTPUT — return ONLY this JSON, no preamble:
 {
-  "title": "concise brief title (e.g. 'Backlink Strategy Brief: <client domain>')",
-  "executive_summary": "3-5 sentence summary the C-level reader gets the entire picture from. Lead with the single most important takeaway.",
-  "current_state": "markdown — honest assessment of where this client stands today: industry, audience, business model in plain English; brand-strength signals; existing PR signals; link-worthy assets; current gaps. Quote from the audit. 2-3 paragraphs.",
-  "sections": [
+  "title": "concise brief title — e.g. 'Backlink Strategy Brief · <hostname>'",
+  "executive_summary": "3-5 sentence summary that gives a C-level reader the entire picture. Lead with the single most important takeaway. Reference the audit's industry and standout signals.",
+  "current_state": "2-3 paragraph markdown — honest assessment of where this client stands today: industry, audience, business model in plain English; brand-strength signals from the audit (quote them); existing PR signals; link-worthy assets currently on the site; current gaps a senior practitioner would flag.",
+  "ninety_day_plan": "Two-paragraph markdown — what the client/agency should actually do in 90 days, in order, with realistic effort estimates and budget-tier-appropriate scope.",
+  "what_not_to_do": "One paragraph markdown — explicit disqualifications: tactics that look attractive but won't work for THIS client, common mistakes in this industry, why some 'easy wins' are traps.",
+  "honest_caveats": "What we cannot know without external backlink tools (Ahrefs/Majestic/Moz). Where confidence is lower. What to verify before pitching to client.",
+  "operator_notes": "Internal note — anything ambiguous, anything that needs verification, anything that would change with more context. Not shown to client."
+}`;
+
+  const framingUser = `INPUTS:\n${inputsDigest}\n\nAUDIT:\n${auditDigest}\n\nResearch lanes have already surfaced ${oppsAll.length} opportunities across ${Object.keys(oppsByCategory).length} categories — they will be written up separately. Focus on the strategic frame.`;
+
+  if (opts.onProgress) await opts.onProgress("synthesizing_framing");
+  const framingParsed = await callAnthropicJson({ system: framingSystem, user: framingUser, label: "backlinks/synth-framing", maxTokens: 3500 });
+  if (!framingParsed || !framingParsed.executive_summary) {
+    throw new Error("Backlink brief framing returned empty or malformed output. The audit + research data may not be substantial enough — try with deep_audit enabled or supply more operator context.");
+  }
+
+  /* ─── PASS 2: SIX PARALLEL SECTIONS ─────────────────────────
+     Each section call sees the framing exec_summary so all sections
+     share a north star. Receives only its own raw opportunities. */
+
+  const sectionDefs: Array<{ key: string; category_label: string; framing_hint: string }> = [
+    { key: "digital_pr", category_label: "Digital PR", framing_hint: "newsworthy angles, journalist beats, named publication targets where honestly knowable" },
+    { key: "resource_page", category_label: "Resource Pages", framing_hint: "link-roundup / 'best of' / industry-hub pages, search operators to find them, what asset to pitch" },
+    { key: "broken_link", category_label: "Broken-link reclamation", framing_hint: "broken-link prospecting in this industry, what asset would replace common dead links, unlinked brand mentions" },
+    { key: "expert_quote", category_label: "Expert quotes (HARO / Featured / Connectively)", framing_hint: "which expert-quote platforms fit this vertical, what expertise the client can credibly speak to, realistic conversion at this budget" },
+    { key: "topical_co_citation", category_label: "Topical co-citation + AI-Overview / LLM-search visibility", framing_hint: "which sites AI Overviews and LLM search typically cite for this space, what structured content gets a site into those citations, entity-association tactics" },
+    { key: "partnership", category_label: "Partnerships / co-marketing", framing_hint: "adjacent non-competing brands, partnership structures (co-authored white papers, joint webinars, mutual integrations), how to identify candidates" },
+  ];
+
+  const sectionUserBase = `CLIENT WEBSITE: ${inputs.client_url}
+INDUSTRY: ${audit.industry || "unknown"}
+AUDIENCE: ${audit.audience || "unknown"}
+BUSINESS MODEL: ${audit.business_model || "unknown"}
+${inputs.geography ? `GEOGRAPHY: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `BUDGET TIER: ${inputs.budget_tier}\n` : ""}${audit.link_worthy_assets?.length ? `LINK-WORTHY ASSETS: ${audit.link_worthy_assets.slice(0, 5).join("; ")}\n` : ""}
+EXECUTIVE SUMMARY (the rest of the brief's frame — your section must align with this):
+${framingParsed.executive_summary}`;
+
+  if (opts.onProgress) await opts.onProgress("synthesizing_sections", { sections_done: 0, sections_total: sectionDefs.length });
+
+  let sectionsDone = 0;
+  const sectionRuns = await Promise.all(sectionDefs.map(async (def) => {
+    const rawOpps = oppsByCategory[def.key] || [];
+    const sectionSystem = `You are writing ONE section of a Backlink Strategy Brief — the "${def.category_label}" section.
+
+The rest of the brief (framing, other sections) is being written in parallel. Your section must be self-contained but consistent with the executive summary you'll see.
+
+FOCUS: ${def.framing_hint}
+
+${sharedContextBlock}
+
+OUTPUT — return ONLY this JSON, no preamble:
+{
+  "category": "${def.category_label}",
+  "summary": "1-2 sentences on this category specifically for THIS client (not generic)",
+  "opportunities": [
     {
-      "category": "Digital PR",
-      "summary": "1-2 sentences on this category for this client",
-      "opportunities": [
-        { "title": "Specific opportunity", "rationale": "why for THIS client", "tactical_path": "concrete how-to", "effort": "low|medium|high", "realism": "high|medium|speculative", "example_targets": ["specific where applicable, empty array if you cannot name without inventing"], "lenses": ["lens label 1", "lens label 2"] }
-      ]
-    },
-    {
-      "category": "Resource Pages",
-      "summary": "...",
-      "opportunities": [...]
-    },
-    {
-      "category": "Broken-link reclamation",
-      "summary": "...",
-      "opportunities": [...]
-    },
-    {
-      "category": "Expert quotes (HARO/Featured/Connectively)",
-      "summary": "...",
-      "opportunities": [...]
-    },
-    {
-      "category": "Topical co-citation + AI-Overview / LLM-search visibility",
-      "summary": "...",
-      "opportunities": [...]
-    },
-    {
-      "category": "Partnerships / co-marketing",
-      "summary": "...",
-      "opportunities": [...]
+      "title": "Specific opportunity title",
+      "rationale": "Why this works for THIS client (specific to their industry/audience/assets)",
+      "tactical_path": "Concrete how-to: who to contact, what asset to pitch, what to send, expected timeline",
+      "effort": "low|medium|high",
+      "realism": "high|medium|speculative",
+      "example_targets": ["specific named target if you can name honestly without inventing; empty array if not"],
+      "lenses": ["lens label 1", "lens label 2"]
     }
-  ],
-  "ninety_day_plan": "markdown — what the client / agency should actually do in the next 90 days, in order, with realistic effort estimates. Two paragraphs max.",
-  "what_not_to_do": "markdown — explicit disqualifications: tactics that look attractive but won't work for THIS client, common mistakes in this industry, why some 'easy wins' are traps. One paragraph.",
-  "honest_caveats": "what we cannot know without external tools (Ahrefs / Majestic / Moz), where this brief's confidence is lower, what the operator should verify before pitching it to the client.",
-  "operator_notes": "anything ambiguous, anything that needs verification, anything that would change with more context — internal note, not shown to client"
+  ]
 }
 
-RULES (absolute):
-- Never invent publication names, journalist names, specific URLs, or specific tools. If you cannot name something honestly, say so or omit example_targets.
-- Never claim a tactic will produce a specific result that you cannot back up. Use ranges ("3-7 high-quality links per quarter is realistic at this budget tier") not point estimates.
-- If an opportunity is speculative, mark it speculative — do not gild it.
-- Lens tagging on each opportunity is required when multiple lenses are selected.
-- Do not use internal vocabulary like "pillar", "step report", "workspace".`;
+RULES:
+- 3-7 opportunities. Quality over quantity. Disqualify wrong-fit ideas instead of padding.
+- If a raw research opportunity below doesn't fit this client, ignore it.
+- If you have your own better opportunity not in the raw research, add it.
+- If the raw research is empty for this category, you may still produce 2-3 opportunities from first principles based on the audit signals.
+- Never invent specific URLs, named journalists, or publication names. Generic strategic ideas are fine; fabricated specifics destroy trust.`;
 
-  const userPayload = `INPUTS:\n${JSON.stringify({ ...inputs, lenses: undefined }, null, 2)}\n\nAUDIT:\n${JSON.stringify(audit, null, 2)}\n\nOPPORTUNITIES (raw, from research lanes — synthesise, de-duplicate, prioritise):\n${JSON.stringify(opps, null, 2)}\n\nProduce the brief as JSON per the system prompt schema.`;
+    const sectionUser = `${sectionUserBase}
 
-  const parsed = await callAnthropicJson({ system, user: userPayload, label: "backlinks/synthesise", maxTokens: 14000 });
-  if (!parsed || !parsed.executive_summary) {
-    throw new Error("Backlink brief synthesis returned empty or malformed output. Try again; if persistent, paste this run's id for diagnosis.");
+RAW RESEARCH FROM THIS CATEGORY'S LANE (${rawOpps.length} items — synthesise, de-duplicate, prioritise; drop items that don't fit this client):
+${JSON.stringify(rawOpps, null, 2)}
+
+Write the "${def.category_label}" section as JSON per the schema.`;
+
+    try {
+      const parsed = await callAnthropicJson({ system: sectionSystem, user: sectionUser, label: `backlinks/synth-${def.key}`, maxTokens: 2500 });
+      sectionsDone += 1;
+      if (opts.onProgress) { try { await opts.onProgress("synthesizing_sections", { sections_done: sectionsDone, sections_total: sectionDefs.length }); } catch { /* silent */ } }
+      if (parsed && Array.isArray(parsed.opportunities)) {
+        return { ok: true, section: parsed };
+      }
+      // Failed section — return a placeholder so the brief still has the category but flags the gap
+      return {
+        ok: false,
+        section: {
+          category: def.category_label,
+          summary: `_Section generation failed for this category. ${rawOpps.length} raw research items are preserved in the operator notes._`,
+          opportunities: [],
+        },
+        rawCount: rawOpps.length,
+      };
+    } catch (e: any) {
+      sectionsDone += 1;
+      if (opts.onProgress) { try { await opts.onProgress("synthesizing_sections", { sections_done: sectionsDone, sections_total: sectionDefs.length }); } catch { /* silent */ } }
+      return {
+        ok: false,
+        section: {
+          category: def.category_label,
+          summary: `_Section generation threw an error: ${e?.message || "unknown"}_`,
+          opportunities: [],
+        },
+        rawCount: rawOpps.length,
+      };
+    }
+  }));
+
+  const sections = sectionRuns.map(r => r.section);
+  const failedSections = sectionRuns.filter(r => !r.ok).map(r => r.section.category);
+
+  // Append failure notes to operator_notes if any section died
+  let operator_notes = framingParsed.operator_notes || "";
+  if (failedSections.length) {
+    operator_notes = (operator_notes ? operator_notes + " " : "") +
+      `[Build 12.4] Failed sections: ${failedSections.join(", ")}. Raw research from these lanes is in opportunities_json; the brief is partial.`;
   }
+
+  /* ─── Assemble + render ───────────────────────────────────── */
+  const parsed = {
+    title: framingParsed.title || `Backlink Strategy Brief · ${(() => { try { return new URL(inputs.client_url.startsWith("http") ? inputs.client_url : "https://" + inputs.client_url).hostname.replace(/^www\./, ""); } catch { return inputs.client_url; } })()}`,
+    executive_summary: framingParsed.executive_summary,
+    current_state: framingParsed.current_state || "",
+    sections,
+    ninety_day_plan: framingParsed.ninety_day_plan || "",
+    what_not_to_do: framingParsed.what_not_to_do || "",
+    honest_caveats: framingParsed.honest_caveats || "",
+    operator_notes,
+  };
 
   const brief_md = renderBacklinkBrief({
     inputs,
@@ -424,11 +544,8 @@ RULES (absolute):
     lens_labels: resolvedLenses.map(l => l.label),
   });
 
-  return {
-    brief_md,
-    title: parsed.title || `Backlink Strategy Brief · ${new URL(inputs.client_url.startsWith("http") ? inputs.client_url : "https://" + inputs.client_url).hostname.replace(/^www\./, "")}`,
-    llm_calls: 1,
-  };
+  // 1 framing + 6 sections = 7 LLM calls for synthesis stage
+  return { brief_md, title: parsed.title, llm_calls: 7 };
 }
 
 function renderBacklinkBrief(opts: { inputs: BacklinkBriefInputs; audit: any; payload: any; lens_labels: string[] }): string {
@@ -695,9 +812,32 @@ export async function runBacklinkBrief(opts: {
     llm_calls_used += 6;
     await updateProgress({ status: "synthesizing", lanes_done: 6 });
 
-    // Stage 3 — brief synthesis
+    // Stage 3 — brief synthesis (split into framing + 6 parallel sections per Build 12.4)
     if (timedOut) throw new Error("Aborted before synthesis due to wall-time limit.");
-    const synth = await buildBacklinkBrief({ inputs: opts.inputs, audit, opportunities: opps });
+    const synth = await buildBacklinkBrief({
+      inputs: opts.inputs,
+      audit,
+      opportunities: opps,
+      onProgress: async (stage, detail) => {
+        // Re-use the outer updateProgress helper with synthesis sub-stages.
+        // The progress row gets a richer stage label for the client to display.
+        if (!brief_id) return;
+        try {
+          const progress: any = {
+            stage,
+            lanes_total: 6,
+            lanes_done: 6,
+            client_request_id: opts.client_request_id || null,
+            elapsed_seconds: Math.round((Date.now() - startedAt) / 1000),
+          };
+          if (detail?.sections_total) {
+            progress.sections_total = detail.sections_total;
+            progress.sections_done = detail.sections_done || 0;
+          }
+          await db().from("backlink_briefs").update({ status: "synthesizing", progress_json: progress }).eq("id", brief_id);
+        } catch { /* progress writes never block synthesis */ }
+      },
+    });
     llm_calls_used += synth.llm_calls;
     await updateProgress({ status: "extracting_assets", lanes_done: 6 });
 
@@ -848,6 +988,8 @@ export async function getBacklinkBriefStatus(opts: {
       stage: progress.stage || row.status,
       lanes_done: typeof progress.lanes_done === "number" ? progress.lanes_done : 0,
       lanes_total: typeof progress.lanes_total === "number" ? progress.lanes_total : 6,
+      sections_done: typeof progress.sections_done === "number" ? progress.sections_done : null,
+      sections_total: typeof progress.sections_total === "number" ? progress.sections_total : null,
       elapsed_seconds: typeof progress.elapsed_seconds === "number" ? progress.elapsed_seconds : null,
       error_message: row.error_message || null,
       complete,

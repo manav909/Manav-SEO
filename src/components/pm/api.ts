@@ -4522,6 +4522,6 @@ export interface BacklinkInputsExtended extends BacklinkInputs {
 
 /* ─── Build 12.3 — Status polling ─────────────────────────────── */
 export async function backlinkStatus(opts: { brief_id?: string; client_request_id?: string }):
-  Promise<{ success?: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; elapsed_seconds?: number; brief_id?: string; error_message?: string | null; complete?: boolean; brief_md?: string; title?: string; error?: string }> {
+  Promise<{ success?: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; sections_done?: number | null; sections_total?: number | null; elapsed_seconds?: number; brief_id?: string; error_message?: string | null; complete?: boolean; brief_md?: string; title?: string; error?: string }> {
   return post(ENGINE, { action: 'backlink_status', ...opts });
 }

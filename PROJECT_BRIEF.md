@@ -214,3 +214,25 @@ New action: backlink_status. Server-side getBacklinkBriefStatus accepts either b
 Client (BacklinksPanel.tsx): run() function rewritten. Generates a client_request_id via crypto.randomUUID before the call. Starts a 3s polling interval 4s after the run (giving server time to insert). Polls update a new `progress` state with stage + lanes_done + elapsed_seconds. UI shows stage label ('1/3 · Auditing', '2/3 · Running 6 parallel research lanes', '3/3 · Synthesizing the brief (the long one)'), 5-pip progress bar with done/active/pending states, and italic hint during the synthesis stage. Updated time estimate copy from "60-180s" to "90-240 seconds, up to ~5 minutes in heavy load" — more honest. Brief recovery: if the foreground fetch dies (browser timeout, network blip) but the server completed, a final status check rescues the brief.
 
 Resilience: poll failures tolerated up to 3 in a row before polling gives up silently (foreground fetch continues). All progress writes are best-effort; never block the pipeline. Migration-not-applied case: minimal-row insert fallback keeps the pipeline working without status; client just sees the generic 'starting up' state until the run completes.
+
+Build 12.4 — Section-parallel backlink brief synthesis [SHIPPED 2026-05-30]: Fixed the slow-and-malformed synthesis problem. The old approach asked one Anthropic call to produce up to 14000 tokens of deeply nested JSON in one go — at Sonnet's ~50-80 tok/s on long completions that's 175-280 seconds of pure generation, frequently truncated mid-JSON and rejected by the parser ('Backlink brief synthesis returned empty or malformed output').
+
+Replaced with two-pass synthesis in api/lib/bde-backlinks.ts:
+
+PASS 1 — FRAMING (one call, ~3000 tokens): title, executive_summary, current_state, ninety_day_plan, what_not_to_do, honest_caveats, operator_notes. Fast and reliable.
+
+PASS 2 — SIX PARALLEL SECTIONS (six calls, ~1500 tokens each, Promise.all): one call per opportunity category (digital_pr, resource_page, broken_link, expert_quote, topical_co_citation, partnership). Each section call receives the framing's executive_summary so all sections share a coherent north star. Each receives only its own raw research lane output (pre-bucketed by category) so input size is also smaller.
+
+Effects:
+- Wall time for synthesis stage: ~30-50s (was 120-240s). Total brief ~60-120s typical (was 90-240s).
+- Reliability: 1500-token outputs almost never truncate. If one section fails, brief still completes with a placeholder for that category + operator_notes flag — no more all-or-nothing failure.
+- Cost: 7 LLM calls instead of 1. Each smaller. Total input tokens similar (shared context repeated), total output tokens similar. ~10-15% cost increase from repeated context.
+- Cross-section coherence: parallel section writers can't reference each other, but executive_summary shared between them provides anchor. Acceptable trade-off — each section is self-contained anyway.
+
+Progress hook: buildBacklinkBrief now accepts onProgress callback. runBacklinkBrief wires it through with closure over brief_id + client_request_id, so the polling client gets new sub-stages: 'synthesizing_framing' and 'synthesizing_sections' (with sections_done/sections_total counter). Status getter exposes sections_done + sections_total fields. UI shows '3/3 · Writing executive summary + strategic frame' then '3/3 · Writing the 6 opportunity sections (3/6)' with live counter updates as each section resolves. 5-pip progress bar collapses both synthesis sub-stages into the single 'synthesizing' pip — visual stays clean.
+
+Section failure handling: a failed section returns a placeholder { summary: '_Section generation failed for this category. N raw research items preserved in operator notes._', opportunities: [] } so the brief still renders with the category present. Failed section labels appended to operator_notes ('[Build 12.4] Failed sections: ...'). Brief consumer sees partial result with clear gap flag rather than total failure.
+
+Time estimate copy updated: '60-120 seconds typical, may run longer in heavy load' (was 90-240s). More accurate post-12.4.
+
+Hardcoding audit clean. String-safety scan clean. Vite build green at 42.75s. No migration needed for 12.4 — schema unchanged from 12.3.

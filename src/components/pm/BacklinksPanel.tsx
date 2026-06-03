@@ -185,7 +185,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   }, [running]);
 
   // Build 12.3 — live progress state
-  const [progress, setProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null; error_message?: string | null } | null>(null);
+  const [progress, setProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; sections_done?: number | null; sections_total?: number | null; elapsed_seconds: number | null; error_message?: string | null } | null>(null);
 
   const run = async () => {
     setError('');
@@ -213,6 +213,8 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               stage: s.stage || s.status || 'running',
               lanes_done: typeof s.lanes_done === 'number' ? s.lanes_done : 0,
               lanes_total: typeof s.lanes_total === 'number' ? s.lanes_total : 6,
+              sections_done: typeof s.sections_done === 'number' ? s.sections_done : null,
+              sections_total: typeof s.sections_total === 'number' ? s.sections_total : null,
               elapsed_seconds: typeof s.elapsed_seconds === 'number' ? s.elapsed_seconds : null,
               error_message: s.error_message,
             });
@@ -619,11 +621,11 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                     {running ? `Generating brief… ${elapsed}s` : 'Generate brief'}
                   </button>
                   {!running && (
-                    <div className="text-[10px] text-muted-foreground">Typically 90-240 seconds; may run up to ~5 minutes in heavy load.</div>
+                    <div className="text-[10px] text-muted-foreground">Typically 60-120 seconds with section-parallel synthesis; may run longer in heavy load.</div>
                   )}
                 </div>
 
-                {/* Build 12.3 — live progress with per-stage label */}
+                {/* Build 12.3+12.4 — live progress with per-stage label */}
                 {running && progress && (
                   <div className="rounded-lg border border-border bg-background/50 p-3 space-y-2">
                     <div className="flex items-center justify-between text-[11px]">
@@ -631,11 +633,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                         {progress.stage === 'starting' && 'Starting up…'}
                         {progress.stage === 'audit_running' && '1/3 · Auditing the website'}
                         {progress.stage === 'lanes_running' && `2/3 · Running 6 parallel research lanes`}
-                        {progress.stage === 'synthesizing' && '3/3 · Synthesizing the brief (the long one)'}
+                        {progress.stage === 'synthesizing' && '3/3 · Synthesizing the brief'}
+                        {progress.stage === 'synthesizing_framing' && '3/3 · Writing executive summary + strategic frame'}
+                        {progress.stage === 'synthesizing_sections' && `3/3 · Writing the 6 opportunity sections (${progress.sections_done || 0}/${progress.sections_total || 6})`}
                         {progress.stage === 'extracting_assets' && '3/3 · Saving assets to the registry'}
                         {progress.stage === 'complete' && 'Wrapping up…'}
                         {(progress.stage === 'failed' || progress.stage === 'timed_out') && 'Stopped'}
-                        {!['starting','audit_running','lanes_running','synthesizing','extracting_assets','complete','failed','timed_out'].includes(progress.stage) && progress.stage}
+                        {!['starting','audit_running','lanes_running','synthesizing','synthesizing_framing','synthesizing_sections','extracting_assets','complete','failed','timed_out'].includes(progress.stage) && progress.stage}
                       </span>
                       <span className="text-muted-foreground">
                         {progress.elapsed_seconds !== null && `server elapsed: ${progress.elapsed_seconds}s`}
@@ -644,7 +648,10 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                     {/* Step pips */}
                     <div className="flex items-center gap-1">
                       {(['audit_running','lanes_running','synthesizing','extracting_assets','complete'] as const).map((stage, i, arr) => {
-                        const currentIdx = arr.indexOf(progress.stage as any);
+                        // Build 12.4: collapse synthesizing_framing + synthesizing_sections into the single 'synthesizing' pip
+                        const synthesisStages = ['synthesizing', 'synthesizing_framing', 'synthesizing_sections'];
+                        const currentStageMapped = synthesisStages.includes(progress.stage) ? 'synthesizing' : progress.stage;
+                        const currentIdx = arr.indexOf(currentStageMapped as any);
                         const stageIdx = i;
                         const active = stageIdx === currentIdx;
                         const done = currentIdx >= 0 && stageIdx < currentIdx;
@@ -658,9 +665,14 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                         );
                       })}
                     </div>
-                    {progress.stage === 'synthesizing' && (
+                    {progress.stage === 'synthesizing_framing' && (
                       <div className="text-[10px] text-muted-foreground italic">
-                        This step is the slowest — one big LLM call producing the full brief. 30-90 seconds typical, up to 2 minutes in load.
+                        Writing the framing (exec summary, current state, 90-day plan, caveats) — typically 15-30 seconds.
+                      </div>
+                    )}
+                    {progress.stage === 'synthesizing_sections' && (
+                      <div className="text-[10px] text-muted-foreground italic">
+                        6 opportunity sections being written in parallel — typically 20-40 seconds total.
                       </div>
                     )}
                     {progress.error_message && (
