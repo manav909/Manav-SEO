@@ -4425,3 +4425,38 @@ export async function fileToAdHocRef(file: File): Promise<CompareSourceRef> {
   });
   return { kind: 'ad_hoc', file_name: file.name, content_type: file.type || 'application/octet-stream', file_b64, size_bytes: file.size };
 }
+
+/* ─── Backlink Strategy (Build 12) ────────────────────────────── */
+
+export interface BacklinkInputs {
+  client_url: string;
+  target_keywords?: string[];
+  budget_tier?: 'low' | 'medium' | 'high' | 'enterprise';
+  competitor_urls?: string[];
+  geography?: string;
+  context?: string;
+  lenses?: CompareSelectedLens[];
+  deep_audit?: boolean;
+}
+
+export interface BacklinkListItem { id: string; client_url: string; created_at: string; keywords: string[] }
+
+export async function backlinkLenses():
+  Promise<{ success?: boolean; lenses?: CompareLens[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_lenses' });
+}
+
+export async function backlinkList(projectId: string):
+  Promise<{ success?: boolean; items?: BacklinkListItem[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_list', projectId });
+}
+
+export async function backlinkLoad(opts: { projectId: string; briefId: string }):
+  Promise<{ success?: boolean; brief?: any; error?: string }> {
+  return post(ENGINE, { action: 'backlink_load', ...opts });
+}
+
+export async function backlinkRun(opts: { projectId: string; campaignId?: string; inputs: BacklinkInputs }):
+  Promise<{ success?: boolean; brief_id?: string; report_id?: string; title?: string; brief_md?: string; error?: string }> {
+  return post(ENGINE, { action: 'backlink_run', ...opts });
+}

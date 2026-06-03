@@ -28,9 +28,10 @@ import Documents from '@/pages/Documents';
 import PMOnboardingWizard from '@/components/pm/PMOnboardingWizard';
 import DevPanel from '@/components/pm/DevPanel';
 import ComparePanel from '@/components/pm/ComparePanel';
+import BacklinksPanel from '@/components/pm/BacklinksPanel';
 import PMChatPanel from '@/components/pm/PMChatPanel';
 
-type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents' | 'compare' | 'developer';
+type Tab = 'requirements' | 'board' | 'reports' | 'autopilot' | 'seo_campaigns' | 'seo_inbox' | 'documents' | 'compare' | 'backlinks' | 'developer';
 
 export default function PMModule() {
   const { selectedProject, selectedProjectId, setSelectedProjectId } = useProject();
@@ -72,6 +73,7 @@ export default function PMModule() {
     { id: 'seo_inbox',      label: 'SEO Inbox' },
     { id: 'documents',      label: 'Documents' },
     { id: 'compare',        label: 'Compare' },
+    { id: 'backlinks',      label: '🔗 Backlinks (BDE)' },
     { id: 'developer',      label: '🛠️ Developer' },
   ];
 
@@ -249,6 +251,9 @@ export default function PMModule() {
             )}
           {tab === 'compare' && (
               <ComparePanel projectId={selectedProjectId} />
+            )}
+          {tab === 'backlinks' && (
+              <BacklinksPanel projectId={selectedProjectId} />
             )}
           {tab === 'developer' && (
               <DevPanel projectId={selectedProjectId} />

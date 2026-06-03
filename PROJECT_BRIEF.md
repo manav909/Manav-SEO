@@ -162,3 +162,23 @@ Build 11.2 — Compare tab proper client-ready exports [SHIPPED 2026-05-30]: Fix
 Hard rule (encoded 2026-05-30 after Build 11.2 Vercel build failure on missing compareLenses export): every deploy command must list every file the build's new code IMPORTS, not just the files modified this session. If a new component imports a helper that was added in a prior session, include the helper's file in this deploy too. The cost of redundant `cp` is zero; the cost of an omitted file is a broken Vercel build. Verify after push: `git show HEAD --stat` should list every file the new code depends on, even if some show 0 line changes.
 
 Build 11.3 — Diff toggle on Compare tab [SHIPPED 2026-05-30]: Made the mechanical line-by-line diff section optional. Default OFF — the section often runs hundreds of lines (cluttering client-ready exports) and adds ~CPU for the O(N×M) LCS computation. Token note: making the diff optional does NOT save LLM tokens since the diff is computed in JavaScript before the LLM call — but it does save server compute and document length. include_diff:boolean added to compareDocs opts, the API route body, the client compareRun signature, and as a checkbox in the operator-context block in ComparePanel UI. When false: computeDiff() is skipped entirely (CPU + memory saved); renderComparison skips the section. Off-by-default ensures client documents stay clean unless operator explicitly opts in for receipts.
+
+Build 12 — BDE Backlink Strategy module [SHIPPED 2026-05-30]: New PM tab "🔗 Backlinks (BDE)" producing Senior-DMS-grade backlink strategy briefs from just a client URL. Three-stage pipeline in api/lib/bde-backlinks.ts:
+
+(1) AUDIT — fetches homepage + optional deep audit of /about, /press, /blog, /resources etc. Extracts industry, audience, business model, brand-strength signals, existing PR signals, link-worthy assets, current gaps via Anthropic structured-JSON call. Uses workspace/shared.ts fetchHtml.
+
+(2) OPPORTUNITIES — six parallel research lanes (digital_pr, resource_page, broken_link, expert_quote, topical_co_citation, partnership) each one LLM call with category-specific prompt. Common rules: be specific (name publications/journalists where possible without inventing); disqualify wrong-fit ideas; 3-7 opportunities per lane; 2026-aware framing (AI Overviews + LLM search cite specific sources, topic relevance over raw DA). Also queries SerpAPI for top SERP for first 3 target keywords. BacklinkProvider interface stubbed for future Ahrefs/Moz/Majestic adapter.
+
+(3) BRIEF SYNTHESIS — one big LLM call (14000 max_tokens) synthesizes audit + opportunities into structured brief: executive_summary, current_state, sections[] (one per category with summary + opportunities[] tagged by lens), ninety_day_plan, what_not_to_do, honest_caveats, operator_notes (internal).
+
+Lens system extends Compare's: BDE_LENSES adds 'sales_deck' (sales pitch framing) and 'objection_handling' (account manager handling sceptical client) to the 9 from LENS_CATALOG. Default selection: Senior Digital Marketing Specialist. compare_lenses returns merged catalog.
+
+Persistence: new backlink_briefs table (id, project_id, client_url, inputs_json, audit_json, opportunities_json, brief_md, llm_calls_used, web_searches_used, created_at) + duplicate to seo_campaign_reports with pillar='backlink_strategy' so it shows in Documents + Compare tab picker. Both inserts graceful-fallback on schema variance.
+
+UI src/components/pm/BacklinksPanel.tsx: inputs (URL required, target_keywords, budget_tier dropdown low/medium/high/enterprise, competitor_urls, geography, free-text context, lens checklist + custom, deep_audit toggle). Run button shows elapsed seconds. Result renders via mdToHtml with same .backlink-preview CSS scoping as Compare. Word / Open-as-PDF / HTML / Copy-raw export via shared reportExport. Sidebar shows prior briefs for re-load.
+
+Performance: ~60-180s per brief (1 audit + 6 parallel lanes + 1 synthesis = 8 LLM calls, but lanes are parallel so wall-time is closer to 90s typical). Retry-with-backoff on 429/503/529 inside callAnthropicJson.
+
+Hardcoding audit clean. String-safety hard rule: ran Python sweep to strip apostrophe contractions from all backtick template literals after initial draft tripped 6 instances (client's, Google's, you'd, etc.). Resulting grammar slightly clunky but model-interpretable. Build green; vite build 22.76s.
+
+BDE pipeline note: backlink data quality is bounded by what web research + SerpAPI can surface. Real backlink discovery (referring domains, anchor text distribution, link velocity) requires Ahrefs/Moz/Majestic API integration which is stubbed via BacklinkProvider interface for future.

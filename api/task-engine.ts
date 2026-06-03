@@ -545,6 +545,28 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  /* ═══ BACKLINK STRATEGY (Build 12) — backlink_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("backlink_")) {
+    const { runBacklinkBrief, listBacklinkBriefs, loadBacklinkBrief, BDE_LENSES } = await import("./lib/bde-backlinks.js");
+    const { LENS_CATALOG } = await import("./lib/pm-compare.js");
+    if (action === "backlink_lenses") {
+      return ok(res, { success: true, lenses: [...LENS_CATALOG, ...BDE_LENSES].map(l => ({ id: l.id, label: l.label })) });
+    }
+    if (action === "backlink_list") {
+      return ok(res, await listBacklinkBriefs(body.projectId));
+    }
+    if (action === "backlink_load") {
+      return ok(res, await loadBacklinkBrief(body.briefId, body.projectId));
+    }
+    if (action === "backlink_run") {
+      return ok(res, await runBacklinkBrief({
+        projectId: body.projectId,
+        campaignId: body.campaignId,
+        inputs: body.inputs || {},
+      }));
+    }
+  }
+
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */
   if (typeof action === "string" && action.startsWith("ga4_")) {
     const { handlePmGa4 } = await import("./lib/pm-ga4.js");
