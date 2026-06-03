@@ -39,6 +39,84 @@ export type SourceRef =
   | { kind: "step_report"; step_report_id: string }   // workspace step evidence
   | { kind: "ad_hoc"; file_name: string; content_type: string; file_b64: string; size_bytes: number };
 
+/* ─── Stakeholder lens catalog (Build 11.1) ───────────────────────
+   Each lens shapes the comparison output: the action list, the
+   semantic summary's emphasis, and which deltas surface as
+   high-priority. The system prompt receives the selected lenses
+   verbatim — the role + lens of attention + what they care about.
+   The model produces ONE merged action list where each action is
+   tagged with the lens(es) that demanded it.
+
+   Custom lens (kind:"custom", description) is treated identically.
+*/
+export interface LensDef {
+  id: string;
+  label: string;            // short UI label
+  role: string;             // the role the model adopts
+  priorities: string;       // sentence-form: what this lens cares about
+}
+
+export const LENS_CATALOG: LensDef[] = [
+  {
+    id: "client",
+    label: "Client",
+    role: "the business paying for the SEO work",
+    priorities: "revenue impact, ranking outcomes the business can see, what they are paying for vs. getting, ROI clarity, timelines they can hold the agency to. Avoid jargon. Lead with money and visibility.",
+  },
+  {
+    id: "senior_dm",
+    label: "Senior Digital Marketing Specialist",
+    role: "a senior digital-marketing strategist acting as a quality gate",
+    priorities: "holistic strategy soundness, where assumptions could fail, what's missing from the analysis, gaps in evidence, cross-channel context the comparison should but might not address.",
+  },
+  {
+    id: "senior_seo",
+    label: "Senior SEO Specialist",
+    role: "a senior SEO technical specialist",
+    priorities: "ranking mechanics specifically (query landscape, intent, indexation, on-page, internal links, technical health), what would actually move the needle, technical correctness of any claims in the documents.",
+  },
+  {
+    id: "seo_exec",
+    label: "SEO Executive (junior implementer)",
+    role: "a junior SEO executive who has to execute the work this week",
+    priorities: "clear specific tasks they can do, prioritization with no ambiguity, what changed this week vs last that requires action, what to start tomorrow morning.",
+  },
+  {
+    id: "pm",
+    label: "Project / Account Manager",
+    role: "the PM keeping the engagement shipping on time",
+    priorities: "deadlines, blockers, scope changes, dependencies, client-facing risk, anything that affects the project timeline or budget, anything to flag to the client proactively.",
+  },
+  {
+    id: "content",
+    label: "Content Writer",
+    role: "the person who has to produce or update pages",
+    priorities: "brief specificity, target keywords + intent, tone direction, structural guidance, which pages need new content vs edits, word-count targets, what the SERP demands.",
+  },
+  {
+    id: "sales",
+    label: "Sales / BDE",
+    role: "a salesperson who pitches the work to new clients",
+    priorities: "proof points, ROI stories, what to put in a deck, before/after numbers, quotable wins, competitive positioning vs other agencies.",
+  },
+  {
+    id: "brand",
+    label: "Brand / Comms Specialist",
+    role: "the brand and communications lead",
+    priorities: "tone alignment, brand-safety risks, message consistency across pages, anything that could damage positioning, voice drift between documents.",
+  },
+  {
+    id: "investor",
+    label: "Investor / Board",
+    role: "an investor or board member with strategic oversight",
+    priorities: "trajectory of the business, unit economics implications, competitive position, growth signals, anything that materially changes the investment thesis or risk profile.",
+  },
+];
+
+export type SelectedLens =
+  | { kind: "preset"; id: string }
+  | { kind: "custom"; description: string };
+
 interface LoadedDoc {
   label: string;
   origin: string;          // human-readable source line
@@ -225,6 +303,10 @@ export async function compareDocs(opts: {
   /** Operator context — what kind of comparison is this for, who's the
       reader, what should we emphasise. Optional but recommended. */
   context?: string;
+  /** Selected stakeholder lenses (Build 11.1). When provided, the
+      action list is tailored to these readers and each action is
+      tagged with the lens(es) that demanded it. Max 5 enforced. */
+  lenses?: SelectedLens[];
   /** Persist the comparison as a seo_campaign_reports row. Default true. */
   save?: boolean;
 }): Promise<{ success: boolean; comparison_id?: string; title?: string; body_md?: string; error?: string }> {
@@ -236,11 +318,38 @@ export async function compareDocs(opts: {
   const b = await loadDoc(opts.docB, { projectId: opts.projectId });
   if ("error" in b) return { success: false, error: `Document B: ${b.error}` };
 
+  // ── Resolve the selected lenses ────────────────────────────────
+  // Each preset gets looked up in the catalog; each custom gets passed
+  // through verbatim. Unknown preset ids are silently dropped so the
+  // model never sees a malformed lens. Cap at 5 to keep token cost sane.
+  const resolvedLenses: Array<{ label: string; role: string; priorities: string }> = [];
+  for (const sel of (opts.lenses || []).slice(0, 5)) {
+    if (sel.kind === "preset") {
+      const def = LENS_CATALOG.find(l => l.id === sel.id);
+      if (def) resolvedLenses.push({ label: def.label, role: def.role, priorities: def.priorities });
+    } else if (sel.kind === "custom") {
+      const desc = String(sel.description || "").trim();
+      if (desc.length >= 5) resolvedLenses.push({
+        label: "Custom reader",
+        role: "a specific reader described by the operator",
+        priorities: desc,
+      });
+    }
+  }
+
   // Compute the mechanical diff up front — saves an LLM token vs. asking
   // it to do this poorly, and gives the operator deterministic receipts.
   const diffText = (a.text && b.text) ? computeDiff(a.text, b.text) : "_Mechanical text diff is not available — one or both documents are PDFs and have no text representation to diff against. The semantic comparison below is based on the model reading each PDF natively._";
 
-  const system = `You are a senior advisor preparing a comparison briefing between two documents for a stakeholder who must act on what they read.
+  // ── Lens block injected into the system prompt ─────────────────
+  // When lenses are selected, the action list MUST tag each action
+  // with the lens label(s) that demanded it, and the synthesis MUST
+  // resolve duplicates rather than producing parallel separate lists.
+  const lensBlock = resolvedLenses.length === 0
+    ? ""
+    : `\n\nREADERS OF THIS COMPARISON (tailor the action list to these specific lenses):\n${resolvedLenses.map((l, i) => `  ${i + 1}. ${l.label} — ${l.role}.\n     Concerns: ${l.priorities}`).join("\n")}\n\nLENS HANDLING RULES:\n- The single STAKEHOLDER ACTION LIST must serve ALL the readers above.\n- Tag each action with which lens(es) demanded it using a "lenses" field in the JSON action object: e.g. "lenses": ["Client", "Senior SEO Specialist"].\n- When an action is relevant to multiple lenses, do NOT duplicate it — list it once with all relevant lens tags.\n- When two lenses imply conflicting actions, list both and note the conflict in the "why" field.\n- The semantic summary should give each lens at least a sentence of relevant analysis if applicable (e.g. one paragraph each via sub-headings), but only where there is substantive content for that lens — do not pad.\n- The lens framing CHANGES the priority of items: an action critical for the Client (revenue) but trivial for an SEO Executive should still be HIGH priority.\n`;
+
+  const system = `You are a senior advisor preparing a comparison briefing between two documents for one or more stakeholders who must act on what they read.
 
 Your output has THREE sections, in this order of priority:
 
@@ -249,7 +358,7 @@ Your output has THREE sections, in this order of priority:
 2. SEMANTIC SUMMARY — what changed in meaning, intent, or substance between A and B. This goes beyond text differences: numbers that shifted up/down (with the actual values), recommendations that softened or hardened, scope that expanded or narrowed, deadlines that moved, risks that emerged or resolved, stakeholders that came in or out, anything where the SAME line means a different thing now. Be specific: cite the actual text or figures.
 
 3. KEY DELTAS — a structured table of the most consequential differences. Each row: what changed, where (section reference if findable), why it matters in one sentence. Prefer 5-15 high-signal rows over 30 trivial ones.
-
+${lensBlock}
 ABSOLUTE RULES:
 - Never invent facts not present in either document. If a number isn't there, do not estimate it.
 - Distinguish "added in B / removed from A / changed value" cleanly. If you're not sure which, say so.
@@ -261,7 +370,7 @@ OUTPUT FORMAT — return ONLY this JSON, no prose around it:
   "title": "Concise title for this comparison (e.g. 'Q3 Report v1 vs v2 — comparison')",
   "summary": "1-2 sentence framing of what's being compared and the headline takeaway",
   "stakeholder_actions": [
-    { "action": "Concrete thing to do or decide", "why": "Why it matters in one sentence", "priority": "high" | "medium" | "low" }
+    { "action": "Concrete thing to do or decide", "why": "Why it matters in one sentence", "priority": "high" | "medium" | "low"${resolvedLenses.length ? `, "lenses": ["Lens label 1", "Lens label 2"] (REQUIRED — at least one matching lens label from the READERS section above)` : ""} }
   ],
   "semantic_summary": "Markdown prose covering substantive changes in meaning. Use sub-headings if helpful. Reference specific text or figures.",
   "key_deltas": [
@@ -356,6 +465,7 @@ OUTPUT FORMAT — return ONLY this JSON, no prose around it:
     semantic_summary: String(parsed.semantic_summary || ""),
     key_deltas: Array.isArray(parsed.key_deltas) ? parsed.key_deltas : [],
     diff: diffText,
+    lens_labels: resolvedLenses.map(l => l.label),
   });
 
   // Persist as a seo_campaign_reports row (unless save:false)
@@ -404,19 +514,24 @@ function renderComparison(opts: {
   summary: string;
   docA_origin: string;
   docB_origin: string;
-  stakeholder_actions: Array<{ action: string; why?: string; priority?: string }>;
+  stakeholder_actions: Array<{ action: string; why?: string; priority?: string; lenses?: string[] }>;
   semantic_summary: string;
   key_deltas: Array<{ what_changed: string; where?: string | null; why_it_matters?: string }>;
   diff: string;
+  lens_labels?: string[];          // labels of selected lenses, for header subtitle
 }): string {
   const L: string[] = [];
   L.push(`# ${opts.title}\n`);
   if (opts.summary) L.push(`${opts.summary}\n`);
   L.push(`**Document A:** ${opts.docA_origin}  `);
-  L.push(`**Document B:** ${opts.docB_origin}\n`);
+  L.push(`**Document B:** ${opts.docB_origin}  `);
+  if (opts.lens_labels && opts.lens_labels.length) {
+    L.push(`**Read for:** ${opts.lens_labels.join(" · ")}  `);
+  }
+  L.push("");
   L.push(`---\n`);
 
-  // 1. Stakeholder action list
+  // 1. Stakeholder action list (with lens tags when present)
   L.push(`## Stakeholder action list\n`);
   if (!opts.stakeholder_actions.length) {
     L.push(`_No actions identified — the differences between these documents do not appear to require immediate stakeholder action._\n`);
@@ -425,7 +540,10 @@ function renderComparison(opts: {
     const sorted = [...opts.stakeholder_actions].sort((a, b) => byPriority(a.priority) - byPriority(b.priority));
     for (const a of sorted) {
       const pTag = a.priority ? `**[${a.priority.toUpperCase()}]** ` : "";
-      L.push(`- ${pTag}${a.action}${a.why ? ` — _${a.why}_` : ""}`);
+      const lensTag = Array.isArray(a.lenses) && a.lenses.length
+        ? ` _(${a.lenses.join(" · ")})_`
+        : "";
+      L.push(`- ${pTag}${a.action}${a.why ? ` — _${a.why}_` : ""}${lensTag}`);
     }
     L.push("");
   }

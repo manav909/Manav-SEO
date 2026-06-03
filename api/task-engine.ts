@@ -524,9 +524,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
 
   /* ═══ DOCUMENT COMPARISON (Build 11) — compare_* actions ═══ */
   if (typeof action === "string" && action.startsWith("compare_")) {
-    const { compareDocs, listComparableDocs } = await import("./lib/pm-compare.js");
+    const { compareDocs, listComparableDocs, LENS_CATALOG } = await import("./lib/pm-compare.js");
     if (action === "compare_list_docs") {
       return ok(res, await listComparableDocs(body.projectId));
+    }
+    if (action === "compare_lenses") {
+      return ok(res, { success: true, lenses: LENS_CATALOG.map(l => ({ id: l.id, label: l.label })) });
     }
     if (action === "compare_run") {
       return ok(res, await compareDocs({
@@ -535,6 +538,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         docA: body.docA,
         docB: body.docB,
         context: body.context,
+        lenses: Array.isArray(body.lenses) ? body.lenses : [],
         save: body.save !== false,
       }));
     }

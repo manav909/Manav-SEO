@@ -4394,12 +4394,23 @@ export type CompareSourceRef =
 
 export interface CompareItem { kind: string; id: string; label: string; sublabel: string; created_at: string; }
 
+/* Build 11.1 — stakeholder lens selection. */
+export interface CompareLens { id: string; label: string; }
+export type CompareSelectedLens =
+  | { kind: 'preset'; id: string }
+  | { kind: 'custom'; description: string };
+
 export async function compareListDocs(projectId: string):
   Promise<{ success?: boolean; items?: CompareItem[]; error?: string }> {
   return post(ENGINE, { action: 'compare_list_docs', projectId });
 }
 
-export async function compareRun(opts: { projectId: string; campaignId?: string; docA: CompareSourceRef; docB: CompareSourceRef; context?: string; save?: boolean }):
+export async function compareLenses():
+  Promise<{ success?: boolean; lenses?: CompareLens[]; error?: string }> {
+  return post(ENGINE, { action: 'compare_lenses' });
+}
+
+export async function compareRun(opts: { projectId: string; campaignId?: string; docA: CompareSourceRef; docB: CompareSourceRef; context?: string; lenses?: CompareSelectedLens[]; save?: boolean }):
   Promise<{ success?: boolean; comparison_id?: string; title?: string; body_md?: string; error?: string }> {
   return post(ENGINE, { action: 'compare_run', ...opts });
 }
