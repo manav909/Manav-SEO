@@ -33,7 +33,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
-import { fetchHtml, fetchSerpFeatures } from "./workspace/shared.js";
+import { fetchHtml, fetchSerpFeatures, loadGsc } from "./workspace/shared.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = "claude-sonnet-4-6";
@@ -84,6 +84,209 @@ export interface BacklinkBriefInputs {
   scope?: "project" | "bde_lead" | "bde_standalone";
   /** Build 12.1 — when scope is "bde_lead", link the brief to a lead. */
   lead_id?: string;
+}
+
+/* ─── Build 12.6 — Project context loader ──────────────────────
+   Pulls everything the system already knows about this project so
+   the audit + research + synthesis stages can build on it instead of
+   re-discovering basics from a fresh homepage fetch.
+
+   Reads in parallel:
+   - projects row (industry, country, keywords, competitors, goals)
+   - latest metrics row (visibility / E-E-A-T / growth scores)
+   - latest audit_reports row (score + section summaries)
+   - gsc cached data (top pages, top queries, query-page pairs)
+     — for position 6-15 "almost-there" identification
+   - ga4 cached signals (top countries, traffic sources, devices)
+   - recent seo_campaign_reports titles (so brief does not repeat work)
+   - client_report_attachments file index (data-room knowledge)
+   - active brain_learnings tagged backlink/PR/content/outreach
+
+   Returns null when projectId is empty (BDE-standalone mode). All
+   parallel queries are individually wrapped — one slow table cannot
+   stall the whole context load. */
+interface ProjectBacklinkContext {
+  project_name: string;
+  client_name: string;
+  industry_known: string;       // from project row, not derived from HTML
+  country: string;
+  goals: string;
+  declared_keywords: string[];
+  declared_competitors: string[];
+  /* GSC signals — the most valuable inputs for honest backlink work */
+  gsc_top_ranking_queries: Array<{ query: string; position: number; clicks: number; impressions: number }>;
+  gsc_top_ranking_pages: Array<{ page: string; clicks: number; impressions: number; ctr: number; position: number }>;
+  gsc_near_top_pairs: Array<{ query: string; page: string; position: number; impressions: number }>;
+    // ↑ Pairs at positions 6-15 — the "links could push these to top-10" set.
+  /* GA4 signals — directional only */
+  ga4_top_countries: Array<{ country: string; sessions: number }>;
+  ga4_top_traffic_sources: Array<{ source: string; sessions: number }>;
+  /* Prior work — so the brief does not repeat */
+  recent_reports: Array<{ title: string; pillar: string; created_at: string }>;
+  data_room_files: Array<{ name: string; type: string; uploaded_at: string }>;
+  /* Latest audit + metrics — anchors */
+  latest_audit_summary: { score: number | null; created_at: string | null; key_findings: string[] };
+  latest_metrics: { visibility: number | null; eeat: number | null; growth: number | null; pages_indexed: number | null; recorded_at: string | null };
+  /* Brain learnings filtered to backlink-relevant cards */
+  backlink_relevant_learnings: Array<{ title: string; improvement: string; confidence: number }>;
+}
+
+async function loadProjectContextForBacklinks(projectId: string | null | undefined): Promise<ProjectBacklinkContext | null> {
+  if (!projectId) return null;
+
+  // Parallel pulls. Each is individually tolerant — a missing table or
+  // RLS error on any one query does not break the others.
+  const settle = async <T>(p: PromiseLike<T>, fallback: T): Promise<T> => {
+    try { return await p; } catch { return fallback; }
+  };
+
+  const [proj, metrics, audit, recentReports, attachments, learnings, gsc] = await Promise.all([
+    settle(
+      db().from("projects").select("name, url, industry, country, cms, keywords, competitors, goals, client_id").eq("id", projectId).maybeSingle().then((r: any) => r.data || null),
+      null as any
+    ),
+    settle(
+      db().from("metrics").select("llm_visibility_score, eeat_score, overall_growth_score, pages_indexed, recorded_at").eq("project_id", projectId).order("recorded_at", { ascending: false }).limit(1).then((r: any) => (r.data || [])[0] || null),
+      null as any
+    ),
+    settle(
+      db().from("audit_reports").select("id, created_at, score, sections, summary").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).then((r: any) => (r.data || [])[0] || null),
+      null as any
+    ),
+    settle(
+      db().from("seo_campaign_reports").select("title, pillar, created_at").eq("project_id", projectId).order("created_at", { ascending: false }).limit(5).then((r: any) => r.data || []),
+      [] as any[]
+    ),
+    settle(
+      db().from("client_report_attachments").select("file_name, content_type, created_at").eq("project_id", projectId).order("created_at", { ascending: false }).limit(30).then((r: any) => r.data || []),
+      [] as any[]
+    ),
+    settle(
+      db().from("brain_learnings")
+        .select("card_title, improvement, confidence_score, tags, applied_count")
+        .eq("project_id", projectId).eq("status", "active")
+        .order("confidence_score", { ascending: false }).limit(40)
+        .then((r: any) => r.data || []),
+      [] as any[]
+    ),
+    settle(loadGsc(projectId), { topPages: [], topQueries: [], queryPagePairs: [], fetchedAt: "" }),
+  ]);
+
+  // Resolve client name (separate query — projects has client_id only)
+  let clientName = "";
+  if (proj?.client_id) {
+    try {
+      const cr: any = await db().from("clients").select("name, company").eq("id", proj.client_id).maybeSingle();
+      clientName = cr.data?.company || cr.data?.name || "";
+    } catch { /* silent */ }
+  }
+
+  // Identify GSC pairs at positions 6-15 — the "almost there, links could help" set.
+  // Sorted by impressions descending (worth-effort prioritisation).
+  const nearTopPairs = (gsc.queryPagePairs || [])
+    .filter((p: any) => typeof p.position === "number" && p.position >= 6 && p.position <= 15 && (p.impressions || 0) >= 50)
+    .sort((a: any, b: any) => (b.impressions || 0) - (a.impressions || 0))
+    .slice(0, 15)
+    .map((p: any) => ({ query: p.query || "", page: p.page || "", position: Number(p.position) || 0, impressions: Number(p.impressions) || 0 }));
+
+  // Top-ranking pages — already-strong pages that earn the link equity flow downhill
+  const topPages = (gsc.topPages || [])
+    .slice(0, 10)
+    .map((p: any) => ({ page: p.page || p.url || "", clicks: Number(p.clicks) || 0, impressions: Number(p.impressions) || 0, ctr: Number(p.ctr) || 0, position: Number(p.position) || 0 }));
+
+  // Top-ranking queries — what the brand already gets traffic for
+  const topQueries = (gsc.topQueries || [])
+    .slice(0, 15)
+    .map((q: any) => ({ query: q.query || "", position: Number(q.position) || 0, clicks: Number(q.clicks) || 0, impressions: Number(q.impressions) || 0 }));
+
+  // GA4 cached aggregates
+  let ga4Countries: any[] = [];
+  let ga4Sources: any[] = [];
+  try {
+    const { data: ga4Rows } = await db().from("project_knowledge")
+      .select("field_key, field_value")
+      .eq("project_id", projectId)
+      .in("field_key", ["ga4_top_countries", "ga4_top_traffic_sources"]);
+    for (const row of (ga4Rows as any[] || [])) {
+      try {
+        const parsed = JSON.parse(row.field_value || "[]");
+        if (row.field_key === "ga4_top_countries") ga4Countries = parsed.slice(0, 6);
+        if (row.field_key === "ga4_top_traffic_sources") ga4Sources = parsed.slice(0, 8);
+      } catch { /* skip malformed cache rows */ }
+    }
+  } catch { /* GA4 not connected — fine */ }
+
+  // Audit summary: pull a few key findings from the audit's sections JSON
+  let auditKeyFindings: string[] = [];
+  if (audit?.sections) {
+    try {
+      const sec = typeof audit.sections === "string" ? JSON.parse(audit.sections) : audit.sections;
+      // sections is typically an object keyed by section_name → { score, findings[] }
+      // or an array of { name, findings[] }. Be defensive.
+      const collectFindings = (obj: any): string[] => {
+        const out: string[] = [];
+        if (Array.isArray(obj)) {
+          for (const it of obj) {
+            if (it?.findings && Array.isArray(it.findings)) out.push(...it.findings.slice(0, 2));
+            else if (typeof it === "string") out.push(it);
+          }
+        } else if (obj && typeof obj === "object") {
+          for (const k of Object.keys(obj)) {
+            const v = obj[k];
+            if (v?.findings && Array.isArray(v.findings)) out.push(...v.findings.slice(0, 2));
+          }
+        }
+        return out;
+      };
+      auditKeyFindings = collectFindings(sec).slice(0, 8);
+    } catch { /* malformed audit sections — skip */ }
+    if (auditKeyFindings.length === 0 && audit.summary) auditKeyFindings = [String(audit.summary).slice(0, 300)];
+  }
+
+  // Filter brain_learnings to those tagged backlink/pr/content/outreach — the
+  // ones a backlink strategist actually cares about.
+  const relevantTags = new Set(["backlink", "backlinks", "pr", "press", "content", "outreach", "links", "authority", "eeat", "e-e-a-t"]);
+  const backlinkLearnings = (learnings || [])
+    .filter((l: any) => {
+      const tags: string[] = Array.isArray(l.tags) ? l.tags.map((t: any) => String(t).toLowerCase()) : [];
+      return tags.some((t) => relevantTags.has(t));
+    })
+    .slice(0, 10)
+    .map((l: any) => ({
+      title: l.card_title || "",
+      improvement: l.improvement || "",
+      confidence: Number(l.confidence_score) || 0,
+    }));
+
+  return {
+    project_name: proj?.name || "",
+    client_name: clientName,
+    industry_known: proj?.industry || "",
+    country: proj?.country || "",
+    goals: proj?.goals || "",
+    declared_keywords: Array.isArray(proj?.keywords) ? proj.keywords.slice(0, 20) : [],
+    declared_competitors: Array.isArray(proj?.competitors) ? proj.competitors.slice(0, 10) : [],
+    gsc_top_ranking_queries: topQueries,
+    gsc_top_ranking_pages: topPages,
+    gsc_near_top_pairs: nearTopPairs,
+    ga4_top_countries: ga4Countries,
+    ga4_top_traffic_sources: ga4Sources,
+    recent_reports: (recentReports || []).map((r: any) => ({ title: r.title || "", pillar: r.pillar || "", created_at: r.created_at || "" })),
+    data_room_files: (attachments || []).map((a: any) => ({ name: a.file_name || "", type: a.content_type || "", uploaded_at: a.created_at || "" })),
+    latest_audit_summary: {
+      score: typeof audit?.score === "number" ? audit.score : null,
+      created_at: audit?.created_at || null,
+      key_findings: auditKeyFindings,
+    },
+    latest_metrics: {
+      visibility: typeof metrics?.llm_visibility_score === "number" ? metrics.llm_visibility_score : null,
+      eeat: typeof metrics?.eeat_score === "number" ? metrics.eeat_score : null,
+      growth: typeof metrics?.overall_growth_score === "number" ? metrics.overall_growth_score : null,
+      pages_indexed: typeof metrics?.pages_indexed === "number" ? metrics.pages_indexed : null,
+      recorded_at: metrics?.recorded_at || null,
+    },
+    backlink_relevant_learnings: backlinkLearnings,
+  };
 }
 
 /* ─── Audit stage ─────────────────────────────────────────────── */
@@ -185,8 +388,30 @@ async function findOpportunities(opts: {
   const competitorList = (inputs.competitor_urls || []).slice(0, 6).join(", ");
   const keywordsList = (inputs.target_keywords || []).slice(0, 15).join(", ");
 
+  // Build 12.6 — project intelligence block. When project context is
+  // available, surface the highest-signal data (GSC near-top queries,
+  // data-room assets, recent work) so research lanes ground their
+  // suggestions in what is real for this client rather than reasoning
+  // generically about the industry.
+  const pc = (audit as any).project_context as ProjectBacklinkContext | null;
+  const projectIntelligenceBlock = pc ? `
+
+PROJECT INTELLIGENCE (what the system already knows about this client — use this; do NOT re-discover):
+${pc.industry_known ? `- Industry per project record: ${pc.industry_known}${pc.industry_known.toLowerCase() !== (audit.industry || "").toLowerCase() && audit.industry ? ` (site-derived industry was: ${audit.industry} — reconcile in your reasoning)` : ""}` : ""}
+${pc.goals ? `- Project goals: ${pc.goals}` : ""}
+${pc.declared_keywords.length ? `- Declared target keywords (validated by the operator): ${pc.declared_keywords.slice(0, 10).join(", ")}` : ""}
+${pc.gsc_top_ranking_queries.length ? `- Top 10 queries this client ALREADY ranks for (GSC, last 28 days):\n${pc.gsc_top_ranking_queries.slice(0, 10).map(q => `    "${q.query}" — position ${q.position.toFixed(1)}, ${q.clicks} clicks, ${q.impressions} impressions`).join("\n")}` : "- GSC not connected for this project; ranking data unavailable."}
+${pc.gsc_near_top_pairs.length ? `- "Almost-there" query-page pairs at positions 6-15 (HIGH-PRIORITY backlink targets — links to these pages would push them into top-10):\n${pc.gsc_near_top_pairs.slice(0, 8).map(p => `    "${p.query}" → ${p.page} — position ${p.position.toFixed(1)}, ${p.impressions} impressions`).join("\n")}` : ""}
+${pc.gsc_top_ranking_pages.length ? `- Top 5 pages by traffic (link equity here flows to interlinked pages):\n${pc.gsc_top_ranking_pages.slice(0, 5).map(p => `    ${p.page} — ${p.clicks} clicks, position ${p.position.toFixed(1)}`).join("\n")}` : ""}
+${pc.ga4_top_countries.length ? `- Top countries by traffic: ${pc.ga4_top_countries.slice(0, 5).map((c: any) => `${c.country || c.geoCountry || c.dimensionValue || ""} (${c.sessions || c.metricValue || 0})`).join(", ")}` : ""}
+${pc.ga4_top_traffic_sources.length ? `- Top referrer sources (where current backlinks already drive traffic): ${pc.ga4_top_traffic_sources.slice(0, 5).map((s: any) => `${s.source || s.session_source || s.dimensionValue || ""} (${s.sessions || s.metricValue || 0})`).join(", ")}` : ""}
+${pc.data_room_files.length ? `- Existing assets in the data room (the client already has these — surface them, do not propose creating duplicates):\n${pc.data_room_files.slice(0, 12).map(f => `    ${f.name} (${f.type || "file"})`).join("\n")}` : ""}
+${pc.recent_reports.length ? `- Recent reports on this project (do NOT repeat their work; build on it):\n${pc.recent_reports.slice(0, 5).map(r => `    "${r.title}" — ${r.pillar} pillar, ${new Date(r.created_at).toLocaleDateString("en-GB")}`).join("\n")}` : ""}
+${pc.latest_audit_summary.key_findings.length ? `- Most recent audit findings (score ${pc.latest_audit_summary.score ?? "n/a"}):\n${pc.latest_audit_summary.key_findings.slice(0, 5).map(f => `    ${f}`).join("\n")}` : ""}
+${pc.backlink_relevant_learnings.length ? `- Things we have already learned about this client backlink/PR/content work:\n${pc.backlink_relevant_learnings.slice(0, 5).map(l => `    ${l.title}${l.improvement ? ` — ${l.improvement.slice(0, 150)}` : ""}`).join("\n")}` : ""}` : "";
+
   const contextBlock = `CLIENT WEBSITE: ${inputs.client_url}
-INDUSTRY: ${audit.industry || "unknown"}
+INDUSTRY: ${audit.industry || pc?.industry_known || "unknown"}
 AUDIENCE: ${audit.audience || "unknown"}
 BUSINESS MODEL: ${audit.business_model || "unknown"}
 ${audit.brand_strength_signals?.length ? `BRAND STRENGTH SIGNALS: ${audit.brand_strength_signals.slice(0, 6).join("; ")}` : ""}
@@ -194,7 +419,7 @@ ${audit.link_worthy_assets?.length ? `LINK-WORTHY ASSETS: ${audit.link_worthy_as
 ${competitorList ? `KNOWN COMPETITORS: ${competitorList}` : ""}
 ${keywordsList ? `TARGET KEYWORDS: ${keywordsList}` : ""}
 ${inputs.geography ? `GEOGRAPHY: ${inputs.geography}` : ""}
-${inputs.budget_tier ? `BUDGET TIER: ${inputs.budget_tier}` : ""}`;
+${inputs.budget_tier ? `BUDGET TIER: ${inputs.budget_tier}` : ""}${projectIntelligenceBlock}`;
 
   // Common system prompt rules
   const commonRules = `Return ONLY this JSON (no preamble, no markdown):
@@ -397,19 +622,35 @@ ${lensBlock}`;
   }
 
   /* ─── PASS 1: FRAMING ─────────────────────────────────────── */
+  // Build 12.6 — pc is the project context attached to the audit; when
+  // present we instruct framing to BUILD ON existing knowledge instead
+  // of re-discovering basics.
+  const pcForFraming = (audit as any).project_context as ProjectBacklinkContext | null;
+  const framingProjectInstruction = pcForFraming ? `
+
+THIS IS AN EXISTING PROJECT — NOT A FRESH AUDIT.
+The system already has project history, GSC data, prior reports, data-room files. Your framing MUST:
+- Reference what the project already knows (industry, goals, declared keywords). Do NOT re-derive from the site as if you have never seen this client.
+- If GSC shows the client already ranks for things, lead with that in current_state (e.g., "Currently ranking for X and Y in positions Z-W, with N near-top opportunities at positions 6-15").
+- 90-day plan must be ANCHORED to specific GSC near-top pairs where available — backlinks to those specific pages would compound existing rankings.
+- Honest caveats: distinguish what we know from project data vs what we'd need Ahrefs for. Do not say "we don't know if they rank" if GSC data is right there.
+- Reference data-room assets by name if relevant ("the Q3 white paper in your data room is link-pitchable").
+- Do NOT repeat work already done in recent reports — name them in operator_notes if relevant.
+` : "";
+
   const framingSystem = `You are a senior digital marketing strategist preparing the FRAMING SECTIONS of a client-ready Backlink Strategy Brief. The opportunity sections will be written in a separate pass — your job is the strategic frame around them.
 
 ${sharedContextBlock}
-
+${framingProjectInstruction}
 OUTPUT — return ONLY this JSON, no preamble:
 {
   "title": "concise brief title — e.g. 'Backlink Strategy Brief · <hostname>'",
-  "executive_summary": "3-5 sentence summary that gives a C-level reader the entire picture. Lead with the single most important takeaway. Reference the audit's industry and standout signals.",
-  "current_state": "2-3 paragraph markdown — honest assessment of where this client stands today: industry, audience, business model in plain English; brand-strength signals from the audit (quote them); existing PR signals; link-worthy assets currently on the site; current gaps a senior practitioner would flag.",
-  "ninety_day_plan": "Two-paragraph markdown — what the client/agency should actually do in 90 days, in order, with realistic effort estimates and budget-tier-appropriate scope.",
+  "executive_summary": "3-5 sentence summary that gives a C-level reader the entire picture. Lead with the single most important takeaway. Reference specific GSC rankings or near-top opportunities if available.",
+  "current_state": "2-3 paragraph markdown — honest assessment grounded in WHAT WE ALREADY KNOW. Include: actual ranking position for top queries (from GSC), what existing assets the data room contains, what recent reports concluded, audit score and key findings if available. Do NOT speculate about things we have hard data for.",
+  "ninety_day_plan": "Two-paragraph markdown — anchored to specific near-top GSC opportunities when available. Reference actual pages and queries. Realistic effort estimates and budget-tier-appropriate scope.",
   "what_not_to_do": "One paragraph markdown — explicit disqualifications: tactics that look attractive but won't work for THIS client, common mistakes in this industry, why some 'easy wins' are traps.",
-  "honest_caveats": "What we cannot know without external backlink tools (Ahrefs/Majestic/Moz). Where confidence is lower. What to verify before pitching to client.",
-  "operator_notes": "Internal note — anything ambiguous, anything that needs verification, anything that would change with more context. Not shown to client."
+  "honest_caveats": "What we cannot know without external backlink tools (Ahrefs/Majestic/Moz). Where confidence is lower. What to verify before pitching to client. Distinguish 'we have GSC data so we know X' from 'we don't have backlink-tool data so Y is unknown'.",
+  "operator_notes": "Internal note — anything ambiguous, anything that needs verification, anything that would change with more context. Not shown to client. Reference prior reports if their conclusions affect this brief."
 }`;
 
   const framingUser = `INPUTS:\n${inputsDigest}\n\nAUDIT:\n${auditDigest}\n\nResearch lanes have already surfaced ${oppsAll.length} opportunities across ${Object.keys(oppsByCategory).length} categories — they will be written up separately. Focus on the strategic frame.`;
@@ -433,11 +674,26 @@ OUTPUT — return ONLY this JSON, no preamble:
     { key: "partnership", category_label: "Partnerships / co-marketing", framing_hint: "adjacent non-competing brands, partnership structures (co-authored white papers, joint webinars, mutual integrations), how to identify candidates" },
   ];
 
+  // Build 12.6 — curated project intelligence for section calls.
+  // Smaller than the research-lane block (sections need brevity), but
+  // includes the highest-signal items: near-top GSC pairs, data-room
+  // assets, GA4 referrer sources. Each section then knows what real
+  // ranking opportunities exist and what real assets the client has.
+  const pcForSections = (audit as any).project_context as ProjectBacklinkContext | null;
+  const sectionProjectBlock = pcForSections ? `
+
+PROJECT INTELLIGENCE (use; do NOT re-discover):
+${pcForSections.gsc_near_top_pairs.length ? `Near-top GSC pairs that backlinks could push to top-10:\n${pcForSections.gsc_near_top_pairs.slice(0, 6).map(p => `  "${p.query}" → ${p.page} (position ${p.position.toFixed(1)}, ${p.impressions} imps)`).join("\n")}` : ""}
+${pcForSections.data_room_files.length ? `Existing assets in the data room (pitch THESE, do not propose creating new):\n${pcForSections.data_room_files.slice(0, 8).map(f => `  ${f.name}`).join("\n")}` : ""}
+${pcForSections.ga4_top_traffic_sources.length ? `Current top referrer sources: ${pcForSections.ga4_top_traffic_sources.slice(0, 4).map((s: any) => s.source || s.session_source || s.dimensionValue || "").join(", ")}` : ""}
+${pcForSections.declared_keywords.length ? `Declared target keywords: ${pcForSections.declared_keywords.slice(0, 8).join(", ")}` : ""}
+` : "";
+
   const sectionUserBase = `CLIENT WEBSITE: ${inputs.client_url}
-INDUSTRY: ${audit.industry || "unknown"}
+INDUSTRY: ${audit.industry || pcForSections?.industry_known || "unknown"}
 AUDIENCE: ${audit.audience || "unknown"}
 BUSINESS MODEL: ${audit.business_model || "unknown"}
-${inputs.geography ? `GEOGRAPHY: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `BUDGET TIER: ${inputs.budget_tier}\n` : ""}${audit.link_worthy_assets?.length ? `LINK-WORTHY ASSETS: ${audit.link_worthy_assets.slice(0, 5).join("; ")}\n` : ""}
+${inputs.geography ? `GEOGRAPHY: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `BUDGET TIER: ${inputs.budget_tier}\n` : ""}${audit.link_worthy_assets?.length ? `LINK-WORTHY ASSETS: ${audit.link_worthy_assets.slice(0, 5).join("; ")}\n` : ""}${sectionProjectBlock}
 EXECUTIVE SUMMARY (the rest of the brief's frame — your section must align with this):
 ${framingParsed.executive_summary}`;
 
@@ -479,7 +735,8 @@ RULES:
 - If you have your own better opportunity not in the raw research, add it.
 - If the raw research is empty for this category, you may still produce 2-3 opportunities from first principles based on the audit signals.
 - Never invent specific URLs, named journalists, or publication names. Generic strategic ideas are fine; fabricated specifics destroy trust.
-- No newlines inside string values. Use periods instead.`;
+- No newlines inside string values. Use periods instead.
+- When PROJECT INTELLIGENCE is provided: reference specific GSC near-top pages by URL in tactical_path where backlinks would compound rankings, name data-room assets that exist (do not propose creating duplicates of assets already in hand). The reader will lose trust if you propose creating an asset that is sitting in their data room.`;
 
     const sectionUser = `${sectionUserBase}
 
@@ -576,6 +833,18 @@ function renderBacklinkBrief(opts: { inputs: BacklinkBriefInputs; audit: any; pa
   if (inputs.geography) L.push(`**Geography:** ${inputs.geography}  `);
   if (inputs.budget_tier) L.push(`**Budget tier:** ${inputs.budget_tier}  `);
   if (lens_labels.length) L.push(`**Read for:** ${lens_labels.join(" · ")}  `);
+  // Build 12.6 — list the project intelligence sources that informed this brief
+  const pc = (audit as any).project_context as ProjectBacklinkContext | null;
+  if (pc) {
+    const sources: string[] = [];
+    if (pc.gsc_top_ranking_queries.length) sources.push("GSC rankings");
+    if (pc.ga4_top_traffic_sources.length) sources.push("GA4 referrers");
+    if (pc.data_room_files.length) sources.push(`${pc.data_room_files.length} data-room files`);
+    if (pc.latest_audit_summary.score != null) sources.push(`audit score ${pc.latest_audit_summary.score}`);
+    if (pc.recent_reports.length) sources.push(`${pc.recent_reports.length} prior reports`);
+    if (pc.backlink_relevant_learnings.length) sources.push(`${pc.backlink_relevant_learnings.length} brain learnings`);
+    if (sources.length) L.push(`**Informed by project data:** ${sources.join(" · ")}  `);
+  }
   L.push(`**Generated:** ${new Date().toLocaleDateString("en-GB")}`);
   L.push("");
   L.push("---");
@@ -1011,15 +1280,35 @@ export async function runBacklinkBrief(opts: {
   }, WALL_TIMEOUT_MS);
 
   try {
-    // Stage 1 — audit (respects path_filter when set)
+    // Stage 1 — audit + project context load (parallel)
+    // Build 12.6: project context pulls from projects/metrics/audit_reports/
+    // GSC/GA4 caches/client_report_attachments/brain_learnings so downstream
+    // stages build on what the system already knows. Runs in parallel with
+    // the website fetch since they query different sources.
     if (timedOut) throw new Error("Aborted before audit due to wall-time limit.");
-    const audit = await auditWebsiteForBacklinks({
-      client_url: opts.inputs.client_url,
-      deep: opts.inputs.deep_audit === true,
-      path_filter: opts.inputs.path_filter,
-    });
+    const [audit, projectContext] = await Promise.all([
+      auditWebsiteForBacklinks({
+        client_url: opts.inputs.client_url,
+        deep: opts.inputs.deep_audit === true,
+        path_filter: opts.inputs.path_filter,
+      }),
+      loadProjectContextForBacklinks(opts.projectId),
+    ]);
     llm_calls_used += 1;
     web_searches_used += (audit as any).raw_pages_fetched?.length || 0;
+
+    // Merge: project context becomes a sibling field on the audit JSON so
+    // every downstream consumer (research lanes, framing, sections, render)
+    // can read audit.project_context.* alongside audit.industry etc.
+    (audit as any).project_context = projectContext;
+
+    // If the project's known industry differs from the LLM's site-derived
+    // industry, log it — it's a signal the audit may have misread the site,
+    // OR the project metadata is stale. Either way worth flagging.
+    if (projectContext?.industry_known && audit.industry && projectContext.industry_known.toLowerCase() !== audit.industry.toLowerCase()) {
+      console.log(`[backlinks] industry mismatch: project=${projectContext.industry_known}, site-derived=${audit.industry}. Both will be passed to synthesis; senior DMS lens should reconcile.`);
+    }
+
     await updateProgress({ status: "lanes_running", lanes_done: 0 });
 
     // Stage 2 — opportunities (6 parallel lanes). The current

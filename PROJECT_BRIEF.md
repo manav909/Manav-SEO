@@ -266,3 +266,27 @@ Build 12.5 ships without UI changes — the user-visible improvements happen aut
 Honest caveats: (1) Repair strategies are heuristic. If the LLM produces output that's structurally novel in a way none of the 6 strategies handle, we still return null. Diagnostics will show the raw response for adding strategy #7. (2) The stagger (200ms × index = 0-1000ms spread across 6 sections) is a small mitigation; if Anthropic is genuinely rate-limiting our key, a longer backoff or queue is needed. (3) Diagnostics table grows unbounded — needs a cleanup cron eventually. (4) Token bump 2500→4000 increases cost ~10% per section on the synthesis stage; total brief cost increase ~5%. Acceptable for the reliability win.
 
 Vite build green at 38.07s.
+
+Build 12.6 — Project context injection into backlink brief [SHIPPED 2026-05-30]: Fix for the second damning issue in the Alpha Software brief — the engine ignored everything the system already knew about the project. Re-audited the homepage from scratch like a fresh prospect, ignored GSC rankings, ignored data-room assets, ignored prior reports, ignored audit_reports, ignored brain_learnings.
+
+New helper `loadProjectContextForBacklinks(projectId)` in api/lib/bde-backlinks.ts pulls in parallel: projects row, latest metrics, latest audit_reports row, recent 5 seo_campaign_reports titles, 30 client_report_attachments file names, 40 brain_learnings filtered to backlink/PR/content/outreach tags, GSC cached data via loadGsc, GA4 cached top_countries + top_traffic_sources from project_knowledge. Identifies "near-top" GSC pairs at positions 6-15 with impressions >=50 (the "links could push these to top-10" set — the most valuable signal for honest backlink work). Returns null when projectId empty (BDE-standalone preserves existing behaviour). Every parallel query individually wrapped — one slow table never stalls the whole load.
+
+Wired into runBacklinkBrief: project context loads in parallel with the website audit (no extra wall time since they query different sources). Result merged onto the audit JSON as audit.project_context so every downstream consumer reads it automatically.
+
+Prompts updated at three injection points:
+- Research lanes — new `projectIntelligenceBlock` appended to contextBlock listing GSC near-top pairs, top ranking queries, data-room file names, GA4 traffic sources, recent reports, audit findings, brain learnings. Lanes are explicitly instructed to ground suggestions in this data rather than reasoning generically.
+- Framing synthesis — new `framingProjectInstruction` paragraph telling the model "this is an existing project, not a fresh audit". Current_state must be ANCHORED to actual GSC rankings if available. 90-day plan must reference specific near-top pairs. Honest caveats must distinguish what we know from project data vs what needs Ahrefs.
+- Section synthesis — curated `sectionProjectBlock` with the highest-signal subset (near-top pairs, data-room assets, GA4 referrers, declared keywords). Section rules updated: name specific near-top pages by URL where backlinks would compound rankings; name data-room assets that already exist (do not propose creating duplicates of assets already in hand).
+
+Industry reconciliation: when project.industry differs from the LLM's site-derived audit.industry, both are passed to synthesis with a "reconcile" instruction. Logged server-side. Prevents the brief from confidently asserting a wrong industry.
+
+Brief header now lists which project intelligence sources informed the brief (e.g. "Informed by project data: GSC rankings · GA4 referrers · 12 data-room files · audit score 78 · 3 prior reports · 5 brain learnings"). Visible signal to the reader that the brief is grounded in real data.
+
+Honest caveats:
+1. Project context is opportunistic — if GSC isn't connected, the brief still generates but loses its highest-value input. The framing prompt acknowledges this honestly in caveats.
+2. GA4 per-page traffic NOT included — we use cached top_countries and top_traffic_sources only. Per-page would require fresh GA4 API calls which would slow the audit stage by 5-15s. Acceptable trade-off; can be added if you need it.
+3. brain_learnings filter is naive — matches on tag substring containing "backlink", "pr", "press", "content", "outreach", "links", "authority", "eeat". Misses learnings without these tags even if they're relevant. Improving the filter needs an actual tagging discipline in the brain layer.
+4. Build 12.6 does NOT change the asset extraction pathway — assets extracted from briefs still come from example_targets only, not from data-room or GSC pairs. That's a different fix (Build 12.7 territory).
+5. Prompt size increased by ~1500 tokens when project context is rich. Slightly more cost per brief. The reliability and quality win is worth it.
+
+Vite build green at 27.60s. No migration needed — reads existing tables only.
