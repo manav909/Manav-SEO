@@ -593,11 +593,14 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       return ok(res, await m.listBacklinkAssets({
         projectId: body.projectId || null,
         leadId: body.leadId || null,
-        scope: body.scope || undefined,
+        include_shared: body.include_shared,
         search: body.search,
         category: body.category,
         industry: body.industry,
         status: body.status,
+        data_source: body.data_source,
+        min_da: body.min_da,
+        max_spam: body.max_spam,
         limit: body.limit,
       }));
     }
@@ -608,6 +611,69 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         status: body.status,
         goods: body.goods,
         bads: body.bads,
+        // Build 12.7 — metrics + is_shared
+        domain_authority: body.domain_authority,
+        spam_score: body.spam_score,
+        referring_domains: body.referring_domains,
+        organic_traffic_est: body.organic_traffic_est,
+        link_type: body.link_type,
+        anchor_text_examples: body.anchor_text_examples,
+        data_source: body.data_source,
+        is_shared: body.is_shared,
+      }));
+    }
+    // Build 12.7 — provider keys
+    if (action === "backlink_provider_keys_list") {
+      return ok(res, await m.listBacklinkProviderKeys());
+    }
+    if (action === "backlink_provider_keys_upsert") {
+      return ok(res, await m.upsertBacklinkProviderKey({
+        provider: body.provider,
+        api_key: body.api_key,
+        account_id: body.account_id,
+        base_url: body.base_url,
+        enabled: body.enabled,
+        rate_limit_per_minute: body.rate_limit_per_minute,
+        notes: body.notes,
+      }));
+    }
+    if (action === "backlink_provider_keys_delete") {
+      return ok(res, await m.deleteBacklinkProviderKey(body.provider));
+    }
+    if (action === "backlink_metrics_refresh") {
+      return ok(res, await m.enqueueMetricsRefresh({
+        asset_ids: Array.isArray(body.asset_ids) ? body.asset_ids : [],
+        requested_by: body.requested_by,
+      }));
+    }
+    if (action === "backlink_asset_export_csv") {
+      return ok(res, await m.exportAssetsCsv({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        include_shared: body.include_shared,
+        search: body.search,
+        category: body.category,
+        industry: body.industry,
+        status: body.status,
+        data_source: body.data_source,
+        min_da: body.min_da,
+        max_spam: body.max_spam,
+      }));
+    }
+    if (action === "backlink_asset_export_report") {
+      return ok(res, await m.exportAssetsReport({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        include_shared: body.include_shared,
+        search: body.search,
+        category: body.category,
+        industry: body.industry,
+        status: body.status,
+        data_source: body.data_source,
+        min_da: body.min_da,
+        max_spam: body.max_spam,
+        report_title: body.report_title,
+        report_intro: body.report_intro,
       }));
     }
     if (action === "backlink_competitor_map") {

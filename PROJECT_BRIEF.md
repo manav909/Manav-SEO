@@ -290,3 +290,42 @@ Honest caveats:
 5. Prompt size increased by ~1500 tokens when project context is rich. Slightly more cost per brief. The reliability and quality win is worth it.
 
 Vite build green at 27.60s. No migration needed — reads existing tables only.
+
+Build 12.7 — Backlink metrics + scope isolation + export [SHIPPED 2026-05-30]: Three real-world complaints addressed in one build because they were tightly coupled (scope rules affect listing; metrics affect what gets exported; export depends on both).
+
+SCOPE ISOLATION (strict-by-default + per-asset opt-in to library):
+- backlink_assets gets new is_shared boolean column (default false). Only assets explicitly toggled is_shared=true appear in cross-project asset lists.
+- listBacklinkAssets rewritten: when called with projectId, returns project-owned assets + (optionally) the is_shared=true library tail. Same for leadId. BDE-standalone calls return only bde_standalone scope + library. No more cross-project leakage by default.
+- include_shared filter (default true) lets operator suppress the library tail for a "this project only" view.
+- scope_override is admin-only and NEVER set from UI code; reserved for tooling.
+- Per-asset "Share with library" checkbox in the asset card lets operator opt assets in/out one at a time. Toggle shows immediate confirmation toast.
+
+BACKLINK METRICS (real provider columns + manual edit + provider key storage + adapter scaffolding):
+- New columns on backlink_assets: domain_authority numeric(5,2), spam_score numeric(5,2), referring_domains int, organic_traffic_est int, first_seen_at, link_type ('dofollow'/'nofollow'/'sponsored'/'ugc'/'unknown'), anchor_text_examples text[], data_source ('none'/'manual'/'ahrefs'/'moz'/'majestic'/'estimated_by_llm'), last_metrics_check_at.
+- New backlink_provider_keys table stores Ahrefs/Moz/Majestic/SEMrush API credentials (encrypted at rest by Supabase RLS-protected). One row per provider unique constraint. Server-side functions: listBacklinkProviderKeys (NEVER returns api_key to client, only api_key_present flag), upsertBacklinkProviderKey, deleteBacklinkProviderKey.
+- Adapter scaffolding: AhrefsProvider + MozProvider stubs implement BacklinkProvider interface. loadProviderConfig reads from backlink_provider_keys table. Stubs return empty lists with TODO comments pointing to Ahrefs API v3 /site-explorer/referring-domains endpoint and Moz Links API. When real keys arrive, activation is a code change here, not a schema change.
+- resolveActiveBacklinkProvider returns the first enabled provider (Ahrefs > Moz > StubProvider fallback). Existing pipeline integration points already accept BacklinkProvider; once stubs return real data, the entire pipeline picks it up automatically.
+- enqueueMetricsRefresh records intent in backlink_metrics_refresh_queue with status 'queued' (provider configured) or 'no_provider' (none configured). Operator gets honest toast either way; no fake DA ever appears.
+- updateBacklinkAsset extended to accept domain_authority/spam_score/referring_domains/organic_traffic_est/link_type/anchor_text_examples/data_source/is_shared. data_source='manual' stamps last_metrics_check_at automatically.
+
+EXPORT (CSV + Word/PDF report):
+- exportAssetsCsv: reuses listBacklinkAssets so strict scope isolation enforced; produces RFC-4180-compliant CSV with 19 columns (domain/url/category/attainability/DA/spam/refDomains/linkType/dataSource/status/whyValuable/assetToPitch/goods/bads/anchorTexts/industries/isShared/timestamps).
+- exportAssetsReport: produces a Word/PDF-ready markdown report grouped by category, sorted DA descending within category. Each asset rendered as a section with metrics line (DA · Spam · Ref domains · Type · Attainability · Source), URL, why-valuable, asset-to-pitch, strengths/risks bullet lists, anchor text examples. Header includes honest note about metric provenance ("N of M assets have verified data; rest awaiting provider population").
+- Client downloads via existing downloadStakeholderAsWord + openStakeholderReport helpers (which build 11.2 already battle-tested for Word/HTML export).
+
+UI:
+- Asset Library tab: removed old 4-option scope dropdown; added "Include shared library" checkbox (default checked). Filter row 1: search, category, data source, industry. Filter row 2: min DA, max spam, include shared, Apply button. Export bar: CSV, Preview report, Download Word.
+- Asset card metrics row: DA / Spam / Ref domains / Type / data source, in muted color when null, normal weight when populated. "Edit metrics" button opens a drawer where operator can paste numbers from Ahrefs. "Refresh from provider" button enqueues a refresh (honest toast about no_provider status). "Share with library" checkbox per asset.
+- Edit metrics drawer: 6 numeric/text fields with proper validation. Save stamps data_source='manual' automatically.
+- Provider keys modal: lists configured providers with enabled/disabled badges, lets operator add/edit/delete keys. Honest note explains adapter activation is the next code change. API keys are password-input fields; never displayed back to client.
+
+HONEST CAVEATS:
+1. Ahrefs/Moz adapters are SCAFFOLDED but not yet making real API calls. They return empty lists with console warnings until I wire the actual endpoints. Keys persist + are loadable; once you provide a real Ahrefs key + I wire the adapter, all existing asset rows can be backfilled via the metrics refresh queue.
+2. The "Refresh from provider" button records intent in the queue but won't process until a worker drains it. For now the queue accumulates and shows status='no_provider' when no provider configured. A queue-draining worker is its own follow-up build (12.8 territory).
+3. Strict scope isolation is enforced at the listBacklinkAssets layer. It is NOT enforced at the lower db().from() layer — if anything else in the codebase queries backlink_assets directly without going through listBacklinkAssets, scope leakage could recur. Audit of other callers is pending. As of this build, listBacklinkAssets is the only public entry to the table.
+4. CSV export uses naive Postgres ilike escape for the search filter (escapes % and _). Sufficient for normal text search; not a SQL injection vector since Supabase parameterises queries.
+5. Provider key storage relies on Supabase's at-rest encryption. If your Supabase deployment doesn't encrypt the database, the api_key column is plaintext. Verify with your Supabase plan.
+
+Schema migration workspace-build12_7-backlink-metrics-and-scope.sql — applies to backlink_assets, creates backlink_provider_keys + backlink_metrics_refresh_queue tables with appropriate indexes. All idempotent.
+
+Vite build green at 25.73s. All four files compile clean.

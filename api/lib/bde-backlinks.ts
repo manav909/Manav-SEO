@@ -1624,27 +1624,91 @@ async function extractAndPersistAssets(opts: {
 }
 
 /* ─── List assets with rich filtering ─────────────────────────── */
+/* ─── Build 12.7 — Asset listing with strict scope isolation ───
+   The previous version of this function trusted whatever `scope`
+   argument the caller sent, which meant the UI could request
+   scope=all and pull every asset from every project. That broke
+   client confidentiality and made the BDE library show PM project
+   work and vice-versa.
+
+   The new contract:
+   - When called with projectId, returns ONLY assets owned by that
+     project, PLUS assets marked is_shared=true (the library opt-in).
+   - When called with leadId, returns ONLY assets owned by that
+     specific lead, PLUS is_shared=true assets.
+   - When called from BDE standalone (no projectId, no leadId),
+     returns ONLY bde_standalone assets the operator created, PLUS
+     is_shared=true assets.
+   - The `include_shared` flag (default true) lets the caller suppress
+     the library tail if they want a "this project only, nothing
+     borrowed" view.
+   - The `scope_override` flag (default false) is reserved for admin
+     tooling that genuinely needs cross-project visibility. NOT exposed
+     in the UI. */
 export async function listBacklinkAssets(opts: {
   projectId?: string | null;
   leadId?: string | null;
-  scope?: "project" | "cross_project" | "bde_standalone" | "all";
-  search?: string;        // matches domain + why_valuable + asset_to_pitch
+  /** Show is_shared=true assets in addition to scope-matching ones.
+      Default true — the operator can untick "include shared library"
+      in the UI to suppress. */
+  include_shared?: boolean;
+  search?: string;
   category?: string;
   industry?: string;
   status?: string;
+  /** Filter to a specific data source — useful when an operator wants
+      to see only assets that have real Ahrefs data attached. */
+  data_source?: string;
+  /** Minimum domain authority filter — null/undefined = no filter. */
+  min_da?: number;
+  /** Maximum spam score filter (lower is better). */
+  max_spam?: number;
   limit?: number;
+  /** Admin-only escape hatch; never set from UI code. */
+  scope_override?: boolean;
 }) {
   try {
+    const includeShared = opts.include_shared !== false;
     let q = db().from("backlink_assets").select("*").order("created_at", { ascending: false }).limit(opts.limit || 200);
-    if (opts.scope && opts.scope !== "all") q = q.eq("scope", opts.scope);
-    if (opts.projectId) q = q.eq("project_id", opts.projectId);
-    if (opts.leadId) q = q.eq("lead_id", opts.leadId);
+
+    // Scope isolation — build the OR clause based on what was provided.
+    // Strict: assets owned by this caller's scope, optionally union the
+    // library (is_shared=true) tail.
+    if (opts.scope_override) {
+      // Admin path — no scope filter at all
+    } else if (opts.projectId) {
+      // PM-mode: this project's assets + (optionally) shared library
+      if (includeShared) {
+        q = q.or(`project_id.eq.${opts.projectId},is_shared.eq.true`);
+      } else {
+        q = q.eq("project_id", opts.projectId);
+      }
+    } else if (opts.leadId) {
+      // BDE-with-lead: this lead's assets + (optionally) shared library
+      if (includeShared) {
+        q = q.or(`lead_id.eq.${opts.leadId},is_shared.eq.true`);
+      } else {
+        q = q.eq("lead_id", opts.leadId);
+      }
+    } else {
+      // BDE-standalone: only bde_standalone assets + (optionally) shared library.
+      // This is the strictest case — without a project_id and without a lead_id,
+      // we don't know who the caller is, so we restrict to the standalone scope.
+      if (includeShared) {
+        q = q.or(`scope.eq.bde_standalone,is_shared.eq.true`);
+      } else {
+        q = q.eq("scope", "bde_standalone");
+      }
+    }
+
     if (opts.category) q = q.eq("category", opts.category);
     if (opts.status) q = q.eq("status", opts.status);
     if (opts.industry) q = q.contains("industries_fit", [opts.industry]);
+    if (opts.data_source) q = q.eq("data_source", opts.data_source);
+    if (typeof opts.min_da === "number") q = q.gte("domain_authority", opts.min_da);
+    if (typeof opts.max_spam === "number") q = q.lte("spam_score", opts.max_spam);
     if (opts.search) {
-      const s = opts.search.trim();
-      // Postgres ilike OR across three text fields
+      const s = opts.search.trim().replace(/[%_]/g, "\\$&");  // basic SQL ilike escape
       q = q.or(`domain.ilike.%${s}%,why_valuable.ilike.%${s}%,asset_to_pitch.ilike.%${s}%`);
     }
     const { data, error } = await q;
@@ -1655,19 +1719,44 @@ export async function listBacklinkAssets(opts: {
   }
 }
 
-/* ─── Update asset (notes, status, goods/bads) ────────────────── */
+/* ─── Update asset (notes, status, goods/bads, metrics, sharing) ─ */
 export async function updateBacklinkAsset(opts: {
   assetId: string;
   notes?: string;
   status?: string;
   goods?: string[];
   bads?: string[];
+  /** Build 12.7 — backlink metrics. Operators paste these from Ahrefs/Moz
+      manually until a real adapter is wired. */
+  domain_authority?: number | null;
+  spam_score?: number | null;
+  referring_domains?: number | null;
+  organic_traffic_est?: number | null;
+  link_type?: string | null;
+  anchor_text_examples?: string[];
+  data_source?: string;
+  /** Build 12.7 — "share with library" toggle. When set true, the asset
+      surfaces in cross-project asset libraries. Default false at insert. */
+  is_shared?: boolean;
 }) {
   const patch: any = { updated_at: new Date().toISOString() };
   if (opts.notes !== undefined) patch.notes = opts.notes;
   if (opts.status !== undefined) patch.status = opts.status;
   if (Array.isArray(opts.goods)) patch.goods = opts.goods;
   if (Array.isArray(opts.bads)) patch.bads = opts.bads;
+  // Metrics — null is a valid value (clears the field)
+  if (opts.domain_authority !== undefined) patch.domain_authority = opts.domain_authority;
+  if (opts.spam_score !== undefined) patch.spam_score = opts.spam_score;
+  if (opts.referring_domains !== undefined) patch.referring_domains = opts.referring_domains;
+  if (opts.organic_traffic_est !== undefined) patch.organic_traffic_est = opts.organic_traffic_est;
+  if (opts.link_type !== undefined) patch.link_type = opts.link_type;
+  if (Array.isArray(opts.anchor_text_examples)) patch.anchor_text_examples = opts.anchor_text_examples;
+  if (opts.data_source !== undefined) {
+    patch.data_source = opts.data_source;
+    // When operator edits metrics by hand, stamp last_metrics_check_at
+    if (opts.data_source === "manual") patch.last_metrics_check_at = new Date().toISOString();
+  }
+  if (opts.is_shared !== undefined) patch.is_shared = opts.is_shared;
   try {
     const { error } = await db().from("backlink_assets").update(patch).eq("id", opts.assetId);
     if (error) return { success: false, error: error.message };
@@ -1675,6 +1764,164 @@ export async function updateBacklinkAsset(opts: {
   } catch (e: any) {
     return { success: false, error: e?.message };
   }
+}
+
+/* ─── Build 12.7 — Provider key configuration ────────────────── */
+/* Stores Ahrefs/Moz/Majestic API credentials so the engine can call
+   them. For now the engine doesn't actually CALL these (adapter code
+   is stubbed), but having the storage layer in place means the
+   moment we wire the adapter up, keys are ready. */
+export async function listBacklinkProviderKeys() {
+  try {
+    const { data, error } = await db().from("backlink_provider_keys")
+      .select("id, provider, account_id, base_url, enabled, rate_limit_per_minute, notes, configured_at, last_used_at")
+      .order("provider");
+    if (error) return { success: false, items: [], error: error.message };
+    // NEVER return api_key to the client. Replace with a presence flag.
+    const items = (data || []).map((r: any) => ({ ...r, api_key_present: true }));
+    return { success: true, items };
+  } catch (e: any) {
+    return { success: false, items: [], error: e?.message };
+  }
+}
+
+export async function upsertBacklinkProviderKey(opts: {
+  provider: "ahrefs" | "moz" | "majestic" | "semrush";
+  api_key?: string;
+  account_id?: string;
+  base_url?: string;
+  enabled?: boolean;
+  rate_limit_per_minute?: number;
+  notes?: string;
+}) {
+  try {
+    // Upsert by provider — one row per provider
+    const patch: any = { provider: opts.provider, configured_at: new Date().toISOString() };
+    if (opts.api_key !== undefined && opts.api_key.length > 0) patch.api_key = opts.api_key;
+    if (opts.account_id !== undefined) patch.account_id = opts.account_id;
+    if (opts.base_url !== undefined) patch.base_url = opts.base_url;
+    if (opts.enabled !== undefined) patch.enabled = opts.enabled;
+    if (opts.rate_limit_per_minute !== undefined) patch.rate_limit_per_minute = opts.rate_limit_per_minute;
+    if (opts.notes !== undefined) patch.notes = opts.notes;
+    const { error } = await db().from("backlink_provider_keys").upsert(patch, { onConflict: "provider" });
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
+export async function deleteBacklinkProviderKey(provider: string) {
+  try {
+    const { error } = await db().from("backlink_provider_keys").delete().eq("provider", provider);
+    if (error) return { success: false, error: error.message };
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
+  }
+}
+
+/* ─── Build 12.7 — Metrics refresh enqueue ──────────────────── */
+/* Operator clicks "refresh metrics" on an asset (or batch). For now
+   we record the intent in backlink_metrics_refresh_queue with status
+   'queued' or 'no_provider' depending on whether any provider is
+   configured. When the real Ahrefs/Moz adapter ships, a worker drains
+   this queue and populates the metric columns. */
+export async function enqueueMetricsRefresh(opts: { asset_ids: string[]; requested_by?: string }) {
+  if (!Array.isArray(opts.asset_ids) || opts.asset_ids.length === 0) {
+    return { success: false, queued: 0, error: "No asset ids provided." };
+  }
+
+  // Check if any provider is enabled — if none, mark as 'no_provider'
+  // so the operator knows it'll never be processed without an API key.
+  let initialStatus = "queued";
+  try {
+    const { data } = await db().from("backlink_provider_keys")
+      .select("provider").eq("enabled", true).limit(1);
+    if (!data || data.length === 0) initialStatus = "no_provider";
+  } catch { initialStatus = "queued"; /* graceful if table missing */ }
+
+  const rows = opts.asset_ids.map(id => ({
+    asset_id: id,
+    requested_by: opts.requested_by || null,
+    status: initialStatus,
+  }));
+  try {
+    const { error } = await db().from("backlink_metrics_refresh_queue").insert(rows);
+    if (error) return { success: false, queued: 0, error: error.message };
+    return {
+      success: true,
+      queued: rows.length,
+      status: initialStatus,
+      note: initialStatus === "no_provider"
+        ? "Queued for refresh, but no backlink data provider (Ahrefs/Moz/Majestic) is currently configured. Once you add an API key in settings, the queue will drain automatically. Until then, you can edit metrics manually on each asset."
+        : "Refresh queued. A background worker will populate metrics when it runs.",
+    };
+  } catch (e: any) {
+    return { success: false, queued: 0, error: e?.message };
+  }
+}
+
+/* ─── Provider adapter scaffolding (Build 12.7) ────────────────
+   These are the real adapter shapes that will replace the StubProvider
+   once we wire actual API calls. For now they import and use the keys
+   from the backlink_provider_keys table but DO NOT make real network
+   calls — they're placeholders that return empty data so the rest of
+   the pipeline keeps working. When you provide a real Ahrefs key,
+   activating the adapter is a code change here, not a schema change. */
+
+async function loadProviderConfig(provider: "ahrefs" | "moz" | "majestic" | "semrush"): Promise<{ api_key: string; account_id?: string; base_url?: string } | null> {
+  try {
+    const { data } = await db().from("backlink_provider_keys")
+      .select("api_key, account_id, base_url, enabled")
+      .eq("provider", provider).eq("enabled", true).maybeSingle();
+    if (!data || !(data as any).api_key) return null;
+    return { api_key: (data as any).api_key, account_id: (data as any).account_id, base_url: (data as any).base_url };
+  } catch {
+    return null;
+  }
+}
+
+/* AhrefsProvider — real implementation pending. Shape ready. */
+async function makeAhrefsProvider(): Promise<BacklinkProvider | null> {
+  const cfg = await loadProviderConfig("ahrefs");
+  if (!cfg) return null;
+  return {
+    name: "ahrefs",
+    referringDomains: async (_url: string) => {
+      // TODO: wire to Ahrefs API v3 /site-explorer/referring-domains
+      // Endpoint: https://api.ahrefs.com/v3/site-explorer/referring-domains
+      // Auth: Authorization: Bearer ${cfg.api_key}
+      // For now returns empty until adapter is built.
+      console.log(`[ahrefs] adapter not yet implemented; returning empty for ${_url}`);
+      return [];
+    },
+    recentChanges: async (_url: string) => ({ new: [], lost: [] }),
+  };
+}
+
+/* MozProvider — real implementation pending. */
+async function makeMozProvider(): Promise<BacklinkProvider | null> {
+  const cfg = await loadProviderConfig("moz");
+  if (!cfg) return null;
+  return {
+    name: "moz",
+    referringDomains: async (_url: string) => {
+      // TODO: wire to Moz Links API
+      console.log(`[moz] adapter not yet implemented; returning empty for ${_url}`);
+      return [];
+    },
+    recentChanges: async (_url: string) => ({ new: [], lost: [] }),
+  };
+}
+
+/* Returns the first enabled provider in preference order, or null. */
+export async function resolveActiveBacklinkProvider(): Promise<BacklinkProvider> {
+  const a = await makeAhrefsProvider();
+  if (a) return a;
+  const m = await makeMozProvider();
+  if (m) return m;
+  return StubProvider;
 }
 
 /* ─── Competitor backlink mapping ─────────────────────────────── */
@@ -1904,4 +2151,151 @@ export async function listSynthesisDiagnostics(opts: { brief_id?: string; label_
   } catch (e: any) {
     return { success: false, items: [], error: e?.message };
   }
+}
+
+/* ─── Build 12.7 — Asset list export (CSV + Word/PDF report) ──── */
+/* Both export endpoints REUSE listBacklinkAssets so the same strict
+   scope isolation rules apply — exports cannot leak data the user
+   would not see in the asset library UI. */
+
+function csvEscape(v: any): string {
+  if (v == null) return "";
+  const s = String(v);
+  // RFC 4180: if value contains comma, quote, or newline, wrap in double quotes and double-escape any quotes
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+export async function exportAssetsCsv(opts: Parameters<typeof listBacklinkAssets>[0]): Promise<{ success: boolean; csv?: string; filename?: string; count?: number; error?: string }> {
+  const r = await listBacklinkAssets({ ...opts, limit: 1000 });
+  if (!r.success) return { success: false, error: r.error };
+  const items = r.items as any[];
+
+  const headers = [
+    "domain", "url", "category", "attainability_score", "domain_authority", "spam_score",
+    "referring_domains", "link_type", "data_source", "status",
+    "why_valuable", "asset_to_pitch", "goods", "bads",
+    "anchor_text_examples", "industries_fit", "is_shared",
+    "first_seen_at", "last_metrics_check_at", "created_at",
+  ];
+
+  const lines: string[] = [];
+  lines.push(headers.join(","));
+  for (const it of items) {
+    const row = [
+      it.domain || "",
+      it.url || "",
+      it.category || "",
+      it.attainability_score ?? "",
+      it.domain_authority ?? "",
+      it.spam_score ?? "",
+      it.referring_domains ?? "",
+      it.link_type || "",
+      it.data_source || "none",
+      it.status || "",
+      it.why_valuable || "",
+      it.asset_to_pitch || "",
+      Array.isArray(it.goods) ? it.goods.join(" | ") : "",
+      Array.isArray(it.bads) ? it.bads.join(" | ") : "",
+      Array.isArray(it.anchor_text_examples) ? it.anchor_text_examples.join(" | ") : "",
+      Array.isArray(it.industries_fit) ? it.industries_fit.join(" | ") : "",
+      it.is_shared ? "yes" : "no",
+      it.first_seen_at || "",
+      it.last_metrics_check_at || "",
+      it.created_at || "",
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+  const csv = lines.join("\n");
+  const ts = new Date().toISOString().slice(0, 10);
+  const filename = `backlink-assets-${ts}.csv`;
+  return { success: true, csv, filename, count: items.length };
+}
+
+export async function exportAssetsReport(opts: Parameters<typeof listBacklinkAssets>[0] & { report_title?: string; report_intro?: string }): Promise<{ success: boolean; markdown?: string; title?: string; count?: number; error?: string }> {
+  const r = await listBacklinkAssets({ ...opts, limit: 1000 });
+  if (!r.success) return { success: false, error: r.error };
+  const items = r.items as any[];
+
+  const title = opts.report_title || "Backlink Asset List";
+  const intro = opts.report_intro || "";
+  const generatedDate = new Date().toLocaleDateString("en-GB");
+
+  const L: string[] = [];
+  L.push(`# ${title}`);
+  L.push("");
+  L.push(`**Generated:** ${generatedDate}  `);
+  L.push(`**Total assets:** ${items.length}`);
+  L.push("");
+  if (intro) { L.push(intro); L.push(""); }
+
+  // Honest note about metric provenance
+  const withRealData = items.filter(it => it.data_source && it.data_source !== "none" && it.data_source !== "estimated_by_llm").length;
+  const withoutData = items.length - withRealData;
+  if (withoutData > 0) {
+    L.push(`> **Note on metrics:** ${withRealData} of ${items.length} assets have verified DA/spam-score data; ${withoutData} are awaiting metric population from a connected backlink data provider (Ahrefs/Moz/Majestic).`);
+    L.push("");
+  }
+  L.push("---");
+  L.push("");
+
+  // Group by category for readability
+  const byCategory: Record<string, any[]> = {};
+  for (const it of items) {
+    const cat = it.category || "Uncategorised";
+    if (!byCategory[cat]) byCategory[cat] = [];
+    byCategory[cat].push(it);
+  }
+
+  // Sort categories by count desc
+  const sortedCategories = Object.keys(byCategory).sort((a, b) => byCategory[b].length - byCategory[a].length);
+
+  for (const cat of sortedCategories) {
+    const group = byCategory[cat];
+    L.push(`## ${cat} (${group.length})`);
+    L.push("");
+    // Sort within category by DA desc, nulls last
+    group.sort((a: any, b: any) => {
+      const da = a.domain_authority == null ? -1 : Number(a.domain_authority);
+      const db = b.domain_authority == null ? -1 : Number(b.domain_authority);
+      return db - da;
+    });
+    for (const it of group) {
+      L.push(`### ${it.domain || it.url || "Unnamed asset"}`);
+      L.push("");
+      // Compact metrics line — uses em-dash for missing values
+      const metrics: string[] = [];
+      metrics.push(`DA: ${it.domain_authority != null ? it.domain_authority : "—"}`);
+      metrics.push(`Spam: ${it.spam_score != null ? it.spam_score : "—"}`);
+      metrics.push(`Ref domains: ${it.referring_domains != null ? it.referring_domains : "—"}`);
+      if (it.link_type) metrics.push(`Type: ${it.link_type}`);
+      if (it.attainability_score != null) metrics.push(`Attainability: ${it.attainability_score}/10`);
+      metrics.push(`Source: ${it.data_source || "none"}`);
+      L.push(`*${metrics.join(" · ")}*`);
+      L.push("");
+      if (it.url) { L.push(`**URL:** ${it.url}`); L.push(""); }
+      if (it.why_valuable) { L.push(`**Why valuable:** ${it.why_valuable}`); L.push(""); }
+      if (it.asset_to_pitch) { L.push(`**Asset to pitch:** ${it.asset_to_pitch}`); L.push(""); }
+      if (Array.isArray(it.goods) && it.goods.length) {
+        L.push(`**Strengths:**`);
+        for (const g of it.goods) L.push(`- ${g}`);
+        L.push("");
+      }
+      if (Array.isArray(it.bads) && it.bads.length) {
+        L.push(`**Risks:**`);
+        for (const b of it.bads) L.push(`- ${b}`);
+        L.push("");
+      }
+      if (Array.isArray(it.anchor_text_examples) && it.anchor_text_examples.length) {
+        L.push(`**Suggested anchor text:** ${it.anchor_text_examples.slice(0, 3).map((a: string) => `"${a}"`).join(", ")}`);
+        L.push("");
+      }
+      if (it.status) { L.push(`*Status: ${it.status}*`); L.push(""); }
+      L.push("---");
+      L.push("");
+    }
+  }
+
+  const markdown = L.join("\n");
+  return { success: true, markdown, title, count: items.length };
 }

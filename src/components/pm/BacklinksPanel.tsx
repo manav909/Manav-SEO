@@ -22,6 +22,8 @@ import {
 import {
   backlinkLenses, backlinkList, backlinkLoad, backlinkRun, backlinkStatus,
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
+  backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
+  backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
@@ -97,13 +99,30 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
      'competitor' — single competitor map + batch comparative matrix */
   const [subTab, setSubTab] = useState<SubTab>('brief');
 
-  // Asset library state
+  // Asset library state — Build 12.7 (strict scope + new metric filters)
   const [assets, setAssets] = useState<BacklinkAsset[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(false);
-  const [assetScope, setAssetScope] = useState<'project' | 'cross_project' | 'bde_standalone' | 'all'>(bdeMode ? 'all' : 'project');
+  const [includeShared, setIncludeShared] = useState(true);
   const [assetSearch, setAssetSearch] = useState('');
   const [assetCategory, setAssetCategory] = useState('');
   const [assetIndustry, setAssetIndustry] = useState('');
+  const [assetDataSource, setAssetDataSource] = useState<string>('');
+  const [assetMinDa, setAssetMinDa] = useState<string>('');
+  const [assetMaxSpam, setAssetMaxSpam] = useState<string>('');
+
+  // Build 12.7 — asset edit drawer state
+  const [editingAsset, setEditingAsset] = useState<BacklinkAsset | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  // Build 12.7 — provider keys modal
+  const [showProviderKeys, setShowProviderKeys] = useState(false);
+  const [providerKeys, setProviderKeys] = useState<any[]>([]);
+  const [providerKeysLoading, setProviderKeysLoading] = useState(false);
+  const [providerForm, setProviderForm] = useState<{ provider: string; api_key: string; account_id: string; base_url: string; enabled: boolean; notes: string }>({ provider: 'ahrefs', api_key: '', account_id: '', base_url: '', enabled: false, notes: '' });
+  const [savingProvider, setSavingProvider] = useState(false);
+
+  // Build 12.7 — export state
+  const [exporting, setExporting] = useState(false);
 
   // Competitor mapping state
   const [competitorMode, setCompetitorMode] = useState<'single' | 'batch'>('single');
@@ -310,22 +329,25 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     setShowInputs(false);
   };
 
-  /* ─── Build 12.1: asset library loader ─────────────────────── */
+  /* ─── Build 12.7: asset library loader with strict scope ─────── */
   const loadAssets = useCallback(async () => {
     setAssetsLoading(true);
     try {
       const r = await backlinkAssetsList({
         projectId: bdeMode ? null : projectId,
         leadId: leadId || undefined,
-        scope: assetScope,
+        include_shared: includeShared,
         search: assetSearch.trim() || undefined,
         category: assetCategory || undefined,
         industry: assetIndustry.trim() || undefined,
+        data_source: assetDataSource || undefined,
+        min_da: assetMinDa ? Number(assetMinDa) : undefined,
+        max_spam: assetMaxSpam ? Number(assetMaxSpam) : undefined,
         limit: 200,
       });
       if (r.success && Array.isArray(r.items)) setAssets(r.items);
     } finally { setAssetsLoading(false); }
-  }, [projectId, leadId, bdeMode, assetScope, assetSearch, assetCategory, assetIndustry]);
+  }, [projectId, leadId, bdeMode, includeShared, assetSearch, assetCategory, assetIndustry, assetDataSource, assetMinDa, assetMaxSpam]);
 
   useEffect(() => { if (subTab === 'assets') loadAssets(); }, [subTab, loadAssets]);
 
@@ -336,6 +358,173 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
       toast({ title: 'Status updated' });
     } else {
       toast({ title: 'Update failed', description: r.error, variant: 'destructive' });
+    }
+  };
+
+  /* ─── Build 12.7: per-asset share toggle ────────────────────── */
+  const onAssetShareToggle = async (assetId: string, currentShared: boolean) => {
+    const next = !currentShared;
+    const r = await backlinkAssetUpdate({ assetId, is_shared: next });
+    if (r.success) {
+      setAssets(prev => prev.map(a => a.id === assetId ? { ...a, is_shared: next } as any : a));
+      toast({ title: next ? 'Shared with library' : 'Removed from library', description: next ? 'Visible in cross-project asset lists.' : 'Now scoped to this project only.' });
+    } else {
+      toast({ title: 'Toggle failed', description: r.error, variant: 'destructive' });
+    }
+  };
+
+  /* ─── Build 12.7: open edit drawer for an asset ─────────────── */
+  const openAssetEdit = (a: BacklinkAsset) => {
+    setEditingAsset(a);
+    setEditForm({
+      domain_authority: (a as any).domain_authority ?? '',
+      spam_score: (a as any).spam_score ?? '',
+      referring_domains: (a as any).referring_domains ?? '',
+      organic_traffic_est: (a as any).organic_traffic_est ?? '',
+      link_type: (a as any).link_type || '',
+      anchor_text_examples: ((a as any).anchor_text_examples || []).join(', '),
+      notes: (a as any).notes || '',
+    });
+  };
+
+  const saveAssetEdit = async () => {
+    if (!editingAsset) return;
+    const patch: any = {
+      assetId: editingAsset.id,
+      data_source: 'manual',
+    };
+    if (editForm.domain_authority !== '') patch.domain_authority = Number(editForm.domain_authority);
+    if (editForm.spam_score !== '') patch.spam_score = Number(editForm.spam_score);
+    if (editForm.referring_domains !== '') patch.referring_domains = Number(editForm.referring_domains);
+    if (editForm.organic_traffic_est !== '') patch.organic_traffic_est = Number(editForm.organic_traffic_est);
+    if (editForm.link_type) patch.link_type = editForm.link_type;
+    if (editForm.anchor_text_examples) {
+      patch.anchor_text_examples = String(editForm.anchor_text_examples).split(',').map((s: string) => s.trim()).filter(Boolean);
+    }
+    if (editForm.notes !== undefined) patch.notes = editForm.notes;
+
+    const r = await backlinkAssetUpdate(patch);
+    if (r.success) {
+      toast({ title: 'Asset updated' });
+      setEditingAsset(null);
+      loadAssets();
+    } else {
+      toast({ title: 'Save failed', description: r.error, variant: 'destructive' });
+    }
+  };
+
+  /* ─── Build 12.7: refresh metrics from provider ─────────────── */
+  const refreshAssetMetrics = async (assetId: string) => {
+    const r = await backlinkMetricsRefresh({ asset_ids: [assetId] });
+    if (r.success) {
+      toast({ title: r.status === 'no_provider' ? 'Queued (no provider yet)' : 'Refresh queued', description: r.note });
+    } else {
+      toast({ title: 'Refresh failed', description: r.error, variant: 'destructive' });
+    }
+  };
+
+  /* ─── Build 12.7: export handlers ───────────────────────────── */
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const r = await backlinkAssetExportCsv({
+        projectId: bdeMode ? null : projectId,
+        leadId: leadId || undefined,
+        include_shared: includeShared,
+        search: assetSearch.trim() || undefined,
+        category: assetCategory || undefined,
+        industry: assetIndustry.trim() || undefined,
+        data_source: assetDataSource || undefined,
+        min_da: assetMinDa ? Number(assetMinDa) : undefined,
+        max_spam: assetMaxSpam ? Number(assetMaxSpam) : undefined,
+      });
+      if (!r.success || !r.csv) {
+        toast({ title: 'Export failed', description: r.error || 'No data returned', variant: 'destructive' });
+        return;
+      }
+      // Trigger browser download
+      const blob = new Blob([r.csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = r.filename || 'backlink-assets.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: 'CSV exported', description: `${r.count} assets` });
+    } finally { setExporting(false); }
+  };
+
+  const exportReport = async (format: 'word' | 'preview') => {
+    setExporting(true);
+    try {
+      const r = await backlinkAssetExportReport({
+        projectId: bdeMode ? null : projectId,
+        leadId: leadId || undefined,
+        include_shared: includeShared,
+        search: assetSearch.trim() || undefined,
+        category: assetCategory || undefined,
+        industry: assetIndustry.trim() || undefined,
+        data_source: assetDataSource || undefined,
+        min_da: assetMinDa ? Number(assetMinDa) : undefined,
+        max_spam: assetMaxSpam ? Number(assetMaxSpam) : undefined,
+        report_title: 'Backlink Asset List',
+      });
+      if (!r.success || !r.markdown) {
+        toast({ title: 'Export failed', description: r.error || 'No data returned', variant: 'destructive' });
+        return;
+      }
+      if (format === 'word') {
+        downloadStakeholderAsWord({ title: r.title || 'Backlink Asset List', markdown: r.markdown });
+      } else {
+        openStakeholderReport({ title: r.title || 'Backlink Asset List', markdown: r.markdown });
+      }
+      toast({ title: format === 'word' ? 'Word document downloaded' : 'Report opened in preview', description: `${r.count} assets` });
+    } finally { setExporting(false); }
+  };
+
+  /* ─── Build 12.7: provider keys handlers ────────────────────── */
+  const loadProviderKeys = useCallback(async () => {
+    setProviderKeysLoading(true);
+    try {
+      const r = await backlinkProviderKeysList();
+      if (r.success && Array.isArray(r.items)) setProviderKeys(r.items);
+    } finally { setProviderKeysLoading(false); }
+  }, []);
+
+  useEffect(() => { if (showProviderKeys) loadProviderKeys(); }, [showProviderKeys, loadProviderKeys]);
+
+  const saveProvider = async () => {
+    if (!providerForm.provider) return;
+    setSavingProvider(true);
+    try {
+      const r = await backlinkProviderKeysUpsert({
+        provider: providerForm.provider as any,
+        api_key: providerForm.api_key || undefined,
+        account_id: providerForm.account_id || undefined,
+        base_url: providerForm.base_url || undefined,
+        enabled: providerForm.enabled,
+        notes: providerForm.notes || undefined,
+      });
+      if (r.success) {
+        toast({ title: 'Provider saved', description: providerForm.provider });
+        setProviderForm({ provider: 'ahrefs', api_key: '', account_id: '', base_url: '', enabled: false, notes: '' });
+        loadProviderKeys();
+      } else {
+        toast({ title: 'Save failed', description: r.error, variant: 'destructive' });
+      }
+    } finally { setSavingProvider(false); }
+  };
+
+  const deleteProvider = async (provider: string) => {
+    if (!confirm(`Remove ${provider} API key? This cannot be undone.`)) return;
+    const r = await backlinkProviderKeysDelete(provider);
+    if (r.success) {
+      toast({ title: 'Provider removed', description: provider });
+      loadProviderKeys();
+    } else {
+      toast({ title: 'Delete failed', description: r.error, variant: 'destructive' });
     }
   };
 
@@ -766,47 +955,94 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
       {subTab === 'assets' && (
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-center gap-2 mb-2">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
               <Database className="h-4 w-4 text-primary" />
               <h3 className="text-sm font-semibold">Backlink Asset Library</h3>
               <span className="text-[10px] text-muted-foreground">{assets.length} asset{assets.length === 1 ? '' : 's'} loaded</span>
+              <div className="flex-1" />
+              {/* Build 12.7 — provider keys settings button */}
+              <button
+                onClick={() => setShowProviderKeys(true)}
+                className="text-[11px] px-2.5 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="Configure Ahrefs / Moz / Majestic API keys"
+              >
+                Provider keys
+              </button>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-              Every backlink target found in any brief lives here. Reuse across clients with similar industries; filter by scope, category, industry, or status.
+              {bdeMode
+                ? leadId
+                  ? 'Assets researched for this lead. Cross-project assets shown only when explicitly marked share-with-library.'
+                  : 'BDE-standalone prospect research. Other projects are not shown unless an operator has explicitly shared an asset to the library.'
+                : 'Assets researched for this project. The library includes only items explicitly marked share-with-library by other projects.'}
             </p>
-            {/* Filters */}
-            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+
+            {/* Filters — strict-scope means no scope dropdown; instead "include shared library" checkbox */}
+            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2 mb-2">
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Scope</label>
-                <select value={assetScope} onChange={e => setAssetScope(e.target.value as any)} className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background">
-                  <option value="all">All scopes</option>
-                  <option value="project">This project only</option>
-                  <option value="cross_project">Cross-project (shared)</option>
-                  <option value="bde_standalone">BDE standalone</option>
-                </select>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Search</label>
+                <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="domain or text" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
               </div>
               <div>
                 <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Category</label>
                 <input value={assetCategory} onChange={e => setAssetCategory(e.target.value)} placeholder="e.g. resource_page" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Industry</label>
-                <input value={assetIndustry} onChange={e => setAssetIndustry(e.target.value)} placeholder="exact industry tag" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Data source</label>
+                <select value={assetDataSource} onChange={e => setAssetDataSource(e.target.value)} className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background">
+                  <option value="">Any</option>
+                  <option value="manual">Manual (operator-pasted)</option>
+                  <option value="ahrefs">Ahrefs</option>
+                  <option value="moz">Moz</option>
+                  <option value="majestic">Majestic</option>
+                  <option value="none">No metrics yet</option>
+                </select>
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Search</label>
-                <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="domain or text" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Industry tag</label>
+                <input value={assetIndustry} onChange={e => setAssetIndustry(e.target.value)} placeholder="exact industry tag" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
               </div>
             </div>
-            <div className="flex items-center gap-2 mb-2">
-              <button onClick={loadAssets} disabled={assetsLoading} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 flex items-center gap-1.5">
-                {assetsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ListFilter className="h-3 w-3" />}
-                Apply filters
-              </button>
-              {assetCategories.length > 0 && (
-                <div className="text-[10px] text-muted-foreground">Found categories: {assetCategories.join(', ')}</div>
-              )}
+            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Min DA</label>
+                <input type="number" min="0" max="100" value={assetMinDa} onChange={e => setAssetMinDa(e.target.value)} placeholder="e.g. 40" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Max spam score</label>
+                <input type="number" min="0" max="100" value={assetMaxSpam} onChange={e => setAssetMaxSpam(e.target.value)} placeholder="e.g. 30" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+              </div>
+              <div className="flex items-end">
+                <label className="text-[11px] flex items-center gap-2 cursor-pointer text-muted-foreground hover:text-foreground">
+                  <input type="checkbox" checked={includeShared} onChange={e => setIncludeShared(e.target.checked)} className="rounded" />
+                  Include shared library
+                </label>
+              </div>
+              <div className="flex items-end">
+                <button onClick={loadAssets} disabled={assetsLoading} className="w-full text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 flex items-center justify-center gap-1.5">
+                  {assetsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ListFilter className="h-3 w-3" />}
+                  Apply
+                </button>
+              </div>
             </div>
+
+            {/* Export bar */}
+            {assets.length > 0 && (
+              <div className="flex items-center gap-2 mb-3 pt-2 border-t border-border">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Export current view:</span>
+                <button onClick={exportCsv} disabled={exporting} className="text-[11px] px-2.5 py-1 rounded border border-border hover:bg-muted disabled:opacity-50">
+                  CSV
+                </button>
+                <button onClick={() => exportReport('preview')} disabled={exporting} className="text-[11px] px-2.5 py-1 rounded border border-border hover:bg-muted disabled:opacity-50">
+                  Preview report
+                </button>
+                <button onClick={() => exportReport('word')} disabled={exporting} className="text-[11px] px-2.5 py-1 rounded border border-border hover:bg-muted disabled:opacity-50">
+                  Download Word
+                </button>
+                {exporting && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+              </div>
+            )}
+
             {/* Asset list */}
             {assetsLoading ? (
               <div className="text-xs text-muted-foreground p-4 text-center">Loading…</div>
@@ -816,40 +1052,231 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               </div>
             ) : (
               <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-                {assets.map(a => (
-                  <div key={a.id} className="rounded-lg border border-border p-3 bg-background/50">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-semibold truncate">{a.domain}</span>
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase tracking-wide">{a.category}</span>
-                          {a.attainability && <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide">{a.attainability}</span>}
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wide ${a.scope === 'project' ? 'bg-blue-500/15 text-blue-400' : a.scope === 'cross_project' ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'}`}>{a.scope}</span>
+                {assets.map(a => {
+                  const aa = a as any;
+                  const hasMetrics = aa.data_source && aa.data_source !== 'none';
+                  return (
+                    <div key={a.id} className="rounded-lg border border-border p-3 bg-background/50">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold truncate">{a.domain}</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase tracking-wide">{a.category}</span>
+                            {a.attainability && <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide">{a.attainability}</span>}
+                            {aa.is_shared && <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 uppercase tracking-wide">shared</span>}
+                          </div>
+                          {/* Build 12.7 — Metrics row */}
+                          <div className="flex items-center gap-3 mt-1.5 text-[10px] flex-wrap">
+                            <span className={hasMetrics ? 'text-foreground/80' : 'text-muted-foreground/50'}>
+                              <span className="text-muted-foreground">DA:</span> {aa.domain_authority != null ? aa.domain_authority : '—'}
+                            </span>
+                            <span className={hasMetrics ? 'text-foreground/80' : 'text-muted-foreground/50'}>
+                              <span className="text-muted-foreground">Spam:</span> {aa.spam_score != null ? aa.spam_score : '—'}
+                            </span>
+                            <span className={hasMetrics ? 'text-foreground/80' : 'text-muted-foreground/50'}>
+                              <span className="text-muted-foreground">Ref domains:</span> {aa.referring_domains != null ? aa.referring_domains.toLocaleString() : '—'}
+                            </span>
+                            {aa.link_type && (
+                              <span className="text-foreground/80"><span className="text-muted-foreground">Type:</span> {aa.link_type}</span>
+                            )}
+                            <span className="text-muted-foreground italic">
+                              source: {aa.data_source || 'none'}
+                            </span>
+                          </div>
+                          {a.url && <a href={a.url} target="_blank" rel="noreferrer" className="text-[10px] text-muted-foreground hover:text-foreground truncate block mt-1">{a.url}</a>}
+                          {a.why_valuable && <div className="text-[11px] text-foreground/80 mt-1.5"><span className="text-muted-foreground">Why:</span> {a.why_valuable}</div>}
+                          {a.asset_to_pitch && <div className="text-[11px] text-foreground/80 mt-1"><span className="text-muted-foreground">Pitch:</span> {a.asset_to_pitch}</div>}
+                          {a.industries_fit && a.industries_fit.length > 0 && (
+                            <div className="text-[10px] text-muted-foreground mt-1">Fits: {a.industries_fit.join(' · ')}</div>
+                          )}
+                          {/* Build 12.7 — action row */}
+                          <div className="flex items-center gap-2 mt-2 flex-wrap">
+                            <button
+                              onClick={() => openAssetEdit(a)}
+                              className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                              title="Edit metrics manually"
+                            >
+                              Edit metrics
+                            </button>
+                            <button
+                              onClick={() => refreshAssetMetrics(a.id)}
+                              className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                              title="Queue a metrics refresh from the configured provider"
+                            >
+                              Refresh from provider
+                            </button>
+                            <label className="text-[10px] flex items-center gap-1.5 cursor-pointer text-muted-foreground hover:text-foreground">
+                              <input
+                                type="checkbox"
+                                checked={!!aa.is_shared}
+                                onChange={() => onAssetShareToggle(a.id, !!aa.is_shared)}
+                                className="rounded"
+                              />
+                              Share with library
+                            </label>
+                          </div>
                         </div>
-                        {a.url && <a href={a.url} target="_blank" rel="noreferrer" className="text-[10px] text-muted-foreground hover:text-foreground truncate block">{a.url}</a>}
-                        {a.why_valuable && <div className="text-[11px] text-foreground/80 mt-1.5"><span className="text-muted-foreground">Why:</span> {a.why_valuable}</div>}
-                        {a.asset_to_pitch && <div className="text-[11px] text-foreground/80 mt-1"><span className="text-muted-foreground">Pitch:</span> {a.asset_to_pitch}</div>}
-                        {a.industries_fit && a.industries_fit.length > 0 && (
-                          <div className="text-[10px] text-muted-foreground mt-1">Fits: {a.industries_fit.join(' · ')}</div>
-                        )}
+                        <select
+                          value={a.status}
+                          onChange={e => onAssetStatusChange(a.id, e.target.value)}
+                          className="text-[10px] px-2 py-1 rounded border border-border bg-background"
+                        >
+                          <option value="new">new</option>
+                          <option value="pursuing">pursuing</option>
+                          <option value="won">won</option>
+                          <option value="dead">dead</option>
+                          <option value="declined">declined</option>
+                        </select>
                       </div>
-                      <select
-                        value={a.status}
-                        onChange={e => onAssetStatusChange(a.id, e.target.value)}
-                        className="text-[10px] px-2 py-1 rounded border border-border bg-background"
-                      >
-                        <option value="new">new</option>
-                        <option value="pursuing">pursuing</option>
-                        <option value="won">won</option>
-                        <option value="dead">dead</option>
-                        <option value="declined">declined</option>
-                      </select>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
+
+          {/* Build 12.7 — Edit metrics drawer */}
+          {editingAsset && (
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setEditingAsset(null)}>
+              <div className="bg-card border border-border rounded-xl p-5 max-w-lg w-full space-y-3" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Edit metrics · {editingAsset.domain}</h3>
+                  <button onClick={() => setEditingAsset(null)} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Paste from Ahrefs / Moz / Majestic. Setting any value marks this asset data_source=manual and stamps last-checked timestamp.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Domain Authority (0-100)</label>
+                    <input type="number" min="0" max="100" value={editForm.domain_authority} onChange={e => setEditForm({ ...editForm, domain_authority: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Spam score (0-100)</label>
+                    <input type="number" min="0" max="100" value={editForm.spam_score} onChange={e => setEditForm({ ...editForm, spam_score: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Referring domains</label>
+                    <input type="number" min="0" value={editForm.referring_domains} onChange={e => setEditForm({ ...editForm, referring_domains: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Organic traffic est</label>
+                    <input type="number" min="0" value={editForm.organic_traffic_est} onChange={e => setEditForm({ ...editForm, organic_traffic_est: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Link type</label>
+                    <select value={editForm.link_type} onChange={e => setEditForm({ ...editForm, link_type: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background">
+                      <option value="">— not specified —</option>
+                      <option value="dofollow">dofollow</option>
+                      <option value="nofollow">nofollow</option>
+                      <option value="sponsored">sponsored</option>
+                      <option value="ugc">ugc</option>
+                      <option value="unknown">unknown</option>
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Anchor text examples (comma-separated)</label>
+                    <input value={editForm.anchor_text_examples} onChange={e => setEditForm({ ...editForm, anchor_text_examples: e.target.value })} placeholder='e.g. "field operations software", "no-code platform"' className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Notes</label>
+                    <textarea value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} rows={2} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background resize-y" />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button onClick={() => setEditingAsset(null)} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">Cancel</button>
+                  <button onClick={saveAssetEdit} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90">Save</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Build 12.7 — Provider keys modal */}
+          {showProviderKeys && (
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowProviderKeys(false)}>
+              <div className="bg-card border border-border rounded-xl p-5 max-w-xl w-full space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Backlink data providers</h3>
+                  <button onClick={() => setShowProviderKeys(false)} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Add API keys for Ahrefs, Moz, or Majestic. Once configured + enabled, the engine will populate DA / spam score / referring domains automatically when assets are extracted. Until then, asset metrics stay empty unless an operator pastes them manually.
+                  <span className="block mt-1 text-amber-400/80">Note: as of this build, the adapters are scaffolded but not yet calling out to provider APIs. Keys persist; activation is the next code change.</span>
+                </p>
+
+                {/* Existing keys */}
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Configured providers</div>
+                  {providerKeysLoading ? (
+                    <div className="text-xs text-muted-foreground">Loading…</div>
+                  ) : providerKeys.length === 0 ? (
+                    <div className="text-xs text-muted-foreground italic">No providers configured.</div>
+                  ) : providerKeys.map(p => (
+                    <div key={p.id} className="rounded-lg border border-border p-3 bg-background/50">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-xs font-semibold flex items-center gap-2">
+                            {p.provider}
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wide ${p.enabled ? 'bg-emerald-500/15 text-emerald-400' : 'bg-muted text-muted-foreground'}`}>{p.enabled ? 'enabled' : 'disabled'}</span>
+                            {p.api_key_present && <span className="text-[9px] text-muted-foreground">key set</span>}
+                          </div>
+                          {p.account_id && <div className="text-[10px] text-muted-foreground">account: {p.account_id}</div>}
+                          {p.notes && <div className="text-[10px] text-muted-foreground italic">{p.notes}</div>}
+                        </div>
+                        <button onClick={() => deleteProvider(p.provider)} className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground">
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add / update form */}
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Add or update</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Provider</label>
+                      <select value={providerForm.provider} onChange={e => setProviderForm({ ...providerForm, provider: e.target.value })} className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background">
+                        <option value="ahrefs">Ahrefs</option>
+                        <option value="moz">Moz</option>
+                        <option value="majestic">Majestic</option>
+                        <option value="semrush">SEMrush</option>
+                      </select>
+                    </div>
+                    <div className="flex items-end">
+                      <label className="text-[11px] flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" checked={providerForm.enabled} onChange={e => setProviderForm({ ...providerForm, enabled: e.target.checked })} className="rounded" />
+                        Enabled
+                      </label>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">API key</label>
+                      <input type="password" value={providerForm.api_key} onChange={e => setProviderForm({ ...providerForm, api_key: e.target.value })} placeholder="paste API key" className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Account ID (optional)</label>
+                      <input value={providerForm.account_id} onChange={e => setProviderForm({ ...providerForm, account_id: e.target.value })} placeholder="if required" className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Base URL override</label>
+                      <input value={providerForm.base_url} onChange={e => setProviderForm({ ...providerForm, base_url: e.target.value })} placeholder="default if blank" className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Notes</label>
+                      <input value={providerForm.notes} onChange={e => setProviderForm({ ...providerForm, notes: e.target.value })} placeholder="any operator note" className="w-full text-xs px-2 py-1.5 rounded border border-border bg-background" />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button onClick={saveProvider} disabled={savingProvider} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2">
+                      {savingProvider && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Save provider
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

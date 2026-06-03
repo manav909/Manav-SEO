@@ -4488,14 +4488,47 @@ export async function backlinkListExtended(opts: { projectId?: string | null; le
   return post(ENGINE, { action: 'backlink_list_extended', ...opts });
 }
 
-export async function backlinkAssetsList(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'cross_project' | 'bde_standalone' | 'all'; search?: string; category?: string; industry?: string; status?: string; limit?: number }):
+export async function backlinkAssetsList(opts: { projectId?: string | null; leadId?: string | null; include_shared?: boolean; search?: string; category?: string; industry?: string; status?: string; data_source?: string; min_da?: number; max_spam?: number; limit?: number }):
   Promise<{ success?: boolean; items?: BacklinkAsset[]; error?: string }> {
   return post(ENGINE, { action: 'backlink_assets_list', ...opts });
 }
 
-export async function backlinkAssetUpdate(opts: { assetId: string; notes?: string; status?: string; goods?: string[]; bads?: string[] }):
+export async function backlinkAssetUpdate(opts: { assetId: string; notes?: string; status?: string; goods?: string[]; bads?: string[]; domain_authority?: number | null; spam_score?: number | null; referring_domains?: number | null; organic_traffic_est?: number | null; link_type?: string | null; anchor_text_examples?: string[]; data_source?: string; is_shared?: boolean }):
   Promise<{ success?: boolean; error?: string }> {
   return post(ENGINE, { action: 'backlink_asset_update', ...opts });
+}
+
+/* ─── Build 12.7 — Provider keys ─────────────────────────────── */
+export async function backlinkProviderKeysList():
+  Promise<{ success?: boolean; items?: Array<{ id: string; provider: string; account_id?: string; base_url?: string; enabled: boolean; rate_limit_per_minute?: number; notes?: string; configured_at: string; last_used_at?: string; api_key_present: boolean }>; error?: string }> {
+  return post(ENGINE, { action: 'backlink_provider_keys_list' });
+}
+
+export async function backlinkProviderKeysUpsert(opts: { provider: 'ahrefs' | 'moz' | 'majestic' | 'semrush'; api_key?: string; account_id?: string; base_url?: string; enabled?: boolean; rate_limit_per_minute?: number; notes?: string }):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'backlink_provider_keys_upsert', ...opts });
+}
+
+export async function backlinkProviderKeysDelete(provider: string):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'backlink_provider_keys_delete', provider });
+}
+
+/* ─── Build 12.7 — Metrics refresh enqueue ──────────────────── */
+export async function backlinkMetricsRefresh(opts: { asset_ids: string[]; requested_by?: string }):
+  Promise<{ success?: boolean; queued?: number; status?: string; note?: string; error?: string }> {
+  return post(ENGINE, { action: 'backlink_metrics_refresh', ...opts });
+}
+
+/* ─── Build 12.7 — Export ─────────────────────────────────────── */
+export async function backlinkAssetExportCsv(opts: { projectId?: string | null; leadId?: string | null; include_shared?: boolean; search?: string; category?: string; industry?: string; status?: string; data_source?: string; min_da?: number; max_spam?: number }):
+  Promise<{ success?: boolean; csv?: string; filename?: string; count?: number; error?: string }> {
+  return post(ENGINE, { action: 'backlink_asset_export_csv', ...opts });
+}
+
+export async function backlinkAssetExportReport(opts: { projectId?: string | null; leadId?: string | null; include_shared?: boolean; search?: string; category?: string; industry?: string; status?: string; data_source?: string; min_da?: number; max_spam?: number; report_title?: string; report_intro?: string }):
+  Promise<{ success?: boolean; markdown?: string; title?: string; count?: number; error?: string }> {
+  return post(ENGINE, { action: 'backlink_asset_export_report', ...opts });
 }
 
 export async function backlinkCompetitorMap(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'bde_lead' | 'bde_standalone'; competitor_url: string; for_client_url?: string; context?: string }):
