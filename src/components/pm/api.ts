@@ -4383,3 +4383,34 @@ export async function wsCrRemoveAttachment(opts: { projectId: string; attachment
   Promise<{ success?: boolean; error?: string }> {
   return post(ENGINE, { action: 'ws_cr_remove_attachment', ...opts });
 }
+
+/* ─── Document Comparison (Build 11) ──────────────────────────── */
+
+export type CompareSourceRef =
+  | { kind: 'client_report' | 'workspace_report'; report_id: string }
+  | { kind: 'attachment'; attachment_id: string }
+  | { kind: 'step_report'; step_report_id: string }
+  | { kind: 'ad_hoc'; file_name: string; content_type: string; file_b64: string; size_bytes: number };
+
+export interface CompareItem { kind: string; id: string; label: string; sublabel: string; created_at: string; }
+
+export async function compareListDocs(projectId: string):
+  Promise<{ success?: boolean; items?: CompareItem[]; error?: string }> {
+  return post(ENGINE, { action: 'compare_list_docs', projectId });
+}
+
+export async function compareRun(opts: { projectId: string; campaignId?: string; docA: CompareSourceRef; docB: CompareSourceRef; context?: string; save?: boolean }):
+  Promise<{ success?: boolean; comparison_id?: string; title?: string; body_md?: string; error?: string }> {
+  return post(ENGINE, { action: 'compare_run', ...opts });
+}
+
+/* Browser helper: encode a File for ad_hoc comparison input. */
+export async function fileToAdHocRef(file: File): Promise<CompareSourceRef> {
+  const file_b64 = await new Promise<string>((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => { const s = String(fr.result || ''); const i = s.indexOf(','); resolve(i >= 0 ? s.slice(i + 1) : s); };
+    fr.onerror = () => reject(new Error('Could not read file.'));
+    fr.readAsDataURL(file);
+  });
+  return { kind: 'ad_hoc', file_name: file.name, content_type: file.type || 'application/octet-stream', file_b64, size_bytes: file.size };
+}

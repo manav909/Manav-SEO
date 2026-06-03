@@ -522,6 +522,24 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (gscResult !== null) return ok(res, gscResult);
   }
 
+  /* ═══ DOCUMENT COMPARISON (Build 11) — compare_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("compare_")) {
+    const { compareDocs, listComparableDocs } = await import("./lib/pm-compare.js");
+    if (action === "compare_list_docs") {
+      return ok(res, await listComparableDocs(body.projectId));
+    }
+    if (action === "compare_run") {
+      return ok(res, await compareDocs({
+        projectId: body.projectId,
+        campaignId: body.campaignId,
+        docA: body.docA,
+        docB: body.docB,
+        context: body.context,
+        save: body.save !== false,
+      }));
+    }
+  }
+
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */
   if (typeof action === "string" && action.startsWith("ga4_")) {
     const { handlePmGa4 } = await import("./lib/pm-ga4.js");
