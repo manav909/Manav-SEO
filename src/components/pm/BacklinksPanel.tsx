@@ -26,6 +26,7 @@ import {
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
 import { useToast } from '@/hooks/use-toast';
+import { useProject } from '@/contexts/ProjectContext';
 
 type SubTab = 'brief' | 'assets' | 'competitor';
 
@@ -43,6 +44,11 @@ interface Props {
 export default function BacklinksPanel({ projectId, bdeMode = false, leadId = null }: Props) {
   const { toast } = useToast();
 
+  // Build 12.2 — read the project's rich derived context so we can
+  // auto-populate inputs in PM mode. Skipped in BDE mode where the
+  // operator is researching prospects, not working with a saved project.
+  const { brainContext } = useProject();
+
   // Inputs
   const [clientUrl, setClientUrl] = useState('');
   const [keywordsText, setKeywordsText] = useState('');
@@ -53,6 +59,21 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [deepAudit, setDeepAudit] = useState(false);
   // Build 12.1 — optional path filter narrows audit to a section like /products/*
   const [pathFilter, setPathFilter] = useState('');
+
+  // Build 12.2 — track which fields were auto-populated from the project,
+  // so we can: (a) show a "from project" badge next to those fields,
+  // (b) re-populate when the project changes WITHOUT clobbering operator
+  // edits. If the operator types something new in a field, we mark it
+  // dirty and stop overwriting on subsequent project changes.
+  const [autofilled, setAutofilled] = useState<{ [k: string]: boolean }>({});
+  const [dirty, setDirty] = useState<{ [k: string]: boolean }>({});
+
+  // Mark a field dirty when the operator edits it manually. This wraps
+  // each setter so the autofill effect knows what NOT to overwrite.
+  const editClientUrl = (v: string) => { setClientUrl(v); setDirty(d => ({ ...d, clientUrl: true })); setAutofilled(a => ({ ...a, clientUrl: false })); };
+  const editKeywords = (v: string) => { setKeywordsText(v); setDirty(d => ({ ...d, keywordsText: true })); setAutofilled(a => ({ ...a, keywordsText: false })); };
+  const editCompetitors = (v: string) => { setCompetitorsText(v); setDirty(d => ({ ...d, competitorsText: true })); setAutofilled(a => ({ ...a, competitorsText: false })); };
+  const editGeography = (v: string) => { setGeography(v); setDirty(d => ({ ...d, geography: true })); setAutofilled(a => ({ ...a, geography: false })); };
 
   // Lens picker — defaults to Senior DMS
   const [lensCatalog, setLensCatalog] = useState<CompareLens[]>([]);
@@ -114,8 +135,46 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     setGeography(''); setContext(''); setDeepAudit(false);
     setPickedLensIds(new Set(['senior_dm'])); setCustomLens('');
     setResult(null); setError(''); setHistory([]); setElapsed(0); setShowInputs(true);
+    // Reset autofill tracking too — new project, fresh slate
+    setAutofilled({}); setDirty({});
     loadHistory();
   }, [projectId, loadHistory]);
+
+  // Build 12.2 — auto-populate inputs from the project's brainContext.
+  // Runs after the project-switch reset above (because brainContext
+  // changes shortly after projectId does). Only fills fields the operator
+  // has NOT manually edited. Skipped entirely in BDE mode.
+  useEffect(() => {
+    if (bdeMode) return;
+    if (!brainContext) return;
+
+    // URL — primary auto-fill. If the project has a URL and operator hasn't typed one, use it.
+    if (brainContext.url && !dirty.clientUrl) {
+      setClientUrl(brainContext.url);
+      setAutofilled(a => ({ ...a, clientUrl: true }));
+    }
+
+    // Keywords — array → newline-joined for the textarea
+    if (Array.isArray(brainContext.keywords) && brainContext.keywords.length && !dirty.keywordsText) {
+      setKeywordsText(brainContext.keywords.slice(0, 20).join('\n'));
+      setAutofilled(a => ({ ...a, keywordsText: true }));
+    }
+
+    // Competitors — array → newline-joined
+    if (Array.isArray(brainContext.competitors) && brainContext.competitors.length && !dirty.competitorsText) {
+      setCompetitorsText(brainContext.competitors.slice(0, 10).join('\n'));
+      setAutofilled(a => ({ ...a, competitorsText: true }));
+    }
+
+    // Geography — from project.country
+    if (brainContext.country && !dirty.geography) {
+      setGeography(brainContext.country);
+      setAutofilled(a => ({ ...a, geography: true }));
+    }
+    // Note: industry from brainContext flows naturally to the engine via the
+    // on-site audit (the audit DERIVES industry). We could pre-feed it but the
+    // engine's own inference is more honest — uses what the site actually says.
+  }, [bdeMode, brainContext, dirty.clientUrl, dirty.keywordsText, dirty.competitorsText, dirty.geography]);
 
   // Elapsed timer during run
   useEffect(() => {
@@ -322,10 +381,15 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
               {/* URL */}
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Client website URL <span className="text-red-400">*</span></label>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                  Client website URL <span className="text-red-400">*</span>
+                  {autofilled.clientUrl && (
+                    <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 normal-case font-normal tracking-normal">from project</span>
+                  )}
+                </label>
                 <input
                   value={clientUrl}
-                  onChange={e => setClientUrl(e.target.value)}
+                  onChange={e => editClientUrl(e.target.value)}
                   placeholder="https://example.com"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                 />
@@ -333,10 +397,15 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
               {/* Target keywords */}
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Target keywords <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional · comma or newline separated · max 20</span></label>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                  Target keywords <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional · comma or newline separated · max 20</span>
+                  {autofilled.keywordsText && (
+                    <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 normal-case font-normal tracking-normal">from project</span>
+                  )}
+                </label>
                 <textarea
                   value={keywordsText}
-                  onChange={e => setKeywordsText(e.target.value)}
+                  onChange={e => editKeywords(e.target.value)}
                   rows={2}
                   placeholder="What does the client want to rank for? One per line or comma-separated."
                   className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground resize-y"
@@ -360,10 +429,15 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Geography <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional</span></label>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                    Geography <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional</span>
+                    {autofilled.geography && (
+                      <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 normal-case font-normal tracking-normal">from project</span>
+                    )}
+                  </label>
                   <input
                     value={geography}
-                    onChange={e => setGeography(e.target.value)}
+                    onChange={e => editGeography(e.target.value)}
                     placeholder="UK / US-east / global"
                     className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground"
                   />
@@ -372,10 +446,15 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
               {/* Competitor URLs */}
               <div>
-                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Competitor URLs <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional · max 10</span></label>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                  Competitor URLs <span className="text-muted-foreground/60 text-[10px] normal-case font-normal">· optional · max 10</span>
+                  {autofilled.competitorsText && (
+                    <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 normal-case font-normal tracking-normal">from project</span>
+                  )}
+                </label>
                 <textarea
                   value={competitorsText}
-                  onChange={e => setCompetitorsText(e.target.value)}
+                  onChange={e => editCompetitors(e.target.value)}
                   rows={2}
                   placeholder="competitor1.com&#10;competitor2.com"
                   className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground resize-y"
