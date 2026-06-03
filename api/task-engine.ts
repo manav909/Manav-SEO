@@ -573,6 +573,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         projectId: body.projectId || null,
         campaignId: body.campaignId,
         inputs: body.inputs || {},
+        client_request_id: body.client_request_id,
+      }));
+    }
+    if (action === "backlink_status") {
+      return ok(res, await m.getBacklinkBriefStatus({
+        brief_id: body.brief_id,
+        client_request_id: body.client_request_id,
       }));
     }
     if (action === "backlink_assets_list") {

@@ -571,6 +571,10 @@ export async function runBacklinkBrief(opts: {
   campaignId?: string;
   inputs: BacklinkBriefInputs;
   provider?: BacklinkProvider;
+  /** Build 12.3 — when provided, the brief row is created with this
+      client_request_id in progress_json so the client can poll for
+      status updates while runBacklinkBrief is still executing. */
+  client_request_id?: string;
 }): Promise<{ success: boolean; brief_id?: string; report_id?: string; title?: string; brief_md?: string; assets_extracted?: number; error?: string }> {
   const provider = opts.provider || StubProvider;
   const startedAt = Date.now();
@@ -591,8 +595,86 @@ export async function runBacklinkBrief(opts: {
     return { success: false, error: "scope 'bde_lead' requires a lead_id" };
   }
 
+  /* ─── Build 12.3 — early row insert + progress tracking ──────── */
+  // Create the brief row immediately with status='audit_running' so the
+  // client can begin polling for progress. Includes a client_request_id
+  // if the caller provided one so the client can find its own row.
+  let brief_id: string | undefined;
+  const initialRow: any = {
+    project_id: opts.projectId || null,
+    campaign_id: opts.campaignId || null,
+    client_url: opts.inputs.client_url,
+    inputs_json: opts.inputs,
+    brief_md: "",                    // populated on completion
+    llm_calls_used: 0,
+    web_searches_used: 0,
+    scope,
+    lead_id: opts.inputs.lead_id || null,
+    path_filter: opts.inputs.path_filter || null,
+    status: "audit_running",
+    started_at: new Date().toISOString(),
+    progress_json: {
+      stage: "audit_running",
+      lanes_total: 6,
+      lanes_done: 0,
+      client_request_id: opts.client_request_id || null,
+      started_at_ms: startedAt,
+    },
+  };
+  try {
+    const { data, error } = await db().from("backlink_briefs").insert(initialRow).select("id").single();
+    if (error) {
+      // Migration 12.3 may not be applied yet — fall back to minimal row.
+      // The brief still runs; just no live progress.
+      const minimal: any = { ...initialRow };
+      delete minimal.status; delete minimal.started_at; delete minimal.progress_json;
+      const retry = await db().from("backlink_briefs").insert(minimal).select("id").single();
+      if (retry.error) {
+        console.warn(`[backlinks] could not create progress row: ${retry.error.message}`);
+      } else {
+        brief_id = (retry.data as any).id;
+        console.warn(`[backlinks] persisted without 12.3 progress columns; run the migration to enable live progress`);
+      }
+    } else {
+      brief_id = (data as any).id;
+    }
+  } catch (e: any) {
+    console.warn(`[backlinks] initial insert threw: ${e?.message}`);
+  }
+
+  /* Helper: update progress without crashing on any DB / schema error.
+     Best-effort writes — if the migration is not applied, these no-op
+     silently and the pipeline continues to completion. */
+  const updateProgress = async (patch: { status?: string; stage?: string; lanes_done?: number; error_message?: string | null }) => {
+    if (!brief_id) return;
+    try {
+      const update: any = {};
+      if (patch.status) update.status = patch.status;
+      if (patch.error_message !== undefined) update.error_message = patch.error_message;
+      // Merge progress_json fields
+      const progress: any = { stage: patch.stage || patch.status, lanes_total: 6 };
+      if (typeof patch.lanes_done === "number") progress.lanes_done = patch.lanes_done;
+      progress.client_request_id = opts.client_request_id || null;
+      progress.elapsed_seconds = Math.round((Date.now() - startedAt) / 1000);
+      update.progress_json = progress;
+      await db().from("backlink_briefs").update(update).eq("id", brief_id);
+    } catch { /* silent — progress writes never block the pipeline */ }
+  };
+
+  /* Wall-time abort: at 280 seconds we proactively mark the brief as
+     timed_out, give up, and return cleanly. Vercel's hard cap on this
+     function is 300s; we want to write our own status before Vercel
+     kills us, otherwise the brief sits in 'lanes_running' forever. */
+  const WALL_TIMEOUT_MS = 280_000;
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => {
+    timedOut = true;
+    updateProgress({ status: "timed_out", error_message: "Wall-time limit reached (~280s). Some lanes may have completed; see partial results." });
+  }, WALL_TIMEOUT_MS);
+
   try {
     // Stage 1 — audit (respects path_filter when set)
+    if (timedOut) throw new Error("Aborted before audit due to wall-time limit.");
     const audit = await auditWebsiteForBacklinks({
       client_url: opts.inputs.client_url,
       deep: opts.inputs.deep_audit === true,
@@ -600,37 +682,52 @@ export async function runBacklinkBrief(opts: {
     });
     llm_calls_used += 1;
     web_searches_used += (audit as any).raw_pages_fetched?.length || 0;
+    await updateProgress({ status: "lanes_running", lanes_done: 0 });
 
-    // Stage 2 — opportunities (6 parallel lanes)
+    // Stage 2 — opportunities (6 parallel lanes). The current
+    // implementation runs all 6 in Promise.all and resolves together,
+    // so we can not increment lanes_done per-completion without
+    // refactoring findOpportunities. As a partial improvement, mark
+    // 'lanes_running' before and 'lanes_complete' after; per-lane
+    // counting can be added later if useful.
+    if (timedOut) throw new Error("Aborted before opportunities lanes due to wall-time limit.");
     const opps = await findOpportunities({ audit, inputs: opts.inputs, provider });
     llm_calls_used += 6;
+    await updateProgress({ status: "synthesizing", lanes_done: 6 });
 
     // Stage 3 — brief synthesis
+    if (timedOut) throw new Error("Aborted before synthesis due to wall-time limit.");
     const synth = await buildBacklinkBrief({ inputs: opts.inputs, audit, opportunities: opps });
     llm_calls_used += synth.llm_calls;
+    await updateProgress({ status: "extracting_assets", lanes_done: 6 });
 
-    // Persist to backlink_briefs (graceful fallback)
-    let brief_id: string | undefined;
-    try {
-      const insertRow: any = {
-        project_id: opts.projectId || null,
-        campaign_id: opts.campaignId || null,
-        client_url: opts.inputs.client_url,
-        inputs_json: opts.inputs,
-        audit_json: audit,
-        opportunities_json: opps,
-        brief_md: synth.brief_md,
-        llm_calls_used,
-        web_searches_used,
-        scope,
-        lead_id: opts.inputs.lead_id || null,
-        path_filter: opts.inputs.path_filter || null,
-      };
-      const { data, error } = await db().from("backlink_briefs").insert(insertRow).select("id").single();
-      if (error) {
-        // Migration may not be applied — retry without 12.1 columns
-        const fallback = {
-          project_id: opts.projectId || null,    // still nullable iff migration applied col change
+    // Persist final state to the brief row (or insert if early-insert failed)
+    if (brief_id) {
+      try {
+        const finalRow: any = {
+          audit_json: audit,
+          opportunities_json: opps,
+          brief_md: synth.brief_md,
+          llm_calls_used,
+          web_searches_used,
+          status: "complete",
+          completed_at: new Date().toISOString(),
+        };
+        const { error } = await db().from("backlink_briefs").update(finalRow).eq("id", brief_id);
+        if (error) {
+          // Migration not applied — retry without 12.3 columns
+          const partial: any = {
+            audit_json: audit, opportunities_json: opps, brief_md: synth.brief_md,
+            llm_calls_used, web_searches_used,
+          };
+          await db().from("backlink_briefs").update(partial).eq("id", brief_id);
+        }
+      } catch (e: any) { console.warn(`[backlinks] final update threw: ${e?.message}`); }
+    } else {
+      // Early insert failed — fall back to original insert flow
+      try {
+        const insertRow: any = {
+          project_id: opts.projectId || null,
           campaign_id: opts.campaignId || null,
           client_url: opts.inputs.client_url,
           inputs_json: opts.inputs,
@@ -639,12 +736,14 @@ export async function runBacklinkBrief(opts: {
           brief_md: synth.brief_md,
           llm_calls_used,
           web_searches_used,
+          scope,
+          lead_id: opts.inputs.lead_id || null,
+          path_filter: opts.inputs.path_filter || null,
         };
-        const retry = await db().from("backlink_briefs").insert(fallback).select("id").single();
-        if (retry.error) console.warn(`[backlinks] could not persist to backlink_briefs: ${retry.error.message}`);
-        else { brief_id = (retry.data as any).id; console.warn(`[backlinks] persisted without 12.1 columns; run the migration to enable scope/lead/path_filter`); }
-      } else brief_id = (data as any).id;
-    } catch (e: any) { console.warn(`[backlinks] backlink_briefs insert threw: ${e?.message}`); }
+        const { data } = await db().from("backlink_briefs").insert(insertRow).select("id").single();
+        if (data) brief_id = (data as any).id;
+      } catch (e: any) { console.warn(`[backlinks] late insert threw: ${e?.message}`); }
+    }
 
     // Also persist to seo_campaign_reports — but only when there is a project.
     // BDE-standalone briefs have no project to live in; their canonical home
@@ -701,10 +800,62 @@ export async function runBacklinkBrief(opts: {
       } catch (e: any) { console.warn(`[backlinks] asset extraction threw: ${e?.message}`); }
     }
 
+    await updateProgress({ status: "complete" });
+    clearTimeout(timeoutHandle);
+
     console.log(`[backlinks] brief done in ${Math.round((Date.now() - startedAt) / 1000)}s · llm=${llm_calls_used} · brief_id=${brief_id} · report_id=${report_id} · assets=${assets_extracted}`);
     return { success: true, brief_id, report_id, title: synth.title, brief_md: synth.brief_md, assets_extracted };
   } catch (e: any) {
-    return { success: false, error: e?.message || "Backlink brief failed." };
+    clearTimeout(timeoutHandle);
+    const msg = e?.message || "Backlink brief failed.";
+    await updateProgress({ status: timedOut ? "timed_out" : "failed", error_message: msg });
+    return { success: false, brief_id, error: msg };
+  }
+}
+
+/* ─── Build 12.3 — Status polling for in-flight briefs ───────── */
+/* Returns the current status row. Client supplies either a brief_id
+   (if it already has one from a completed run) or a client_request_id
+   that was sent in the run call — server uses that to find the row
+   created at the very start of the pipeline. */
+export async function getBacklinkBriefStatus(opts: {
+  brief_id?: string;
+  client_request_id?: string;
+}): Promise<{ success: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; elapsed_seconds?: number; brief_id?: string; error_message?: string | null; complete?: boolean; brief_md?: string; title?: string; error?: string }> {
+  try {
+    let q = db().from("backlink_briefs").select("id, status, progress_json, brief_md, error_message, inputs_json, client_url, started_at, completed_at").limit(1);
+    if (opts.brief_id) {
+      q = q.eq("id", opts.brief_id);
+    } else if (opts.client_request_id) {
+      // Postgres jsonb match — exact equality on the nested key
+      q = q.eq("progress_json->>client_request_id", opts.client_request_id);
+    } else {
+      return { success: false, error: "Either brief_id or client_request_id required." };
+    }
+    // Pick the most recent if multiple (shouldn't happen but defensive)
+    q = q.order("started_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false });
+    const { data, error } = await q.maybeSingle();
+    if (error) return { success: false, error: error.message };
+    if (!data) return { success: false, error: "No brief found for that request id yet — may still be starting up." };
+    const row: any = data;
+    const progress = row.progress_json || {};
+    const complete = row.status === "complete";
+    const title = complete && row.brief_md ? `Backlink Strategy Brief · ${(() => { try { return new URL(row.client_url?.startsWith("http") ? row.client_url : "https://" + row.client_url).hostname.replace(/^www\./, ""); } catch { return row.client_url; } })()}` : undefined;
+    return {
+      success: true,
+      brief_id: row.id,
+      status: row.status || "unknown",
+      stage: progress.stage || row.status,
+      lanes_done: typeof progress.lanes_done === "number" ? progress.lanes_done : 0,
+      lanes_total: typeof progress.lanes_total === "number" ? progress.lanes_total : 6,
+      elapsed_seconds: typeof progress.elapsed_seconds === "number" ? progress.elapsed_seconds : null,
+      error_message: row.error_message || null,
+      complete,
+      brief_md: complete ? row.brief_md : undefined,
+      title,
+    };
+  } catch (e: any) {
+    return { success: false, error: e?.message };
   }
 }
 

@@ -4456,7 +4456,7 @@ export async function backlinkLoad(opts: { projectId: string; briefId: string })
   return post(ENGINE, { action: 'backlink_load', ...opts });
 }
 
-export async function backlinkRun(opts: { projectId: string; campaignId?: string; inputs: BacklinkInputs }):
+export async function backlinkRun(opts: { projectId: string; campaignId?: string; inputs: BacklinkInputs; client_request_id?: string }):
   Promise<{ success?: boolean; brief_id?: string; report_id?: string; title?: string; brief_md?: string; error?: string }> {
   return post(ENGINE, { action: 'backlink_run', ...opts });
 }
@@ -4518,4 +4518,10 @@ export interface BacklinkInputsExtended extends BacklinkInputs {
   path_filter?: string;
   scope?: 'project' | 'bde_lead' | 'bde_standalone';
   lead_id?: string;
+}
+
+/* ─── Build 12.3 — Status polling ─────────────────────────────── */
+export async function backlinkStatus(opts: { brief_id?: string; client_request_id?: string }):
+  Promise<{ success?: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; elapsed_seconds?: number; brief_id?: string; error_message?: string | null; complete?: boolean; brief_md?: string; title?: string; error?: string }> {
+  return post(ENGINE, { action: 'backlink_status', ...opts });
 }

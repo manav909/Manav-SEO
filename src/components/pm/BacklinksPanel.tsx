@@ -20,7 +20,7 @@ import {
   Link2, Loader2, AlertCircle, FileDown, ExternalLink, Download, Users, Search, Plus, X, ChevronDown, ChevronRight, Database, Target, ListFilter,
 } from 'lucide-react';
 import {
-  backlinkLenses, backlinkList, backlinkLoad, backlinkRun,
+  backlinkLenses, backlinkList, backlinkLoad, backlinkRun, backlinkStatus,
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
@@ -184,12 +184,55 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     return () => clearInterval(t);
   }, [running]);
 
+  // Build 12.3 — live progress state
+  const [progress, setProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null; error_message?: string | null } | null>(null);
+
   const run = async () => {
     setError('');
     if (!clientUrl.trim()) { setError('Client website URL is required.'); return; }
     setRunning(true);
     setResult(null);
     setElapsed(0);
+    setProgress({ stage: 'starting', lanes_done: 0, lanes_total: 6, elapsed_seconds: 0 });
+
+    // Build 12.3 — client-generated request id lets the polling endpoint
+    // find this run's row even if we never get the brief_id back (e.g. if
+    // the long-running fetch is killed by the browser).
+    const clientReqId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // Start polling status every 3s in parallel with the long-running fetch
+    let pollHandle: any = null;
+    let pollFailures = 0;
+    const startPolling = () => {
+      pollHandle = setInterval(async () => {
+        try {
+          const s = await backlinkStatus({ client_request_id: clientReqId });
+          if (s.success) {
+            pollFailures = 0;
+            setProgress({
+              stage: s.stage || s.status || 'running',
+              lanes_done: typeof s.lanes_done === 'number' ? s.lanes_done : 0,
+              lanes_total: typeof s.lanes_total === 'number' ? s.lanes_total : 6,
+              elapsed_seconds: typeof s.elapsed_seconds === 'number' ? s.elapsed_seconds : null,
+              error_message: s.error_message,
+            });
+            if (s.status === 'failed' || s.status === 'timed_out') {
+              // Server marked it failed — stop polling, surface message
+              clearInterval(pollHandle);
+              setError(s.error_message || `Brief ${s.status}.`);
+            }
+          } else {
+            pollFailures += 1;
+            // Up to 3 missed polls before we just stop the polling
+            // without breaking the foreground fetch
+            if (pollFailures >= 3) clearInterval(pollHandle);
+          }
+        } catch { /* tolerate transient poll errors */ }
+      }, 3000);
+    };
+    // Wait 4s before starting polls so the server has time to insert the row
+    const pollStartTimer = setTimeout(startPolling, 4000);
+
     try {
       const lenses: CompareSelectedLens[] = [];
       pickedLensIds.forEach(id => lenses.push({ kind: 'preset', id }));
@@ -216,15 +259,45 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
       // Merge extras into inputs (path_filter, scope, lead_id are server-side recognised)
       const fullInputs: any = { ...inputs, ...extras };
 
-      const r = await backlinkRun({ projectId: bdeMode && !leadId ? undefined as any : projectId, inputs: fullInputs });
+      const r = await backlinkRun({
+        projectId: bdeMode && !leadId ? undefined as any : projectId,
+        inputs: fullInputs,
+        client_request_id: clientReqId,
+      });
+      clearTimeout(pollStartTimer);
+      if (pollHandle) clearInterval(pollHandle);
       if (!r.success) { setError(r.error || 'Brief generation failed.'); return; }
       setResult({ title: r.title, brief_md: r.brief_md, brief_id: r.brief_id });
+      setProgress(null);
       setShowInputs(false);
       toast({ title: 'Brief ready', description: r.brief_id ? 'Saved to project history.' : 'Returned in-memory only.' });
       loadHistory();
     } catch (e: any) {
+      clearTimeout(pollStartTimer);
+      if (pollHandle) clearInterval(pollHandle);
+      // If the foreground fetch died (browser timeout, network error) but
+      // the server is still running, attempt one final status check before
+      // giving up — the brief may have actually completed.
+      try {
+        const final = await backlinkStatus({ client_request_id: clientReqId });
+        if (final.success && final.complete && final.brief_md) {
+          setResult({ title: final.title, brief_md: final.brief_md, brief_id: final.brief_id });
+          setProgress(null);
+          setShowInputs(false);
+          toast({ title: 'Brief recovered', description: 'Foreground request lost but server completed the brief.' });
+          loadHistory();
+          return;
+        }
+        if (final.success && final.error_message) {
+          setError(final.error_message);
+          setProgress(null);
+          return;
+        }
+      } catch { /* fall through to original error */ }
       setError(e?.message || 'Brief generation failed.');
-    } finally { setRunning(false); }
+    } finally {
+      setRunning(false);
+    }
   };
 
   const loadPrior = async (id: string) => {
@@ -535,17 +608,65 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               </div>
 
               {/* Run */}
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  onClick={run}
-                  disabled={running || !clientUrl.trim()}
-                  className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
-                  {running ? `Generating brief… ${elapsed}s` : 'Generate brief'}
-                </button>
-                {running && (
-                  <div className="text-[10px] text-muted-foreground">Audit → 6 research lanes → synthesis · expect 60-180s</div>
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <button
+                    onClick={run}
+                    disabled={running || !clientUrl.trim()}
+                    className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                    {running ? `Generating brief… ${elapsed}s` : 'Generate brief'}
+                  </button>
+                  {!running && (
+                    <div className="text-[10px] text-muted-foreground">Typically 90-240 seconds; may run up to ~5 minutes in heavy load.</div>
+                  )}
+                </div>
+
+                {/* Build 12.3 — live progress with per-stage label */}
+                {running && progress && (
+                  <div className="rounded-lg border border-border bg-background/50 p-3 space-y-2">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-medium text-foreground/90">
+                        {progress.stage === 'starting' && 'Starting up…'}
+                        {progress.stage === 'audit_running' && '1/3 · Auditing the website'}
+                        {progress.stage === 'lanes_running' && `2/3 · Running 6 parallel research lanes`}
+                        {progress.stage === 'synthesizing' && '3/3 · Synthesizing the brief (the long one)'}
+                        {progress.stage === 'extracting_assets' && '3/3 · Saving assets to the registry'}
+                        {progress.stage === 'complete' && 'Wrapping up…'}
+                        {(progress.stage === 'failed' || progress.stage === 'timed_out') && 'Stopped'}
+                        {!['starting','audit_running','lanes_running','synthesizing','extracting_assets','complete','failed','timed_out'].includes(progress.stage) && progress.stage}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {progress.elapsed_seconds !== null && `server elapsed: ${progress.elapsed_seconds}s`}
+                      </span>
+                    </div>
+                    {/* Step pips */}
+                    <div className="flex items-center gap-1">
+                      {(['audit_running','lanes_running','synthesizing','extracting_assets','complete'] as const).map((stage, i, arr) => {
+                        const currentIdx = arr.indexOf(progress.stage as any);
+                        const stageIdx = i;
+                        const active = stageIdx === currentIdx;
+                        const done = currentIdx >= 0 && stageIdx < currentIdx;
+                        return (
+                          <div
+                            key={stage}
+                            className={`h-1 flex-1 rounded ${
+                              done ? 'bg-primary' : active ? 'bg-primary/50 animate-pulse' : 'bg-muted'
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
+                    {progress.stage === 'synthesizing' && (
+                      <div className="text-[10px] text-muted-foreground italic">
+                        This step is the slowest — one big LLM call producing the full brief. 30-90 seconds typical, up to 2 minutes in load.
+                      </div>
+                    )}
+                    {progress.error_message && (
+                      <div className="text-[10px] text-amber-400">{progress.error_message}</div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
