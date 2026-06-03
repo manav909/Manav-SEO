@@ -545,24 +545,84 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  /* ═══ BACKLINK STRATEGY (Build 12) — backlink_* actions ═══ */
+  /* ═══ BACKLINK STRATEGY (Build 12 + 12.1) — backlink_* actions ═══ */
   if (typeof action === "string" && action.startsWith("backlink_")) {
-    const { runBacklinkBrief, listBacklinkBriefs, loadBacklinkBrief, BDE_LENSES } = await import("./lib/bde-backlinks.js");
+    const m = await import("./lib/bde-backlinks.js");
     const { LENS_CATALOG } = await import("./lib/pm-compare.js");
     if (action === "backlink_lenses") {
-      return ok(res, { success: true, lenses: [...LENS_CATALOG, ...BDE_LENSES].map(l => ({ id: l.id, label: l.label })) });
+      return ok(res, { success: true, lenses: [...LENS_CATALOG, ...m.BDE_LENSES].map(l => ({ id: l.id, label: l.label })) });
     }
     if (action === "backlink_list") {
-      return ok(res, await listBacklinkBriefs(body.projectId));
+      // Project-scoped list, original (used by PM tab)
+      return ok(res, await m.listBacklinkBriefs(body.projectId));
+    }
+    if (action === "backlink_list_extended") {
+      // Build 12.1 — accepts projectId / leadId / scope filters
+      return ok(res, await m.listBacklinkBriefsExtended({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        scope: body.scope || undefined,
+        limit: body.limit,
+      }));
     }
     if (action === "backlink_load") {
-      return ok(res, await loadBacklinkBrief(body.briefId, body.projectId));
+      return ok(res, await m.loadBacklinkBrief(body.briefId, body.projectId));
     }
     if (action === "backlink_run") {
-      return ok(res, await runBacklinkBrief({
-        projectId: body.projectId,
+      return ok(res, await m.runBacklinkBrief({
+        projectId: body.projectId || null,
         campaignId: body.campaignId,
         inputs: body.inputs || {},
+      }));
+    }
+    if (action === "backlink_assets_list") {
+      return ok(res, await m.listBacklinkAssets({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        scope: body.scope || undefined,
+        search: body.search,
+        category: body.category,
+        industry: body.industry,
+        status: body.status,
+        limit: body.limit,
+      }));
+    }
+    if (action === "backlink_asset_update") {
+      return ok(res, await m.updateBacklinkAsset({
+        assetId: body.assetId,
+        notes: body.notes,
+        status: body.status,
+        goods: body.goods,
+        bads: body.bads,
+      }));
+    }
+    if (action === "backlink_competitor_map") {
+      return ok(res, await m.runCompetitorBacklinkMap({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        scope: body.scope || undefined,
+        competitor_url: body.competitor_url,
+        for_client_url: body.for_client_url,
+        context: body.context,
+      }));
+    }
+    if (action === "backlink_competitor_batch") {
+      return ok(res, await m.runCompetitorBatch({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        scope: body.scope || undefined,
+        competitor_urls: body.competitor_urls || [],
+        for_client_url: body.for_client_url,
+        context: body.context,
+      }));
+    }
+    if (action === "backlink_competitor_list") {
+      return ok(res, await m.listCompetitorMaps({
+        projectId: body.projectId || null,
+        leadId: body.leadId || null,
+        scope: body.scope || undefined,
+        competitor_domain: body.competitor_domain,
+        limit: body.limit,
       }));
     }
   }

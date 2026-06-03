@@ -4460,3 +4460,62 @@ export async function backlinkRun(opts: { projectId: string; campaignId?: string
   Promise<{ success?: boolean; brief_id?: string; report_id?: string; title?: string; brief_md?: string; error?: string }> {
   return post(ENGINE, { action: 'backlink_run', ...opts });
 }
+
+/* ─── Build 12.1: BDE/cross-project + asset registry + competitor mapping ── */
+
+export interface BacklinkAsset {
+  id: string; domain: string; url: string | null;
+  scope: 'project' | 'cross_project' | 'bde_standalone';
+  project_id: string | null; lead_id: string | null;
+  source_brief_id: string | null; category: string;
+  industries_fit: string[]; audience_fit: string | null;
+  attainability: string | null; why_valuable: string | null;
+  asset_to_pitch: string | null; goods: string[]; bads: string[];
+  competitor_with_link: string | null; notes: string | null;
+  status: string; last_verified_at: string | null;
+  created_at: string; updated_at: string;
+}
+
+export interface CompetitorMapItem {
+  id: string; competitor_url: string; competitor_domain: string;
+  scope: string; project_id: string | null; lead_id: string | null;
+  for_client_url: string | null; strategy_summary: string | null;
+  created_at: string;
+}
+
+export async function backlinkListExtended(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'bde_lead' | 'bde_standalone' | 'all'; limit?: number }):
+  Promise<{ success?: boolean; items?: any[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_list_extended', ...opts });
+}
+
+export async function backlinkAssetsList(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'cross_project' | 'bde_standalone' | 'all'; search?: string; category?: string; industry?: string; status?: string; limit?: number }):
+  Promise<{ success?: boolean; items?: BacklinkAsset[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_assets_list', ...opts });
+}
+
+export async function backlinkAssetUpdate(opts: { assetId: string; notes?: string; status?: string; goods?: string[]; bads?: string[] }):
+  Promise<{ success?: boolean; error?: string }> {
+  return post(ENGINE, { action: 'backlink_asset_update', ...opts });
+}
+
+export async function backlinkCompetitorMap(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'bde_lead' | 'bde_standalone'; competitor_url: string; for_client_url?: string; context?: string }):
+  Promise<{ success?: boolean; map_id?: string; summary?: string; goods?: string[]; bads?: string[]; estimated_top_referrers?: string[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_competitor_map', ...opts });
+}
+
+export async function backlinkCompetitorBatch(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'bde_lead' | 'bde_standalone'; competitor_urls: string[]; for_client_url?: string; context?: string }):
+  Promise<{ success?: boolean; maps?: any[]; comparison_md?: string; error?: string }> {
+  return post(ENGINE, { action: 'backlink_competitor_batch', ...opts });
+}
+
+export async function backlinkCompetitorList(opts: { projectId?: string | null; leadId?: string | null; scope?: 'project' | 'bde_lead' | 'bde_standalone' | 'all'; competitor_domain?: string; limit?: number }):
+  Promise<{ success?: boolean; items?: CompetitorMapItem[]; error?: string }> {
+  return post(ENGINE, { action: 'backlink_competitor_list', ...opts });
+}
+
+/* Extended run accepts lead_id, scope, path_filter via inputs */
+export interface BacklinkInputsExtended extends BacklinkInputs {
+  path_filter?: string;
+  scope?: 'project' | 'bde_lead' | 'bde_standalone';
+  lead_id?: string;
+}

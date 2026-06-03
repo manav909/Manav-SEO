@@ -1,5 +1,6 @@
 import PortalNav from '@/components/PortalNav';
 import { useProject } from '@/contexts/ProjectContext';
+import BacklinksPanel from '@/components/pm/BacklinksPanel';
 import React,{useState,useEffect,useRef} from "react";
 
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
@@ -740,7 +741,7 @@ function ResponsesPanel({quickResps, analysis, rawPaste, copied, copyText, post}
 
 export default function BdePanel() {
   const CTX_KEY = "bde_ctx_v3";
-  const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'|'agent'>('fiverr');
+  const [tab,setTab]=useState<'fiverr'|'intel'|'tools'|'responses'|'leads'|'docs'|'agent'|'backlinks'>('fiverr');
   // Conversation state
   const [rawPaste,setRawPaste]=useState('');
   const [parsedMsgs,setParsedMsgs]=useState<any[]>([]);
@@ -1396,7 +1397,7 @@ export default function BdePanel() {
 
       {/* Tabs */}
       <div style={S.tabs}>
-        {([['fiverr','🟢 Fiverr Analyser'],['agent','⚡ Live Agent'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents']] as [string,string][]).map(([id,l])=>(
+        {([['fiverr','🟢 Fiverr Analyser'],['agent','⚡ Live Agent'],['intel','🧠 Lead Intel'+(prospects.length?` (${prospects.length})`:'' )],['tools','⚡ Tools'],['responses','💬 Responses'],['leads','📋 Leads'],['docs','🏆 Documents'],['backlinks','🔗 Backlinks']] as [string,string][]).map(([id,l])=>(
           <button key={id} style={{...S.tab,...(tab===id?S.tabA:{})}} onClick={()=>setTab(id as any)}>{l}</button>
         ))}
       </div>
@@ -2421,6 +2422,23 @@ export default function BdePanel() {
         {/* ═══ DOCUMENTS ═══ */}
         {tab==='docs'&&(
           <DocGenerator analysis={analysis} auditResult={auditResult} prospectName={savedProspect?.name||leadNameInput||parsedMsgs.find((m:any)=>m.speaker==='client')?.speakerName||''} prospectUrl={savedProspect?.url||auditResult?.url||auditUrl||''} clientIndustry={savedProspect?.industry||''} pendingSuggDoc={pendingSuggDoc} onSuggDocUsed={()=>setPendingSuggDoc(null)}/>
+        )}
+
+        {/* ═══ BACKLINKS (Build 12.1) ═══
+           BDE mode — no required project. The BacklinksPanel handles:
+           - generating briefs (saved as bde_standalone or bde_lead scope)
+           - the asset library (cross-project visible by default in BDE)
+           - competitor mapping (single + batch)
+           Lead linkage would come from a stable lead_id field on
+           savedProspect; for now we pass null and briefs land as
+           bde_standalone, which the operator can re-attach later if
+           the lead schema gains an id. */}
+        {tab==='backlinks'&&(
+          <BacklinksPanel
+            projectId={''}
+            bdeMode={true}
+            leadId={savedProspect?.id || null}
+          />
         )}
       </div>
     </div>

@@ -15,20 +15,32 @@
    Prior briefs for this project listed in the sidebar for re-load.
 ════════════════════════════════════════════════════════════════ */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Link2, Loader2, AlertCircle, FileDown, ExternalLink, Download, Users, Search, Plus, X, ChevronDown, ChevronRight,
+  Link2, Loader2, AlertCircle, FileDown, ExternalLink, Download, Users, Search, Plus, X, ChevronDown, ChevronRight, Database, Target, ListFilter,
 } from 'lucide-react';
 import {
   backlinkLenses, backlinkList, backlinkLoad, backlinkRun,
-  type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens,
+  backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
+  type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
 import { useToast } from '@/hooks/use-toast';
 
-interface Props { projectId: string }
+type SubTab = 'brief' | 'assets' | 'competitor';
 
-export default function BacklinksPanel({ projectId }: Props) {
+interface Props {
+  projectId: string;
+  /** Build 12.1: when set, this panel runs in BDE scope. Asset library
+      defaults to cross-project + bde_standalone; new briefs inherit the
+      scope. When omitted, panel runs in project scope. */
+  bdeMode?: boolean;
+  /** When provided in BDE mode, the new brief is linked to this lead.
+      Without it, the brief is BDE-standalone. */
+  leadId?: string | null;
+}
+
+export default function BacklinksPanel({ projectId, bdeMode = false, leadId = null }: Props) {
   const { toast } = useToast();
 
   // Inputs
@@ -39,6 +51,8 @@ export default function BacklinksPanel({ projectId }: Props) {
   const [geography, setGeography] = useState('');
   const [context, setContext] = useState('');
   const [deepAudit, setDeepAudit] = useState(false);
+  // Build 12.1 — optional path filter narrows audit to a section like /products/*
+  const [pathFilter, setPathFilter] = useState('');
 
   // Lens picker — defaults to Senior DMS
   const [lensCatalog, setLensCatalog] = useState<CompareLens[]>([]);
@@ -55,6 +69,30 @@ export default function BacklinksPanel({ projectId }: Props) {
   const [result, setResult] = useState<{ title?: string; brief_md?: string; brief_id?: string } | null>(null);
   const [error, setError] = useState('');
   const [elapsed, setElapsed] = useState(0);
+
+  /* ─── Build 12.1: sub-tab state ────────────────────────────────
+     'brief'      — the original generate-brief flow
+     'assets'     — the backlink asset library (filterable across scopes)
+     'competitor' — single competitor map + batch comparative matrix */
+  const [subTab, setSubTab] = useState<SubTab>('brief');
+
+  // Asset library state
+  const [assets, setAssets] = useState<BacklinkAsset[]>([]);
+  const [assetsLoading, setAssetsLoading] = useState(false);
+  const [assetScope, setAssetScope] = useState<'project' | 'cross_project' | 'bde_standalone' | 'all'>(bdeMode ? 'all' : 'project');
+  const [assetSearch, setAssetSearch] = useState('');
+  const [assetCategory, setAssetCategory] = useState('');
+  const [assetIndustry, setAssetIndustry] = useState('');
+
+  // Competitor mapping state
+  const [competitorMode, setCompetitorMode] = useState<'single' | 'batch'>('single');
+  const [competitorUrl, setCompetitorUrl] = useState('');
+  const [competitorBatchText, setCompetitorBatchText] = useState('');
+  const [competitorForClient, setCompetitorForClient] = useState('');
+  const [competitorContext, setCompetitorContext] = useState('');
+  const [competitorRunning, setCompetitorRunning] = useState(false);
+  const [competitorResult, setCompetitorResult] = useState<{ kind: 'single' | 'batch'; summary?: string; goods?: string[]; bads?: string[]; estimated_top_referrers?: string[]; comparison_md?: string } | null>(null);
+  const [competitorHistory, setCompetitorHistory] = useState<CompetitorMapItem[]>([]);
 
   // Load lens catalog once
   useEffect(() => {
@@ -109,8 +147,17 @@ export default function BacklinksPanel({ projectId }: Props) {
         lenses: lenses.length ? lenses : undefined,
         deep_audit: deepAudit,
       };
+      // Build 12.1 — scope inference + path filter
+      const extras: any = {};
+      if (pathFilter.trim()) extras.path_filter = pathFilter.trim();
+      if (bdeMode) {
+        extras.scope = leadId ? 'bde_lead' : 'bde_standalone';
+        if (leadId) extras.lead_id = leadId;
+      }
+      // Merge extras into inputs (path_filter, scope, lead_id are server-side recognised)
+      const fullInputs: any = { ...inputs, ...extras };
 
-      const r = await backlinkRun({ projectId, inputs });
+      const r = await backlinkRun({ projectId: bdeMode && !leadId ? undefined as any : projectId, inputs: fullInputs });
       if (!r.success) { setError(r.error || 'Brief generation failed.'); return; }
       setResult({ title: r.title, brief_md: r.brief_md, brief_id: r.brief_id });
       setShowInputs(false);
@@ -129,6 +176,95 @@ export default function BacklinksPanel({ projectId }: Props) {
     setShowInputs(false);
   };
 
+  /* ─── Build 12.1: asset library loader ─────────────────────── */
+  const loadAssets = useCallback(async () => {
+    setAssetsLoading(true);
+    try {
+      const r = await backlinkAssetsList({
+        projectId: bdeMode ? null : projectId,
+        leadId: leadId || undefined,
+        scope: assetScope,
+        search: assetSearch.trim() || undefined,
+        category: assetCategory || undefined,
+        industry: assetIndustry.trim() || undefined,
+        limit: 200,
+      });
+      if (r.success && Array.isArray(r.items)) setAssets(r.items);
+    } finally { setAssetsLoading(false); }
+  }, [projectId, leadId, bdeMode, assetScope, assetSearch, assetCategory, assetIndustry]);
+
+  useEffect(() => { if (subTab === 'assets') loadAssets(); }, [subTab, loadAssets]);
+
+  const onAssetStatusChange = async (assetId: string, status: string) => {
+    const r = await backlinkAssetUpdate({ assetId, status });
+    if (r.success) {
+      setAssets(prev => prev.map(a => a.id === assetId ? { ...a, status } : a));
+      toast({ title: 'Status updated' });
+    } else {
+      toast({ title: 'Update failed', description: r.error, variant: 'destructive' });
+    }
+  };
+
+  /* ─── Build 12.1: competitor mapping handlers ───────────────── */
+  const loadCompetitorHistory = useCallback(async () => {
+    const r = await backlinkCompetitorList({
+      projectId: bdeMode ? null : projectId,
+      leadId: leadId || undefined,
+      scope: bdeMode ? (leadId ? 'bde_lead' : 'bde_standalone') : 'project',
+      limit: 50,
+    });
+    if (r.success && Array.isArray(r.items)) setCompetitorHistory(r.items);
+  }, [projectId, leadId, bdeMode]);
+
+  useEffect(() => { if (subTab === 'competitor') loadCompetitorHistory(); }, [subTab, loadCompetitorHistory]);
+
+  const runCompetitorSingle = async () => {
+    setError('');
+    if (!competitorUrl.trim()) { setError('Competitor URL is required.'); return; }
+    setCompetitorRunning(true);
+    setCompetitorResult(null);
+    try {
+      const r = await backlinkCompetitorMap({
+        projectId: bdeMode ? null : projectId,
+        leadId: leadId || undefined,
+        scope: bdeMode ? (leadId ? 'bde_lead' : 'bde_standalone') : 'project',
+        competitor_url: competitorUrl.trim(),
+        for_client_url: competitorForClient.trim() || undefined,
+        context: competitorContext.trim() || undefined,
+      });
+      if (!r.success) { setError(r.error || 'Competitor map failed.'); return; }
+      setCompetitorResult({ kind: 'single', summary: r.summary, goods: r.goods, bads: r.bads, estimated_top_referrers: r.estimated_top_referrers });
+      loadCompetitorHistory();
+    } catch (e: any) { setError(e?.message || 'Failed.'); }
+    finally { setCompetitorRunning(false); }
+  };
+
+  const runCompetitorBatchHandler = async () => {
+    setError('');
+    const urls = competitorBatchText.split(/[,\n]/).map(s => s.trim()).filter(Boolean).slice(0, 5);
+    if (urls.length < 2) { setError('Batch mode needs at least 2 competitor URLs (max 5).'); return; }
+    setCompetitorRunning(true);
+    setCompetitorResult(null);
+    try {
+      const r = await backlinkCompetitorBatch({
+        projectId: bdeMode ? null : projectId,
+        leadId: leadId || undefined,
+        scope: bdeMode ? (leadId ? 'bde_lead' : 'bde_standalone') : 'project',
+        competitor_urls: urls,
+        for_client_url: competitorForClient.trim() || undefined,
+        context: competitorContext.trim() || undefined,
+      });
+      if (!r.success) { setError(r.error || 'Batch competitor mapping failed.'); return; }
+      setCompetitorResult({ kind: 'batch', comparison_md: r.comparison_md });
+      loadCompetitorHistory();
+    } catch (e: any) { setError(e?.message || 'Failed.'); }
+    finally { setCompetitorRunning(false); }
+  };
+
+  // Derived: unique categories + industries from current assets, for the filter chips
+  const assetCategories = useMemo(() => Array.from(new Set(assets.map(a => a.category))).sort(), [assets]);
+  const assetIndustries = useMemo(() => Array.from(new Set(assets.flatMap(a => a.industries_fit || []))).sort(), [assets]);
+
   // Export
   const meta = () => ({ title: result?.title || 'Backlink Strategy Brief', kind: 'Backlink Strategy', generatedAt: new Date().toISOString() });
   const downloadAsWord = () => { if (!result?.brief_md) return; downloadStakeholderAsWord(result.brief_md, meta()); toast({ title: 'Word document downloaded' }); };
@@ -142,13 +278,36 @@ export default function BacklinksPanel({ projectId }: Props) {
       <div className="rounded-xl border border-border bg-card p-4">
         <div className="flex items-center gap-2 mb-1">
           <Link2 className="h-4 w-4 text-primary" />
-          <h2 className="text-base font-semibold">Backlink Strategy Brief</h2>
+          <h2 className="text-base font-semibold">Backlink Strategy {bdeMode ? '(BDE)' : 'Brief'}</h2>
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">
           Senior-DMS-grade backlink intelligence from just a website URL. Audits the site, derives industry and audience, runs research across six categories (digital PR, resource pages, broken-link reclamation, expert quotes, AI-Overview citation, partnerships), and produces a client-ready strategic brief. Designed for 2026 SEO and AI-search dynamics — topic relevance, AI Overview citation, and entity association matter as much as DA.
         </p>
       </div>
 
+      {/* Sub-tabs: Brief generation / Asset library / Competitor mapping */}
+      <div className="flex gap-1 border-b border-border">
+        {([
+          ['brief', 'Generate Brief', Link2],
+          ['assets', 'Asset Library', Database],
+          ['competitor', 'Competitor Map', Target],
+        ] as [SubTab, string, any][]).map(([id, label, Icon]) => (
+          <button
+            key={id}
+            onClick={() => setSubTab(id)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors border-b-2 -mb-px ${
+              subTab === id
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'brief' && (
       <div className="grid lg:grid-cols-[1fr_240px] gap-4">
         <div className="space-y-4 min-w-0">
           {/* Inputs */}
@@ -283,6 +442,19 @@ export default function BacklinksPanel({ projectId }: Props) {
                 </div>
               </label>
 
+              {/* Build 12.1 — path filter for page-scoped analysis */}
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                  Path filter <span className="text-muted-foreground/60 normal-case font-normal text-[10px]">· optional · narrow audit to a section</span>
+                </label>
+                <input
+                  value={pathFilter}
+                  onChange={e => setPathFilter(e.target.value)}
+                  placeholder="/products/* — leave empty for whole domain"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground"
+                />
+              </div>
+
               {/* Run */}
               <div className="flex items-center gap-3 pt-2">
                 <button
@@ -376,6 +548,211 @@ export default function BacklinksPanel({ projectId }: Props) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* ─── Sub-tab: Asset Library ─────────────────────────── */}
+      {subTab === 'assets' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Database className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Backlink Asset Library</h3>
+              <span className="text-[10px] text-muted-foreground">{assets.length} asset{assets.length === 1 ? '' : 's'} loaded</span>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+              Every backlink target found in any brief lives here. Reuse across clients with similar industries; filter by scope, category, industry, or status.
+            </p>
+            {/* Filters */}
+            <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Scope</label>
+                <select value={assetScope} onChange={e => setAssetScope(e.target.value as any)} className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background">
+                  <option value="all">All scopes</option>
+                  <option value="project">This project only</option>
+                  <option value="cross_project">Cross-project (shared)</option>
+                  <option value="bde_standalone">BDE standalone</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Category</label>
+                <input value={assetCategory} onChange={e => setAssetCategory(e.target.value)} placeholder="e.g. resource_page" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Industry</label>
+                <input value={assetIndustry} onChange={e => setAssetIndustry(e.target.value)} placeholder="exact industry tag" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Search</label>
+                <input value={assetSearch} onChange={e => setAssetSearch(e.target.value)} placeholder="domain or text" className="w-full text-[11px] px-2 py-1.5 rounded border border-border bg-background" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <button onClick={loadAssets} disabled={assetsLoading} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted disabled:opacity-50 flex items-center gap-1.5">
+                {assetsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ListFilter className="h-3 w-3" />}
+                Apply filters
+              </button>
+              {assetCategories.length > 0 && (
+                <div className="text-[10px] text-muted-foreground">Found categories: {assetCategories.join(', ')}</div>
+              )}
+            </div>
+            {/* Asset list */}
+            {assetsLoading ? (
+              <div className="text-xs text-muted-foreground p-4 text-center">Loading…</div>
+            ) : assets.length === 0 ? (
+              <div className="text-xs text-muted-foreground p-4 text-center">
+                No assets yet. Generate a brief; targets surfaced there will appear here.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                {assets.map(a => (
+                  <div key={a.id} className="rounded-lg border border-border p-3 bg-background/50">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold truncate">{a.domain}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground uppercase tracking-wide">{a.category}</span>
+                          {a.attainability && <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary uppercase tracking-wide">{a.attainability}</span>}
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wide ${a.scope === 'project' ? 'bg-blue-500/15 text-blue-400' : a.scope === 'cross_project' ? 'bg-purple-500/15 text-purple-400' : 'bg-amber-500/15 text-amber-400'}`}>{a.scope}</span>
+                        </div>
+                        {a.url && <a href={a.url} target="_blank" rel="noreferrer" className="text-[10px] text-muted-foreground hover:text-foreground truncate block">{a.url}</a>}
+                        {a.why_valuable && <div className="text-[11px] text-foreground/80 mt-1.5"><span className="text-muted-foreground">Why:</span> {a.why_valuable}</div>}
+                        {a.asset_to_pitch && <div className="text-[11px] text-foreground/80 mt-1"><span className="text-muted-foreground">Pitch:</span> {a.asset_to_pitch}</div>}
+                        {a.industries_fit && a.industries_fit.length > 0 && (
+                          <div className="text-[10px] text-muted-foreground mt-1">Fits: {a.industries_fit.join(' · ')}</div>
+                        )}
+                      </div>
+                      <select
+                        value={a.status}
+                        onChange={e => onAssetStatusChange(a.id, e.target.value)}
+                        className="text-[10px] px-2 py-1 rounded border border-border bg-background"
+                      >
+                        <option value="new">new</option>
+                        <option value="pursuing">pursuing</option>
+                        <option value="won">won</option>
+                        <option value="dead">dead</option>
+                        <option value="declined">declined</option>
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Sub-tab: Competitor Mapping ──────────────────── */}
+      {subTab === 'competitor' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Target className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Competitor Backlink Strategy Map</h3>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+              Audit a competitor's site and infer their backlink approach — what they do well, where they have weaknesses, and what your client could realistically copy. Run one competitor at a time (single) or up to 5 for a comparative matrix (batch).
+            </p>
+
+            <div className="flex gap-1 mb-3">
+              {(['single', 'batch'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => setCompetitorMode(mode)}
+                  className={`text-[11px] px-3 py-1.5 rounded-lg border transition-colors ${competitorMode === mode ? 'border-primary/50 bg-primary/10 text-foreground' : 'border-border text-muted-foreground hover:bg-muted/40'}`}
+                >
+                  {mode === 'single' ? 'Single competitor' : 'Batch comparison (2-5)'}
+                </button>
+              ))}
+            </div>
+
+            {competitorMode === 'single' ? (
+              <div className="space-y-2">
+                <input value={competitorUrl} onChange={e => setCompetitorUrl(e.target.value)} placeholder="https://competitor.com" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+              </div>
+            ) : (
+              <textarea value={competitorBatchText} onChange={e => setCompetitorBatchText(e.target.value)} rows={4} placeholder={'competitor-1.com\ncompetitor-2.com\ncompetitor-3.com\n(min 2, max 5)'} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background resize-y" />
+            )}
+
+            <input value={competitorForClient} onChange={e => setCompetitorForClient(e.target.value)} placeholder="For client (optional): https://asking-client.com — frames recommendations" className="w-full mt-2 text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+            <textarea value={competitorContext} onChange={e => setCompetitorContext(e.target.value)} rows={2} placeholder="Optional context: anything you want emphasised in this analysis." className="w-full mt-2 text-xs px-3 py-2 rounded-lg border border-border bg-background resize-y" />
+
+            <button
+              onClick={() => competitorMode === 'single' ? runCompetitorSingle() : runCompetitorBatchHandler()}
+              disabled={competitorRunning || (competitorMode === 'single' ? !competitorUrl.trim() : competitorBatchText.split(/[,\n]/).filter(s => s.trim()).length < 2)}
+              className="mt-3 text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+            >
+              {competitorRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Target className="h-4 w-4" />}
+              {competitorRunning ? 'Mapping…' : (competitorMode === 'single' ? 'Map competitor' : 'Run batch comparison')}
+            </button>
+          </div>
+
+          {competitorResult && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              {competitorResult.kind === 'single' ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold">Competitor map</h3>
+                  {competitorResult.summary && <p className="text-xs text-foreground/85">{competitorResult.summary}</p>}
+                  {competitorResult.goods && competitorResult.goods.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-emerald-400 font-medium mb-1">What they do well</div>
+                      <ul className="text-xs space-y-1 pl-4 list-disc">
+                        {competitorResult.goods.map((g, i) => <li key={i}>{g}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {competitorResult.bads && competitorResult.bads.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-amber-400 font-medium mb-1">Where they have weaknesses</div>
+                      <ul className="text-xs space-y-1 pl-4 list-disc">
+                        {competitorResult.bads.map((b, i) => <li key={i}>{b}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {competitorResult.estimated_top_referrers && competitorResult.estimated_top_referrers.length > 0 && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium mb-1">Estimated referrer types</div>
+                      <ul className="text-xs space-y-1 pl-4 list-disc">
+                        {competitorResult.estimated_top_referrers.map((r, i) => <li key={i}>{r}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold">Comparative matrix</h3>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => { if (competitorResult.comparison_md) { downloadStakeholderAsWord(competitorResult.comparison_md, { title: 'Competitor Backlink Comparison', kind: 'Backlink Competitor Matrix', generatedAt: new Date().toISOString() }); toast({ title: 'Downloaded' }); } }} className="text-xs px-3 py-1.5 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 flex items-center gap-1.5 font-medium">
+                        <FileDown className="h-3 w-3" /> Word
+                      </button>
+                      <button onClick={() => { if (competitorResult.comparison_md) { openStakeholderReport(competitorResult.comparison_md, { title: 'Competitor Backlink Comparison', kind: 'Backlink Competitor Matrix', generatedAt: new Date().toISOString() }); } }} className="text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-muted flex items-center gap-1.5">
+                        <ExternalLink className="h-3 w-3" /> PDF
+                      </button>
+                    </div>
+                  </div>
+                  <div className="backlink-preview prose prose-sm prose-invert max-w-none text-foreground/90" dangerouslySetInnerHTML={{ __html: mdToHtml(competitorResult.comparison_md || '') }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* History */}
+          {competitorHistory.length > 0 && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold mb-2">Prior competitor maps</h3>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {competitorHistory.map(c => (
+                  <div key={c.id} className="text-[11px] py-1.5 border-b border-border/40 last:border-0">
+                    <span className="font-medium">{c.competitor_domain}</span>
+                    {c.for_client_url && <span className="text-muted-foreground"> · for {c.for_client_url}</span>}
+                    <span className="text-muted-foreground"> · {new Date(c.created_at).toLocaleDateString('en-GB')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <style>{`
         .backlink-preview h1 { font-size: 18px; font-weight: 700; margin: 0 0 12px; color: hsl(var(--foreground)); border-bottom: 1px solid hsl(var(--border)); padding-bottom: 8px; }
