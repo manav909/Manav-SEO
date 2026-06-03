@@ -582,6 +582,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         client_request_id: body.client_request_id,
       }));
     }
+    if (action === "backlink_diagnostics") {
+      return ok(res, await m.listSynthesisDiagnostics({
+        brief_id: body.brief_id,
+        label_prefix: body.label_prefix,
+        limit: body.limit,
+      }));
+    }
     if (action === "backlink_assets_list") {
       return ok(res, await m.listBacklinkAssets({
         projectId: body.projectId || null,

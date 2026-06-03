@@ -327,6 +327,8 @@ async function buildBacklinkBrief(opts: {
   /** Build 12.4 — progress hook called at synthesis sub-stages.
       Receives a free-text stage label. Optional; no-op when omitted. */
   onProgress?: (stage: string, detail?: { sections_done?: number; sections_total?: number }) => Promise<void> | void;
+  /** Build 12.5 — brief id so diagnostics persist linked to the brief. */
+  brief_id?: string | null;
 }): Promise<{ brief_md: string; title: string; llm_calls: number }> {
   const inputs = opts.inputs;
   const audit = opts.audit;
@@ -413,7 +415,7 @@ OUTPUT — return ONLY this JSON, no preamble:
   const framingUser = `INPUTS:\n${inputsDigest}\n\nAUDIT:\n${auditDigest}\n\nResearch lanes have already surfaced ${oppsAll.length} opportunities across ${Object.keys(oppsByCategory).length} categories — they will be written up separately. Focus on the strategic frame.`;
 
   if (opts.onProgress) await opts.onProgress("synthesizing_framing");
-  const framingParsed = await callAnthropicJson({ system: framingSystem, user: framingUser, label: "backlinks/synth-framing", maxTokens: 3500 });
+  const framingParsed = await callAnthropicJson({ system: framingSystem, user: framingUser, label: "backlinks/synth-framing", maxTokens: 3500, brief_id: opts.brief_id || null });
   if (!framingParsed || !framingParsed.executive_summary) {
     throw new Error("Backlink brief framing returned empty or malformed output. The audit + research data may not be substantial enough — try with deep_audit enabled or supply more operator context.");
   }
@@ -442,7 +444,7 @@ ${framingParsed.executive_summary}`;
   if (opts.onProgress) await opts.onProgress("synthesizing_sections", { sections_done: 0, sections_total: sectionDefs.length });
 
   let sectionsDone = 0;
-  const sectionRuns = await Promise.all(sectionDefs.map(async (def) => {
+  const sectionRuns = await Promise.all(sectionDefs.map(async (def, defIndex) => {
     const rawOpps = oppsByCategory[def.key] || [];
     const sectionSystem = `You are writing ONE section of a Backlink Strategy Brief — the "${def.category_label}" section.
 
@@ -452,39 +454,53 @@ FOCUS: ${def.framing_hint}
 
 ${sharedContextBlock}
 
-OUTPUT — return ONLY this JSON, no preamble:
+OUTPUT — return ONLY this JSON, no preamble. Be CONCISE: each field as short as possible while still being specific. No long essays. The brief reader scans this; they do not read it.
+
 {
   "category": "${def.category_label}",
-  "summary": "1-2 sentences on this category specifically for THIS client (not generic)",
+  "summary": "1-2 sentences max — this category specifically for THIS client (not generic)",
   "opportunities": [
     {
-      "title": "Specific opportunity title",
-      "rationale": "Why this works for THIS client (specific to their industry/audience/assets)",
-      "tactical_path": "Concrete how-to: who to contact, what asset to pitch, what to send, expected timeline",
+      "title": "<= 12 words",
+      "rationale": "1 sentence on why this works for THIS client",
+      "tactical_path": "1-2 sentences on concrete how-to",
       "effort": "low|medium|high",
       "realism": "high|medium|speculative",
       "example_targets": ["specific named target if you can name honestly without inventing; empty array if not"],
-      "lenses": ["lens label 1", "lens label 2"]
+      "lenses": ["lens label"]
     }
   ]
 }
 
 RULES:
-- 3-7 opportunities. Quality over quantity. Disqualify wrong-fit ideas instead of padding.
-- If a raw research opportunity below doesn't fit this client, ignore it.
+- Output 3-5 opportunities. Quality over quantity.
+- Each opportunity's rationale + tactical_path combined < 60 words. Brevity is required.
+- If a raw research opportunity below does not fit this client, ignore it.
 - If you have your own better opportunity not in the raw research, add it.
 - If the raw research is empty for this category, you may still produce 2-3 opportunities from first principles based on the audit signals.
-- Never invent specific URLs, named journalists, or publication names. Generic strategic ideas are fine; fabricated specifics destroy trust.`;
+- Never invent specific URLs, named journalists, or publication names. Generic strategic ideas are fine; fabricated specifics destroy trust.
+- No newlines inside string values. Use periods instead.`;
 
     const sectionUser = `${sectionUserBase}
 
-RAW RESEARCH FROM THIS CATEGORY'S LANE (${rawOpps.length} items — synthesise, de-duplicate, prioritise; drop items that don't fit this client):
+RAW RESEARCH FROM THIS CATEGORY LANE (${rawOpps.length} items — synthesise, de-duplicate, prioritise; drop items that do not fit this client):
 ${JSON.stringify(rawOpps, null, 2)}
 
-Write the "${def.category_label}" section as JSON per the schema.`;
+Write the "${def.category_label}" section as JSON per the schema. Be brief.`;
+
+    // Build 12.5 — stagger section start by 200ms × index so 6 parallel
+    // calls do not hit Anthropic in a single burst (avoids rate-limit
+    // throttling that previously caused all 6 to fail simultaneously).
+    if (defIndex > 0) await new Promise(r => setTimeout(r, defIndex * 200));
 
     try {
-      const parsed = await callAnthropicJson({ system: sectionSystem, user: sectionUser, label: `backlinks/synth-${def.key}`, maxTokens: 2500 });
+      const parsed = await callAnthropicJson({
+        system: sectionSystem,
+        user: sectionUser,
+        label: `backlinks/synth-${def.key}`,
+        maxTokens: 4000,                // Build 12.5 — was 2500, often hit cap
+        brief_id: opts.brief_id || null,
+      });
       sectionsDone += 1;
       if (opts.onProgress) { try { await opts.onProgress("synthesizing_sections", { sections_done: sectionsDone, sections_total: sectionDefs.length }); } catch { /* silent */ } }
       if (parsed && Array.isArray(parsed.opportunities)) {
@@ -637,13 +653,174 @@ function renderBacklinkBrief(opts: { inputs: BacklinkBriefInputs; audit: any; pa
 }
 
 /* ─── Anthropic helper with retry + JSON repair ───────────────── */
-async function callAnthropicJson(opts: { system: string; user: string; label: string; maxTokens: number }): Promise<any | null> {
+/* ─── Tolerant JSON repair (Build 12.5) ────────────────────────
+   The strict JSON.parse() in the old version of this helper rejected
+   responses that were valid-looking but had common LLM-output issues:
+   - trailing commas before `}` or `]`
+   - unescaped newlines / tabs inside string values
+   - truncated mid-string when max_tokens was hit
+   - smart quotes (curly ' or ") from the model "helpfully" punctuating
+
+   This function attempts several increasingly-aggressive repairs and
+   returns the first one that parses. Returns null only when nothing
+   parses, in which case the raw response is logged + persisted. */
+function tolerantJsonParse(raw: string): { parsed: any | null; repair_used: string } {
+  if (!raw) return { parsed: null, repair_used: "empty" };
+
+  // Strip code fences + leading prose
+  let clean = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
+  const first = clean.indexOf("{");
+  if (first > 0) clean = clean.slice(first);
+  const lastClose = clean.lastIndexOf("}");
+  if (lastClose > 0 && lastClose < clean.length - 1) clean = clean.slice(0, lastClose + 1);
+
+  // Strategy 1 — straight parse
+  try { return { parsed: JSON.parse(clean), repair_used: "none" }; } catch { /* fall through */ }
+
+  // Strategy 2 — strip trailing commas before } or ]
+  try {
+    const noTrailing = clean.replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(noTrailing), repair_used: "trailing_commas" };
+  } catch { /* fall through */ }
+
+  // Strategy 3 — normalise smart quotes that LLMs sometimes insert
+  try {
+    const noSmart = clean
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(noSmart), repair_used: "smart_quotes" };
+  } catch { /* fall through */ }
+
+  // Strategy 4 — escape literal newlines/tabs inside string values.
+  // Walk the text; track whether we are inside a "string". Inside a
+  // string, replace raw \n with \\n, raw \t with \\t. Leaves structural
+  // whitespace alone.
+  try {
+    const out: string[] = [];
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (escape) { out.push(ch); escape = false; continue; }
+      if (ch === "\\") { out.push(ch); escape = true; continue; }
+      if (ch === '"') { inString = !inString; out.push(ch); continue; }
+      if (inString && ch === "\n") { out.push("\\n"); continue; }
+      if (inString && ch === "\r") { out.push("\\r"); continue; }
+      if (inString && ch === "\t") { out.push("\\t"); continue; }
+      out.push(ch);
+    }
+    const fixed = out.join("").replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(fixed), repair_used: "string_escapes" };
+  } catch { /* fall through */ }
+
+  // Strategy 5 — truncated output. Walk the JSON until the deepest
+  // valid balanced prefix and try to parse that. Useful when max_tokens
+  // cuts the response mid-array — we may recover everything up to the
+  // last complete object.
+  try {
+    let depth = 0, inStr = false, esc = false, lastBalanced = -1;
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") {
+        depth--;
+        if (depth === 0) lastBalanced = i;
+      }
+    }
+    if (lastBalanced > 0) {
+      const truncated = clean.slice(0, lastBalanced + 1);
+      return { parsed: JSON.parse(truncated), repair_used: "truncated_balanced" };
+    }
+  } catch { /* fall through */ }
+
+  // Strategy 6 — extract the inner array if the top-level fails but
+  // the response contains a parseable opportunities[] sub-array. Pretty
+  // aggressive; only do if the response actually contains "opportunities"
+  // and we can find balanced brackets after it.
+  try {
+    const oppMatch = clean.match(/"opportunities"\s*:\s*\[/);
+    if (oppMatch && oppMatch.index !== undefined) {
+      const arrStart = oppMatch.index + oppMatch[0].length - 1;
+      let depth = 0, inStr = false, esc = false, arrEnd = -1;
+      for (let i = arrStart; i < clean.length; i++) {
+        const ch = clean[i];
+        if (esc) { esc = false; continue; }
+        if (ch === "\\") { esc = true; continue; }
+        if (ch === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (ch === "[") depth++;
+        else if (ch === "]") { depth--; if (depth === 0) { arrEnd = i; break; } }
+      }
+      if (arrEnd > arrStart) {
+        const arrText = clean.slice(arrStart, arrEnd + 1).replace(/,(\s*[}\]])/g, "$1");
+        const opps = JSON.parse(arrText);
+        return { parsed: { opportunities: opps }, repair_used: "extracted_opportunities" };
+      }
+    }
+  } catch { /* fall through */ }
+
+  return { parsed: null, repair_used: "all_failed" };
+}
+
+/* ─── Persist a synthesis diagnostic for post-mortem ──────────── */
+async function persistSynthesisDiagnostic(opts: {
+  brief_id?: string | null;
+  module: string;
+  label: string;
+  http_status?: number | null;
+  stop_reason?: string | null;
+  parse_error?: string | null;
+  raw_response?: string;
+  request_summary: { model: string; max_tokens: number; system_length: number; user_length: number };
+  attempt_number: number;
+  duration_ms: number;
+}) {
+  try {
+    const raw = opts.raw_response || "";
+    const truncated = raw.length > 16_000 ? raw.slice(0, 16_000) : raw;
+    await db().from("synthesis_diagnostics").insert({
+      brief_id: opts.brief_id || null,
+      module: opts.module,
+      label: opts.label,
+      http_status: opts.http_status ?? null,
+      stop_reason: opts.stop_reason || null,
+      parse_error: opts.parse_error || null,
+      raw_response: truncated,
+      raw_length: raw.length,
+      request_summary: opts.request_summary,
+      attempt_number: opts.attempt_number,
+      duration_ms: opts.duration_ms,
+    });
+  } catch (e: any) {
+    // Migration may not be applied; silently skip rather than block synthesis
+    console.warn(`[synthesis_diagnostics] persist failed (migration may not be applied): ${e?.message}`);
+  }
+}
+
+async function callAnthropicJson(opts: {
+  system: string;
+  user: string;
+  label: string;
+  maxTokens: number;
+  /** Build 12.5 — when supplied, diagnostics for any failures persist
+      with this brief_id so they can be looked up post-mortem. */
+  brief_id?: string | null;
+}): Promise<any | null> {
   if (!ANTHROPIC_API_KEY) { console.error(`[${opts.label}] ANTHROPIC_API_KEY missing`); return null; }
   const RETRYABLE = new Set([429, 503, 529]);
+  const requestSummary = { model: MODEL, max_tokens: opts.maxTokens, system_length: opts.system.length, user_length: opts.user.length };
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     if (attempt > 1) await new Promise(r => setTimeout(r, attempt === 2 ? 1000 : 4000));
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 180_000);
+    const attemptStart = Date.now();
+
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -652,31 +829,75 @@ async function callAnthropicJson(opts: { system: string; user: string; label: st
         body: JSON.stringify({ model: MODEL, max_tokens: opts.maxTokens, system: opts.system, messages: [{ role: "user", content: opts.user }] }),
       });
       clearTimeout(timer);
+      const durationMs = Date.now() - attemptStart;
+
       if (r.ok) {
         const d = await r.json();
+        const stopReason = d?.stop_reason || null;
         const raw = (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
-        let clean = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
-        const first = clean.indexOf("{");
-        if (first >= 0) clean = clean.slice(first);
-        try { return JSON.parse(clean); }
-        catch {
-          const last = clean.lastIndexOf("}");
-          if (last > 0) { try { return JSON.parse(clean.slice(0, last + 1)); } catch { /* fall */ } }
-          console.error(`[${opts.label}] JSON parse failed. raw head: ${raw.slice(0, 200)}`);
-          return null;
+
+        // Tolerant parse — tries six repair strategies
+        const { parsed, repair_used } = tolerantJsonParse(raw);
+        if (parsed) {
+          if (repair_used !== "none") {
+            // We recovered — log a non-fatal note so we know repairs are firing
+            console.warn(`[${opts.label}] parsed via repair strategy "${repair_used}" on attempt ${attempt}; raw_length=${raw.length}, stop_reason=${stopReason}`);
+          }
+          return parsed;
         }
+
+        // Parse failed — capture full diagnostic for post-mortem
+        const truncationHint = stopReason === "max_tokens" ? " (likely truncated by max_tokens cap)" : "";
+        const headPreview = raw.slice(0, 800);
+        console.error(`[${opts.label}] JSON parse failed after all repairs${truncationHint}. raw_length=${raw.length}, stop_reason=${stopReason}, attempt=${attempt}, repair_attempted=all_failed.\nFIRST 800 CHARS:\n${headPreview}\nLAST 400 CHARS:\n${raw.slice(-400)}`);
+        await persistSynthesisDiagnostic({
+          brief_id: opts.brief_id,
+          module: "backlinks",
+          label: opts.label,
+          stop_reason: stopReason,
+          parse_error: `All repair strategies failed${truncationHint}`,
+          raw_response: raw,
+          request_summary: requestSummary,
+          attempt_number: attempt,
+          duration_ms: durationMs,
+        });
+        // If stop_reason was max_tokens, retrying won't help; bail immediately
+        if (stopReason === "max_tokens") return null;
+        // Otherwise let it retry once more (might be a transient LLM weirdness)
+        if (attempt === 3) return null;
+        continue;
       }
-      if (!RETRYABLE.has(r.status) || attempt === 3) {
-        const t = await r.text().catch(() => "");
-        console.error(`[${opts.label}] HTTP ${r.status}: ${t.slice(0, 200)}`);
-        return null;
-      }
+
+      // Non-2xx HTTP
+      const errText = await r.text().catch(() => "");
+      console.error(`[${opts.label}] HTTP ${r.status} on attempt ${attempt}: ${errText.slice(0, 300)}`);
+      await persistSynthesisDiagnostic({
+        brief_id: opts.brief_id,
+        module: "backlinks",
+        label: opts.label,
+        http_status: r.status,
+        parse_error: errText.slice(0, 1000),
+        raw_response: errText,
+        request_summary: requestSummary,
+        attempt_number: attempt,
+        duration_ms: durationMs,
+      });
+      if (!RETRYABLE.has(r.status) || attempt === 3) return null;
     } catch (e: any) {
       clearTimeout(timer);
-      if (attempt === 3 || controller.signal.aborted) {
-        console.error(`[${opts.label}] exc ${e?.message}`);
-        return null;
-      }
+      const durationMs = Date.now() - attemptStart;
+      const aborted = controller.signal.aborted;
+      console.error(`[${opts.label}] exc on attempt ${attempt}: ${e?.message}${aborted ? " (aborted by timeout)" : ""}`);
+      await persistSynthesisDiagnostic({
+        brief_id: opts.brief_id,
+        module: "backlinks",
+        label: opts.label,
+        parse_error: `${e?.message}${aborted ? " (aborted by timeout)" : ""}`,
+        request_summary: requestSummary,
+        attempt_number: attempt,
+        duration_ms: durationMs,
+      });
+      if (attempt === 3 || aborted) return null;
     }
   }
   return null;
@@ -818,6 +1039,7 @@ export async function runBacklinkBrief(opts: {
       inputs: opts.inputs,
       audit,
       opportunities: opps,
+      brief_id,                       // Build 12.5 — for diagnostic linkage
       onProgress: async (stage, detail) => {
         // Re-use the outer updateProgress helper with synthesis sub-stages.
         // The progress row gets a richer stage label for the client to display.
@@ -1373,6 +1595,23 @@ export async function listBacklinkBriefsExtended(opts: {
       lead_id: r.lead_id, project_id: r.project_id,
       keywords: Array.isArray(r.inputs_json?.target_keywords) ? r.inputs_json.target_keywords.slice(0, 5) : [],
     })) };
+  } catch (e: any) {
+    return { success: false, items: [], error: e?.message };
+  }
+}
+
+/* ─── Build 12.5 — Fetch diagnostics for a brief ───────────────
+   Returns the full list of synthesis_diagnostics rows linked to a
+   brief, ordered by call. Lets an operator (or me) inspect exactly
+   what failed and why on a per-section basis. */
+export async function listSynthesisDiagnostics(opts: { brief_id?: string; label_prefix?: string; limit?: number }) {
+  try {
+    let q = db().from("synthesis_diagnostics").select("id, brief_id, module, label, http_status, stop_reason, parse_error, raw_response, raw_length, request_summary, attempt_number, duration_ms, created_at").order("created_at", { ascending: false }).limit(opts.limit || 50);
+    if (opts.brief_id) q = q.eq("brief_id", opts.brief_id);
+    if (opts.label_prefix) q = q.ilike("label", `${opts.label_prefix}%`);
+    const { data, error } = await q;
+    if (error) return { success: false, items: [], error: error.message };
+    return { success: true, items: data || [] };
   } catch (e: any) {
     return { success: false, items: [], error: e?.message };
   }

@@ -236,3 +236,33 @@ Section failure handling: a failed section returns a placeholder { summary: '_Se
 Time estimate copy updated: '60-120 seconds typical, may run longer in heavy load' (was 90-240s). More accurate post-12.4.
 
 Hardcoding audit clean. String-safety scan clean. Vite build green at 42.75s. No migration needed for 12.4 — schema unchanged from 12.3.
+
+Build 12.5 — Synthesis diagnostics + tolerant JSON parser + section stagger [SHIPPED 2026-05-30]: Direct response to a production failure where all 6 section calls returned malformed JSON and the brief shipped with empty opportunity sections.
+
+Root-cause investigation findings (from the failed Alpha Software brief):
+- Six identical failures across all sections = structural problem, not LLM variance
+- Old callAnthropicJson only logged 200 chars of raw response = no way to diagnose what came back
+- Strict JSON.parse() rejects common LLM-output issues: trailing commas, unescaped newlines in strings, smart quotes, truncated mid-stream
+- 6 parallel calls fired in a single tick can saturate Anthropic rate limits
+- maxTokens=2500 likely hit on verbose sections
+
+Three layered fixes:
+
+(1) DIAGNOSTICS — new synthesis_diagnostics table (migration workspace-build12_5-synthesis-diagnostics.sql) persists the full raw response (up to 16k chars), parse_error, stop_reason, http_status, request_summary, attempt_number, duration_ms for every failed call. brief_id linkage when available. New listSynthesisDiagnostics + backlink_diagnostics route lets operator inspect what came back.
+
+(2) TOLERANT PARSER — new tolerantJsonParse() function in bde-backlinks.ts tries 6 repair strategies in order: (a) straight parse, (b) strip trailing commas, (c) normalise smart quotes, (d) escape unescaped newlines/tabs inside string values via state-machine walk, (e) brace-balanced truncation (recovers partial output when max_tokens hit mid-array), (f) extract inner opportunities[] array even if outer object malformed. Each strategy's success logs a "parsed via repair strategy X" warning so we can track which repairs fire in production. Returns null only when nothing parses, in which case full diagnostic persists.
+
+(3) PIPELINE HARDENING — section maxTokens bumped 2500→4000. Tighter section prompt demands brevity (each opp's rationale+tactical_path < 60 words, no newlines in string values, 3-5 opps not 3-7). Section calls staggered by 200ms × index so 6 parallel calls do not hit Anthropic in a single burst; avoids rate-limit throttling. Stop_reason inspection: when Anthropic returns stop_reason='max_tokens', skip retries (retrying same prompt will produce same truncation). Persist diagnostic + return null faster.
+
+Call site changes:
+- callAnthropicJson now accepts optional brief_id for diagnostic linkage
+- buildBacklinkBrief accepts brief_id and threads to all 7 synthesis calls (1 framing + 6 sections)
+- runBacklinkBrief threads brief_id from outer scope (already had it from early-insert)
+
+New route: backlink_diagnostics returns synthesis_diagnostics rows filtered by brief_id and/or label_prefix. UI surface for operator post-mortem can be added later; for now accessible via API for diagnosis.
+
+Build 12.5 ships without UI changes — the user-visible improvements happen automatically as recovered repair-paths now produce parseable output where 12.4 returned null. If a section still genuinely fails, the same placeholder appears in the brief but with much better diagnostics persisted server-side for me to inspect.
+
+Honest caveats: (1) Repair strategies are heuristic. If the LLM produces output that's structurally novel in a way none of the 6 strategies handle, we still return null. Diagnostics will show the raw response for adding strategy #7. (2) The stagger (200ms × index = 0-1000ms spread across 6 sections) is a small mitigation; if Anthropic is genuinely rate-limiting our key, a longer backoff or queue is needed. (3) Diagnostics table grows unbounded — needs a cleanup cron eventually. (4) Token bump 2500→4000 increases cost ~10% per section on the synthesis stage; total brief cost increase ~5%. Acceptable for the reliability win.
+
+Vite build green at 38.07s.
