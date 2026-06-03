@@ -47,6 +47,11 @@ export default function ComparePanel({ projectId }: Props) {
   const [customLens, setCustomLens] = useState('');
   const totalLensesPicked = pickedLensIds.size + (customLens.trim().length >= 5 ? 1 : 0);
 
+  // Optional line-by-line diff receipts (Build 11.3) — off by default,
+  // since most client-ready exports do not need the line-level diff and
+  // it can run to hundreds of lines for non-trivial document pairs.
+  const [includeDiff, setIncludeDiff] = useState(false);
+
   const [sideA, setSideA] = useState<SideState>({ mode: 'pick', picked: null });
   const [sideB, setSideB] = useState<SideState>({ mode: 'pick', picked: null });
 
@@ -74,6 +79,7 @@ export default function ComparePanel({ projectId }: Props) {
     setItems([]); setSideA({ mode: 'pick', picked: null }); setSideB({ mode: 'pick', picked: null });
     setResult(null); setError(''); setContext('');
     setPickedLensIds(new Set()); setCustomLens('');
+    setIncludeDiff(false);
     loadList();
   }, [projectId, loadList]);
 
@@ -121,7 +127,7 @@ export default function ComparePanel({ projectId }: Props) {
         return;
       }
 
-      const r = await compareRun({ projectId, docA, docB, context: context.trim() || undefined, lenses: lenses.length ? lenses : undefined });
+      const r = await compareRun({ projectId, docA, docB, context: context.trim() || undefined, lenses: lenses.length ? lenses : undefined, include_diff: includeDiff });
       if (!r.success) { setError(r.error || 'Comparison failed.'); return; }
       setResult({ title: r.title, body_md: r.body_md, comparison_id: r.comparison_id });
       if (r.error) toast({ title: 'Comparison ready', description: r.error });
@@ -263,6 +269,25 @@ export default function ComparePanel({ projectId }: Props) {
           placeholder="Add context to shape the comparison's tone, emphasis, and audience…"
           className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background text-foreground placeholder:text-muted-foreground resize-y"
         />
+
+        {/* Line-by-line diff toggle (Build 11.3) — off by default since
+            most client-ready exports do not benefit from the receipts. */}
+        <label className="mt-3 flex items-start gap-2 cursor-pointer group">
+          <input
+            type="checkbox"
+            checked={includeDiff}
+            onChange={e => setIncludeDiff(e.target.checked)}
+            className="mt-0.5 cursor-pointer"
+          />
+          <div>
+            <div className="text-xs font-medium text-foreground/90 group-hover:text-foreground transition-colors">
+              Include line-by-line text diff (receipts)
+            </div>
+            <div className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+              Adds a code-block at the bottom showing every line that was added or removed. Useful for technical review and verifying the model's claims; usually unwanted in client-ready documents. Off by default.
+            </div>
+          </div>
+        </label>
       </div>
 
       {/* Action row */}

@@ -539,6 +539,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         docB: body.docB,
         context: body.context,
         lenses: Array.isArray(body.lenses) ? body.lenses : [],
+        include_diff: body.include_diff === true,
         save: body.save !== false,
       }));
     }

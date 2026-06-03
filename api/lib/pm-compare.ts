@@ -307,6 +307,14 @@ export async function compareDocs(opts: {
       action list is tailored to these readers and each action is
       tagged with the lens(es) that demanded it. Max 5 enforced. */
   lenses?: SelectedLens[];
+  /** Include the mechanical line-diff section in the rendered output
+      (Build 11.3). Default false — the diff is computed in JavaScript
+      (no LLM tokens) but it runs hundreds of lines for non-trivial
+      documents and clutters client-ready exports. Set true only when
+      the reader specifically needs line-level receipts.
+      Note: the diff is also skipped entirely when either document is a
+      PDF, since PDFs have no text representation to diff against. */
+  include_diff?: boolean;
   /** Persist the comparison as a seo_campaign_reports row. Default true. */
   save?: boolean;
 }): Promise<{ success: boolean; comparison_id?: string; title?: string; body_md?: string; error?: string }> {
@@ -339,7 +347,16 @@ export async function compareDocs(opts: {
 
   // Compute the mechanical diff up front — saves an LLM token vs. asking
   // it to do this poorly, and gives the operator deterministic receipts.
-  const diffText = (a.text && b.text) ? computeDiff(a.text, b.text) : "_Mechanical text diff is not available — one or both documents are PDFs and have no text representation to diff against. The semantic comparison below is based on the model reading each PDF natively._";
+  // Skipped entirely when include_diff is false (default) — the diff
+  // section often runs hundreds of lines and is unwanted in client-ready
+  // exports unless line-level receipts are specifically needed. Also
+  // skipped when either side is a PDF (no text representation to diff).
+  const includeDiff = opts.include_diff === true;
+  const diffText = includeDiff
+    ? ((a.text && b.text)
+        ? computeDiff(a.text, b.text)
+        : "_Mechanical text diff is not available — one or both documents are PDFs and have no text representation to diff against. The semantic comparison below is based on the model reading each PDF natively._")
+    : "";
 
   // ── Lens block injected into the system prompt ─────────────────
   // When lenses are selected, the action list MUST tag each action
@@ -567,12 +584,16 @@ function renderComparison(opts: {
     L.push("");
   }
 
-  // 4. Mechanical diff — receipts
-  L.push(`## Mechanical text diff — receipts\n`);
-  L.push(`_Computed line-by-line. \`+\` = added in B, \`-\` = removed from A, plain = unchanged context._\n`);
-  L.push("```diff");
-  L.push(opts.diff);
-  L.push("```");
+  // 4. Mechanical diff — receipts. Only rendered when the operator
+  // explicitly opted in (Build 11.3). Empty diffText means "skip this
+  // section entirely" — keeps client-ready exports clean by default.
+  if (opts.diff && opts.diff.trim().length > 0) {
+    L.push(`## Mechanical text diff — receipts\n`);
+    L.push(`_Computed line-by-line. \`+\` = added in B, \`-\` = removed from A, plain = unchanged context._\n`);
+    L.push("```diff");
+    L.push(opts.diff);
+    L.push("```");
+  }
 
   return L.join("\n");
 }

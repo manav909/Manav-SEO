@@ -4410,7 +4410,7 @@ export async function compareLenses():
   return post(ENGINE, { action: 'compare_lenses' });
 }
 
-export async function compareRun(opts: { projectId: string; campaignId?: string; docA: CompareSourceRef; docB: CompareSourceRef; context?: string; lenses?: CompareSelectedLens[]; save?: boolean }):
+export async function compareRun(opts: { projectId: string; campaignId?: string; docA: CompareSourceRef; docB: CompareSourceRef; context?: string; lenses?: CompareSelectedLens[]; include_diff?: boolean; save?: boolean }):
   Promise<{ success?: boolean; comparison_id?: string; title?: string; body_md?: string; error?: string }> {
   return post(ENGINE, { action: 'compare_run', ...opts });
 }
