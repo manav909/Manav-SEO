@@ -24,7 +24,7 @@ import {
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
   backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
   backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
-  prospectDiscoveryRun, prospectDiscoveryStatus,
+  prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
@@ -136,6 +136,16 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [prospectProgress, setProspectProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null } | null>(null);
   const [prospectResult, setProspectResult] = useState<{ teaser_md: string; targets_count: number; discovery_id?: string } | null>(null);
   const [prospectError, setProspectError] = useState('');
+  // Build 12.10 — Smart Paste state
+  const [smartPasteOpen, setSmartPasteOpen] = useState(false);
+  const [smartPasteText, setSmartPasteText] = useState('');
+  const [smartPasteExtracting, setSmartPasteExtracting] = useState(false);
+  const [smartPasteSignals, setSmartPasteSignals] = useState<any | null>(null);
+  const [smartPasteError, setSmartPasteError] = useState('');
+  // Per-field replace decisions for the hybrid-apply step
+  const [replaceDecisions, setReplaceDecisions] = useState<{ [k: string]: boolean }>({});
+  // Track which fields were populated FROM smart paste so the "from message" badge shows
+  const [smartFilled, setSmartFilled] = useState<{ [k: string]: boolean }>({});
 
   // Competitor mapping state
   const [competitorMode, setCompetitorMode] = useState<'single' | 'batch'>('single');
@@ -625,6 +635,126 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     if (!prospectResult?.teaser_md) return;
     const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
     openStakeholderReport({ title, markdown: prospectResult.teaser_md });
+  };
+
+  /* ─── Build 12.10: Smart Paste handlers ─────────────────────── */
+  const openSmartPaste = () => {
+    setSmartPasteText('');
+    setSmartPasteSignals(null);
+    setSmartPasteError('');
+    setReplaceDecisions({});
+    setSmartPasteOpen(true);
+  };
+
+  const closeSmartPaste = () => {
+    setSmartPasteOpen(false);
+    // Don't clear text — operator may want to reopen with same content
+  };
+
+  const runSmartPasteExtract = async () => {
+    setSmartPasteError('');
+    if (smartPasteText.trim().length < 20) {
+      setSmartPasteError('Paste at least a couple of sentences before extracting.');
+      return;
+    }
+    setSmartPasteExtracting(true);
+    setSmartPasteSignals(null);
+    try {
+      const r = await prospectExtractSignals({ message: smartPasteText });
+      if (!r.success || !r.signals) {
+        setSmartPasteError(r.error || 'Extraction failed. Try a clearer message.');
+        return;
+      }
+      setSmartPasteSignals(r.signals);
+      // Pre-populate replaceDecisions for non-empty existing fields — default false (do NOT replace)
+      const decisions: { [k: string]: boolean } = {};
+      if (prospectIndustry.trim() && r.signals.industry) decisions.industry = false;
+      if (prospectGeography.trim() && r.signals.geography) decisions.geography = false;
+      if (prospectBudget && r.signals.budget_tier) decisions.budget_tier = false;
+      if (prospectUrl.trim() && r.signals.client_url) decisions.client_url = false;
+      if (prospectName.trim() && r.signals.prospect_name) decisions.prospect_name = false;
+      if (prospectContext.trim() && r.signals.suggested_context) decisions.suggested_context = false;
+      setReplaceDecisions(decisions);
+    } finally {
+      setSmartPasteExtracting(false);
+    }
+  };
+
+  const applySmartPaste = () => {
+    const s = smartPasteSignals;
+    if (!s) return;
+    const newFilled: { [k: string]: boolean } = { ...smartFilled };
+
+    // Apply rules:
+    // - Empty fields: auto-populate
+    // - Non-empty fields: only populate if replaceDecisions[field] === true
+    const apply = (field: string, currentValue: string, newValue: string | undefined, setter: (v: string) => void) => {
+      if (!newValue) return;
+      if (!currentValue.trim()) {
+        setter(newValue);
+        newFilled[field] = true;
+      } else if (replaceDecisions[field]) {
+        setter(newValue);
+        newFilled[field] = true;
+      }
+    };
+
+    apply('industry', prospectIndustry, s.industry_specificity || s.industry, setProspectIndustry);
+    apply('geography', prospectGeography, s.geography, setProspectGeography);
+    apply('prospect_name', prospectName, s.prospect_name, setProspectName);
+    apply('client_url', prospectUrl, s.client_url, setProspectUrl);
+
+    // Budget — special, since it's a controlled selector not a free string
+    if (s.budget_tier) {
+      if (!prospectBudget) {
+        setProspectBudget(s.budget_tier);
+        newFilled.budget_tier = true;
+      } else if (replaceDecisions.budget_tier) {
+        setProspectBudget(s.budget_tier);
+        newFilled.budget_tier = true;
+      }
+    }
+
+    // Context — operator-edited narrative. Build the value from suggested_context
+    // + any operator_notes flagged for verification.
+    let newContext = s.suggested_context || '';
+    if (Array.isArray(s.competitors) && s.competitors.length) {
+      newContext += (newContext ? '\n\n' : '') + 'Competitors named: ' + s.competitors.join(', ') + '.';
+    }
+    if (Array.isArray(s.keywords) && s.keywords.length) {
+      newContext += (newContext ? '\n\n' : '') + 'Keywords / topics from message: ' + s.keywords.join(', ') + '.';
+    }
+    if (s.operator_notes) {
+      newContext += (newContext ? '\n\n' : '') + 'Operator note: ' + s.operator_notes;
+    }
+    if (newContext) {
+      if (!prospectContext.trim()) {
+        setProspectContext(newContext);
+        newFilled.context = true;
+      } else if (replaceDecisions.suggested_context) {
+        setProspectContext(newContext);
+        newFilled.context = true;
+      }
+    }
+
+    setSmartFilled(newFilled);
+    toast({ title: 'Smart paste applied', description: 'Fields populated from message.' });
+    setSmartPasteOpen(false);
+  };
+
+  // Helper for the modal UI — does this signal conflict with an existing field value?
+  const fieldHasConflict = (field: string): boolean => {
+    const s = smartPasteSignals;
+    if (!s) return false;
+    switch (field) {
+      case 'industry': return !!(prospectIndustry.trim() && (s.industry || s.industry_specificity));
+      case 'geography': return !!(prospectGeography.trim() && s.geography);
+      case 'budget_tier': return !!(prospectBudget && s.budget_tier);
+      case 'client_url': return !!(prospectUrl.trim() && s.client_url);
+      case 'prospect_name': return !!(prospectName.trim() && s.prospect_name);
+      case 'suggested_context': return !!(prospectContext.trim() && s.suggested_context);
+      default: return false;
+    }
   };
 
   /* ─── Build 12.1: competitor mapping handlers ───────────────── */
@@ -1500,9 +1630,18 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
             <div className="flex items-center gap-2 mb-2">
               <Search className="h-4 w-4 text-primary" />
               <h3 className="text-sm font-semibold">Prospect Finder · Free Backlink Teaser</h3>
+              <div className="flex-1" />
+              <button
+                onClick={openSmartPaste}
+                className="text-[11px] px-2.5 py-1 rounded border border-border hover:bg-muted text-muted-foreground hover:text-foreground"
+                title="Paste a client email / brief / message and extract structured signals"
+              >
+                Smart paste
+              </button>
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
               For prospects who want to see what backlinks you can find for them — sometimes without sharing their URL. Produces a 1-page teaser (3 categories, 5-9 named targets) you can send as a discovery-call leave-behind. Uses live web search to find real publications + podcasts + communities in their industry. DA shown as ranges with confidence labels — never fake precision.
+              <br /><span className="text-foreground/80">Tip: paste a client email or brief into Smart paste to auto-fill these fields.</span>
             </p>
 
             {/* Inputs */}
@@ -1510,6 +1649,9 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               <div>
                 <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
                   Industry <span className="text-red-400">*</span>
+                  {smartFilled.industry && (
+                    <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 normal-case font-normal tracking-normal">from message</span>
+                  )}
                 </label>
                 <input
                   value={prospectIndustry}
@@ -1623,6 +1765,179 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                 </div>
               </div>
               <div className="backlink-preview text-xs max-h-[600px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(prospectResult.teaser_md) }} />
+            </div>
+          )}
+
+          {/* Build 12.10 — Smart Paste modal */}
+          {smartPasteOpen && (
+            <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={closeSmartPaste}>
+              <div className="bg-card border border-border rounded-xl p-5 max-w-2xl w-full space-y-3 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Smart paste · extract signals from a client message</h3>
+                  <button onClick={closeSmartPaste} className="text-xs text-muted-foreground hover:text-foreground">Close</button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Paste a client email, brief, call notes, or chat message. The system extracts industry, geography, competitors, keywords, budget tier, and prospect name when they are stated. Empty fields stay empty — nothing is invented.
+                  <br /><span className="text-amber-400/90">The pasted text is stored as-is in the prospect record. Strip PII (emails, phone numbers, internal pricing) yourself if needed.</span>
+                </p>
+
+                {/* Stage 1 — paste input */}
+                {!smartPasteSignals && (
+                  <div className="space-y-2">
+                    <textarea
+                      value={smartPasteText}
+                      onChange={e => setSmartPasteText(e.target.value)}
+                      rows={10}
+                      placeholder={'Paste the client message here. e.g.:\n\n"Hi, we are a SaaS company in B2B HR analytics targeting mid-market healthcare providers in the UK. Our main competitors are HiBob and Lattice. We want to rank for terms like \'people analytics platform\' and \'employee engagement software\'. Budget for backlinks is around £3k/month. Let me know what you can find for us."'}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background resize-y font-mono"
+                    />
+                    <div className="text-[10px] text-muted-foreground">
+                      {smartPasteText.length} characters {smartPasteText.length > 12000 && <span className="text-amber-400">· will be truncated to 12000</span>}
+                    </div>
+                    {smartPasteError && (
+                      <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-2 text-[11px] text-red-400 flex items-start gap-2">
+                        <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                        <div>{smartPasteError}</div>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={closeSmartPaste} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">Cancel</button>
+                      <button
+                        onClick={runSmartPasteExtract}
+                        disabled={smartPasteExtracting || smartPasteText.trim().length < 20}
+                        className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                      >
+                        {smartPasteExtracting && <Loader2 className="h-3 w-3 animate-spin" />}
+                        Extract signals
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stage 2 — preview + replace decisions + apply */}
+                {smartPasteSignals && (
+                  <div className="space-y-3">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Extracted signals</div>
+
+                    {/* Signals table */}
+                    <div className="rounded-lg border border-border bg-background/50 p-3 space-y-2 text-xs">
+                      {smartPasteSignals.industry_specificity || smartPasteSignals.industry ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Industry:</span>
+                          <span className="flex-1">{smartPasteSignals.industry_specificity || smartPasteSignals.industry}</span>
+                          {fieldHasConflict('industry') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.industry || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, industry: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.geography ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Geography:</span>
+                          <span className="flex-1">{smartPasteSignals.geography}</span>
+                          {fieldHasConflict('geography') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.geography || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, geography: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.budget_tier ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Budget tier:</span>
+                          <span className="flex-1">{smartPasteSignals.budget_tier}</span>
+                          {fieldHasConflict('budget_tier') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.budget_tier || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, budget_tier: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.prospect_name ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Prospect name:</span>
+                          <span className="flex-1">{smartPasteSignals.prospect_name}</span>
+                          {fieldHasConflict('prospect_name') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.prospect_name || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, prospect_name: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.client_url ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Client URL:</span>
+                          <span className="flex-1 truncate">{smartPasteSignals.client_url}</span>
+                          {fieldHasConflict('client_url') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.client_url || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, client_url: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {Array.isArray(smartPasteSignals.competitors) && smartPasteSignals.competitors.length > 0 ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Competitors:</span>
+                          <span className="flex-1">{smartPasteSignals.competitors.join(', ')}</span>
+                        </div>
+                      ) : null}
+
+                      {Array.isArray(smartPasteSignals.keywords) && smartPasteSignals.keywords.length > 0 ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Keywords:</span>
+                          <span className="flex-1">{smartPasteSignals.keywords.join(', ')}</span>
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.suggested_context ? (
+                        <div className="flex items-start gap-3">
+                          <span className="text-muted-foreground w-28 flex-shrink-0">Context:</span>
+                          <span className="flex-1 italic">{smartPasteSignals.suggested_context}</span>
+                          {fieldHasConflict('suggested_context') && (
+                            <label className="text-[10px] flex items-center gap-1 cursor-pointer text-amber-400">
+                              <input type="checkbox" checked={replaceDecisions.suggested_context || false} onChange={e => setReplaceDecisions({ ...replaceDecisions, suggested_context: e.target.checked })} className="rounded" />
+                              replace existing
+                            </label>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {smartPasteSignals.operator_notes ? (
+                        <div className="flex items-start gap-3 pt-2 border-t border-border">
+                          <span className="text-muted-foreground w-28 flex-shrink-0 text-amber-400">Operator note:</span>
+                          <span className="flex-1 text-amber-400/90 italic">{smartPasteSignals.operator_notes}</span>
+                        </div>
+                      ) : null}
+
+                      {/* Empty-everything case */}
+                      {!smartPasteSignals.industry && !smartPasteSignals.industry_specificity && !smartPasteSignals.geography && !smartPasteSignals.budget_tier && !smartPasteSignals.prospect_name && !smartPasteSignals.client_url && (!Array.isArray(smartPasteSignals.competitors) || smartPasteSignals.competitors.length === 0) && (!Array.isArray(smartPasteSignals.keywords) || smartPasteSignals.keywords.length === 0) && !smartPasteSignals.suggested_context && (
+                        <div className="text-muted-foreground italic">No structured signals extracted. The message may be too vague — try editing it and re-extracting.</div>
+                      )}
+                    </div>
+
+                    <div className="text-[10px] text-muted-foreground italic">
+                      Empty fields below will be filled automatically. For fields that conflict with existing values, tick "replace existing" to overwrite.
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2">
+                      <button onClick={() => setSmartPasteSignals(null)} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">Re-extract</button>
+                      <button onClick={closeSmartPaste} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">Cancel</button>
+                      <button onClick={applySmartPaste} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90">Apply to form</button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

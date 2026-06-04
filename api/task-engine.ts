@@ -725,6 +725,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (action === "prospect_discovery_list") {
       return ok(res, await pd.listProspectDiscoveries({ limit: body.limit }));
     }
+    // Build 12.10 — Smart Paste signal extraction
+    if (action === "prospect_extract_signals") {
+      return ok(res, await pd.extractProspectSignals({
+        message: body.message || "",
+      }));
+    }
   }
 
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */

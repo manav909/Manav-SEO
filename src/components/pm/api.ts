@@ -4596,3 +4596,24 @@ export async function prospectDiscoveryList(opts: { limit?: number } = {}):
   Promise<{ success?: boolean; items?: Array<{ id: string; industry: string; geography?: string; prospect_name?: string; status: string; target_count: number; llm_calls_used: number; converted_to_project_id?: string; created_at: string }>; error?: string }> {
   return post(ENGINE, { action: 'prospect_discovery_list', ...opts });
 }
+
+/* ─── Build 12.10 — Smart Paste signal extraction ─────────────── */
+
+export interface ExtractedSignals {
+  industry?: string;
+  industry_specificity?: string;
+  geography?: string;
+  budget_tier?: 'low' | 'medium' | 'high' | 'enterprise' | null;
+  prospect_name?: string;
+  client_url?: string;
+  competitors?: string[];
+  keywords?: string[];
+  suggested_context?: string;
+  confidence?: { [k: string]: 'high' | 'medium' | 'low' };
+  operator_notes?: string;
+}
+
+export async function prospectExtractSignals(opts: { message: string }):
+  Promise<{ success?: boolean; signals?: ExtractedSignals; raw?: string; error?: string }> {
+  return post(ENGINE, { action: 'prospect_extract_signals', ...opts });
+}
