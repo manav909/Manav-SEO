@@ -212,17 +212,180 @@ async function callAnthropicWithWebSearch(opts: {
   return { text: null, web_searches: 0, tool_use_count: 0 };
 }
 
-/* ─── Tolerant JSON extraction (mirror of bde-backlinks helper) ─ */
+/* ─── Build 12.8.3 — Lane response handler ─────────────────────
+   Wraps the post-call work every lane does: log raw head, attempt
+   tolerant JSON parse, persist diagnostic on parse failure or zero
+   targets (so I can see exactly what came back for empty teasers). */
+async function finalizeLane(opts: {
+  category: string;
+  label: string;
+  result: { text: string | null; tool_use_count: number; stop_reason?: string };
+  discovery_id?: string | null;
+  enable_web_search: boolean;
+}): Promise<LaneResult> {
+  const { category, label, result, discovery_id, enable_web_search } = opts;
+
+  // Always log raw head — these go to Vercel function logs for live debugging
+  if (result.text) {
+    console.log(`[${label}] raw response (first 1500 chars): ${result.text.slice(0, 1500)}`);
+  } else {
+    console.log(`[${label}] no text response at all`);
+  }
+
+  if (!result.text) {
+    return { category, targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
+  }
+
+  const parseResult = tolerantJsonParse(result.text);
+  if (!parseResult.parsed) {
+    try {
+      await persistDiagnostic({
+        discovery_id,
+        label,
+        stop_reason: result.stop_reason || null,
+        parse_error: "tolerantJsonParse: all 6 strategies failed",
+        raw_response: result.text,
+        request_summary: { model: MODEL, max_tokens: 3500, system_length: 0, user_length: 0, web_search_enabled: enable_web_search },
+        attempt_number: 1,
+        duration_ms: 0,
+        tool_use_count: result.tool_use_count,
+      });
+    } catch { /* silent */ }
+    return { category, targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed (all strategies)" };
+  }
+
+  const parsed = parseResult.parsed;
+  const targets = Array.isArray(parsed.targets) ? parsed.targets : (Array.isArray(parsed.opportunities) ? parsed.opportunities : []);
+
+  if (!targets.length) {
+    try {
+      await persistDiagnostic({
+        discovery_id,
+        label,
+        stop_reason: result.stop_reason || null,
+        parse_error: `JSON parsed via "${parseResult.repair_used}" but targets array is empty. Model explored: ${parsed.explored || "n/a"}`,
+        raw_response: result.text,
+        request_summary: { model: MODEL, max_tokens: 3500, system_length: 0, user_length: 0, web_search_enabled: enable_web_search },
+        attempt_number: 1,
+        duration_ms: 0,
+        tool_use_count: result.tool_use_count,
+      });
+    } catch { /* silent */ }
+    console.warn(`[${label}] parse OK but 0 targets. explored="${parsed.explored || "n/a"}". This is the silent-empty case.`);
+    return { category, targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "empty targets array" };
+  }
+
+  return { category, targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
+}
+
+/* ─── Build 12.8.3 — Tolerant JSON parse (6 strategies) ────────
+   Ported from bde-backlinks.ts Build 12.5 tolerantJsonParse.
+   The old extractJson did 2 strategies and silently returned null
+   on the wide range of malformations LLMs produce. This version
+   tries straight parse, trailing-comma strip, smart-quote
+   normalisation, in-string newline escaping, brace-balanced
+   truncation, and inner-array extraction. Returns the strategy
+   that succeeded so the caller can log when repair was needed. */
 function extractJson(raw: string): any | null {
-  if (!raw) return null;
+  const result = tolerantJsonParse(raw);
+  if (result.parsed && result.repair_used !== "none") {
+    console.log(`[prospect/json] recovered via strategy "${result.repair_used}"`);
+  }
+  return result.parsed;
+}
+
+function tolerantJsonParse(raw: string): { parsed: any | null; repair_used: string } {
+  if (!raw) return { parsed: null, repair_used: "empty" };
+
+  // Strip code fences + leading prose
   let clean = raw.replace(/```(?:json)?/gi, "").replace(/```/g, "").trim();
   const first = clean.indexOf("{");
   if (first > 0) clean = clean.slice(first);
   const lastClose = clean.lastIndexOf("}");
   if (lastClose > 0 && lastClose < clean.length - 1) clean = clean.slice(0, lastClose + 1);
-  try { return JSON.parse(clean); } catch { /* try repair */ }
-  try { return JSON.parse(clean.replace(/,(\s*[}\]])/g, "$1")); } catch { /* fail */ }
-  return null;
+
+  // Strategy 1 — straight parse
+  try { return { parsed: JSON.parse(clean), repair_used: "none" }; } catch { /* fall through */ }
+
+  // Strategy 2 — strip trailing commas
+  try {
+    const noTrailing = clean.replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(noTrailing), repair_used: "trailing_commas" };
+  } catch { /* fall through */ }
+
+  // Strategy 3 — normalise smart quotes
+  try {
+    const noSmart = clean
+      .replace(/[\u201C\u201D]/g, '"')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(noSmart), repair_used: "smart_quotes" };
+  } catch { /* fall through */ }
+
+  // Strategy 4 — escape literal newlines/tabs inside string values
+  try {
+    const out: string[] = [];
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (escape) { out.push(ch); escape = false; continue; }
+      if (ch === "\\") { out.push(ch); escape = true; continue; }
+      if (ch === '"') { inString = !inString; out.push(ch); continue; }
+      if (inString && ch === "\n") { out.push("\\n"); continue; }
+      if (inString && ch === "\r") { out.push("\\r"); continue; }
+      if (inString && ch === "\t") { out.push("\\t"); continue; }
+      out.push(ch);
+    }
+    const fixed = out.join("").replace(/,(\s*[}\]])/g, "$1");
+    return { parsed: JSON.parse(fixed), repair_used: "string_escapes" };
+  } catch { /* fall through */ }
+
+  // Strategy 5 — brace-balanced truncation (recovers partial output)
+  try {
+    let depth = 0, inStr = false, esc = false, lastBalanced = -1;
+    for (let i = 0; i < clean.length; i++) {
+      const ch = clean[i];
+      if (esc) { esc = false; continue; }
+      if (ch === "\\") { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === "{" || ch === "[") depth++;
+      else if (ch === "}" || ch === "]") {
+        depth--;
+        if (depth === 0) lastBalanced = i;
+      }
+    }
+    if (lastBalanced > 0) {
+      const truncated = clean.slice(0, lastBalanced + 1);
+      return { parsed: JSON.parse(truncated), repair_used: "truncated_balanced" };
+    }
+  } catch { /* fall through */ }
+
+  // Strategy 6 — extract inner targets[] array if outer wrapper malformed
+  try {
+    const arrMatch = clean.match(/"targets"\s*:\s*\[/);
+    if (arrMatch && arrMatch.index !== undefined) {
+      const arrStart = arrMatch.index + arrMatch[0].length - 1;
+      let depth = 0, inStr = false, esc = false, arrEnd = -1;
+      for (let i = arrStart; i < clean.length; i++) {
+        const ch = clean[i];
+        if (esc) { esc = false; continue; }
+        if (ch === "\\") { esc = true; continue; }
+        if (ch === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (ch === "[") depth++;
+        else if (ch === "]") { depth--; if (depth === 0) { arrEnd = i; break; } }
+      }
+      if (arrEnd > arrStart) {
+        const arrText = clean.slice(arrStart, arrEnd + 1).replace(/,(\s*[}\]])/g, "$1");
+        const targets = JSON.parse(arrText);
+        return { parsed: { targets }, repair_used: "extracted_targets" };
+      }
+    }
+  } catch { /* fall through */ }
+
+  return { parsed: null, repair_used: "all_failed" };
 }
 
 /* ─── Shared honesty framing ─────────────────────────────────── */
@@ -292,12 +455,7 @@ ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tie
 Find 2-3 specific resource pages or industry directories where someone in this space could realistically earn a free backlink. Use web_search if available; if not, use training-data knowledge of established industry resource pages.`;
 
   const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/resource-pages", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
-  if (!result.text) return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
-  const parsed = extractJson(result.text);
-  if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
-  }
-  return { category: "Resource Pages & Industry Directories", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
+  return finalizeLane({ category: "Resource Pages & Industry Directories", label: "prospect/resource-pages", result, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search !== false });
 }
 
 async function runHaroPodcastsLane(inputs: ProspectDiscoveryInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<LaneResult> {
@@ -339,12 +497,7 @@ ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tie
 Find 2-3 specific HARO-style platforms or niche podcasts where someone in this space could earn a free placement. Use web_search if available; otherwise rely on training-data knowledge.`;
 
   const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/haro-podcasts", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
-  if (!result.text) return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
-  const parsed = extractJson(result.text);
-  if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
-  }
-  return { category: "Expert Quotes & Podcast Guesting", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
+  return finalizeLane({ category: "Expert Quotes & Podcast Guesting", label: "prospect/haro-podcasts", result, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search !== false });
 }
 
 async function runCommunitiesLane(inputs: ProspectDiscoveryInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<LaneResult> {
@@ -386,12 +539,7 @@ ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tie
 Find 2-3 specific niche communities or industry blogs where someone in this space could build the entity associations that earn ongoing citations. Use web_search if available.`;
 
   const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/communities", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
-  if (!result.text) return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
-  const parsed = extractJson(result.text);
-  if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
-  }
-  return { category: "Niche Communities & Industry Blogs", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
+  return finalizeLane({ category: "Niche Communities & Industry Blogs", label: "prospect/communities", result, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search !== false });
 }
 
 /* ─── Teaser report rendering ─────────────────────────────────── */
@@ -455,7 +603,16 @@ function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: Lane
   }
 
   if (!anyTargets) {
-    L.push(`_No targets surfaced — the research lanes returned no results for this industry/geography combination. This usually means the inputs need to be more specific. Reach out and we can refine together._`);
+    // Operator-facing diagnostic — surface failure reasons from each lane
+    // so you can debug without diving into Vercel logs every time.
+    const laneFailures = lanes.map(l => `  - ${l.category}: ${l.failed || "unknown"} (tool_uses: ${l.tool_use_count}, text length: ${l.raw_research_text.length})`).join("\n");
+    L.push(`_No targets surfaced. Lane status:_`);
+    L.push("");
+    L.push("```");
+    L.push(laneFailures);
+    L.push("```");
+    L.push("");
+    L.push(`_Likely causes: (1) JSON parse failed across all 6 repair strategies — check synthesis_diagnostics table for raw responses; (2) model returned valid JSON but with empty targets array — see "explored" field in diagnostics; (3) Anthropic refused the request — stop_reason will say "refused". Operator: query synthesis_diagnostics where module = 'prospect_discovery' order by created_at desc to see raw responses._`);
     L.push("");
     L.push("---");
     L.push("");

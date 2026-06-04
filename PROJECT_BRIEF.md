@@ -418,3 +418,28 @@ Honest caveats:
 5. Single-file change to api/lib/prospect-discovery.ts. No schema migration (reuses synthesis_diagnostics from Build 12.5). No task-engine change.
 
 Vite build green at 27.02s. Compile clean. No contractions or hardcoding.
+
+Build 12.8.3 — Prospect discovery deep diagnostic + tolerant parser [SHIPPED 2026-05-30]: 12.8.2 fallback fired correctly but second pass still produced 0 targets. Root cause is no longer web_search availability — must be JSON parse failing, model returning empty arrays despite tightened prompts, or refusal. Without raw response visibility, every fix is a guess.
+
+Three changes:
+
+A) TOLERANT JSON PARSER UPGRADED — replaced the 2-strategy extractJson with the 6-strategy tolerantJsonParse ported from bde-backlinks.ts Build 12.5. Strategies: straight parse, trailing-comma strip, smart-quote normalisation, in-string newline escape, brace-balanced truncation, inner-array extraction. Each successful strategy logs which one fired so we can see recovery patterns.
+
+B) LANE FINALIZATION HELPER — new finalizeLane() consolidates the post-call logic for all three lanes. (i) Always console.log first 1500 chars of raw response so it shows in Vercel function logs in real-time. (ii) Persist diagnostic to synthesis_diagnostics on parse failure (all 6 strategies failed). (iii) Persist diagnostic when parse succeeds but targets array is empty — captures the "model said valid JSON with [] targets" silent-empty case. (iv) Fall back to opportunities[] key if targets[] missing (handles model returning slightly off-schema JSON). Three lanes each replace 6 lines of post-call code with one finalizeLane call.
+
+C) OPERATOR-FACING EMPTY-TEASER DIAGNOSTIC — when teaser renders with 0 targets across all lanes, the empty-state block now lists each lane status (category, failure reason, tool_uses count, text length) inside a code block, plus a hint of likely causes and a SQL one-liner to query synthesis_diagnostics. Future empty teasers tell the operator exactly what to investigate instead of saying "be more specific."
+
+Operator next step: after this deploys, run a prospect again. Then EITHER (a) check Vercel function logs for [prospect/resource-pages] raw response lines, OR (b) run this Supabase SQL:
+  select label, parse_error, request_summary->>'tool_use_count' as uses,
+         substring(raw_response, 1, 2000) as preview, created_at
+  from synthesis_diagnostics where module = 'prospect_discovery'
+  order by created_at desc limit 12;
+Paste me the rows. With the actual raw responses visible, I can fix the underlying problem in one more round instead of guessing.
+
+Honest caveats:
+1. This is a diagnostic-shipping build, not a guaranteed fix. It makes the failure visible. The actual fix depends on what the diagnostics reveal.
+2. console.log of raw responses adds noise to Vercel logs. Acceptable trade-off for active debugging; consider gating behind a DEBUG env var later.
+3. Diagnostic table grows ~6 rows per failed prospect run (3 lanes x 2 passes). Cleanup cron territory eventually.
+4. Single-file change to api/lib/prospect-discovery.ts. No schema migration. No client API or UI changes.
+
+Vite build green at 47.44s. Compile clean.
