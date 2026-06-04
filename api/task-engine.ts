@@ -738,6 +738,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         client_request_id: body.client_request_id,
       }));
     }
+    // Build 12.11.1 — Strategic Context Note (optional secondary export)
+    if (action === "prospect_strategic_context") {
+      return ok(res, await pd.generateStrategicContext({
+        inputs: body.inputs || {},
+      }));
+    }
   }
 
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */

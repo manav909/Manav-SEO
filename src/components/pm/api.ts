@@ -4637,3 +4637,22 @@ export async function prospectGuestPostRun(opts: { inputs: GuestPostFinderInputs
   Promise<{ success?: boolean; discovery_id?: string; shortlist_md?: string; candidates_count?: number; avoid_count?: number; llm_calls_used?: number; web_searches_used?: number; error?: string }> {
   return post(ENGINE, { action: 'prospect_guest_post_run', ...opts });
 }
+
+/* ─── Build 12.11.1 — Strategic Context Note ─────────────────── */
+
+export interface StrategicContextInputs {
+  industry: string;
+  client_url?: string;
+  prospect_name?: string;
+  niche_keywords?: string[];
+  competitors?: string[];
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  operator_notes?: string;
+}
+
+export async function prospectStrategicContext(opts: { inputs: StrategicContextInputs }):
+  Promise<{ success?: boolean; markdown?: string; error?: string }> {
+  return post(ENGINE, { action: 'prospect_strategic_context', ...opts });
+}

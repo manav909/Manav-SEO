@@ -24,7 +24,7 @@ import {
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
   backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
   backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
-  prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals, prospectGuestPostRun,
+  prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals, prospectGuestPostRun, prospectStrategicContext,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
@@ -144,6 +144,10 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [gpDofollowRequired, setGpDofollowRequired] = useState<boolean>(true);
   const [gpNicheKeywords, setGpNicheKeywords] = useState<string>(''); // comma-separated input
   const [gpCompetitors, setGpCompetitors] = useState<string>(''); // comma-separated input
+  // Build 12.11.1 — Strategic context note (optional secondary export)
+  const [strategicContextGenerating, setStrategicContextGenerating] = useState<boolean>(false);
+  const [strategicContextMd, setStrategicContextMd] = useState<string>('');
+  const [strategicContextError, setStrategicContextError] = useState<string>('');
   // Build 12.10 — Smart Paste state
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
   const [smartPasteText, setSmartPasteText] = useState('');
@@ -568,6 +572,9 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     }
     setProspectRunning(true);
     setProspectResult(null);
+    // Build 12.11.1 — clear any prior strategic context note so it doesn't linger
+    setStrategicContextMd('');
+    setStrategicContextError('');
 
     // Build 12.11 — branch by mode. Guest post mode runs a single-lane
     // procurement query; teaser mode runs the 3-lane discovery flow.
@@ -715,6 +722,55 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
       : `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
     const kind = prospectMode === 'guest_post' ? 'Guest Post Procurement Shortlist' : 'Free Backlink Opportunity Report';
     openStakeholderReport(prospectResult.teaser_md, { title, kind, generatedAt: new Date().toISOString() });
+  };
+
+  /* ─── Build 12.11.1: Strategic context note handlers ────────── */
+  const generateStrategicContextNote = async () => {
+    setStrategicContextError('');
+    if (!prospectIndustry.trim()) {
+      setStrategicContextError('Industry is required.');
+      return;
+    }
+    setStrategicContextGenerating(true);
+    try {
+      const niches = gpNicheKeywords.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
+      const comps = gpCompetitors.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
+      const r = await prospectStrategicContext({
+        inputs: {
+          industry: prospectIndustry.trim(),
+          client_url: prospectUrl.trim() || undefined,
+          prospect_name: prospectName.trim() || undefined,
+          niche_keywords: niches.length ? niches : undefined,
+          competitors: comps.length ? comps : undefined,
+          dr_threshold: gpDrThreshold,
+          budget_min: gpBudgetMin,
+          budget_max: gpBudgetMax,
+          operator_notes: prospectContext.trim() || undefined,
+        },
+      });
+      if (!r.success || !r.markdown) {
+        setStrategicContextError(r.error || 'Strategic context generation failed.');
+        return;
+      }
+      setStrategicContextMd(r.markdown);
+      toast({ title: 'Strategic context ready', description: 'Optional secondary export to attach to your client response.' });
+    } catch (e: any) {
+      setStrategicContextError(e?.message || 'Strategic context generation failed.');
+    } finally {
+      setStrategicContextGenerating(false);
+    }
+  };
+
+  const downloadStrategicContextWord = () => {
+    if (!strategicContextMd) return;
+    const title = `Strategic Context · ${prospectName || prospectIndustry || 'Client'}`;
+    downloadStakeholderAsWord(strategicContextMd, { title, kind: 'Strategic Context Note', generatedAt: new Date().toISOString() });
+  };
+
+  const previewStrategicContext = () => {
+    if (!strategicContextMd) return;
+    const title = `Strategic Context · ${prospectName || prospectIndustry || 'Client'}`;
+    openStakeholderReport(strategicContextMd, { title, kind: 'Strategic Context Note', generatedAt: new Date().toISOString() });
   };
 
   /* ─── Build 12.10: Smart Paste handlers ─────────────────────── */
@@ -1723,13 +1779,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
             {/* Build 12.11 — mode toggle */}
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 mb-3 w-fit">
               <button
-                onClick={() => { setProspectMode('teaser'); setProspectResult(null); }}
+                onClick={() => { setProspectMode('teaser'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); }}
                 className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'teaser' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Discovery teaser
               </button>
               <button
-                onClick={() => { setProspectMode('guest_post'); setProspectResult(null); }}
+                onClick={() => { setProspectMode('guest_post'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); }}
                 className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'guest_post' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Guest post procurement
@@ -1930,6 +1986,52 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                 </div>
               </div>
               <div className="backlink-preview text-xs max-h-[600px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(prospectResult.teaser_md) }} />
+            </div>
+          )}
+
+          {/* Build 12.11.1 — Strategic Context Note (guest_post mode only, optional secondary export) */}
+          {prospectResult && prospectMode === 'guest_post' && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-semibold">Strategic context note <span className="text-[10px] uppercase tracking-wide text-muted-foreground/80 font-normal ml-1">· optional</span></h3>
+                  <div className="text-[11px] text-muted-foreground leading-relaxed">
+                    600-900 word strategic narrative explaining how the shortlist fits a 90-day backlink approach. Attach to the client response when you want to demonstrate senior thinking beyond procurement. Generated separately so it does not bloat every shortlist.
+                  </div>
+                </div>
+                {!strategicContextMd ? (
+                  <button
+                    onClick={generateStrategicContextNote}
+                    disabled={strategicContextGenerating}
+                    className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {strategicContextGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                    {strategicContextGenerating ? 'Generating…' : 'Generate strategic context'}
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <button onClick={previewStrategicContext} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">
+                      <ExternalLink className="h-3 w-3 inline mr-1" />
+                      Preview in tab
+                    </button>
+                    <button onClick={downloadStrategicContextWord} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90">
+                      <Download className="h-3 w-3 inline mr-1" />
+                      Download Word
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {strategicContextError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-2 text-[11px] text-red-400 flex items-start gap-2 mb-2">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                  <div>{strategicContextError}</div>
+                </div>
+              )}
+
+              {strategicContextMd && (
+                <div className="backlink-preview text-xs max-h-[500px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(strategicContextMd) }} />
+              )}
             </div>
           )}
 

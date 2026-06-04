@@ -571,3 +571,30 @@ Honest caveats:
 Four files changed: api/lib/prospect-discovery.ts (engine), api/task-engine.ts (route), src/components/pm/api.ts (client function), src/components/pm/BacklinksPanel.tsx (mode toggle + procurement fields + branched run handler + mode-aware result block).
 
 Vite build green at 24.77s. Compile clean. No contractions, no hardcoding.
+
+Build 12.11.1 — Three-layered confidence upgrade [SHIPPED 2026-06-04]:
+
+(A) URL EXTRACTION FIX — Smart Paste was silently dropping URLs that did not start with http(s)://. The BlendSpace message contained "BlendSpace (blendspace.ai)" and the strict regex `/^https?:\/\//i.test` rejected it. New normalizer accepts any of: "example.com", "(example.com)", "[Text](https://example.com)", "https://www.example.com/" — strips markdown wrappers, parens, www, trailing slashes, and re-emits as clean "https://example.com". Smart Paste prompt also rewritten with a WORKED EXAMPLE block (using the BlendSpace message as canonical input → correct extraction) so the model understands generous URL extraction is correct behavior. Filter requirements like "DR30+", "dofollow", "$50-150 per placement" now extract into keywords[] and operator_notes when the buyer states them — previously these were silently dropped.
+
+(B) GUEST POST FINDER EXPANSION 8-12 → SHORTLIST DEPTH + CONFIDENCE SECTIONS — Lane prompt schema extended with four new top-level fields:
+- "tier_up_candidates": 3-6 sites above the stated budget — name, URL, DR range, price band, why_worth_the_jump (1 sentence). Renders as separate "Tier-up candidates (above stated budget)" section. Reference list only.
+- "research_methodology": 2-3 sentences on HOW the shortlist was built (search queries, filters applied, what was considered and rejected). Renders as "How this shortlist was built" section after the candidate list.
+- "database_breadth_signal": 1-2 sentences honestly framing the niche pool depth (e.g. "this niche has ~150-200 sites publishing guest posts; ~40-60 sit at DR30+; this shortlist is the top tier matching specific filters"). Renders as "Research depth in this niche" section. The model is INSTRUCTED to base this on its actual assessment, not exaggerate.
+- "senior_strategist_note": 2-4 paragraphs in the voice of a senior link strategist, NOT bullets. Frames selection logic, niche knowledge that justified exclusions, trade-offs at stated budget vs next tier, what the engagement brings beyond the listed sites. Renders as "A note from the strategist" section near the end. This is the per-shortlist confidence-builder.
+Target count raised: 8-12 candidates (default 10 for mainstream niches like AI/SaaS/tech). Honest discipline maintained — if model cannot honestly name 10 it returns fewer, not fabricated filler. maxTokens raised 5500 → 9000 to accommodate richer output.
+
+(C) STRATEGIC CONTEXT NOTE — separate optional secondary export, generated on-demand by a new endpoint `prospect_strategic_context`. Single LLM call, ~10-20s, no web search. Produces a 600-900 word strategic markdown document with 6 sections: "Why guest posts are necessary but not sufficient", "What the shortlist is built to accomplish", "What sits alongside guest posts in a strong 90-day plan", "Budget trade-off honesty", "What the engagement brings beyond the shortlist", "What to ask me on the discovery call". Voice spec: confident senior practitioner, not arrogant, NOT generic SEO advice, honest about trade-offs at stated budget. Specific to the client's industry — the prompt names industry repeatedly to anchor the model.
+UI: appears as a separate card under the shortlist result block in guest_post mode. Button "Generate strategic context" → loading state → on success renders preview + Preview-in-tab + Download Word buttons. Errors render in red callout. The note is in-memory only — cleared on mode switch or new run, not persisted.
+
+For the BlendSpace client specifically: workflow is now Smart paste his email → URL + filters extracted properly → guest post finder run → 10 named candidates in correct shape + strategist note baked in → optionally generate Strategic Context Note → attach BOTH to client response email (Word docs). The shortlist answers the procurement spec; the strategic note demonstrates senior thinking that justifies him picking SEO Season over five vendors quoting the same DR30+ sites at $50-150.
+
+Honest caveats unchanged from Build 12.11:
+1. DR ranges still LLM-estimated. Operator verifies in Ahrefs before client send.
+2. Recent article cadence still not crawled. Build 12.12 = recent-article crawler + dofollow detection.
+3. Strategic context note quality scales with input richness. Generic inputs → generic note. Detailed niche keywords + operator notes + competitor names → tighter, more specific note. The model can only work with what is fed.
+4. database_breadth_signal is the model's honest assessment — for less mainstream niches it may signal smaller pools, which is appropriate.
+5. No persistence on strategic context — regenerate each session if you want to revisit. Future build can persist alongside shortlist if useful.
+
+Four files changed: api/lib/prospect-discovery.ts (URL normalizer fix + Smart Paste prompt with worked example + extended GuestPostFinderResult type + lane prompt with new sections + extended parser + render with 3 new sections + new generateStrategicContext function), api/task-engine.ts (new prospect_strategic_context route), src/components/pm/api.ts (new client function + type), src/components/pm/BacklinksPanel.tsx (strategic context state + handlers + result-block card + clear on mode switch / new run).
+
+Vite build green at 38.07s. Compile clean. No contractions, no hardcoding.
