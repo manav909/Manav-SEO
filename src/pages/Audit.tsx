@@ -13,8 +13,10 @@ import {
   Zap, Brain, ShieldCheck, AlertTriangle, CheckCircle2,
   ChevronRight, RefreshCw, Save, BarChart3, Globe,
   ArrowUpRight, Info, Shield, Target, Sparkles, Eye,
-  FileText, Layers, CircleDot, XCircle, Loader2, TrendingUp
+  FileText, Layers, CircleDot, XCircle, Loader2, TrendingUp,
+  Download, ExternalLink
 } from 'lucide-react';
+import { downloadStakeholderAsWord, openStakeholderReport } from '@/lib/reportExport';
 
 /* ─── Confidence badge ─── */
 const ConfBadge = ({ confidence }: { confidence: number }) => {
@@ -91,6 +93,231 @@ const DataRow = ({ label, value, confidence, limitations }: {
 };
 
 /* ════════════════════════════════════════════════════
+   Build 12.14 — Audit → Markdown renderer
+   Pure function that converts a /api/run-analysis result
+   into a clean client-facing markdown document. Preserves
+   confidence labels and limitations per data point. No
+   operator-facing language. Output goes to Word/HTML via
+   downloadStakeholderAsWord / openStakeholderReport.
+════════════════════════════════════════════════════ */
+
+/** Confidence label translator — internal "Not verifiable" / "Estimated" etc become plain-language. */
+function confLabel(c: number): string {
+  if (c >= 80) return `verified`;
+  if (c >= 50) return `confident estimate`;
+  if (c > 0)   return `directional estimate`;
+  return `not verifiable from public data`;
+}
+
+function renderDataPoint(label: string, dp: any): string[] {
+  if (!dp) return [];
+  const out: string[] = [];
+  const value = dp.value === null || dp.value === undefined ? '—' : String(dp.value);
+  out.push(`- **${label}:** ${value} · _${confLabel(dp.confidence ?? 0)}_`);
+  if (Array.isArray(dp.limitations) && dp.limitations.length) {
+    for (const lim of dp.limitations) {
+      if (lim && lim.trim()) out.push(`  - _${lim}_`);
+    }
+  }
+  return out;
+}
+
+interface AuditExportOpts {
+  buyerName?: string;
+  brandName?: string;
+  preparedBy?: string;
+}
+
+function renderAuditAsMarkdown(result: any, opts: AuditExportOpts = {}): string {
+  const L: string[] = [];
+  const date = new Date().toLocaleDateString('en-GB');
+  const s = result?.sections || {};
+  const syn = result?.synthesis || {};
+
+  /* ─── Header ─── */
+  L.push(`# SEO Audit Report`);
+  L.push('');
+  if (opts.buyerName) L.push(`**Prepared for:** ${opts.buyerName}  `);
+  if (opts.brandName) L.push(`**Brand:** ${opts.brandName}  `);
+  L.push(`**URL audited:** ${result?.url || '—'}  `);
+  L.push(`**Overall confidence:** ${result?.overall_confidence ?? '—'}%  `);
+  L.push(`**Prepared by:** ${opts.preparedBy || 'Manav S'} · ${date}`);
+  L.push('');
+  L.push('---');
+  L.push('');
+
+  /* ─── Verdict ─── */
+  if (syn.overall_verdict) {
+    L.push(`## Verdict`);
+    L.push('');
+    L.push(syn.overall_verdict);
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Data limitations summary (carried from the audit's own honesty layer) ─── */
+  if (syn.data_limitations_summary) {
+    L.push(`## What this analysis could not verify`);
+    L.push('');
+    L.push(syn.data_limitations_summary);
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Technical ─── */
+  if (s.technical?.data) {
+    const d = s.technical.data;
+    L.push(`## Technical health`);
+    L.push('');
+    L.push(`_${s.technical.ceiling || ''}_`);
+    L.push('');
+    L.push(...renderDataPoint('Pages indexed by Google', d.pages_indexed));
+    L.push(...renderDataPoint('Pages in sitemap', d.pages_submitted));
+    L.push(...renderDataPoint('Indexing ratio', d.indexing_ratio?.value !== null && d.indexing_ratio?.value !== undefined
+      ? { ...d.indexing_ratio, value: `${d.indexing_ratio.value}%` }
+      : d.indexing_ratio));
+    L.push(...renderDataPoint('Schema markup present', d.has_schema?.value !== undefined
+      ? { ...d.has_schema, value: d.has_schema.value ? 'Yes' : 'No' }
+      : d.has_schema));
+    L.push(...renderDataPoint('Technical health score', d.technical_score));
+    if (Array.isArray(d.issues) && d.issues.length) {
+      L.push('');
+      L.push(`**Issues found:**`);
+      for (const iss of d.issues) L.push(`- ${iss}`);
+    }
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Content & E-E-A-T ─── */
+  if (s.content?.data) {
+    const d = s.content.data;
+    L.push(`## Content and E-E-A-T`);
+    L.push('');
+    L.push(`_${s.content.ceiling || ''}_`);
+    L.push('');
+    L.push(...renderDataPoint('E-E-A-T score', d.eeat_score));
+    L.push(...renderDataPoint('Content authority score', d.content_authority_score));
+    L.push(...renderDataPoint('LLM citation readiness', d.llm_readiness_score));
+    L.push(...renderDataPoint('Algorithm health score', d.algorithm_health_score));
+    if (Array.isArray(d.eeat_evidence) && d.eeat_evidence.length) {
+      L.push('');
+      L.push(`**E-E-A-T evidence found:**`);
+      for (const e of d.eeat_evidence) L.push(`- ${e}`);
+    }
+    if (Array.isArray(d.gaps) && d.gaps.length) {
+      L.push('');
+      L.push(`**Content gaps:**`);
+      for (const g of d.gaps) L.push(`- ${g}`);
+    }
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── AI Visibility ─── */
+  if (s.visibility?.data) {
+    const d = s.visibility.data;
+    L.push(`## AI search visibility`);
+    L.push('');
+    L.push(`_${s.visibility.ceiling || ''}_`);
+    L.push('');
+    L.push(...renderDataPoint('Perplexity AI mentions', d.perplexity_citations));
+    L.push(...renderDataPoint('ChatGPT citations', d.chatgpt_citations));
+    L.push(...renderDataPoint('Brand mentions (Google)', d.brand_mentions));
+    L.push(...renderDataPoint('LLM visibility score', d.llm_visibility_score));
+    L.push(`- **Google AI Overview presence:** — · _not verifiable from automated analysis (requires authenticated Google session)_`);
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Rankings ─── */
+  if (s.ranking?.data) {
+    const d = s.ranking.data;
+    L.push(`## Rankings and competitive intelligence`);
+    L.push('');
+    L.push(`_${s.ranking.ceiling || ''}_`);
+    L.push('');
+    if (d.competitor_rank?.value) {
+      L.push(...renderDataPoint('Competitive content rank', { ...d.competitor_rank, value: `#${d.competitor_rank.value}` }));
+    }
+    if (Array.isArray(d.keyword_rankings) && d.keyword_rankings.length) {
+      L.push('');
+      L.push(`**Live SERP rankings (verified per keyword):**`);
+      L.push('');
+      for (const k of d.keyword_rankings) {
+        L.push(`- **"${k.keyword}"** — ${k.positionLabel || '—'} · _${confLabel(k.confidence ?? 78)}_`);
+        if (k.snippet) L.push(`  - _"${k.snippet}"_`);
+        if (k.limitation) L.push(`  - _${k.limitation}_`);
+      }
+    }
+    if (Array.isArray(d.competitor_data) && d.competitor_data.length) {
+      L.push('');
+      L.push(`**Competitor page counts:**`);
+      for (const c of d.competitor_data) {
+        L.push(...renderDataPoint(c.domain, c.indexed_pages));
+      }
+    }
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Synthesis (the strategic interpretation) ─── */
+  if (syn && (syn.biggest_verified_win || syn.most_urgent_gap || (Array.isArray(syn.verified_strengths) && syn.verified_strengths.length))) {
+    L.push(`## Synthesis`);
+    L.push('');
+    if (syn.biggest_verified_win) {
+      L.push(`**Biggest verified win:** ${syn.biggest_verified_win}`);
+      L.push('');
+    }
+    if (syn.most_urgent_gap) {
+      L.push(`**Most urgent gap:** ${syn.most_urgent_gap}`);
+      L.push('');
+    }
+    if (Array.isArray(syn.verified_strengths) && syn.verified_strengths.length) {
+      L.push(`**Verified strengths:**`);
+      for (const str of syn.verified_strengths) L.push(`- ${str}`);
+      L.push('');
+    }
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Cross-verification (the multi-source agreement signal) ─── */
+  if (result?.cross_verifications && Object.keys(result.cross_verifications).length) {
+    L.push(`## Cross-verification`);
+    L.push('');
+    L.push(`Where two or more agents reported on the same dimension, agreement was checked. This adjusts the confidence of each data point above.`);
+    L.push('');
+    for (const [key, v] of Object.entries<any>(result.cross_verifications)) {
+      const status = v.agreement ? 'Agreement' : 'Disagreement';
+      L.push(`- **${key.replace(/_/g, ' ')}:** ${status}${v.note ? ` — ${v.note}` : ''}`);
+    }
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  /* ─── Footer / closing ─── */
+  L.push(`## Next steps`);
+  L.push('');
+  L.push(`This audit was produced from publicly fetched data — live HTML, sitemap, Google indexing, SERP positions, AI-search citations. Items marked "not verifiable from public data" require authenticated tool access (Google Search Console, Ahrefs, GA4) to confirm and are flagged honestly throughout.`);
+  L.push('');
+  L.push(`Happy to walk through findings on a call and discuss which gaps to prioritise.`);
+  L.push('');
+  L.push('---');
+  L.push('');
+  L.push(`Prepared by **${opts.preparedBy || 'Manav S'}** · Digital marketing specialist · ${date}`);
+
+  return L.join('\n');
+}
+
+/* ════════════════════════════════════════════════════
    MAIN PAGE
 ════════════════════════════════════════════════════ */
 export default function Audit() {
@@ -106,6 +333,8 @@ export default function Audit() {
   const [keywords,    setKeywords]    = useState('');
   const [competitors, setCompetitors] = useState('');
   const [brandName,   setBrandName]   = useState('');
+  // Build 12.14 — buyer name for prospect-audit framing on exports
+  const [buyerName,   setBuyerName]   = useState('');
   const [loading,     setLoading]     = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [syncing,     setSyncing]     = useState(false);
@@ -208,6 +437,25 @@ export default function Audit() {
       toast({ title: 'Save failed', description: err.message, variant: 'destructive' });
     }
     setSaving(false);
+  };
+
+  /* ─── Build 12.14: export audit as client-facing Word / preview in tab ─── */
+  const exportAuditWord = () => {
+    if (!result) return;
+    const md = renderAuditAsMarkdown(result, { buyerName: buyerName.trim() || undefined, brandName: brandName.trim() || undefined });
+    const title = buyerName.trim()
+      ? `SEO Audit · ${buyerName.trim()}`
+      : `SEO Audit · ${result.url || 'Website'}`;
+    downloadStakeholderAsWord(md, { title, kind: 'SEO Audit Report', generatedAt: new Date().toISOString() });
+  };
+
+  const previewAuditTab = () => {
+    if (!result) return;
+    const md = renderAuditAsMarkdown(result, { buyerName: buyerName.trim() || undefined, brandName: brandName.trim() || undefined });
+    const title = buyerName.trim()
+      ? `SEO Audit · ${buyerName.trim()}`
+      : `SEO Audit · ${result.url || 'Website'}`;
+    openStakeholderReport(md, { title, kind: 'SEO Audit Report', generatedAt: new Date().toISOString() });
   };
 
   const syncToMetrics = async () => {
@@ -480,6 +728,13 @@ export default function Audit() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
+                    Buyer Name <span className="normal-case text-muted-foreground/60">· optional, appears on exports</span>
+                  </Label>
+                  <Input value={buyerName} onChange={e => setBuyerName(e.target.value)} placeholder="e.g. Sarah at BlendSpace"
+                    className="h-10 bg-background/60 border-border" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-mono text-muted-foreground uppercase tracking-wider">
                     Target Keywords (comma separated — each checked live on Google)
                   </Label>
                   <Input value={keywords} onChange={e => setKeywords(e.target.value)}
@@ -588,6 +843,15 @@ export default function Audit() {
                     <Button onClick={saveReport} disabled={saving}
                       className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground">
                       <Save className="h-4 w-4 mr-2" />{saving ? 'Saving...' : 'Save Audit Report'}
+                    </Button>
+                    {/* Build 12.14 — client-facing export */}
+                    <Button onClick={exportAuditWord} variant="outline"
+                      className="border-primary/30 text-primary hover:bg-primary/10">
+                      <Download className="h-4 w-4 mr-2" />Download Word
+                    </Button>
+                    <Button onClick={previewAuditTab} variant="outline"
+                      className="border-border">
+                      <ExternalLink className="h-4 w-4 mr-2" />Preview in tab
                     </Button>
                     {selectedProjectId && savedId && (
                       <Button onClick={syncToMetrics} disabled={syncing} variant="outline"
@@ -775,6 +1039,14 @@ export default function Audit() {
                   <Button onClick={saveReport} disabled={saving}
                     className="bg-gradient-to-r from-primary to-primary-glow text-primary-foreground font-semibold">
                     <Save className="h-4 w-4 mr-2" />{saving ? 'Saving...' : savedId ? 'Saved ✓' : 'Save Audit Report'}
+                  </Button>
+                  {/* Build 12.14 — client-facing export */}
+                  <Button onClick={exportAuditWord} variant="outline"
+                    className="border-primary/30 text-primary hover:bg-primary/10">
+                    <Download className="h-4 w-4 mr-2" />Download Word
+                  </Button>
+                  <Button onClick={previewAuditTab} variant="outline" className="border-border">
+                    <ExternalLink className="h-4 w-4 mr-2" />Preview in tab
                   </Button>
                   {selectedProjectId && savedId && (
                     <Button onClick={syncToMetrics} disabled={syncing}

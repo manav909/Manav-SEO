@@ -680,3 +680,59 @@ Honest caveats:
 Three files changed: api/lib/prospect-discovery.ts (lane prompt count + token budget + timeout + cover letter positioning + render strip), src/components/pm/api.ts (client-side render mirror), src/components/pm/BacklinksPanel.tsx (UI simplification + default sales_stage positioning + hidden strategic context).
 
 Vite build green at 46.03s. Compile clean. No contractions, no hardcoding.
+
+Build 12.14 — Audit page client-facing export [SHIPPED 2026-06-04]: Operator asked whether the existing audit module works on random URLs without GSC/GA4 — answer is yes, the 4-agent system is already designed for that. The actual gap was no Word/PDF export — operator could run audits but could not send the result as a sales asset. This build closes that gap with a single-file UI change.
+
+NEW FUNCTION: `renderAuditAsMarkdown(result, opts)` — pure function near top of src/pages/Audit.tsx. Converts the /api/run-analysis result object into a clean client-facing markdown document. Preserves the existing confidence + limitations honesty discipline:
+- Each data point rendered as `**Label:** value · _confidence label_` with limitations as nested bullets
+- Confidence labels translated from numeric to plain language: >=80 'verified', >=50 'confident estimate', >0 'directional estimate', 0 'not verifiable from public data'
+- All four agent sections (Technical, Content/E-E-A-T, AI Visibility, Rankings) rendered with their confidence ceilings as section subheaders
+- Synthesis section (verdict, biggest_verified_win, most_urgent_gap, verified_strengths) preserved
+- Cross-verification section preserved (the multi-source agreement signal)
+- Footer "Next steps" + signature
+
+NEW FIELD: "Buyer Name" input added to the audit form alongside Brand Name. Optional. When populated, appears on exports as "Prepared for: [name]". For prospect-audit use case where the audit is being run on a lead's site to share back.
+
+NEW HANDLERS: `exportAuditWord()` and `previewAuditTab()` in the Audit component. Both call renderAuditAsMarkdown with buyer/brand names from form state, then route through existing downloadStakeholderAsWord / openStakeholderReport helpers from src/lib/reportExport.ts (same helpers used by all other Word exports across the platform — Build 12.10.1 hotfix patterns followed correctly here: passing (markdown, meta) two-arg signature).
+
+UI: Two new buttons added to BOTH action rows in the audit results (top action row inside the overall header card, AND bottom Save/Sync row). Buttons: "Download Word" (border-primary styling, primary CTA color) and "Preview in tab" (subtle border-border). Sits between Save and Sync.
+
+WHY THIS WORKS WITHOUT GSC/GA4:
+- Technical agent fetches live HTML + sitemap + Google site: count — public data
+- Content agent runs LLM analysis on fetched HTML for E-E-A-T signals — public data
+- AI Visibility agent checks Perplexity/ChatGPT citations + brand mention counts — public data
+- Ranking agent checks live SERP positions per keyword via existing search infra — public data
+- None of these require authenticated GSC/GA4 access to the target site
+- Items that genuinely require authenticated access (Google AI Overview presence) render with explicit 'not verifiable from automated analysis' label — already in the audit's own architecture, just preserved in export
+
+HONESTY DISCIPLINE IN EXPORT:
+- The audit already carries confidence (0-100) + limitations[] per data point internally
+- The export preserves both — every numeric value in the Word doc has a confidence label after it
+- Each section subheader carries its own "confidence ceiling" line (e.g. 'Max confidence 92% — cannot verify JS-rendered content or authenticated pages')
+- The cross-verification section explicitly shows where multiple agents agreed/disagreed
+- The "What this analysis could not verify" section from the synthesis is preserved verbatim
+- Footer notes that items marked 'not verifiable from public data' require GSC/Ahrefs/GA4 for confirmation
+- No hedging, no defensive language, just qualified data presented with its qualifications inline
+
+OPERATOR WORKFLOW for prospect-audit (BlendSpace-style lead):
+1. Open /audit, leave project dropdown empty
+2. Paste prospect URL (e.g. blendspace.ai)
+3. Enter prospect name in Brand Name field, contact name in Buyer Name field
+4. Optionally add 1-5 guessed keywords (LLM ranking agent will check them on live SERP)
+5. Click Run Analysis — ~30-90s, 4 agents in parallel
+6. Review results in-app, confidence badges per row
+7. Click "Download Word" — client-facing audit report Word doc downloads
+8. (Optional) Click "Preview in tab" first to verify content
+9. Send to prospect with personal cover note
+
+Honest caveats:
+1. Audit works on any URL but quality scales with input. For random URL with no keywords, you get the technical + content + visibility findings. Adding 3-5 guessed keywords unlocks the Ranking section with actual SERP positions.
+2. Items requiring authenticated tools (Google AI Overview, actual organic traffic, Ahrefs DR if you wanted that) come back as 'not verifiable from public data' with explicit labels. Honest, not hedged.
+3. The render preserves the audit's existing confidence/limitations architecture exactly — does not add new disclaimers, does not strip existing ones. The audit module was already well-designed for data honesty; this build just makes it shareable.
+4. No PDF generation — Word .doc only. Same caveat as all other exports in the system. Buyers open in Word, can save-as-PDF if they want.
+5. Buyer name is optional. If blank, document title becomes 'SEO Audit · [URL]'. With buyer name: 'SEO Audit · [name]'.
+6. The audit takes 30-90s to run per URL. For batch audits across multiple prospect leads, no batch UI yet — operator runs one at a time.
+
+Single file changed: src/pages/Audit.tsx (added imports, added renderAuditAsMarkdown helper function, added buyerName state, added exportAuditWord + previewAuditTab handlers, added Buyer Name form input, added Download Word + Preview in tab buttons to both action rows).
+
+Vite build green at 39.49s. Compile clean. No contractions, no hardcoding.
