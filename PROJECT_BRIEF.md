@@ -329,3 +329,53 @@ HONEST CAVEATS:
 Schema migration workspace-build12_7-backlink-metrics-and-scope.sql — applies to backlink_assets, creates backlink_provider_keys + backlink_metrics_refresh_queue tables with appropriate indexes. All idempotent.
 
 Vite build green at 25.73s. All four files compile clean.
+
+Build 12.8 — Prospect Discovery (Free Backlink Finder) [SHIPPED 2026-05-30]: New sales-motion feature for prospects who haven't engaged. Inputs industry (required) + optional geography/budget/URL/name. Produces a 1-page teaser report with 3 categories of free backlink opportunities and 5-9 named real targets, sized to leave them wanting more.
+
+New file api/lib/prospect-discovery.ts (~13kb, ~440 lines). Three parallel research lanes each calling Anthropic with the native web_search tool:
+- Resource Pages & Industry Directories
+- Expert Quotes (HARO/Featured/Connectively) & Podcast Guesting
+- Niche Communities & Industry Blogs
+Each lane returns 2-3 targets max — quality over quantity. Empty arrays are explicitly allowed when web_search finds nothing genuine — no fabrication to fill quota.
+
+DA estimation discipline (the key honesty win):
+- EVERY target shows DA as a range ("40-60", "60-80"), NEVER a precise number
+- EVERY target carries a confidence label: "high" (model encountered this site repeatedly in training), "medium" (estimating by analogy), "low" (inferring from URL/topical signals)
+- Prompts explicitly forbid invention of publication names. If web_search returns nothing useful for a category, lane returns fewer targets rather than fabricating.
+- Teaser opening line: "Every target below is named and findable — we have not invented placeholders."
+
+Web search integration: new callAnthropicWithWebSearch helper (in prospect-discovery.ts, not bde-backlinks.ts). Sends tools array [{type: 'web_search_20250305', name: 'web_search', max_uses: 5}] per lane. Extracts all text blocks from response. Counts tool_use blocks for web_searches_used metric. 240s timeout per lane.
+
+Schema migration workspace-build12_8-prospect-discovery.sql creates prospect_discoveries table:
+- Inputs: industry (required), geography, budget_tier, client_url (optional!), prospect_name, prospect_email, context
+- Run state: status (queued|researching|synthesizing|complete|failed|timed_out), progress_json, started_at, completed_at, error_message
+- Output: teaser_md, targets_json[], llm_calls_used, web_searches_used
+- Provenance: converted_to_project_id, converted_at (for when prospect becomes a client)
+- Polling: client_request_id
+
+API routes (lazy-imported from prospect-discovery.ts):
+- prospect_discovery_run — fires the 3-lane research, returns discovery_id and teaser_md
+- prospect_discovery_status — client-side polling endpoint
+- prospect_discovery_list — recent discoveries (for tracking pipeline)
+
+Teaser report shape:
+- Header: "Free Backlink Opportunity Report" branded "Prepared by Manav S" (primary brand), date in en-GB
+- Opening note sets honest expectation: "discovery teaser, not full strategy"
+- Each lane as section with named targets, DA range + confidence label, why_valuable, attainability, outreach_path
+- Closing "What is NOT in this teaser" section lists 7 things the full engagement includes (Digital PR, broken-link, Ahrefs metrics, 90-day plan, etc.) — the conversion hook
+- Footer: "SEO Season by Manav S" subtle attribution
+
+UI: new "Prospect Finder" sub-tab in BacklinksPanel (4th tab, Search icon). Form: industry (required, bold red asterisk), geography, budget, URL (optional), prospect name (optional, appears on teaser), context. Live progress shows 3-pip bar with "X/3 lanes complete" counter, italic "Live web search in progress" hint. On completion: preview pane with embedded HTML rendering of the teaser + Preview-in-tab button + Download Word button. Existing downloadStakeholderAsWord helper handles Word export. Recovery flow if foreground fetch dies.
+
+Wall-time abort: 180s cap (was 280s for full briefs; prospect flow is supposed to be FAST for sales motion). Beyond 3 minutes the prospect has lost interest.
+
+Honest caveats:
+1. web_search adds latency — each lane typically 20-40s. Total wall time 30-90s typical (slower than no-search version, but the named-targets-not-fabricated trade-off is worth it).
+2. web_search uses Anthropic's tool. Cost ~$10 per 1000 searches; with max_uses=5 per lane and 3 lanes, max ~$0.15 per teaser worst case. Cheap enough to not gate.
+3. Targets are only as good as what web_search finds. For obscure verticals (e.g. "small-batch artisan B2B beard oil") it may return generic results. Geography helps — "construction tech UK" gets better results than "construction tech".
+4. DA ranges are still LLM estimates. The confidence label is honest signal but the range itself could be wrong. The disclaimer in the teaser ("verify in Ahrefs before pitching") + the entire framing as "teaser, not strategy" sets expectations correctly.
+5. Prospect-to-project conversion (clicking "Convert to project" in the discovery list) is NOT yet built — converted_to_project_id column exists in schema but no UI flow. Build 12.9 territory.
+6. Anthropic web_search tool requires API key with web_search beta access. If your key doesn't have it, calls will return 400. Check Anthropic console.
+7. Prospect data (industry, name, URL) is currently stored without RLS protection — operator-level access only. Fine for single-operator deployment; needs RLS if multi-tenant.
+
+Vite build green at 25.43s. All 5 files compile clean. No contractions, no hardcoding.

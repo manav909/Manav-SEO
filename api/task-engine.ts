@@ -589,6 +589,25 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         limit: body.limit,
       }));
     }
+    // Build 12.8 — Prospect Discovery (free backlink finder)
+    if (action === "prospect_discovery_run" || action === "prospect_discovery_status" || action === "prospect_discovery_list") {
+      const pd = await import("./lib/prospect-discovery.js");
+      if (action === "prospect_discovery_run") {
+        return ok(res, await pd.runProspectDiscovery({
+          inputs: body.inputs || {},
+          client_request_id: body.client_request_id,
+        }));
+      }
+      if (action === "prospect_discovery_status") {
+        return ok(res, await pd.getProspectDiscoveryStatus({
+          discovery_id: body.discovery_id,
+          client_request_id: body.client_request_id,
+        }));
+      }
+      if (action === "prospect_discovery_list") {
+        return ok(res, await pd.listProspectDiscoveries({ limit: body.limit }));
+      }
+    }
     if (action === "backlink_assets_list") {
       return ok(res, await m.listBacklinkAssets({
         projectId: body.projectId || null,

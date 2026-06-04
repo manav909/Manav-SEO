@@ -24,13 +24,14 @@ import {
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
   backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
   backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
+  prospectDiscoveryRun, prospectDiscoveryStatus,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
 import { useToast } from '@/hooks/use-toast';
 import { useProject } from '@/contexts/ProjectContext';
 
-type SubTab = 'brief' | 'assets' | 'competitor';
+type SubTab = 'brief' | 'assets' | 'competitor' | 'prospect';
 
 interface Props {
   projectId: string;
@@ -123,6 +124,18 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
   // Build 12.7 — export state
   const [exporting, setExporting] = useState(false);
+
+  // Build 12.8 — prospect finder state
+  const [prospectIndustry, setProspectIndustry] = useState('');
+  const [prospectGeography, setProspectGeography] = useState('');
+  const [prospectBudget, setProspectBudget] = useState<'low' | 'medium' | 'high' | 'enterprise' | ''>('');
+  const [prospectUrl, setProspectUrl] = useState('');
+  const [prospectName, setProspectName] = useState('');
+  const [prospectContext, setProspectContext] = useState('');
+  const [prospectRunning, setProspectRunning] = useState(false);
+  const [prospectProgress, setProspectProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null } | null>(null);
+  const [prospectResult, setProspectResult] = useState<{ teaser_md: string; targets_count: number; discovery_id?: string } | null>(null);
+  const [prospectError, setProspectError] = useState('');
 
   // Competitor mapping state
   const [competitorMode, setCompetitorMode] = useState<'single' | 'batch'>('single');
@@ -528,6 +541,92 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     }
   };
 
+  /* ─── Build 12.8: prospect finder handler ──────────────────── */
+  const runProspectFinder = async () => {
+    setProspectError('');
+    if (!prospectIndustry.trim()) {
+      setProspectError('Industry is required. Even just one word — "construction" or "SaaS" — is enough to start.');
+      return;
+    }
+    setProspectRunning(true);
+    setProspectResult(null);
+    setProspectProgress({ stage: 'starting', lanes_done: 0, lanes_total: 3, elapsed_seconds: 0 });
+
+    const clientReqId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    let pollHandle: any = null;
+    const startPolling = () => {
+      pollHandle = setInterval(async () => {
+        try {
+          const s = await prospectDiscoveryStatus({ client_request_id: clientReqId });
+          if (s.success) {
+            setProspectProgress({
+              stage: s.stage || s.status || 'running',
+              lanes_done: typeof s.lanes_done === 'number' ? s.lanes_done : 0,
+              lanes_total: typeof s.lanes_total === 'number' ? s.lanes_total : 3,
+              elapsed_seconds: typeof s.elapsed_seconds === 'number' ? s.elapsed_seconds : null,
+            });
+            if (s.status === 'failed' || s.status === 'timed_out') {
+              clearInterval(pollHandle);
+              setProspectError(s.error_message || `Discovery ${s.status}.`);
+            }
+          }
+        } catch { /* tolerate */ }
+      }, 3000);
+    };
+    const pollStartTimer = setTimeout(startPolling, 4000);
+
+    try {
+      const r = await prospectDiscoveryRun({
+        inputs: {
+          industry: prospectIndustry.trim(),
+          geography: prospectGeography.trim() || undefined,
+          budget_tier: prospectBudget || undefined,
+          client_url: prospectUrl.trim() || undefined,
+          prospect_name: prospectName.trim() || undefined,
+          context: prospectContext.trim() || undefined,
+        },
+        client_request_id: clientReqId,
+      });
+      clearTimeout(pollStartTimer);
+      if (pollHandle) clearInterval(pollHandle);
+      if (!r.success) {
+        setProspectError(r.error || 'Discovery failed.');
+        return;
+      }
+      setProspectResult({ teaser_md: r.teaser_md || '', targets_count: r.targets_count || 0, discovery_id: r.discovery_id });
+      setProspectProgress(null);
+      toast({ title: 'Teaser ready', description: `${r.targets_count} targets across 3 categories.` });
+    } catch (e: any) {
+      clearTimeout(pollStartTimer);
+      if (pollHandle) clearInterval(pollHandle);
+      // Try recovery via final status poll
+      try {
+        const final = await prospectDiscoveryStatus({ client_request_id: clientReqId });
+        if (final.success && final.complete && final.teaser_md) {
+          setProspectResult({ teaser_md: final.teaser_md, targets_count: Array.isArray(final.targets) ? final.targets.length : 0, discovery_id: final.discovery_id });
+          setProspectProgress(null);
+          toast({ title: 'Teaser recovered', description: 'Foreground request lost but server completed.' });
+          return;
+        }
+      } catch { /* fall through */ }
+      setProspectError(e?.message || 'Discovery failed.');
+    } finally {
+      setProspectRunning(false);
+    }
+  };
+
+  const downloadProspectTeaserWord = () => {
+    if (!prospectResult?.teaser_md) return;
+    const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
+    downloadStakeholderAsWord({ title, markdown: prospectResult.teaser_md });
+  };
+
+  const previewProspectTeaser = () => {
+    if (!prospectResult?.teaser_md) return;
+    const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
+    openStakeholderReport({ title, markdown: prospectResult.teaser_md });
+  };
+
   /* ─── Build 12.1: competitor mapping handlers ───────────────── */
   const loadCompetitorHistory = useCallback(async () => {
     const r = await backlinkCompetitorList({
@@ -608,12 +707,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
         </p>
       </div>
 
-      {/* Sub-tabs: Brief generation / Asset library / Competitor mapping */}
+      {/* Sub-tabs: Brief generation / Asset library / Competitor mapping / Prospect Finder */}
       <div className="flex gap-1 border-b border-border">
         {([
           ['brief', 'Generate Brief', Link2],
           ['assets', 'Asset Library', Database],
           ['competitor', 'Competitor Map', Target],
+          ['prospect', 'Prospect Finder', Search],
         ] as [SubTab, string, any][]).map(([id, label, Icon]) => (
           <button
             key={id}
@@ -1388,6 +1488,141 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Sub-tab: Prospect Finder (Build 12.8) ──────────────── */}
+      {subTab === 'prospect' && (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Search className="h-4 w-4 text-primary" />
+              <h3 className="text-sm font-semibold">Prospect Finder · Free Backlink Teaser</h3>
+            </div>
+            <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
+              For prospects who want to see what backlinks you can find for them — sometimes without sharing their URL. Produces a 1-page teaser (3 categories, 5-9 named targets) you can send as a discovery-call leave-behind. Uses live web search to find real publications + podcasts + communities in their industry. DA shown as ranges with confidence labels — never fake precision.
+            </p>
+
+            {/* Inputs */}
+            <div className="space-y-2">
+              <div>
+                <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                  Industry <span className="text-red-400">*</span>
+                </label>
+                <input
+                  value={prospectIndustry}
+                  onChange={e => setProspectIndustry(e.target.value)}
+                  placeholder="e.g. construction tech, B2B HR analytics, sustainable fashion"
+                  className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background"
+                />
+              </div>
+              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Geography <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
+                  <input value={prospectGeography} onChange={e => setProspectGeography(e.target.value)} placeholder="UK / US / global" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Budget tier <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
+                  <select value={prospectBudget} onChange={e => setProspectBudget(e.target.value as any)} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background">
+                    <option value="">— not specified —</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="enterprise">enterprise</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Prospect URL <span className="text-muted-foreground/60 normal-case font-normal">· if shared</span></label>
+                  <input value={prospectUrl} onChange={e => setProspectUrl(e.target.value)} placeholder="https://… (optional)" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Prospect name <span className="text-muted-foreground/60 normal-case font-normal">· optional, appears on teaser</span></label>
+                  <input value={prospectName} onChange={e => setProspectName(e.target.value)} placeholder="e.g. Acme Corp, or contact name" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Context <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
+                  <input value={prospectContext} onChange={e => setProspectContext(e.target.value)} placeholder="anything specific to emphasise" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                </div>
+              </div>
+            </div>
+
+            {/* Run */}
+            <div className="space-y-2 pt-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={runProspectFinder}
+                  disabled={prospectRunning || !prospectIndustry.trim()}
+                  className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {prospectRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                  {prospectRunning ? 'Finding…' : 'Find free backlinks'}
+                </button>
+                {!prospectRunning && (
+                  <div className="text-[10px] text-muted-foreground">3 lanes in parallel with live web search · typically 30-90s.</div>
+                )}
+              </div>
+
+              {prospectRunning && prospectProgress && (
+                <div className="rounded-lg border border-border bg-background/50 p-3 space-y-2">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-medium text-foreground/90">
+                      {prospectProgress.stage === 'starting' && 'Starting up…'}
+                      {prospectProgress.stage === 'researching' && `Researching: ${prospectProgress.lanes_done}/${prospectProgress.lanes_total} lanes complete`}
+                      {prospectProgress.stage === 'synthesizing' && 'Assembling the teaser…'}
+                      {!['starting', 'researching', 'synthesizing'].includes(prospectProgress.stage) && prospectProgress.stage}
+                    </span>
+                    {prospectProgress.elapsed_seconds !== null && (
+                      <span className="text-muted-foreground">server elapsed: {prospectProgress.elapsed_seconds}s</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3].map(i => {
+                      const done = (prospectProgress.lanes_done || 0) >= i;
+                      const active = (prospectProgress.lanes_done || 0) === i - 1;
+                      return (
+                        <div key={i} className={`h-1 flex-1 rounded ${done ? 'bg-primary' : active ? 'bg-primary/50 animate-pulse' : 'bg-muted'}`} />
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground italic">
+                    Live web search in progress — finding actual publications, podcasts, and communities in this industry.
+                  </div>
+                </div>
+              )}
+
+              {prospectError && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-[11px] text-red-400 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                  <div>{prospectError}</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Teaser preview + export */}
+          {prospectResult && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <div>
+                  <h3 className="text-sm font-semibold">Teaser ready</h3>
+                  <div className="text-[11px] text-muted-foreground">{prospectResult.targets_count} target{prospectResult.targets_count === 1 ? '' : 's'} across 3 categories · honest DA ranges with confidence labels</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={previewProspectTeaser} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">
+                    <ExternalLink className="h-3 w-3 inline mr-1" />
+                    Preview in tab
+                  </button>
+                  <button onClick={downloadProspectTeaserWord} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90">
+                    <Download className="h-3 w-3 inline mr-1" />
+                    Download Word
+                  </button>
+                </div>
+              </div>
+              <div className="backlink-preview text-xs max-h-[600px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(prospectResult.teaser_md) }} />
             </div>
           )}
         </div>

@@ -4558,3 +4558,41 @@ export async function backlinkStatus(opts: { brief_id?: string; client_request_i
   Promise<{ success?: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; sections_done?: number | null; sections_total?: number | null; elapsed_seconds?: number; brief_id?: string; error_message?: string | null; complete?: boolean; brief_md?: string; title?: string; error?: string }> {
   return post(ENGINE, { action: 'backlink_status', ...opts });
 }
+
+/* ─── Build 12.8 — Prospect Discovery ─────────────────────────── */
+
+export interface ProspectDiscoveryInputs {
+  industry: string;
+  geography?: string;
+  budget_tier?: 'low' | 'medium' | 'high' | 'enterprise';
+  client_url?: string;
+  prospect_name?: string;
+  prospect_email?: string;
+  context?: string;
+}
+
+export interface ProspectTarget {
+  category: string;
+  name: string;
+  url?: string;
+  da_range: string;
+  confidence: 'high' | 'medium' | 'low';
+  why_valuable: string;
+  attainability: 'easy' | 'medium' | 'hard';
+  outreach_path: string;
+}
+
+export async function prospectDiscoveryRun(opts: { inputs: ProspectDiscoveryInputs; client_request_id?: string }):
+  Promise<{ success?: boolean; discovery_id?: string; teaser_md?: string; targets_count?: number; llm_calls_used?: number; web_searches_used?: number; error?: string }> {
+  return post(ENGINE, { action: 'prospect_discovery_run', ...opts });
+}
+
+export async function prospectDiscoveryStatus(opts: { discovery_id?: string; client_request_id?: string }):
+  Promise<{ success?: boolean; status?: string; stage?: string; lanes_done?: number; lanes_total?: number; elapsed_seconds?: number; complete?: boolean; teaser_md?: string; targets?: ProspectTarget[]; error_message?: string; error?: string }> {
+  return post(ENGINE, { action: 'prospect_discovery_status', ...opts });
+}
+
+export async function prospectDiscoveryList(opts: { limit?: number } = {}):
+  Promise<{ success?: boolean; items?: Array<{ id: string; industry: string; geography?: string; prospect_name?: string; status: string; target_count: number; llm_calls_used: number; converted_to_project_id?: string; created_at: string }>; error?: string }> {
+  return post(ENGINE, { action: 'prospect_discovery_list', ...opts });
+}
