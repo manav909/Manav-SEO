@@ -387,3 +387,34 @@ Fix: extracted the prospect routes into their own sibling block guarded by `acti
 Single-file change to api/task-engine.ts. No schema migration. Vite build green at 40.44s.
 
 Honest note: this should have been caught by manual route testing before shipping 12.8. Adding "post-deploy: curl the new route once to confirm it returns success, not Unknown action" to my mental checklist.
+
+Build 12.8.2 — Hotfix: prospect 0-target failure mode [SHIPPED 2026-05-30]: When the prospect-discovery flow produced "0 targets across 3 categories" with no clear cause, root-cause investigation surfaced two issues:
+
+(1) ROOT CAUSE — web_search appears not enabled on the Anthropic API key. The Anthropic web_search tool requires explicit enablement in the Anthropic Console (org-admin toggle). Without it, the API still accepts the tools array in the request body and returns 200 OK, but the model never invokes web_search — text-only response, 0 tool_use blocks. My prompts gave the model explicit permission to return empty arrays "if web_search returns nothing useful," and the model dutifully complied with empty targets.
+
+(2) NO DIAGNOSTIC CAPTURE — prospect-discovery wasn't wired into the synthesis_diagnostics table that brief synthesis uses (Build 12.5). When all three lanes returned empty, we had no record of what came back. Flying blind on silent failures.
+
+Three layered fixes:
+
+A) DIAGNOSTIC CAPTURE: every lane call now persists to synthesis_diagnostics on failure paths: empty text response, 0 tool_use blocks with tools enabled (the "web_search disabled" smoking gun), HTTP errors, parse failures. Diagnostic includes raw response, stop_reason, request_summary (with web_search_enabled flag and tool_use_count), attempt_number, duration_ms. Reuses the existing synthesis_diagnostics table — discovery_id stored in the brief_id column (both are nullable uuids). Module column distinguishes 'prospect_discovery' from 'backlinks'.
+
+B) PROMPT TIGHTENING: removed the "empty array is acceptable" permission from all three lanes. New rules:
+   - Resource pages: "Produce 2-3 SPECIFIC NAMED targets. Default: 3. Acceptable fallback: name a CATEGORY with a concrete search operator."
+   - HARO: "Produce 2-3 SPECIFIC NAMED targets. HARO-style platforms are stable; name them from training data."
+   - Communities: "Empty arrays NOT acceptable for mainstream industries. Reddit alone has communities for almost everything."
+   - All lanes: include "explored" field at top level explaining what was searched/considered.
+
+C) WEB_SEARCH-DISABLED DETECTION + LLM-ONLY FALLBACK: callAnthropicWithWebSearch extended with optional enable_web_search flag (default true). When omitted false, tools array is not sent. LaneResult shape now returns tool_use_count from each lane. Top-level orchestrator detects the failure signature: if all three lanes return 0 tool_uses AND 0 targets on first pass, automatically re-runs all three lanes with web_search disabled. Second pass uses pure LLM training-data knowledge of established industry resource pages, HARO platforms, podcasts, communities. Result is not as fresh as live web search, but for mainstream industries it produces useful real names. Console logs the fallback decision so it's debuggable.
+
+Teaser report rendering updated: when webSearchDisabled is true, the opening note swaps to honest disclosure: "Note: Targets below are sourced from established industry knowledge, not live web search. The full engagement uses real-time discovery to surface current opportunities including newly-launched podcasts and newly-published resource pages." Avoids the lie of claiming "named and findable from live search" when search didn't run.
+
+Operator action: to enable real web search, go to Anthropic Console > organisation settings > Privacy / Tools > toggle Web Search on. Once enabled, the next prospect run will use live search and the fallback won't fire. To verify: check synthesis_diagnostics rows with label like 'prospect/%' — tool_use_count > 0 means web_search ran successfully.
+
+Honest caveats:
+1. The fallback doubles the LLM call count when it fires (3 first-pass + 3 fallback = 6 calls, ~$0.05-0.10 extra per prospect). Worth it for not delivering empty teasers.
+2. Diagnostic table grows ~3 rows per prospect run when web_search is unavailable. Acceptable scale; eventual cleanup cron territory.
+3. The fallback only triggers when ALL THREE lanes return 0/0. If one lane finds anything (even one target), no fallback. This is intentional — partial real-search results are better than full LLM-fallback.
+4. If web_search IS enabled but returns 0 useful results for a deeply obscure vertical, fallback also fires — model writes from training data instead. Honest disclosure banner explains this either way.
+5. Single-file change to api/lib/prospect-discovery.ts. No schema migration (reuses synthesis_diagnostics from Build 12.5). No task-engine change.
+
+Vite build green at 27.02s. Compile clean. No contractions or hardcoding.

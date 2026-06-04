@@ -31,6 +31,45 @@ import { db } from "./db.js";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const MODEL = "claude-sonnet-4-20250514";
 
+/* ─── Build 12.8.2 — Diagnostic persistence ─────────────────── */
+/* Same synthesis_diagnostics table used by bde-backlinks Build 12.5.
+   When a lane returns empty, parse fails, or web_search returns 0
+   tool uses, we persist the raw response so I can post-mortem
+   exactly what happened. Without this we are flying blind on
+   silent failures like "0 targets across 3 categories". */
+async function persistDiagnostic(opts: {
+  discovery_id?: string | null;
+  label: string;
+  http_status?: number | null;
+  stop_reason?: string | null;
+  parse_error?: string | null;
+  raw_response?: string;
+  request_summary: { model: string; max_tokens: number; system_length: number; user_length: number; web_search_enabled: boolean };
+  attempt_number: number;
+  duration_ms: number;
+  tool_use_count?: number;
+}) {
+  try {
+    const raw = opts.raw_response || "";
+    const truncated = raw.length > 16_000 ? raw.slice(0, 16_000) : raw;
+    await db().from("synthesis_diagnostics").insert({
+      brief_id: opts.discovery_id || null,        // reuse brief_id column for discovery_id (same nullable uuid)
+      module: "prospect_discovery",
+      label: opts.label,
+      http_status: opts.http_status ?? null,
+      stop_reason: opts.stop_reason || null,
+      parse_error: opts.parse_error || null,
+      raw_response: truncated,
+      raw_length: raw.length,
+      request_summary: { ...opts.request_summary, tool_use_count: opts.tool_use_count ?? 0 },
+      attempt_number: opts.attempt_number,
+      duration_ms: opts.duration_ms,
+    });
+  } catch (e: any) {
+    console.warn(`[prospect/diag] persist failed: ${e?.message}`);
+  }
+}
+
 /* ─── Types ───────────────────────────────────────────────────── */
 
 export interface ProspectDiscoveryInputs {
@@ -70,12 +109,18 @@ async function callAnthropicWithWebSearch(opts: {
   user: string;
   label: string;
   maxTokens: number;
-  brief_id?: string | null;
-}): Promise<{ text: string | null; web_searches: number; tool_use_count: number }> {
+  discovery_id?: string | null;
+  /** Build 12.8.2 — when false, omit the tools array entirely.
+      Used as fallback when web_search appears disabled on the API key
+      so prospects still get useful (LLM-only) results. */
+  enable_web_search?: boolean;
+}): Promise<{ text: string | null; web_searches: number; tool_use_count: number; stop_reason?: string }> {
   if (!ANTHROPIC_API_KEY) {
     console.error(`[${opts.label}] ANTHROPIC_API_KEY missing`);
     return { text: null, web_searches: 0, tool_use_count: 0 };
   }
+  const enableTools = opts.enable_web_search !== false;
+  const requestSummary = { model: MODEL, max_tokens: opts.maxTokens, system_length: opts.system.length, user_length: opts.user.length, web_search_enabled: enableTools };
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     if (attempt > 1) await new Promise(r => setTimeout(r, 2000));
@@ -84,38 +129,68 @@ async function callAnthropicWithWebSearch(opts: {
     const attemptStart = Date.now();
 
     try {
+      const body: any = {
+        model: MODEL,
+        max_tokens: opts.maxTokens,
+        system: opts.system,
+        messages: [{ role: "user", content: opts.user }],
+      };
+      if (enableTools) {
+        body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }];
+      }
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         signal: controller.signal,
         headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: opts.maxTokens,
-          system: opts.system,
-          messages: [{ role: "user", content: opts.user }],
-          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
-        }),
+        body: JSON.stringify(body),
       });
       clearTimeout(timer);
+      const duration = Date.now() - attemptStart;
 
       if (r.ok) {
         const d = await r.json();
         const blocks = d?.content || [];
-        // Extract all text blocks, joined with double newline
         const textBlocks = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "");
         const text = textBlocks.join("\n\n").trim();
-        // Count web_search tool uses
         const toolUseCount = blocks.filter((b: any) => b.type === "tool_use" && b.name === "web_search").length;
-        // Server-side metric stays separate from tool_use count (some servers
-        // may have multiple internal searches per tool_use call).
-        const webSearches = toolUseCount;
-        const duration = Date.now() - attemptStart;
-        console.log(`[${opts.label}] ok in ${duration}ms · tool_uses=${toolUseCount} · text_len=${text.length} · stop=${d?.stop_reason}`);
-        return { text: text || null, web_searches: webSearches, tool_use_count: toolUseCount };
+        const stopReason = d?.stop_reason || null;
+        console.log(`[${opts.label}] ok in ${duration}ms · tool_uses=${toolUseCount} · text_len=${text.length} · stop=${stopReason} · tools_enabled=${enableTools}`);
+
+        // Persist diagnostic when something feels off — empty text, 0 tool uses
+        // with tools enabled (likely web_search not enabled on key), etc.
+        if (!text || (enableTools && toolUseCount === 0)) {
+          await persistDiagnostic({
+            discovery_id: opts.discovery_id,
+            label: opts.label,
+            stop_reason: stopReason,
+            parse_error: !text ? "empty text response" : "0 tool_use blocks with tools enabled (web_search may be disabled on API key)",
+            raw_response: text || JSON.stringify(blocks).slice(0, 4000),
+            request_summary: requestSummary,
+            attempt_number: attempt,
+            duration_ms: duration,
+            tool_use_count: toolUseCount,
+          });
+        }
+
+        return { text: text || null, web_searches: toolUseCount, tool_use_count: toolUseCount, stop_reason: stopReason };
       }
 
       const errText = await r.text().catch(() => "");
-      console.error(`[${opts.label}] HTTP ${r.status}: ${errText.slice(0, 300)}`);
+      console.error(`[${opts.label}] HTTP ${r.status}: ${errText.slice(0, 400)}`);
+      await persistDiagnostic({
+        discovery_id: opts.discovery_id,
+        label: opts.label,
+        http_status: r.status,
+        parse_error: errText.slice(0, 1000),
+        raw_response: errText,
+        request_summary: requestSummary,
+        attempt_number: attempt,
+        duration_ms: duration,
+      });
+      // Specific signal: 400 with "tools" in error message = web_search not enabled
+      if (r.status === 400 && /tool|web_search|invalid|not.*enabled/i.test(errText)) {
+        console.warn(`[${opts.label}] web_search appears not enabled — caller should fall back to LLM-only`);
+      }
       if (![429, 503, 529].includes(r.status) || attempt === 2) {
         return { text: null, web_searches: 0, tool_use_count: 0 };
       }
@@ -123,6 +198,14 @@ async function callAnthropicWithWebSearch(opts: {
       clearTimeout(timer);
       const aborted = controller.signal.aborted;
       console.error(`[${opts.label}] exc: ${e?.message}${aborted ? " (aborted by 240s timeout)" : ""}`);
+      await persistDiagnostic({
+        discovery_id: opts.discovery_id,
+        label: opts.label,
+        parse_error: `${e?.message}${aborted ? " (aborted by timeout)" : ""}`,
+        request_summary: requestSummary,
+        attempt_number: attempt,
+        duration_ms: Date.now() - attemptStart,
+      });
       if (attempt === 2 || aborted) return { text: null, web_searches: 0, tool_use_count: 0 };
     }
   }
@@ -159,10 +242,11 @@ interface LaneResult {
   category: string;
   targets: ProspectTarget[];
   raw_research_text: string;
+  tool_use_count: number;       // Build 12.8.2 — surface for orchestrator detection
   failed?: string;
 }
 
-async function runResourcePagesLane(inputs: ProspectDiscoveryInputs): Promise<LaneResult> {
+async function runResourcePagesLane(inputs: ProspectDiscoveryInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<LaneResult> {
   const system = `You are a senior backlink strategist researching FREE backlink opportunities for a prospect in the ${inputs.industry} industry${inputs.geography ? ` (geography: ${inputs.geography})` : ""}.
 
 Focus: RESOURCE PAGES + INDUSTRY DIRECTORIES.
@@ -190,24 +274,33 @@ OUTPUT — return ONLY this JSON, no preamble:
 }
 
 RULES:
-- 2-3 targets ONLY. Quality over quantity. Prospect will read 3, not 10.
-- Use web_search to find current resource pages in this industry. Search queries like: "[industry] resource page", "[industry] useful links", "best [industry] websites".
-- If web_search returns no useful results, return fewer targets. Empty array is acceptable.`;
+- Produce 2-3 SPECIFIC NAMED targets. Default: 3. Only return fewer when you genuinely cannot name 3 good ones.
+- When web_search is available, USE IT before answering. Try queries like: "[industry] resource page", "[industry] useful links", "best [industry] websites 2025".
+- When web_search returns useful results, name the actual sites. When training data already contains well-known industry resource pages, you may include those with confidence "medium" or "high".
+- Acceptable fallback: if you cannot name a specific publication, you can name a CATEGORY of resource pages with a concrete search operator the prospect can run themselves (e.g., 'inurl:"resources" [industry]'). This counts as a target.
+- Empty arrays are NOT acceptable unless this industry is so niche that no resource pages plausibly exist. If you return empty, you must include reasoning in the operator_note field below.
+
+ALWAYS include an "explored" field at the top level:
+{
+  "explored": "1 sentence on what you searched for or considered",
+  "category": "...",
+  "targets": [...]
+}`;
 
   const user = `Industry: ${inputs.industry}
 ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `Budget tier: ${inputs.budget_tier}\n` : ""}${inputs.context ? `Additional context: ${inputs.context}\n` : ""}
-Find 2-3 specific resource pages or industry directories where someone in this space could realistically earn a free backlink. Use web_search to find current, real options.`;
+Find 2-3 specific resource pages or industry directories where someone in this space could realistically earn a free backlink. Use web_search if available; if not, use training-data knowledge of established industry resource pages.`;
 
-  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/resource-pages", maxTokens: 3500 });
-  if (!result.text) return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: "", failed: "no response" };
+  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/resource-pages", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
+  if (!result.text) return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
   const parsed = extractJson(result.text);
   if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: result.text, failed: "parse failed" };
+    return { category: "Resource Pages & Industry Directories", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
   }
-  return { category: "Resource Pages & Industry Directories", targets: parsed.targets, raw_research_text: result.text };
+  return { category: "Resource Pages & Industry Directories", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
 }
 
-async function runHaroPodcastsLane(inputs: ProspectDiscoveryInputs): Promise<LaneResult> {
+async function runHaroPodcastsLane(inputs: ProspectDiscoveryInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<LaneResult> {
   const system = `You are a senior backlink strategist researching FREE backlink opportunities via EXPERT-QUOTE PLATFORMS and PODCAST GUESTING for a prospect in the ${inputs.industry} industry${inputs.geography ? ` (geography: ${inputs.geography})` : ""}.
 
 Focus:
@@ -235,25 +328,26 @@ OUTPUT — return ONLY this JSON, no preamble:
 }
 
 RULES:
-- 2-3 targets ONLY.
-- Use web_search to find current podcasts in this industry that accept guests. Search queries like: "top [industry] podcasts 2025", "[industry] podcasts accepting guests".
-- For HARO-style platforms, you can rely on training data — they're well-known and stable.
-- Empty array acceptable if web_search returns nothing specific.`;
+- Produce 2-3 SPECIFIC NAMED targets. Default: 3.
+- HARO-style platforms are stable; you can name them from training data (HARO/Connectively, Featured, SourceBottle, Qwoted, Help A B2B Writer, etc.) — pick the 1-2 most relevant to this industry.
+- Industry-specific podcasts: use web_search if available to find currently-active podcasts that accept guests in this vertical. If web_search unavailable, name 1-2 well-known industry podcasts from training data with confidence "medium".
+- Empty arrays are NOT acceptable. HARO-style platforms always apply.
+- Always include "explored" field at the top level explaining what you searched/considered.`;
 
   const user = `Industry: ${inputs.industry}
 ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `Budget tier: ${inputs.budget_tier}\n` : ""}${inputs.context ? `Additional context: ${inputs.context}\n` : ""}
-Find 2-3 specific HARO-style platforms or niche podcasts where someone in this space could earn a free placement. Use web_search to find current real podcasts.`;
+Find 2-3 specific HARO-style platforms or niche podcasts where someone in this space could earn a free placement. Use web_search if available; otherwise rely on training-data knowledge.`;
 
-  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/haro-podcasts", maxTokens: 3500 });
-  if (!result.text) return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: "", failed: "no response" };
+  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/haro-podcasts", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
+  if (!result.text) return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
   const parsed = extractJson(result.text);
   if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: result.text, failed: "parse failed" };
+    return { category: "Expert Quotes & Podcast Guesting", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
   }
-  return { category: "Expert Quotes & Podcast Guesting", targets: parsed.targets, raw_research_text: result.text };
+  return { category: "Expert Quotes & Podcast Guesting", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
 }
 
-async function runCommunitiesLane(inputs: ProspectDiscoveryInputs): Promise<LaneResult> {
+async function runCommunitiesLane(inputs: ProspectDiscoveryInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<LaneResult> {
   const system = `You are a senior backlink strategist researching FREE backlink opportunities via NICHE COMMUNITIES and INDUSTRY BLOGS for a prospect in the ${inputs.industry} industry${inputs.geography ? ` (geography: ${inputs.geography})` : ""}.
 
 Focus:
@@ -281,26 +375,28 @@ OUTPUT — return ONLY this JSON, no preamble:
 }
 
 RULES:
-- 2-3 targets.
-- Use web_search to find current active communities in this industry. Search queries like: "[industry] subreddit", "[industry] community", "best [industry] blogs".
-- Note: communities themselves rarely give followed links. Their VALUE is entity-association and discovery — your name appears, journalists googling the topic find you. Frame why_valuable accordingly.`;
+- Produce 2-3 SPECIFIC NAMED targets. Default: 3.
+- Use web_search if available. If not, name well-known communities from training data: relevant subreddits, Stack Exchange sites, established Slack/Discord communities. For mainstream industries (SaaS, marketing, AI, fintech, e-commerce, healthcare-IT, construction-tech, etc.) you absolutely know real communities exist.
+- Note: communities themselves rarely give followed links. Their VALUE is entity-association and discovery — your name appears, journalists googling the topic find you. Frame why_valuable accordingly.
+- Empty arrays are NOT acceptable for mainstream industries. Reddit alone has communities for almost everything.
+- Always include "explored" field.`;
 
   const user = `Industry: ${inputs.industry}
 ${inputs.geography ? `Geography: ${inputs.geography}\n` : ""}${inputs.budget_tier ? `Budget tier: ${inputs.budget_tier}\n` : ""}${inputs.context ? `Additional context: ${inputs.context}\n` : ""}
-Find 2-3 specific niche communities or industry blogs where someone in this space could build the entity associations that earn ongoing citations. Use web_search.`;
+Find 2-3 specific niche communities or industry blogs where someone in this space could build the entity associations that earn ongoing citations. Use web_search if available.`;
 
-  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/communities", maxTokens: 3500 });
-  if (!result.text) return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: "", failed: "no response" };
+  const result = await callAnthropicWithWebSearch({ system, user, label: "prospect/communities", maxTokens: 3500, discovery_id: opts.discovery_id, enable_web_search: opts.enable_web_search });
+  if (!result.text) return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: "", tool_use_count: result.tool_use_count, failed: "no response" };
   const parsed = extractJson(result.text);
   if (!parsed || !Array.isArray(parsed.targets)) {
-    return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: result.text, failed: "parse failed" };
+    return { category: "Niche Communities & Industry Blogs", targets: [], raw_research_text: result.text, tool_use_count: result.tool_use_count, failed: "parse failed" };
   }
-  return { category: "Niche Communities & Industry Blogs", targets: parsed.targets, raw_research_text: result.text };
+  return { category: "Niche Communities & Industry Blogs", targets: parsed.targets, raw_research_text: result.text, tool_use_count: result.tool_use_count };
 }
 
 /* ─── Teaser report rendering ─────────────────────────────────── */
-function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: LaneResult[] }): string {
-  const { inputs, lanes } = opts;
+function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: LaneResult[]; webSearchDisabled?: boolean }): string {
+  const { inputs, lanes, webSearchDisabled } = opts;
   const totalTargets = lanes.reduce((n, l) => n + l.targets.length, 0);
   const date = new Date().toLocaleDateString("en-GB");
 
@@ -321,8 +417,14 @@ function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: Lane
   // Opening note — sets honest expectation
   L.push(`This is a **discovery teaser** showing ${totalTargets} specific free backlink opportunities in your space. It is not the full strategy.`);
   L.push("");
-  L.push(`Every target below is **named and findable** — we have not invented placeholders. DA ranges shown are honest estimates with confidence labels; precise numbers come from connected backlink tools after engagement.`);
-  L.push("");
+  if (webSearchDisabled) {
+    // Honest disclosure when live web search was unavailable
+    L.push(`> _Note: Targets below are sourced from established industry knowledge, not live web search. The full engagement uses real-time discovery to surface current opportunities including newly-launched podcasts and newly-published resource pages._`);
+    L.push("");
+  } else {
+    L.push(`Every target below is **named and findable** — we have not invented placeholders. DA ranges shown are honest estimates with confidence labels; precise numbers come from connected backlink tools after engagement.`);
+    L.push("");
+  }
   L.push("---");
   L.push("");
 
@@ -458,24 +560,44 @@ export async function runProspectDiscovery(opts: {
     };
 
     if (timedOut) throw new Error("Aborted before research lanes due to wall-time limit.");
-    const [resourceLane, haroLane, communitiesLane] = await Promise.all([
-      trackLane(runResourcePagesLane(inputs)),
-      trackLane(runHaroPodcastsLane(inputs)),
-      trackLane(runCommunitiesLane(inputs)),
+
+    // Build 12.8.2 — first attempt with web_search enabled
+    let [resourceLane, haroLane, communitiesLane] = await Promise.all([
+      trackLane(runResourcePagesLane(inputs, { discovery_id })),
+      trackLane(runHaroPodcastsLane(inputs, { discovery_id })),
+      trackLane(runCommunitiesLane(inputs, { discovery_id })),
     ]);
 
+    // Build 12.8.2 — detect web_search-disabled state. If ALL THREE lanes
+    // returned zero tool_use_count AND zero targets, the most likely cause
+    // is web_search not enabled on the Anthropic API key. Fall back to
+    // LLM-only research (omit tools array) so the prospect at least gets
+    // training-data-grounded suggestions instead of an empty teaser.
+    const totalToolUses = resourceLane.tool_use_count + haroLane.tool_use_count + communitiesLane.tool_use_count;
+    const totalTargetsFirstPass = resourceLane.targets.length + haroLane.targets.length + communitiesLane.targets.length;
+    let usedFallback = false;
+    let webSearchDisabled = false;
+    if (totalToolUses === 0 && totalTargetsFirstPass === 0) {
+      webSearchDisabled = true;
+      console.warn(`[prospect] 0/0/0 tool uses + 0/0/0 targets — web_search appears disabled on Anthropic key. Re-running lanes with web_search OFF for honest LLM-only fallback.`);
+      usedFallback = true;
+      lanesDone = 0;
+      await updateProgress({ status: "researching", stage: "researching", lanes_done: 0, lanes_total: 3 });
+      [resourceLane, haroLane, communitiesLane] = await Promise.all([
+        trackLane(runResourcePagesLane(inputs, { discovery_id, enable_web_search: false })),
+        trackLane(runHaroPodcastsLane(inputs, { discovery_id, enable_web_search: false })),
+        trackLane(runCommunitiesLane(inputs, { discovery_id, enable_web_search: false })),
+      ]);
+    }
+
     const lanes = [resourceLane, haroLane, communitiesLane];
-    // Note: web_searches_used isn't directly returned from each lane in the
-    // refactored type; count via lanes' raw_research_text length as a proxy.
-    // For more accurate tracking, callAnthropicWithWebSearch returns the
-    // count and we could thread it through, but for the teaser this is fine.
-    web_searches_used = lanes.reduce((n, l) => n + (l.failed ? 0 : 2), 0); // rough estimate: ~2 searches per successful lane
+    web_searches_used = lanes.reduce((n, l) => n + l.tool_use_count, 0);
 
     /* ─── Render teaser ──────────────────────────────────── */
     if (timedOut) throw new Error("Aborted before render due to wall-time limit.");
     await updateProgress({ status: "synthesizing", stage: "synthesizing", lanes_done: 3, lanes_total: 3 });
 
-    const teaser_md = renderTeaserReport({ inputs, lanes });
+    const teaser_md = renderTeaserReport({ inputs, lanes, webSearchDisabled });
     const totalTargets = lanes.reduce((n, l) => n + l.targets.length, 0);
 
     /* ─── Persist final state ─────────────────────────────── */
