@@ -510,3 +510,25 @@ Honest caveats:
 Four files changed: api/lib/prospect-discovery.ts (extractor function), api/task-engine.ts (route), src/components/pm/api.ts (client function), src/components/pm/BacklinksPanel.tsx (button, modal, handlers, badges).
 
 Vite build green at 44.58s. Compile clean. No contractions, no hardcoding.
+
+Build 12.10.1 — Hotfix: openStakeholderReport / downloadStakeholderAsWord signature mismatch [SHIPPED 2026-06-04]: "Preview in Tab" appeared to do nothing. Root cause:
+
+Both helpers in src/lib/reportExport.ts have signature `(markdown: string, meta: ReportMeta)` — two separate arguments. They were originally designed by Build 11.2 and used correctly throughout the brief flow.
+
+When I wrote the asset library export in Build 12.7 and the prospect teaser export in Build 12.8, I called them as `openStakeholderReport({ title, markdown })` — a single object — confusing the function's API for the API of my own callers. Same mistake in `downloadStakeholderAsWord`. Both wrong calls have been broken since 12.7 / 12.8 shipped, but the bug only surfaced visibly when you tried Preview-in-Tab on a prospect teaser today.
+
+Effect: the first arg (expected to be a markdown string) received an object; the second arg (expected to be ReportMeta) was undefined. Inside the helper, `meta.title` access threw "cannot read title of undefined" — but the exception was swallowed by the browser's event handler boundary, so the click did nothing visible.
+
+Fixed 4 call sites in src/components/pm/BacklinksPanel.tsx:
+- Line 502: asset library report download (Word)
+- Line 504: asset library report preview (in tab)
+- Line 631: prospect teaser download (Word)
+- Line 637: prospect teaser preview (in tab)
+
+All now pass `(markdown_string, { title, kind, generatedAt })` correctly. ReportMeta requires `title` and `kind`; `generatedAt` is optional but included for the header datestamp.
+
+Lesson going forward: when reusing existing helper functions, grep one existing correct caller before adding new ones. Lines 824 and 1597 in BacklinksPanel.tsx were already calling these helpers correctly — I should have copied that pattern instead of guessing at object-arg style.
+
+Single-file change. No migration. No engine, no API, no client API.
+
+Vite build green at 25.28s. Compile clean.

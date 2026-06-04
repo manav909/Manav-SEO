@@ -499,9 +499,9 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
         return;
       }
       if (format === 'word') {
-        downloadStakeholderAsWord({ title: r.title || 'Backlink Asset List', markdown: r.markdown });
+        downloadStakeholderAsWord(r.markdown, { title: r.title || 'Backlink Asset List', kind: 'Backlink Asset List', generatedAt: new Date().toISOString() });
       } else {
-        openStakeholderReport({ title: r.title || 'Backlink Asset List', markdown: r.markdown });
+        openStakeholderReport(r.markdown, { title: r.title || 'Backlink Asset List', kind: 'Backlink Asset List', generatedAt: new Date().toISOString() });
       }
       toast({ title: format === 'word' ? 'Word document downloaded' : 'Report opened in preview', description: `${r.count} assets` });
     } finally { setExporting(false); }
@@ -628,13 +628,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const downloadProspectTeaserWord = () => {
     if (!prospectResult?.teaser_md) return;
     const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
-    downloadStakeholderAsWord({ title, markdown: prospectResult.teaser_md });
+    downloadStakeholderAsWord(prospectResult.teaser_md, { title, kind: 'Free Backlink Opportunity Report', generatedAt: new Date().toISOString() });
   };
 
   const previewProspectTeaser = () => {
     if (!prospectResult?.teaser_md) return;
     const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
-    openStakeholderReport({ title, markdown: prospectResult.teaser_md });
+    openStakeholderReport(prospectResult.teaser_md, { title, kind: 'Free Backlink Opportunity Report', generatedAt: new Date().toISOString() });
   };
 
   /* ─── Build 12.10: Smart Paste handlers ─────────────────────── */
