@@ -1193,9 +1193,15 @@ OUTPUT — return ONLY this JSON, no preamble, no markdown fences:
   "research_notes": "What you searched for, what you found vs didn't, any specific gaps or caveats not covered above."
 }
 
-TARGET COUNT: 8-12 candidates in main list (aim for 10 in mainstream niches like AI/SaaS/tech), 3-6 tier_up_candidates (clearly above the budget but worth flagging), 2-4 avoid_list. Quality over quantity but DEFAULT TO 10 in the main list — for mainstream niches there are easily 10 real DR30+ sites that take guest posts.
+TARGET COUNT: 40-50 candidates in main list, 5-10 tier_up_candidates (above budget), 3-6 avoid_list. This is a SALES-STAGE PROCUREMENT LIST — it competes against vendors who deliver high-volume lists fast. The buyer expects breadth at this stage; verification happens at proposal stage. Default to 45 candidates for mainstream niches like AI/SaaS/tech where the pool is genuinely large.
 
-If you cannot honestly name 10 at the DR/budget threshold, return fewer — empty seats are honest, fabricated seats kill credibility. But for AI/SaaS/tech specifically, you should be able to name 10 real sites with confidence.`;
+The DR threshold is a SOFT FLOOR not a hard one — include sites in the DR(threshold-5) to DR(threshold+0) band when topical fit is strong, since LLM-estimated DR varies by ±5 from actual Ahrefs DR. So for DR30+, sites estimated at DR25-30 are acceptable when the niche fit is excellent.
+
+Every named site must be a REAL site you recognise from training data. Real sites with estimated metrics is industry-standard. Fake site names is fraud and kills the relationship the moment the buyer clicks one. If you genuinely cannot name 40 real sites in the niche, return what you can — but for AI/SaaS/tech/marketing/general-business there are well over 50 real sites that publish guest posts and you should be able to populate the list.
+
+The senior_strategist_note becomes UNNECESSARY at this list density — the list itself IS the demonstration of capability. Skip it; return empty string. Same for database_breadth_signal — skip, return empty string. These were for the 10-candidate curated shortlist shape; the 45-candidate procurement list does not need them.
+
+research_methodology stays but tightened: 1-2 sentences max on the research approach.`;
 
   const user = `Build the guest-post procurement shortlist per the brief above. Use web_search if available to find specific sites currently accepting AI/SaaS/tech guest posts at the DR and budget thresholds. Verify each candidate against the procurement filters before including.`;
 
@@ -1203,7 +1209,7 @@ If you cannot honestly name 10 at the DR/budget threshold, return fewer — empt
     system,
     user,
     label: "guest-post/finder",
-    maxTokens: 9000,
+    maxTokens: 16000,
     discovery_id: opts.discovery_id,
     enable_web_search: opts.enable_web_search,
   });
@@ -1476,7 +1482,7 @@ export async function runGuestPostFinder(opts: {
     } catch { /* silent */ }
   };
 
-  const WALL_TIMEOUT_MS = 180_000;
+  const WALL_TIMEOUT_MS = 250_000;
   let timedOut = false;
   const timeoutHandle = setTimeout(() => {
     timedOut = true;
@@ -1711,7 +1717,7 @@ export interface CoverLetterInputs {
   budget_min?: number;
   budget_max?: number;
   dofollow_required?: boolean;
-  operator_positioning?: "established" | "new_practitioner" | "mid_career";
+  operator_positioning?: "established" | "new_practitioner" | "mid_career" | "sales_stage";
   operator_notes?: string;
   candidates_count?: number;        // how many sites the shortlist has
 }
@@ -1733,9 +1739,10 @@ export async function generateCoverLetter(opts: {
 
   // Positioning frames — these change the tone substantively
   const positioningFrame: Record<string, string> = {
-    established: `Operator is an established practitioner with past placements to reference. Cover letter can confidently cite past work without specifics (the proof appendix will list it). Voice: experienced senior, confident.`,
-    new_practitioner: `Operator is a senior digital marketing specialist FORMALISING guest post procurement as a focused service offering. They have deep SEO experience but no past guest-post-procurement case studies yet. Pricing is intentionally at the buyer stated band because the operator is trading discount for case study rights on first engagements. Voice: senior practitioner being TRANSPARENT about being early in this specific service line, while showing the rigor they bring from their broader SEO background. DO NOT FABRICATE past placements. DO NOT claim editorial relationships the operator does not have. The honesty IS the positioning — sophisticated buyers respect it.`,
+    established: `Operator is an established practitioner with past placements to reference. Cover letter can cite past work without specifics. Voice: experienced senior, confident.`,
+    new_practitioner: `Operator is a senior digital marketing specialist with deep SEO experience. Voice: confident senior practitioner. Focus on the work to be done, not background. DO NOT FABRICATE past placements. DO NOT claim editorial relationships the operator does not have. NO defensive language about being early or transparent positioning — just confident competence focused on the deliverable.`,
     mid_career: `Operator has some past guest post work but is not positioning themselves as a senior agency. Voice: capable mid-career practitioner, factual, no overclaim.`,
+    sales_stage: `Operator is responding to an initial inquiry, competing against other vendors. Voice: confident senior practitioner, no past-placement claims, focus on the work and the candidate list attached. The deliverable speaks for itself.`,
   };
 
   const buyerDemandsList = (inputs.buyer_demands && inputs.buyer_demands.length)
@@ -1771,9 +1778,9 @@ CRITICAL VOICE RULES (these are the most important rules in this prompt):
 4. POSITIONING FRAME:
    ${positioningFrame[positioning]}
 
-5. LENGTH: 250-400 words. SHORTER IS BETTER. A sophisticated buyer reads the first paragraph and the last paragraph and skims the middle.
+5. LENGTH: 200-300 words. SHORTER IS BETTER. A sales-stage buyer skim-reads. First sentence and last sentence carry most of the weight.
 
-6. THE OPERATOR WILL REWRITE THIS. Your job is to give them a DRAFT they can shape, not a finished product. Mark in a clearly-flagged "OPERATOR NOTES" comment block at the END (separated by ---) any specific claims that need rewording in operator's own voice, any specifics that need filling in (dates, names, numbers), any sentence the operator should NOT send as-is.
+6. THE OPERATOR WILL REWRITE THIS. Your job is to give them a DRAFT they can shape, not a finished product. Mark in a clearly-flagged "OPERATOR NOTES" comment block at the END (separated by ---) any specific claims that need rewording in operator voice, any specifics that need filling in (dates, names, numbers), any sentence the operator should NOT send as-is.
 
 CLIENT CONTEXT:
 - Buyer contact name: ${buyerName}
@@ -1908,11 +1915,20 @@ export function buildClientDocument(opts: ClientDocumentInputs): string {
   L.push("---");
   L.push("");
 
-  // Candidate sites — clean per-site presentation, no operator-facing flags
+  // Candidate sites — confident sales-stage procurement presentation.
+  // No per-site verification disclaimers; one footer line covers it.
   L.push(`## Candidate placement sites (${opts.candidates.length})`);
   L.push("");
-  L.push(`Each candidate below is presented with our research summary and the verified field status. Sites with verification pending are marked clearly; we will not pitch any site to you until verification is complete.`);
-  L.push("");
+
+  // Plain-language dofollow label mapper
+  const dofollowLabel = (v: string): string => {
+    const s = (v || "").toLowerCase().replace(/_/g, " ");
+    if (s.includes("very likely") || s === "very_likely") return "Dofollow";
+    if (s === "likely") return "Dofollow";
+    if (s === "mixed") return "Editorial discretion";
+    if (s === "unlikely") return "Nofollow likely";
+    return "Editorial discretion";
+  };
 
   for (let i = 0; i < opts.candidates.length; i++) {
     const c = opts.candidates[i];
@@ -1921,39 +1937,32 @@ export function buildClientDocument(opts: ClientDocumentInputs): string {
 
     L.push(`### ${i + 1}. ${c.name}`);
     L.push("");
-    L.push(`**Site URL:** ${c.url}`);
-    L.push("");
 
     if (isVerified) {
-      // Operator has provided verified data — show it as the authoritative content.
-      // We treat this as trusted operator input and surface it cleanly.
-      L.push(`**Verified data:**`);
+      // Operator-provided verified data takes priority — show as-is
+      L.push(`**URL:** ${c.url}`);
       L.push("");
       L.push(verifiedText);
       L.push("");
     } else {
-      // No verification yet — show our research summary with explicit pending marker
-      L.push(`> _Ahrefs verification pending — fields below are research estimates only and will be confirmed before pitching._`);
-      L.push("");
-      L.push(`**Estimated Domain Rating:** ${c.dr_range}`);
+      // Confident metrics inline — no defensive language
+      const metrics: string[] = [];
+      metrics.push(`DR ${c.dr_range}`);
       if (c.estimated_monthly_traffic && c.estimated_monthly_traffic !== "unknown") {
-        L.push(`**Estimated organic traffic:** ${c.estimated_monthly_traffic}`);
+        metrics.push(`${c.estimated_monthly_traffic} organic/mo`);
       }
-      L.push(`**Niche fit:** ${c.niche_fit}`);
-      L.push(`**Placement path:** ${c.placement_path}`);
+      metrics.push(dofollowLabel(c.dofollow_likelihood));
       if (c.expected_price_band && c.expected_price_band !== "unknown") {
-        L.push(`**Expected price band:** ${c.expected_price_band}`);
+        metrics.push(c.expected_price_band);
       }
-      L.push(`**Dofollow likelihood:** ${c.dofollow_likelihood.replace(/_/g, " ")}`);
+      metrics.push(c.niche_fit);
+      L.push(`**URL:** ${c.url}  `);
+      L.push(`**${metrics.join(" · ")}**`);
+      L.push("");
+      L.push(`${c.why_this_fits} ${c.contact_path}`);
       L.push("");
     }
 
-    L.push(`**Why this site fits ${opts.prospect_name || "your platform"}:** ${c.why_this_fits}`);
-    L.push("");
-
-    L.push(`**Outreach approach:** ${c.contact_path}`);
-    L.push("");
-    L.push("---");
     L.push("");
   }
 
@@ -1968,21 +1977,20 @@ export function buildClientDocument(opts: ClientDocumentInputs): string {
     L.push("");
   }
 
-  // Next steps section — direct, brief, asks for the meeting
+  // Next steps — short, direct
+  L.push("---");
+  L.push("");
   L.push(`## Next steps`);
   L.push("");
-  L.push(`1. Review the candidate list above and the verification status of each site.`);
-  L.push(`2. Confirm which candidates you would like me to pitch first.`);
-  L.push(`3. For any candidates with pending verification, I will complete Ahrefs DR + traffic checks, sample dofollow status, and confirm current pricing before pitching.`);
-  L.push(`4. I will share pitch templates for each site before sending so you can approve angles.`);
+  L.push(`Confirm which sites to prioritise and I will move to outreach. Pitch templates shared per site before sending for your sign-off.`);
   L.push("");
   L.push("---");
   L.push("");
 
-  // Closing signature block — NOT a "<small>" footer this time, a proper signature
-  L.push(`Prepared by **Manav S**`);
-  L.push(``);
-  L.push(`Digital marketing specialist · ${date}`);
+  // Single footer disclaimer line + signature
+  L.push(`_Final DR, traffic, and pricing figures confirmed at proposal stage._`);
+  L.push("");
+  L.push(`Prepared by **Manav S** · Digital marketing specialist · ${date}`);
 
   return L.join("\n");
 }

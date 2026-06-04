@@ -154,7 +154,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [coverLetterMd, setCoverLetterMd] = useState<string>('');
   const [coverLetterError, setCoverLetterError] = useState<string>('');
   const [buyerContactName, setBuyerContactName] = useState<string>('');
-  const [operatorPositioning, setOperatorPositioning] = useState<'established' | 'new_practitioner' | 'mid_career'>('new_practitioner');
+  const [operatorPositioning, setOperatorPositioning] = useState<'established' | 'new_practitioner' | 'mid_career' | 'sales_stage'>('sales_stage');
   const [globalVerifiedNotes, setGlobalVerifiedNotes] = useState<string>('');
   const [perSiteVerified, setPerSiteVerified] = useState<{ [siteName: string]: string }>({});
   const [clientDocMd, setClientDocMd] = useState<string>('');
@@ -1911,7 +1911,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               {prospectMode === 'teaser' ? (
                 <>For cold prospects who want to see what backlinks you can find for them — sometimes without sharing their URL. Produces a 1-page teaser (3 categories, 5-9 named targets) you can send as a discovery-call leave-behind.</>
               ) : (
-                <>For engaged buyers requesting paid guest post placements with strict filters (DR threshold, dofollow, niche, budget). Produces an operator-facing shortlist of 5-8 candidate sites with inline flags identifying which fields require manual verification (Ahrefs DR, recent articles, dofollow, current pricing) before pitching to the client.</>
+                <>For sales-stage responses to guest post procurement inquiries. Produces a 40-50 site candidate list with DR estimates, dofollow status, expected price band, and niche fit. Then assembles a client-facing Word document — confident inline metrics, single footer disclaimer line, no operator-facing sections.</>
               )}
               <br /><span className="text-foreground/80">Tip: paste a client email or brief into Smart paste to auto-fill these fields.</span>
             </p>
@@ -2026,7 +2026,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                 {!prospectRunning && (
                   <div className="text-[10px] text-muted-foreground">
                     {prospectMode === 'guest_post'
-                      ? 'Single-lane procurement research with live web search · typically 30-90s.'
+                      ? 'Single-lane procurement research with live web search · typically 90-180s for 40-50 sites.'
                       : '3 lanes in parallel with live web search · typically 30-90s.'
                     }
                   </div>
@@ -2084,7 +2084,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   <h3 className="text-sm font-semibold">{prospectMode === 'guest_post' ? 'Shortlist ready' : 'Teaser ready'}</h3>
                   <div className="text-[11px] text-muted-foreground">
                     {prospectMode === 'guest_post'
-                      ? <>{prospectResult.targets_count} candidate{prospectResult.targets_count === 1 ? '' : 's'} · inline flags identify which fields need manual verification before pitching</>
+                      ? <>{prospectResult.targets_count} candidate site{prospectResult.targets_count === 1 ? '' : 's'} ready for client document assembly below</>
                       : <>{prospectResult.targets_count} target{prospectResult.targets_count === 1 ? '' : 's'} across 3 categories · honest DA ranges with authority signals</>
                     }
                   </div>
@@ -2104,8 +2104,8 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
             </div>
           )}
 
-          {/* Build 12.11.1 — Strategic Context Note (guest_post mode only, optional secondary export) */}
-          {prospectResult && prospectMode === 'guest_post' && (
+          {/* Build 12.11.1 — Strategic Context Note (HIDDEN in Build 12.13, code preserved for future re-enable) */}
+          {false && prospectResult && prospectMode === 'guest_post' && (
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <div>
@@ -2156,7 +2156,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
               <div>
                 <h3 className="text-sm font-semibold">Build client-ready document</h3>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-                  Combines the shortlist + your verified Ahrefs data + an optional cover letter into a clean client-facing Word document. All operator-facing sections (methodology, strategist notes, verification checklist) are stripped. Sites without verified data show a clear "verification pending" marker — they are NOT removed, so you can see the full pipeline.
+                  Generate an optional cover letter draft and assemble a clean client-facing Word document. Operator-facing sections stripped. Confident metrics inline per candidate. One footer line covers verification disclaimer.
                 </p>
               </div>
 
@@ -2192,9 +2192,10 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   <div>
                     <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Your positioning</label>
                     <select value={operatorPositioning} onChange={e => setOperatorPositioning(e.target.value as any)} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background">
-                      <option value="new_practitioner">New to this specific service (transparent positioning)</option>
+                      <option value="sales_stage">Sales-stage response (confident, focus on the work)</option>
                       <option value="mid_career">Mid-career, some past work</option>
-                      <option value="established">Established with past placements to reference</option>
+                      <option value="established">Established with past placements</option>
+                      <option value="new_practitioner">Early in this service (transparent positioning)</option>
                     </select>
                   </div>
                 </div>
@@ -2217,54 +2218,35 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                 )}
               </div>
 
-              {/* Verified data section */}
-              <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">2 · Your verified Ahrefs data <span className="normal-case text-muted-foreground/70 text-[10px]">· optional</span></div>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  After verifying candidates in Ahrefs (DR, traffic, recent articles, dofollow check, current pricing), paste your verified data per site below. Use any format — the document will embed your text verbatim under each site. Sites you leave blank will show "verification pending" in the client document, which is honest and acceptable.
-                </p>
-                <p className="text-[11px] text-muted-foreground/80 italic">Tip: structure as "Site name: DR XX, traffic XX/mo, recent articles: url1, url2, url3, dofollow confirmed, current price $XX" — but any clear format works.</p>
-
-                {prospectResult.candidates.map((c: any) => (
-                  <div key={c.name} className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wide text-foreground/80 font-medium block">{c.name} <span className="text-muted-foreground/60 normal-case font-normal">· {c.url}</span></label>
-                    <textarea
-                      value={perSiteVerified[c.name] || ''}
-                      onChange={e => setPerSiteVerified({ ...perSiteVerified, [c.name]: e.target.value })}
-                      rows={3}
-                      placeholder={`DR 42 (verified Ahrefs ${new Date().toLocaleDateString('en-GB')}) · 47k organic traffic/mo · Recent articles: https://… , https://… , https://… · Dofollow confirmed · Current price $120/placement (quoted by editor)`}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background font-mono"
-                    />
-                  </div>
-                ))}
-
-                <div className="pt-2">
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Additional verification notes <span className="text-muted-foreground/60 normal-case font-normal">· optional, appears at end</span></label>
+              {/* Optional notes — collapsed by default, single field */}
+              <details className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                <summary className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium cursor-pointer select-none">
+                  2 · Add notes <span className="normal-case text-muted-foreground/70 text-[10px]">· optional, appears at end of document</span>
+                </summary>
+                <div className="pt-3">
                   <textarea
                     value={globalVerifiedNotes}
                     onChange={e => setGlobalVerifiedNotes(e.target.value)}
-                    rows={3}
-                    placeholder="e.g. methodology notes, caveats on pricing volatility, sites recently added/removed from your pool, etc."
+                    rows={4}
+                    placeholder="Any additional context for the client — pricing caveats, niche coverage notes, anything you want to add. Optional."
                     className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background"
                   />
                 </div>
-              </div>
+              </details>
 
-              {/* Build doc button */}
-              <div className="flex items-center justify-between gap-2 flex-wrap">
+              {/* Build doc button — prominent, one-click */}
+              <div className="flex items-center justify-between gap-2 flex-wrap pt-1">
                 <div className="text-[11px] text-muted-foreground">
-                  {Object.values(perSiteVerified).filter(v => v && v.trim()).length} of {prospectResult.candidates.length} sites have verified data {coverLetterMd ? '· cover letter draft attached' : '· no cover letter'}
+                  {prospectResult.candidates.length} candidates ready {coverLetterMd ? '· cover letter draft attached' : '· no cover letter (optional)'}
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={buildClientDocument}
-                    disabled={clientDocBuilding}
-                    className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
-                  >
-                    {clientDocBuilding && <Loader2 className="h-3 w-3 animate-spin" />}
-                    Build client document
-                  </button>
-                </div>
+                <button
+                  onClick={buildClientDocument}
+                  disabled={clientDocBuilding}
+                  className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {clientDocBuilding && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Build client document
+                </button>
               </div>
 
               {clientDocMd && (

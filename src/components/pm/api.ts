@@ -4670,7 +4670,7 @@ export interface CoverLetterInputs {
   budget_min?: number;
   budget_max?: number;
   dofollow_required?: boolean;
-  operator_positioning?: 'established' | 'new_practitioner' | 'mid_career';
+  operator_positioning?: 'established' | 'new_practitioner' | 'mid_career' | 'sales_stage';
   operator_notes?: string;
   candidates_count?: number;
 }
@@ -4755,8 +4755,16 @@ export function buildClientDocumentMd(opts: ClientDocumentInputs): string {
 
   L.push(`## Candidate placement sites (${opts.candidates.length})`);
   L.push('');
-  L.push(`Each candidate below is presented with our research summary and the verified field status. Sites with verification pending are marked clearly; we will not pitch any site to you until verification is complete.`);
-  L.push('');
+
+  // Plain-language dofollow label
+  const dofollowLabel = (v: string): string => {
+    const s = (v || '').toLowerCase().replace(/_/g, ' ');
+    if (s.includes('very likely') || s === 'very_likely') return 'Dofollow';
+    if (s === 'likely') return 'Dofollow';
+    if (s === 'mixed') return 'Editorial discretion';
+    if (s === 'unlikely') return 'Nofollow likely';
+    return 'Editorial discretion';
+  };
 
   for (let i = 0; i < opts.candidates.length; i++) {
     const c = opts.candidates[i];
@@ -4765,35 +4773,29 @@ export function buildClientDocumentMd(opts: ClientDocumentInputs): string {
 
     L.push(`### ${i + 1}. ${c.name}`);
     L.push('');
-    L.push(`**Site URL:** ${c.url}`);
-    L.push('');
 
     if (isVerified) {
-      L.push(`**Verified data:**`);
+      L.push(`**URL:** ${c.url}`);
       L.push('');
       L.push(verifiedText);
       L.push('');
     } else {
-      L.push(`> _Ahrefs verification pending — fields below are research estimates only and will be confirmed before pitching._`);
-      L.push('');
-      L.push(`**Estimated Domain Rating:** ${c.dr_range}`);
+      const metrics: string[] = [];
+      metrics.push(`DR ${c.dr_range}`);
       if (c.estimated_monthly_traffic && c.estimated_monthly_traffic !== 'unknown') {
-        L.push(`**Estimated organic traffic:** ${c.estimated_monthly_traffic}`);
+        metrics.push(`${c.estimated_monthly_traffic} organic/mo`);
       }
-      L.push(`**Niche fit:** ${c.niche_fit}`);
-      L.push(`**Placement path:** ${c.placement_path}`);
+      metrics.push(dofollowLabel(c.dofollow_likelihood));
       if (c.expected_price_band && c.expected_price_band !== 'unknown') {
-        L.push(`**Expected price band:** ${c.expected_price_band}`);
+        metrics.push(c.expected_price_band);
       }
-      L.push(`**Dofollow likelihood:** ${c.dofollow_likelihood.replace(/_/g, ' ')}`);
+      metrics.push(c.niche_fit);
+      L.push(`**URL:** ${c.url}  `);
+      L.push(`**${metrics.join(' · ')}**`);
+      L.push('');
+      L.push(`${c.why_this_fits} ${c.contact_path}`);
       L.push('');
     }
-
-    L.push(`**Why this site fits ${opts.prospect_name || 'your platform'}:** ${c.why_this_fits}`);
-    L.push('');
-    L.push(`**Outreach approach:** ${c.contact_path}`);
-    L.push('');
-    L.push('---');
     L.push('');
   }
 
@@ -4806,18 +4808,17 @@ export function buildClientDocumentMd(opts: ClientDocumentInputs): string {
     L.push('');
   }
 
+  L.push('---');
+  L.push('');
   L.push(`## Next steps`);
   L.push('');
-  L.push(`1. Review the candidate list above and the verification status of each site.`);
-  L.push(`2. Confirm which candidates you would like me to pitch first.`);
-  L.push(`3. For any candidates with pending verification, I will complete Ahrefs DR + traffic checks, sample dofollow status, and confirm current pricing before pitching.`);
-  L.push(`4. I will share pitch templates for each site before sending so you can approve angles.`);
+  L.push(`Confirm which sites to prioritise and I will move to outreach. Pitch templates shared per site before sending for your sign-off.`);
   L.push('');
   L.push('---');
   L.push('');
-  L.push(`Prepared by **Manav S**`);
+  L.push(`_Final DR, traffic, and pricing figures confirmed at proposal stage._`);
   L.push('');
-  L.push(`Digital marketing specialist · ${date}`);
+  L.push(`Prepared by **Manav S** · Digital marketing specialist · ${date}`);
 
   return L.join('\n');
 }

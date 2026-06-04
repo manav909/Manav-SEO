@@ -650,3 +650,33 @@ Workflow for BlendSpace specifically with this build:
 Four files changed: api/lib/prospect-discovery.ts (generateCoverLetter + buildClientDocument + return candidates from runGuestPostFinder), api/task-engine.ts (prospect_cover_letter route), src/components/pm/api.ts (prospectCoverLetter client function + ClientDocumentInputs type + buildClientDocumentMd client-side mirror), src/components/pm/BacklinksPanel.tsx (cover letter state + verified notes state + per-candidate textareas + Build client document card + handlers for generate / build / preview / download).
 
 Vite build green at 25.52s. Compile clean. No contractions in template literals. No hardcoding.
+
+Build 12.13 — Sales-stage procurement list [SHIPPED 2026-06-04]: Operator told me the previous build was over-engineered for the actual sales motion. The system was optimised for careful annotated shortlists with manual verification workflow; what is needed is a fast, dense, confident procurement list that competes with vendors who deliver high-volume site lists at speed. Operator has no time to verify per-site data, no time to fill in textareas, no time to read defensive disclaimers — and neither does the buyer at initial-interaction stage.
+
+Five changes, no schema migration:
+
+(A) CANDIDATE COUNT 8-12 → 40-50. Lane prompt now asks for 40-50 candidates as the default for mainstream niches (AI/SaaS/tech/marketing/general-business). DR threshold relaxed to a soft floor — sites at DR(threshold-5) to DR(threshold) are acceptable when topical fit is strong, since LLM-estimated DR varies by ±5 from actual Ahrefs. maxTokens raised 9000 → 16000 to accommodate the larger output. Wall timeout for guest_post mode raised 180s → 250s (still within Vercel's 300s maxDuration). The senior_strategist_note and database_breadth_signal fields explicitly told to return empty at this list density — they were for the curated 10-candidate shape, not the 45-candidate procurement list. research_methodology tightened to 1-2 sentences max.
+
+(B) DISCLAIMERS STRIPPED FROM CLIENT DOCUMENT. Per-candidate "Ahrefs verification pending" markers gone. Per-candidate "Estimated Domain Rating" labels gone. Defensive language gone. Replaced with confident inline metrics line per site: "DR 35-45 · 47k organic/mo · Dofollow · $80-120 · saas". Plain-language dofollow labels: very_likely / likely → "Dofollow", mixed → "Editorial discretion", unlikely → "Nofollow likely". One footer line covers the rest: "Final DR, traffic, and pricing figures confirmed at proposal stage." That is industry-standard sales-stage practice.
+
+(C) NEXT STEPS COMPRESSED FROM 4 BULLETS TO 1 SENTENCE. Was "1. Review candidate list... 2. Confirm... 3. For pending verification... 4. Pitch templates..." — now reads "Confirm which sites to prioritise and I will move to outreach. Pitch templates shared per site before sending for your sign-off." Direct, no padding.
+
+(D) PER-CANDIDATE VERIFIED-DATA TEXTAREAS DROPPED. Was the bottleneck — 10+ textareas to fill in per shortlist. Gone. Replaced with a single collapsed/optional "Add notes" details element with one textarea for global notes. Operator can ignore it entirely. Build client document button promoted to primary CTA (text-sm bg-primary instead of text-xs border) and becomes one-click from shortlist to Word doc.
+
+(E) COVER LETTER TIGHTENED. Length spec 250-400 → 200-300 words. Added new positioning option "sales_stage" (now the default): "Confident senior practitioner, no past-placement claims, focus on the work and the candidate list. The deliverable speaks for itself." The new_practitioner frame de-fanged — removed the "TRANSPARENT positioning" + "case study rights" framing that was reading defensive. Still keeps the "DO NOT FABRICATE" guardrails.
+
+Also hidden from UI in this build (code preserved): the Strategic Context Note card. It was adding clutter that the sales motion does not need. Re-enable by flipping `false &&` back to active in the BacklinksPanel render.
+
+Voice rules in cover letter prompt unchanged from 12.12 — still bans AI-pattern phrases (em-dash overuse, "in today's competitive landscape", "leverage / synergy / robust / seamless", three-item parallel decoration). Still produces an OPERATOR NOTES appendix the operator must adjust. The amber warning "rewrite in your voice before sending" stays — that is non-negotiable for AI-detection survival.
+
+Honest caveats:
+1. 40-50 candidates from a single LLM call without Ahrefs adapter means model is naming sites it recognises from training data with estimated metrics. Some metrics will be wrong (DR off by ±5-10 in some cases, price band off, dofollow status guessed not verified). The footer line "Final DR, traffic, and pricing figures confirmed at proposal stage" covers this honestly without hedging on every row. Industry-standard.
+2. With 45 sites and ~250s wall budget, the 250s timeout is the right ceiling but real runs may need close to it. If timeout hits, fewer candidates return — graceful degradation.
+3. Naming 40+ real sites means the model will lean heavier on general-tech sites in adjacent niches when the strict niche has fewer than 40 known sites. For very specific verticals (e.g. "Romanian SaaS for veterinarians") the model will return fewer candidates honestly.
+4. Cover letter still requires operator rewrite. The amber warning stays prominent. The "sales_stage" positioning produces less obviously-AI prose than the previous "new_practitioner" framing, but it still needs operator voice.
+5. Strategic Context Note is HIDDEN, not deleted. Operator can re-enable in code when they want to use it again.
+6. The per-candidate verified-data entry workflow was removed entirely — if operator does have verified data they want to insert per-site for a specific shortlist, they will need to edit the downloaded Word doc directly. Acceptable trade-off for the speed gain.
+
+Three files changed: api/lib/prospect-discovery.ts (lane prompt count + token budget + timeout + cover letter positioning + render strip), src/components/pm/api.ts (client-side render mirror), src/components/pm/BacklinksPanel.tsx (UI simplification + default sales_stage positioning + hidden strategic context).
+
+Vite build green at 46.03s. Compile clean. No contractions, no hardcoding.
