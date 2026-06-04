@@ -25,6 +25,7 @@ import {
   backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
   backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
   prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals, prospectGuestPostRun, prospectStrategicContext,
+  prospectCoverLetter, buildClientDocumentMd,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
@@ -134,7 +135,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [prospectContext, setProspectContext] = useState('');
   const [prospectRunning, setProspectRunning] = useState(false);
   const [prospectProgress, setProspectProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null } | null>(null);
-  const [prospectResult, setProspectResult] = useState<{ teaser_md: string; targets_count: number; discovery_id?: string } | null>(null);
+  const [prospectResult, setProspectResult] = useState<{ teaser_md: string; targets_count: number; discovery_id?: string; candidates?: any[] } | null>(null);
   const [prospectError, setProspectError] = useState('');
   // Build 12.11 — mode toggle + procurement fields
   const [prospectMode, setProspectMode] = useState<'teaser' | 'guest_post'>('teaser');
@@ -148,6 +149,16 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [strategicContextGenerating, setStrategicContextGenerating] = useState<boolean>(false);
   const [strategicContextMd, setStrategicContextMd] = useState<string>('');
   const [strategicContextError, setStrategicContextError] = useState<string>('');
+  // Build 12.12 — Client document builder
+  const [coverLetterGenerating, setCoverLetterGenerating] = useState<boolean>(false);
+  const [coverLetterMd, setCoverLetterMd] = useState<string>('');
+  const [coverLetterError, setCoverLetterError] = useState<string>('');
+  const [buyerContactName, setBuyerContactName] = useState<string>('');
+  const [operatorPositioning, setOperatorPositioning] = useState<'established' | 'new_practitioner' | 'mid_career'>('new_practitioner');
+  const [globalVerifiedNotes, setGlobalVerifiedNotes] = useState<string>('');
+  const [perSiteVerified, setPerSiteVerified] = useState<{ [siteName: string]: string }>({});
+  const [clientDocMd, setClientDocMd] = useState<string>('');
+  const [clientDocBuilding, setClientDocBuilding] = useState<boolean>(false);
   // Build 12.10 — Smart Paste state
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
   const [smartPasteText, setSmartPasteText] = useState('');
@@ -575,6 +586,12 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     // Build 12.11.1 — clear any prior strategic context note so it doesn't linger
     setStrategicContextMd('');
     setStrategicContextError('');
+    // Build 12.12 — clear cover letter + client doc + verified notes
+    setCoverLetterMd('');
+    setCoverLetterError('');
+    setGlobalVerifiedNotes('');
+    setPerSiteVerified({});
+    setClientDocMd('');
 
     // Build 12.11 — branch by mode. Guest post mode runs a single-lane
     // procurement query; teaser mode runs the 3-lane discovery flow.
@@ -627,7 +644,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
           setProspectError(r.error || 'Guest post finder failed.');
           return;
         }
-        setProspectResult({ teaser_md: r.shortlist_md || '', targets_count: r.candidates_count || 0, discovery_id: r.discovery_id });
+        setProspectResult({ teaser_md: r.shortlist_md || '', targets_count: r.candidates_count || 0, discovery_id: r.discovery_id, candidates: Array.isArray(r.candidates) ? r.candidates : [] });
         setProspectProgress(null);
         toast({ title: 'Shortlist ready', description: `${r.candidates_count} candidate${r.candidates_count === 1 ? '' : 's'}${typeof r.avoid_count === 'number' && r.avoid_count > 0 ? ` · ${r.avoid_count} on avoid list` : ''}.` });
       } catch (e: any) {
@@ -771,6 +788,104 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     if (!strategicContextMd) return;
     const title = `Strategic Context · ${prospectName || prospectIndustry || 'Client'}`;
     openStakeholderReport(strategicContextMd, { title, kind: 'Strategic Context Note', generatedAt: new Date().toISOString() });
+  };
+
+  /* ─── Build 12.12: Cover letter + Client document handlers ─── */
+  const generateCoverLetterDraft = async () => {
+    setCoverLetterError('');
+    if (!prospectIndustry.trim()) {
+      setCoverLetterError('Industry is required.');
+      return;
+    }
+    setCoverLetterGenerating(true);
+    try {
+      const niches = gpNicheKeywords.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
+      // Parse buyer demands from operator notes + niche keywords (best-effort signal extraction)
+      const demands: string[] = [];
+      if (gpDrThreshold) demands.push(`DR${gpDrThreshold}+ with real organic traffic`);
+      if (gpDofollowRequired) demands.push('Dofollow confirmation per placement');
+      if (niches.length) demands.push(`${niches.join(' / ')} niche sites only`);
+      if (gpBudgetMin || gpBudgetMax) demands.push(`$${gpBudgetMin}-${gpBudgetMax} per placement budget`);
+
+      const r = await prospectCoverLetter({
+        inputs: {
+          industry: prospectIndustry.trim(),
+          client_url: prospectUrl.trim() || undefined,
+          prospect_name: prospectName.trim() || undefined,
+          buyer_contact_name: buyerContactName.trim() || undefined,
+          niche_keywords: niches.length ? niches : undefined,
+          buyer_demands: demands.length ? demands : undefined,
+          dr_threshold: gpDrThreshold,
+          budget_min: gpBudgetMin,
+          budget_max: gpBudgetMax,
+          dofollow_required: gpDofollowRequired,
+          operator_positioning: operatorPositioning,
+          operator_notes: prospectContext.trim() || undefined,
+          candidates_count: prospectResult?.targets_count || 0,
+        },
+      });
+      if (!r.success || !r.markdown) {
+        setCoverLetterError(r.error || 'Cover letter generation failed.');
+        return;
+      }
+      setCoverLetterMd(r.markdown);
+      toast({ title: 'Cover letter draft ready', description: 'Rewrite in your own voice before sending. Operator notes section flags what to adjust.' });
+    } catch (e: any) {
+      setCoverLetterError(e?.message || 'Cover letter generation failed.');
+    } finally {
+      setCoverLetterGenerating(false);
+    }
+  };
+
+  // Build the client-facing document combining candidates + verified data + cover letter
+  const buildClientDocument = () => {
+    if (!prospectResult || !Array.isArray(prospectResult.candidates) || prospectResult.candidates.length === 0) return;
+    setClientDocBuilding(true);
+    try {
+      const md = buildClientDocumentMd({
+        prospect_name: prospectName.trim() || undefined,
+        buyer_contact_name: buyerContactName.trim() || undefined,
+        client_url: prospectUrl.trim() || undefined,
+        industry: prospectIndustry.trim(),
+        dr_threshold: gpDrThreshold,
+        budget_min: gpBudgetMin,
+        budget_max: gpBudgetMax,
+        dofollow_required: gpDofollowRequired,
+        candidates: prospectResult.candidates as any[],
+        verified_notes_per_site: perSiteVerified,
+        global_verified_notes: globalVerifiedNotes.trim() || undefined,
+        // Strip the OPERATOR NOTES appendix from the cover letter before inclusion in client doc
+        cover_letter_md: coverLetterMd || undefined,
+      });
+      setClientDocMd(md);
+      toast({ title: 'Client document built', description: 'Operator-facing sections stripped. Preview or download below.' });
+    } finally {
+      setClientDocBuilding(false);
+    }
+  };
+
+  const downloadClientDocWord = () => {
+    if (!clientDocMd) return;
+    const title = `Guest Post Proposal · ${prospectName || prospectIndustry || 'Client'}`;
+    downloadStakeholderAsWord(clientDocMd, { title, kind: 'Client-Facing Proposal', generatedAt: new Date().toISOString() });
+  };
+
+  const previewClientDoc = () => {
+    if (!clientDocMd) return;
+    const title = `Guest Post Proposal · ${prospectName || prospectIndustry || 'Client'}`;
+    openStakeholderReport(clientDocMd, { title, kind: 'Client-Facing Proposal', generatedAt: new Date().toISOString() });
+  };
+
+  const downloadCoverLetterWord = () => {
+    if (!coverLetterMd) return;
+    const title = `Cover Letter Draft · ${prospectName || prospectIndustry || 'Client'}`;
+    downloadStakeholderAsWord(coverLetterMd, { title, kind: 'Cover Letter Draft', generatedAt: new Date().toISOString() });
+  };
+
+  const previewCoverLetter = () => {
+    if (!coverLetterMd) return;
+    const title = `Cover Letter Draft · ${prospectName || prospectIndustry || 'Client'}`;
+    openStakeholderReport(coverLetterMd, { title, kind: 'Cover Letter Draft', generatedAt: new Date().toISOString() });
   };
 
   /* ─── Build 12.10: Smart Paste handlers ─────────────────────── */
@@ -1779,13 +1894,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
             {/* Build 12.11 — mode toggle */}
             <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 mb-3 w-fit">
               <button
-                onClick={() => { setProspectMode('teaser'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); }}
+                onClick={() => { setProspectMode('teaser'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); setCoverLetterMd(''); setCoverLetterError(''); setGlobalVerifiedNotes(''); setPerSiteVerified({}); setClientDocMd(''); }}
                 className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'teaser' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Discovery teaser
               </button>
               <button
-                onClick={() => { setProspectMode('guest_post'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); }}
+                onClick={() => { setProspectMode('guest_post'); setProspectResult(null); setStrategicContextMd(''); setStrategicContextError(''); setCoverLetterMd(''); setCoverLetterError(''); setGlobalVerifiedNotes(''); setPerSiteVerified({}); setClientDocMd(''); }}
                 className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'guest_post' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
               >
                 Guest post procurement
@@ -2031,6 +2146,138 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
               {strategicContextMd && (
                 <div className="backlink-preview text-xs max-h-[500px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(strategicContextMd) }} />
+              )}
+            </div>
+          )}
+
+          {/* Build 12.12 — Client-facing document builder (guest_post mode only) */}
+          {prospectResult && prospectMode === 'guest_post' && Array.isArray(prospectResult.candidates) && prospectResult.candidates.length > 0 && (
+            <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Build client-ready document</h3>
+                <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+                  Combines the shortlist + your verified Ahrefs data + an optional cover letter into a clean client-facing Word document. All operator-facing sections (methodology, strategist notes, verification checklist) are stripped. Sites without verified data show a clear "verification pending" marker — they are NOT removed, so you can see the full pipeline.
+                </p>
+              </div>
+
+              {/* Cover letter section */}
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">1 · Cover letter draft <span className="normal-case text-muted-foreground/70 text-[10px]">· optional, AI-generated DRAFT to rewrite in your voice</span></div>
+                  </div>
+                  {!coverLetterMd ? (
+                    <button
+                      onClick={generateCoverLetterDraft}
+                      disabled={coverLetterGenerating}
+                      className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      {coverLetterGenerating && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {coverLetterGenerating ? 'Generating draft…' : 'Generate cover letter draft'}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setCoverLetterMd('')} className="text-xs px-2.5 py-1 rounded border border-border hover:bg-muted text-muted-foreground">Discard</button>
+                      <button onClick={previewCoverLetter} className="text-xs px-2.5 py-1 rounded border border-border hover:bg-muted"><ExternalLink className="h-3 w-3 inline mr-1" />Preview</button>
+                      <button onClick={downloadCoverLetterWord} className="text-xs px-2.5 py-1 rounded border border-border hover:bg-muted"><Download className="h-3 w-3 inline mr-1" />Download draft</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Buyer contact name <span className="text-muted-foreground/60 normal-case font-normal">· if known</span></label>
+                    <input value={buyerContactName} onChange={e => setBuyerContactName(e.target.value)} placeholder="e.g. Sarah" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Your positioning</label>
+                    <select value={operatorPositioning} onChange={e => setOperatorPositioning(e.target.value as any)} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background">
+                      <option value="new_practitioner">New to this specific service (transparent positioning)</option>
+                      <option value="mid_career">Mid-career, some past work</option>
+                      <option value="established">Established with past placements to reference</option>
+                    </select>
+                  </div>
+                </div>
+
+                {coverLetterError && (
+                  <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-2 text-[11px] text-red-400 flex items-start gap-2">
+                    <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                    <div>{coverLetterError}</div>
+                  </div>
+                )}
+
+                {coverLetterMd && (
+                  <>
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-400 flex items-start gap-2">
+                      <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                      <div>This is a DRAFT. Sophisticated buyers can detect AI-written prose. Open in Word, rewrite in your own voice line-by-line before sending. The draft has an "Operator notes" section at the end flagging specific lines that need adjustment.</div>
+                    </div>
+                    <div className="backlink-preview text-xs max-h-[300px] overflow-y-auto rounded border border-border bg-background p-3" dangerouslySetInnerHTML={{ __html: mdToHtml(coverLetterMd) }} />
+                  </>
+                )}
+              </div>
+
+              {/* Verified data section */}
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">2 · Your verified Ahrefs data <span className="normal-case text-muted-foreground/70 text-[10px]">· optional</span></div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  After verifying candidates in Ahrefs (DR, traffic, recent articles, dofollow check, current pricing), paste your verified data per site below. Use any format — the document will embed your text verbatim under each site. Sites you leave blank will show "verification pending" in the client document, which is honest and acceptable.
+                </p>
+                <p className="text-[11px] text-muted-foreground/80 italic">Tip: structure as "Site name: DR XX, traffic XX/mo, recent articles: url1, url2, url3, dofollow confirmed, current price $XX" — but any clear format works.</p>
+
+                {prospectResult.candidates.map((c: any) => (
+                  <div key={c.name} className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wide text-foreground/80 font-medium block">{c.name} <span className="text-muted-foreground/60 normal-case font-normal">· {c.url}</span></label>
+                    <textarea
+                      value={perSiteVerified[c.name] || ''}
+                      onChange={e => setPerSiteVerified({ ...perSiteVerified, [c.name]: e.target.value })}
+                      rows={3}
+                      placeholder={`DR 42 (verified Ahrefs ${new Date().toLocaleDateString('en-GB')}) · 47k organic traffic/mo · Recent articles: https://… , https://… , https://… · Dofollow confirmed · Current price $120/placement (quoted by editor)`}
+                      className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background font-mono"
+                    />
+                  </div>
+                ))}
+
+                <div className="pt-2">
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Additional verification notes <span className="text-muted-foreground/60 normal-case font-normal">· optional, appears at end</span></label>
+                  <textarea
+                    value={globalVerifiedNotes}
+                    onChange={e => setGlobalVerifiedNotes(e.target.value)}
+                    rows={3}
+                    placeholder="e.g. methodology notes, caveats on pricing volatility, sites recently added/removed from your pool, etc."
+                    className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background"
+                  />
+                </div>
+              </div>
+
+              {/* Build doc button */}
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-[11px] text-muted-foreground">
+                  {Object.values(perSiteVerified).filter(v => v && v.trim()).length} of {prospectResult.candidates.length} sites have verified data {coverLetterMd ? '· cover letter draft attached' : '· no cover letter'}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={buildClientDocument}
+                    disabled={clientDocBuilding}
+                    className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {clientDocBuilding && <Loader2 className="h-3 w-3 animate-spin" />}
+                    Build client document
+                  </button>
+                </div>
+              </div>
+
+              {clientDocMd && (
+                <div className="space-y-2 pt-2 border-t border-border">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="text-[11px] uppercase tracking-wide text-muted-foreground font-medium">Client document preview</div>
+                    <div className="flex items-center gap-2">
+                      <button onClick={previewClientDoc} className="text-xs px-2.5 py-1 rounded border border-border hover:bg-muted"><ExternalLink className="h-3 w-3 inline mr-1" />Preview in tab</button>
+                      <button onClick={downloadClientDocWord} className="text-xs px-2.5 py-1 rounded bg-primary text-primary-foreground font-semibold hover:opacity-90"><Download className="h-3 w-3 inline mr-1" />Download client Word doc</button>
+                    </div>
+                  </div>
+                  <div className="backlink-preview text-xs max-h-[500px] overflow-y-auto rounded border border-border bg-background p-4" dangerouslySetInnerHTML={{ __html: mdToHtml(clientDocMd) }} />
+                </div>
               )}
             </div>
           )}

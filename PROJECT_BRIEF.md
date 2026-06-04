@@ -598,3 +598,55 @@ Honest caveats unchanged from Build 12.11:
 Four files changed: api/lib/prospect-discovery.ts (URL normalizer fix + Smart Paste prompt with worked example + extended GuestPostFinderResult type + lane prompt with new sections + extended parser + render with 3 new sections + new generateStrategicContext function), api/task-engine.ts (new prospect_strategic_context route), src/components/pm/api.ts (new client function + type), src/components/pm/BacklinksPanel.tsx (strategic context state + handlers + result-block card + clear on mode switch / new run).
 
 Vite build green at 38.07s. Compile clean. No contractions, no hardcoding.
+
+Build 12.12 — Client-ready document builder [SHIPPED 2026-06-04]: All-in-one build addressing operator dissatisfaction with previous shortlists "looking too AI-generated" and "leaking internal instructions to the client." Combines four components for the BlendSpace-style sophisticated buyer:
+
+(A) COVER LETTER GENERATOR — new server endpoint `prospect_cover_letter`. Single Anthropic call producing a 250-400 word draft cover letter. Voice prompt explicitly bans AI phrase patterns (em-dash overuse, "in today's competitive landscape", "leverage / synergy / robust / seamless", three-item parallel decoration, smooth empty transitions). Honest "operator positioning" frame — three options: established / mid_career / new_practitioner. For new_practitioner (BlendSpace case), prompt explicitly forbids fabricating past placements or claiming editorial relationships that do not exist. The positioning IS the transparency. Cover letter draft includes an "OPERATOR NOTES" appendix flagging 3-5 specific lines that need operator rewriting before sending — strictly stripped from the client document via regex when assembled.
+
+(B) MANUAL VERIFIED DATA ENTRY — per-candidate textareas in the UI, one per shortlist site. Operator pastes free-form verified Ahrefs data (DR, traffic, article URLs, dofollow status, current price) after manual verification work. System embeds the text verbatim under each site — does NOT transform, parse, or fabricate from it. Sites without verified data show a clear "Ahrefs verification pending" marker in the client document, NOT removed (per operator answer "include all candidates, flag incomplete rows visibly"). Plus a global "additional verification notes" textarea for overall caveats.
+
+(C) CLIENT-FACING DOCUMENT BUILDER — pure assembly (no LLM) running client-side via `buildClientDocumentMd()` in api.ts (mirror of server-side `buildClientDocument` for round-trip avoidance). Strips ALL operator-facing sections: methodology paragraph, strategist note, database breadth signal, tier-up candidates, avoid list, verification checklist. Keeps: cover letter (with OPERATOR NOTES stripped), specification summary (DR/budget/dofollow/niche), per-candidate sections with verified data OR pending marker, next steps section (concrete 4-step list), signature block. NOT a `<small>` footer this time — proper signature line.
+
+(D) RUN-TYPE EXPANSION — `runGuestPostFinder` server function now ALSO returns `candidates` array in its response (was only `candidates_count` before). Client-side document builder uses this to assemble without a round-trip. Server still persists `targets_json` to the database for later listing.
+
+UI flow in the existing Prospect Finder tab > Guest post procurement mode:
+1. After shortlist generates, a new card appears: "Build client-ready document"
+2. Section 1 — Cover letter draft: buyer contact name input, positioning selector (defaults to new_practitioner), "Generate cover letter draft" button. On generation, draft renders inline with amber warning "this is a DRAFT, rewrite in your voice before sending."
+3. Section 2 — Verified Ahrefs data: per-candidate textareas + global notes textarea. Helper text on format ("DR XX, traffic XX/mo, articles..., dofollow confirmed, price $XX — any clear format works").
+4. Bottom row: counter ("X of Y sites have verified data"), "Build client document" button.
+5. After build: client document renders inline with Preview-in-tab + Download client Word doc buttons.
+
+POSITIONING DEFAULTS to "new_practitioner" — explicit choice based on operator answer that BlendSpace would be the first paid guest-post engagement. The prompt for this positioning forbids fabrication and frames pricing as case-study-rate trade. This is the honest sales position for someone formalising a service line.
+
+HONEST DISCIPLINE re AI detection:
+- Cover letter is explicitly framed as a DRAFT, NOT a final artifact.
+- Amber warning in UI states "Sophisticated buyers can detect AI-written prose. Open in Word, rewrite in your own voice line-by-line before sending."
+- Operator notes appendix flags specific lines to adjust.
+- The system does NOT claim to produce undetectable AI prose — instead trades AI-detection for human-rewriting workflow.
+- The client document is assembly, not generation — names, URLs, verified data are all operator-provided or model-extracted facts, not invented prose.
+
+Honest caveats:
+1. The cover letter draft will still read as somewhat AI-generated until operator rewrites. The system explicitly tells the operator this, but the warning depends on operator discipline.
+2. Verified data textarea relies on operator filling it in. If operator skips the verification work and clicks Build immediately, the client document will show "verification pending" on every candidate — honest but not useful as a finished deliverable.
+3. No PDF generation — only Word .doc download. Acceptable for the BlendSpace-style buyer who will open in Word anyway. Future build = real PDF with branded styling.
+4. Per-candidate textareas in the UI scale only to the shortlist size (~10 sites). For larger candidate lists this could be unwieldy; not a current concern.
+5. The client document does NOT pull from the asset library (no past placements to surface — operator confirmed BlendSpace is first paid guest post engagement). Future build when there ARE past placements: "Selected past placements" section pulling from backlink_assets table.
+6. Cover letter generation cost: ~$0.02-0.05 per call (Sonnet 4.6, ~2500 input tokens, ~1000 output tokens). Acceptable.
+
+Workflow for BlendSpace specifically with this build:
+1. Open Prospect Finder > Guest post procurement mode
+2. Smart paste the BlendSpace email — URL extraction now works (12.11.1), industry + filters populate
+3. Click Build shortlist — wait 30-90s — get 8-12 candidates with strategist note (operator-facing version)
+4. Scroll to new "Build client-ready document" card
+5. Enter buyer contact name "Sarah" (or whatever), positioning stays at default "new_practitioner"
+6. Click "Generate cover letter draft" — wait ~15s — review draft + amber warning
+7. Now do your manual Ahrefs work: for top 5-6 candidates, verify DR, fetch traffic screenshot URL, find 3 recent articles, sample one dofollow link, confirm price. Paste this verified data into the corresponding per-candidate textareas.
+8. Click "Build client document" — see preview
+9. Download client Word doc + download cover letter draft
+10. Open cover letter in Word, REWRITE in your own voice (this is the critical step that beats AI detection)
+11. Open client doc in Word, paste your rewritten cover letter at the top, polish formatting
+12. Send to BlendSpace
+
+Four files changed: api/lib/prospect-discovery.ts (generateCoverLetter + buildClientDocument + return candidates from runGuestPostFinder), api/task-engine.ts (prospect_cover_letter route), src/components/pm/api.ts (prospectCoverLetter client function + ClientDocumentInputs type + buildClientDocumentMd client-side mirror), src/components/pm/BacklinksPanel.tsx (cover letter state + verified notes state + per-candidate textareas + Build client document card + handlers for generate / build / preview / download).
+
+Vite build green at 25.52s. Compile clean. No contractions in template literals. No hardcoding.

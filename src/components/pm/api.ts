@@ -4634,7 +4634,7 @@ export interface GuestPostFinderInputs {
 }
 
 export async function prospectGuestPostRun(opts: { inputs: GuestPostFinderInputs; client_request_id?: string }):
-  Promise<{ success?: boolean; discovery_id?: string; shortlist_md?: string; candidates_count?: number; avoid_count?: number; llm_calls_used?: number; web_searches_used?: number; error?: string }> {
+  Promise<{ success?: boolean; discovery_id?: string; shortlist_md?: string; candidates_count?: number; avoid_count?: number; candidates?: any[]; llm_calls_used?: number; web_searches_used?: number; error?: string }> {
   return post(ENGINE, { action: 'prospect_guest_post_run', ...opts });
 }
 
@@ -4655,4 +4655,169 @@ export interface StrategicContextInputs {
 export async function prospectStrategicContext(opts: { inputs: StrategicContextInputs }):
   Promise<{ success?: boolean; markdown?: string; error?: string }> {
   return post(ENGINE, { action: 'prospect_strategic_context', ...opts });
+}
+
+/* ─── Build 12.12 — Cover letter generator ────────────────────── */
+
+export interface CoverLetterInputs {
+  prospect_name?: string;
+  buyer_contact_name?: string;
+  client_url?: string;
+  industry: string;
+  niche_keywords?: string[];
+  buyer_demands?: string[];
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  dofollow_required?: boolean;
+  operator_positioning?: 'established' | 'new_practitioner' | 'mid_career';
+  operator_notes?: string;
+  candidates_count?: number;
+}
+
+export async function prospectCoverLetter(opts: { inputs: CoverLetterInputs }):
+  Promise<{ success?: boolean; markdown?: string; error?: string }> {
+  return post(ENGINE, { action: 'prospect_cover_letter', ...opts });
+}
+
+/* ─── Build 12.12 — Client document builder (client-side, no API) ─
+   Pure assembly mirror of server-side buildClientDocument so we
+   avoid a round-trip for non-LLM work. Treats verified data as
+   trusted operator input. Strips operator-facing sections. */
+
+export interface ClientDocumentInputs {
+  prospect_name?: string;
+  buyer_contact_name?: string;
+  client_url?: string;
+  industry: string;
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  dofollow_required?: boolean;
+  candidates: Array<{
+    name: string;
+    url: string;
+    dr_range: string;
+    estimated_monthly_traffic?: string;
+    niche_fit: string;
+    placement_path: string;
+    expected_price_band?: string;
+    dofollow_likelihood: string;
+    publishes_external_authors?: string;
+    why_this_fits: string;
+    contact_path: string;
+    flags?: string[];
+  }>;
+  verified_notes_per_site?: { [siteName: string]: string };
+  global_verified_notes?: string;
+  cover_letter_md?: string;
+}
+
+export function buildClientDocumentMd(opts: ClientDocumentInputs): string {
+  const date = new Date().toLocaleDateString('en-GB');
+  const drThreshold = opts.dr_threshold ?? 30;
+  const budgetMin = opts.budget_min ?? 50;
+  const budgetMax = opts.budget_max ?? 150;
+  const dofollowReq = opts.dofollow_required !== false;
+  const verifiedPerSite = opts.verified_notes_per_site || {};
+
+  const L: string[] = [];
+  L.push(`# Guest Post Placement Proposal`);
+  L.push('');
+  L.push(`**Prepared for:** ${opts.prospect_name || '[Client name]'}`);
+  if (opts.client_url) L.push(`**Platform:** ${opts.client_url}`);
+  L.push(`**Industry:** ${opts.industry}`);
+  L.push(`**Date:** ${date}`);
+  L.push('');
+  L.push('---');
+  L.push('');
+
+  if (opts.cover_letter_md && opts.cover_letter_md.trim()) {
+    // Strip OPERATOR NOTES appendix before inclusion
+    let coverClean = opts.cover_letter_md;
+    const opNotesIdx = coverClean.search(/\n---\s*\n\s*\*?\*?OPERATOR NOTES/i);
+    if (opNotesIdx > 0) coverClean = coverClean.slice(0, opNotesIdx).trim();
+    L.push(coverClean);
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  L.push(`## Specification we are working to`);
+  L.push('');
+  L.push(`- Domain Rating threshold: ${drThreshold}+ (Ahrefs)`);
+  L.push(`- Budget per placement: $${budgetMin}-${budgetMax}`);
+  L.push(`- Link type: ${dofollowReq ? 'Dofollow required (hard filter)' : 'Dofollow preferred'}`);
+  L.push(`- Niche: ${opts.industry}`);
+  L.push('');
+  L.push('---');
+  L.push('');
+
+  L.push(`## Candidate placement sites (${opts.candidates.length})`);
+  L.push('');
+  L.push(`Each candidate below is presented with our research summary and the verified field status. Sites with verification pending are marked clearly; we will not pitch any site to you until verification is complete.`);
+  L.push('');
+
+  for (let i = 0; i < opts.candidates.length; i++) {
+    const c = opts.candidates[i];
+    const verifiedText = (verifiedPerSite[c.name] || '').trim();
+    const isVerified = verifiedText.length > 0;
+
+    L.push(`### ${i + 1}. ${c.name}`);
+    L.push('');
+    L.push(`**Site URL:** ${c.url}`);
+    L.push('');
+
+    if (isVerified) {
+      L.push(`**Verified data:**`);
+      L.push('');
+      L.push(verifiedText);
+      L.push('');
+    } else {
+      L.push(`> _Ahrefs verification pending — fields below are research estimates only and will be confirmed before pitching._`);
+      L.push('');
+      L.push(`**Estimated Domain Rating:** ${c.dr_range}`);
+      if (c.estimated_monthly_traffic && c.estimated_monthly_traffic !== 'unknown') {
+        L.push(`**Estimated organic traffic:** ${c.estimated_monthly_traffic}`);
+      }
+      L.push(`**Niche fit:** ${c.niche_fit}`);
+      L.push(`**Placement path:** ${c.placement_path}`);
+      if (c.expected_price_band && c.expected_price_band !== 'unknown') {
+        L.push(`**Expected price band:** ${c.expected_price_band}`);
+      }
+      L.push(`**Dofollow likelihood:** ${c.dofollow_likelihood.replace(/_/g, ' ')}`);
+      L.push('');
+    }
+
+    L.push(`**Why this site fits ${opts.prospect_name || 'your platform'}:** ${c.why_this_fits}`);
+    L.push('');
+    L.push(`**Outreach approach:** ${c.contact_path}`);
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  if (opts.global_verified_notes && opts.global_verified_notes.trim()) {
+    L.push(`## Additional verification notes`);
+    L.push('');
+    L.push(opts.global_verified_notes.trim());
+    L.push('');
+    L.push('---');
+    L.push('');
+  }
+
+  L.push(`## Next steps`);
+  L.push('');
+  L.push(`1. Review the candidate list above and the verification status of each site.`);
+  L.push(`2. Confirm which candidates you would like me to pitch first.`);
+  L.push(`3. For any candidates with pending verification, I will complete Ahrefs DR + traffic checks, sample dofollow status, and confirm current pricing before pitching.`);
+  L.push(`4. I will share pitch templates for each site before sending so you can approve angles.`);
+  L.push('');
+  L.push('---');
+  L.push('');
+  L.push(`Prepared by **Manav S**`);
+  L.push('');
+  L.push(`Digital marketing specialist · ${date}`);
+
+  return L.join('\n');
 }

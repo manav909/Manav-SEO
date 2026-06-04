@@ -1433,6 +1433,7 @@ export async function runGuestPostFinder(opts: {
   shortlist_md?: string;
   candidates_count?: number;
   avoid_count?: number;
+  candidates?: GuestPostCandidate[];
   llm_calls_used?: number;
   web_searches_used?: number;
   error?: string;
@@ -1532,6 +1533,9 @@ export async function runGuestPostFinder(opts: {
       avoid_count: result.avoid_list.length,
       llm_calls_used,
       web_searches_used,
+      // Build 12.12 — also return the structured candidates so the client can
+      // build the client-facing document without round-tripping through the API
+      candidates: result.candidates,
     };
   } catch (e: any) {
     clearTimeout(timeoutHandle);
@@ -1677,4 +1681,308 @@ RULES:
     }
   }
   return { success: false, error: "Strategic context generation failed after retries." };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Build 12.12 — Client-ready document builder
+
+   Three components:
+   1. parseOperatorVerifiedNotes — best-effort regex parsing of the
+      operator's free-form verified-data paste; extracts per-site
+      verified fields (DR, traffic, articles, dofollow, price) without
+      forcing a schema. Anything ambiguous is preserved verbatim.
+   2. generateCoverLetter — LLM call producing a draft cover letter
+      that directly addresses the buyer's stated demands and uses the
+      "new practitioner, transparent positioning" frame.
+   3. buildClientDocument — pure assembly of the final client-facing
+      Word artifact. NO operator-facing sections. NO methodology, NO
+      strategist note, NO verification checklist. Pure professional
+      deliverable.
+   ════════════════════════════════════════════════════════════════ */
+
+export interface CoverLetterInputs {
+  prospect_name?: string;
+  buyer_contact_name?: string;
+  client_url?: string;
+  industry: string;
+  niche_keywords?: string[];
+  buyer_demands?: string[];         // explicit demands the buyer stated
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  dofollow_required?: boolean;
+  operator_positioning?: "established" | "new_practitioner" | "mid_career";
+  operator_notes?: string;
+  candidates_count?: number;        // how many sites the shortlist has
+}
+
+export async function generateCoverLetter(opts: {
+  inputs: CoverLetterInputs;
+}): Promise<{ success: boolean; markdown?: string; error?: string }> {
+  const inputs = opts.inputs;
+  if (!inputs.industry || inputs.industry.trim().length < 2) {
+    return { success: false, error: "Industry is required." };
+  }
+
+  const drThreshold = inputs.dr_threshold ?? 30;
+  const budgetMin = inputs.budget_min ?? 50;
+  const budgetMax = inputs.budget_max ?? 150;
+  const positioning = inputs.operator_positioning || "new_practitioner";
+  const buyerName = inputs.buyer_contact_name || "there";
+  const prospect = inputs.prospect_name || "your platform";
+
+  // Positioning frames — these change the tone substantively
+  const positioningFrame: Record<string, string> = {
+    established: `Operator is an established practitioner with past placements to reference. Cover letter can confidently cite past work without specifics (the proof appendix will list it). Voice: experienced senior, confident.`,
+    new_practitioner: `Operator is a senior digital marketing specialist FORMALISING guest post procurement as a focused service offering. They have deep SEO experience but no past guest-post-procurement case studies yet. Pricing is intentionally at the buyer stated band because the operator is trading discount for case study rights on first engagements. Voice: senior practitioner being TRANSPARENT about being early in this specific service line, while showing the rigor they bring from their broader SEO background. DO NOT FABRICATE past placements. DO NOT claim editorial relationships the operator does not have. The honesty IS the positioning — sophisticated buyers respect it.`,
+    mid_career: `Operator has some past guest post work but is not positioning themselves as a senior agency. Voice: capable mid-career practitioner, factual, no overclaim.`,
+  };
+
+  const buyerDemandsList = (inputs.buyer_demands && inputs.buyer_demands.length)
+    ? inputs.buyer_demands.map(d => `- ${d}`).join("\n")
+    : `- DR${drThreshold}+ sites with real organic traffic\n- Dofollow confirmation per placement\n- AI/SaaS/tech niche sites only\n- $${budgetMin}-${budgetMax} per placement budget`;
+
+  const system = `You are drafting a cover letter from a senior digital marketing specialist to a sophisticated buyer who has asked for paid guest post placements. The cover letter is a CLIENT-FACING DRAFT that the operator will REWRITE LINE BY LINE in their own voice before sending.
+
+CRITICAL VOICE RULES (these are the most important rules in this prompt):
+
+1. NO AI-GENERATED PHRASE PATTERNS. Specifically avoid:
+   - "In today's competitive landscape"
+   - "I understand the importance of"
+   - "Allow me to" / "I'd love to"
+   - Em-dashes as the primary sentence break (use full stops, semicolons, parentheses, varied punctuation)
+   - "Leverage", "synergy", "ecosystem", "robust", "seamless", "best practices"
+   - Three-item parallel structures used as decoration ("clear, concise, and effective")
+   - Smooth-but-empty transitions like "moving forward" or "with that said"
+   - Opening with the buyer's name + standard greeting + paragraph of throat-clearing
+   - Closing with "looking forward to hearing from you" or "happy to discuss further"
+
+2. WRITE LIKE A HUMAN WHO HAS DONE THIS WORK:
+   - Short sentences mixed with one longer one occasionally
+   - Specific numbers that are not round (e.g. "47 sites" not "around 50")
+   - One mid-sentence aside if it fits naturally
+   - Vary paragraph length — some 2 sentences, some 4-5, never all the same
+   - The occasional fragment for emphasis. Like this.
+   - First person, direct, never corporate-plural ("we") unless an agency reality
+
+3. ADDRESS THE BUYER'S DEMANDS DIRECTLY:
+   The buyer asked for specific things. Answer them specifically. Do not paraphrase the demands back at them — they wrote them, they know them.
+
+4. POSITIONING FRAME:
+   ${positioningFrame[positioning]}
+
+5. LENGTH: 250-400 words. SHORTER IS BETTER. A sophisticated buyer reads the first paragraph and the last paragraph and skims the middle.
+
+6. THE OPERATOR WILL REWRITE THIS. Your job is to give them a DRAFT they can shape, not a finished product. Mark in a clearly-flagged "OPERATOR NOTES" comment block at the END (separated by ---) any specific claims that need rewording in operator's own voice, any specifics that need filling in (dates, names, numbers), any sentence the operator should NOT send as-is.
+
+CLIENT CONTEXT:
+- Buyer contact name: ${buyerName}
+- Prospect platform: ${prospect}
+${inputs.client_url ? `- URL: ${inputs.client_url}\n` : ""}- Industry: ${inputs.industry}
+${(inputs.niche_keywords || []).length ? `- Niche specifics: ${(inputs.niche_keywords || []).join(", ")}\n` : ""}- Buyer stated demands:
+${buyerDemandsList}
+- Procurement filters: DR≥${drThreshold}, budget $${budgetMin}-${budgetMax}/placement, dofollow ${inputs.dofollow_required !== false ? "required" : "preferred"}
+${typeof inputs.candidates_count === "number" ? `- Operator has assembled a shortlist of ${inputs.candidates_count} candidate sites for this buyer\n` : ""}${inputs.operator_notes ? `- Operator notes: ${inputs.operator_notes}\n` : ""}
+
+OUTPUT STRUCTURE:
+1. Direct opening (no "I hope this finds you well" — start with the substance)
+2. One paragraph addressing the buyer's procurement demands honestly — what you will deliver, what they will see in the attached shortlist, what verification is already done vs what is in progress
+3. One paragraph on the budget — honest reality check appropriate to the positioning frame. For new_practitioner: explain the case-study pricing rationale openly.
+4. One paragraph (optional) — one specific industry observation that demonstrates you understand this client's space. Pick ONE thing, not a list. Make it real and verifiable.
+5. Closing — direct, asks for the specific next step (call / questions / proceed). Not "looking forward to hearing from you."
+6. After --- separator, an "OPERATOR NOTES" block listing 3-5 things the operator must adjust before sending: claims to verify, specifics to fill in, voice to personalise.
+
+Return ONLY the markdown document. No preamble, no JSON, no markdown fences around the document.`;
+
+  const user = `Draft the cover letter per the spec above. Remember: short, direct, no AI-pattern phrases, honest positioning. The buyer is sophisticated — they will smell smooth-but-empty prose immediately. Specific and a little uneven beats polished and generic.`;
+
+  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+  if (!ANTHROPIC_API_KEY) return { success: false, error: "ANTHROPIC_API_KEY missing" };
+  const MODEL = "claude-sonnet-4-6";
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) await new Promise(r => setTimeout(r, 1500));
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 90_000);
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 2500,
+          system,
+          messages: [{ role: "user", content: user }],
+        }),
+      });
+      clearTimeout(timer);
+      if (r.ok) {
+        const d = await r.json();
+        const blocks = d?.content || [];
+        const markdown = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join("\n").trim();
+        if (!markdown) {
+          if (attempt === 2) return { success: false, error: "Empty response from cover letter model." };
+          continue;
+        }
+        return { success: true, markdown };
+      }
+      const errText = await r.text().catch(() => "");
+      console.error(`[cover-letter] HTTP ${r.status}: ${errText.slice(0, 300)}`);
+      if (![429, 503, 529].includes(r.status) || attempt === 2) {
+        return { success: false, error: `Generation failed: ${r.status}` };
+      }
+    } catch (e: any) {
+      clearTimeout(timer);
+      console.error(`[cover-letter] exc: ${e?.message}`);
+      if (attempt === 2) return { success: false, error: e?.message };
+    }
+  }
+  return { success: false, error: "Cover letter generation failed after retries." };
+}
+
+/* ─── Build 12.12: Client document builder ────────────────────────
+   Pure assembly — NO LLM. Takes the existing shortlist candidates,
+   merges in operator-provided verified data, strips internal sections,
+   and renders a client-facing Word artifact.
+
+   Verified data is operator-pasted free-form text. We display it as
+   trusted operator input — we do not transform, summarise, or
+   fabricate from it. */
+export interface ClientDocumentInputs {
+  prospect_name?: string;
+  buyer_contact_name?: string;
+  client_url?: string;
+  industry: string;
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  dofollow_required?: boolean;
+  candidates: GuestPostCandidate[];
+  verified_notes_per_site?: { [siteName: string]: string };  // operator's verified text per site, keyed by candidate.name
+  global_verified_notes?: string;                            // operator's overall verified data paste, used if per-site missing
+  cover_letter_md?: string;                                  // optional — from generateCoverLetter
+}
+
+export function buildClientDocument(opts: ClientDocumentInputs): string {
+  const date = new Date().toLocaleDateString("en-GB");
+  const drThreshold = opts.dr_threshold ?? 30;
+  const budgetMin = opts.budget_min ?? 50;
+  const budgetMax = opts.budget_max ?? 150;
+  const dofollowReq = opts.dofollow_required !== false;
+  const verifiedPerSite = opts.verified_notes_per_site || {};
+
+  const L: string[] = [];
+
+  // Header — clean, professional, NOT operator-facing
+  L.push(`# Guest Post Placement Proposal`);
+  L.push("");
+  L.push(`**Prepared for:** ${opts.prospect_name || "[Client name]"}`);
+  if (opts.client_url) L.push(`**Platform:** ${opts.client_url}`);
+  L.push(`**Industry:** ${opts.industry}`);
+  L.push(`**Date:** ${date}`);
+  L.push("");
+  L.push("---");
+  L.push("");
+
+  // Cover letter goes first if present
+  if (opts.cover_letter_md && opts.cover_letter_md.trim()) {
+    // Strip any "OPERATOR NOTES" appendix from the cover letter before inclusion
+    let coverClean = opts.cover_letter_md;
+    const opNotesIdx = coverClean.search(/\n---\s*\n\s*\*?\*?OPERATOR NOTES/i);
+    if (opNotesIdx > 0) coverClean = coverClean.slice(0, opNotesIdx).trim();
+    L.push(coverClean);
+    L.push("");
+    L.push("---");
+    L.push("");
+  }
+
+  // Specification summary — direct answer to the buyer's filters
+  L.push(`## Specification we are working to`);
+  L.push("");
+  L.push(`- Domain Rating threshold: ${drThreshold}+ (Ahrefs)`);
+  L.push(`- Budget per placement: $${budgetMin}-${budgetMax}`);
+  L.push(`- Link type: ${dofollowReq ? "Dofollow required (hard filter)" : "Dofollow preferred"}`);
+  L.push(`- Niche: ${opts.industry}`);
+  L.push("");
+  L.push("---");
+  L.push("");
+
+  // Candidate sites — clean per-site presentation, no operator-facing flags
+  L.push(`## Candidate placement sites (${opts.candidates.length})`);
+  L.push("");
+  L.push(`Each candidate below is presented with our research summary and the verified field status. Sites with verification pending are marked clearly; we will not pitch any site to you until verification is complete.`);
+  L.push("");
+
+  for (let i = 0; i < opts.candidates.length; i++) {
+    const c = opts.candidates[i];
+    const verifiedText = (verifiedPerSite[c.name] || "").trim();
+    const isVerified = verifiedText.length > 0;
+
+    L.push(`### ${i + 1}. ${c.name}`);
+    L.push("");
+    L.push(`**Site URL:** ${c.url}`);
+    L.push("");
+
+    if (isVerified) {
+      // Operator has provided verified data — show it as the authoritative content.
+      // We treat this as trusted operator input and surface it cleanly.
+      L.push(`**Verified data:**`);
+      L.push("");
+      L.push(verifiedText);
+      L.push("");
+    } else {
+      // No verification yet — show our research summary with explicit pending marker
+      L.push(`> _Ahrefs verification pending — fields below are research estimates only and will be confirmed before pitching._`);
+      L.push("");
+      L.push(`**Estimated Domain Rating:** ${c.dr_range}`);
+      if (c.estimated_monthly_traffic && c.estimated_monthly_traffic !== "unknown") {
+        L.push(`**Estimated organic traffic:** ${c.estimated_monthly_traffic}`);
+      }
+      L.push(`**Niche fit:** ${c.niche_fit}`);
+      L.push(`**Placement path:** ${c.placement_path}`);
+      if (c.expected_price_band && c.expected_price_band !== "unknown") {
+        L.push(`**Expected price band:** ${c.expected_price_band}`);
+      }
+      L.push(`**Dofollow likelihood:** ${c.dofollow_likelihood.replace(/_/g, " ")}`);
+      L.push("");
+    }
+
+    L.push(`**Why this site fits ${opts.prospect_name || "your platform"}:** ${c.why_this_fits}`);
+    L.push("");
+
+    L.push(`**Outreach approach:** ${c.contact_path}`);
+    L.push("");
+    L.push("---");
+    L.push("");
+  }
+
+  // Optional: global verified notes (operator's overall paste, e.g. summary
+  // of their Ahrefs work) appears below candidates if present
+  if (opts.global_verified_notes && opts.global_verified_notes.trim()) {
+    L.push(`## Additional verification notes`);
+    L.push("");
+    L.push(opts.global_verified_notes.trim());
+    L.push("");
+    L.push("---");
+    L.push("");
+  }
+
+  // Next steps section — direct, brief, asks for the meeting
+  L.push(`## Next steps`);
+  L.push("");
+  L.push(`1. Review the candidate list above and the verification status of each site.`);
+  L.push(`2. Confirm which candidates you would like me to pitch first.`);
+  L.push(`3. For any candidates with pending verification, I will complete Ahrefs DR + traffic checks, sample dofollow status, and confirm current pricing before pitching.`);
+  L.push(`4. I will share pitch templates for each site before sending so you can approve angles.`);
+  L.push("");
+  L.push("---");
+  L.push("");
+
+  // Closing signature block — NOT a "<small>" footer this time, a proper signature
+  L.push(`Prepared by **Manav S**`);
+  L.push(``);
+  L.push(`Digital marketing specialist · ${date}`);
+
+  return L.join("\n");
 }

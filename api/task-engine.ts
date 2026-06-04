@@ -744,6 +744,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         inputs: body.inputs || {},
       }));
     }
+    // Build 12.12 — Cover letter generator
+    if (action === "prospect_cover_letter") {
+      return ok(res, await pd.generateCoverLetter({
+        inputs: body.inputs || {},
+      }));
+    }
   }
 
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */
