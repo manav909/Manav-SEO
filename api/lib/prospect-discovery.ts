@@ -91,7 +91,19 @@ export interface ProspectTarget {
   name: string;                        // publication / site name
   url?: string;                        // direct URL when known
   da_range: string;                    // e.g. "40-60"
-  confidence: "high" | "medium" | "low";
+  /** Build 12.9 — spam score range (lower is better). Honest range only,
+      never a precise number. Same model-estimated discipline as DA. */
+  spam_range?: string;                 // e.g. "1-5" or "10-25"
+  /** Build 12.9 — qualitative authority signal aimed at non-technical
+      readers. Replaces the previous "confidence: high/medium/low" label
+      that confused prospects. Maps:
+        established = recognised brand, training data confidence high
+        likely      = solid site but not universally known
+        inferred    = pattern-matched from URL/topical signals only */
+  authority_signal?: "established" | "likely" | "inferred";
+  /** Deprecated since 12.9 — kept for backward compatibility on existing
+      saved discoveries. New runs populate authority_signal instead. */
+  confidence?: "high" | "medium" | "low";
   why_valuable: string;                // 1-sentence why this matters
   attainability: "easy" | "medium" | "hard";
   outreach_path: string;               // how to actually pitch this (1-2 sentences)
@@ -396,10 +408,10 @@ function tolerantJsonParse(raw: string): { parsed: any | null; repair_used: stri
 const DA_HONESTY_BLOCK = `
 HARD HONESTY RULES (non-negotiable):
 - DA (Domain Authority) and Spam Score are MODEL OUTPUTS from Moz / Ahrefs / Majestic, not measurements. Different tools give different numbers for the same site. Without a connected provider, we estimate.
-- Therefore: EVERY target gets a DA RANGE (e.g. "40-60", "60-80"), NOT a point estimate.
-- EVERY target gets a confidence label: "high" (you've encountered the site repeatedly in training data and it's a well-known authority), "medium" (you recognise the category and can estimate by analogy), "low" (you're inferring from the URL pattern and topical signals only).
-- NEVER produce a precise number like "DA 67". Always a range with confidence.
-- If you're not at least medium-confidence that a site exists and matches the industry, do NOT include it.
+- EVERY target gets BOTH a DA range (e.g. "40-60") AND a spam_range (e.g. "1-5" for clean sites, "10-25" for questionable ones). Lower spam is better. Mainstream publishers and well-known directories should be spam 1-5; smaller niche directories typically 5-15; anything you would not personally trust should not be on this list.
+- EVERY target gets an authority_signal: "established" (recognised industry brand the model has encountered repeatedly in training data — Reddit, VentureBeat, Featured.com, etc.), "likely" (solid site the model knows of but cannot confirm specific authority), "inferred" (best-effort estimate from URL pattern and topical signals only — use sparingly).
+- NEVER produce a precise number like "DA 67" or "Spam 4". Always ranges.
+- If you cannot honestly classify a site as at least "likely", do NOT include it.
 - Use web_search to FIND actual sites in the industry. Do not invent publication names. If web_search returns nothing useful in a category, return fewer targets — don't fabricate to fill quota.
 - The teaser will be sent to a real prospect. Their first instinct will be to verify one of the named sites in Ahrefs. If they find a fabricated name, the entire pitch dies. Better to return 3 honest targets than 5 with one fabrication.`;
 
@@ -432,7 +444,8 @@ OUTPUT — return ONLY this JSON, no preamble:
       "name": "actual publication or directory name",
       "url": "https://… if you found it via web_search; omit if you only know the name",
       "da_range": "e.g. 40-60",
-      "confidence": "high|medium|low",
+      "spam_range": "e.g. 1-5 (clean) or 5-15 (acceptable). Lower is better.",
+      "authority_signal": "established|likely|inferred",
       "why_valuable": "1 sentence on topical fit and authority signal",
       "attainability": "easy|medium|hard",
       "outreach_path": "1-2 sentences: how to actually get included"
@@ -481,7 +494,8 @@ OUTPUT — return ONLY this JSON, no preamble:
       "name": "actual platform or podcast name",
       "url": "https://… if found via web_search; omit if name-only",
       "da_range": "e.g. 50-70",
-      "confidence": "high|medium|low",
+      "spam_range": "e.g. 1-5 (clean) or 5-15 (acceptable). Lower is better.",
+      "authority_signal": "established|likely|inferred",
       "why_valuable": "1 sentence on topical fit and authority signal",
       "attainability": "easy|medium|hard",
       "outreach_path": "1-2 sentences: how to actually get featured"
@@ -523,7 +537,8 @@ OUTPUT — return ONLY this JSON, no preamble:
       "name": "actual community or blog name",
       "url": "https://… if found via web_search; omit if name-only",
       "da_range": "e.g. 30-50",
-      "confidence": "high|medium|low",
+      "spam_range": "e.g. 1-5 (clean) or 5-15 (acceptable). Lower is better.",
+      "authority_signal": "established|likely|inferred",
       "why_valuable": "1 sentence on topical fit — these earn citations through ongoing presence, not one-shot placement",
       "attainability": "easy|medium|hard",
       "outreach_path": "1-2 sentences: how to build presence here that earns citations"
@@ -574,9 +589,15 @@ function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: Lane
     L.push(`> _Note: Targets below are sourced from established industry knowledge, not live web search. The full engagement uses real-time discovery to surface current opportunities including newly-launched podcasts and newly-published resource pages._`);
     L.push("");
   } else {
-    L.push(`Every target below is **named and findable** — we have not invented placeholders. DA ranges shown are honest estimates with confidence labels; precise numbers come from connected backlink tools after engagement.`);
+    L.push(`Every target below is **named and findable** — we have not invented placeholders.`);
     L.push("");
   }
+
+  // Build 12.9 — visible Ahrefs-verify disclaimer. Lives in the
+  // prospect-facing document, not just internal prompts, so the reader
+  // understands DA and Spam are estimates and what to do about it.
+  L.push(`> **About these metrics:** DA (Domain Authority) and Spam Score ranges below are **estimated by Manav S** from established industry knowledge — they are NOT measured numbers from Ahrefs or Moz. Different tools produce different numbers for the same site; that is normal. **Verify any target in Ahrefs, Moz, or Majestic before pitching to a client.** The full engagement uses a connected backlink-data provider (Ahrefs/Moz) so every target ships with measured numbers, not estimates.`);
+  L.push("");
   L.push("---");
   L.push("");
 
@@ -590,10 +611,21 @@ function renderTeaserReport(opts: { inputs: ProspectDiscoveryInputs; lanes: Lane
     for (const t of lane.targets) {
       L.push(`### ${t.name}`);
       L.push("");
+      // Build 12.9 — metrics row now includes spam_range + authority_signal.
+      // Backward-compat: older saved discoveries may still have `confidence`
+      // instead of authority_signal; we map them so old briefs render cleanly.
+      const authorityLabel = (() => {
+        if (t.authority_signal) return t.authority_signal;
+        if (t.confidence === "high") return "established";
+        if (t.confidence === "medium") return "likely";
+        if (t.confidence === "low") return "inferred";
+        return "inferred";
+      })();
       const metrics: string[] = [];
-      metrics.push(`DA range: ${t.da_range}`);
-      metrics.push(`confidence: ${t.confidence}`);
-      metrics.push(`attainability: ${t.attainability}`);
+      metrics.push(`DA: ${t.da_range || "—"}`);
+      metrics.push(`Spam: ${t.spam_range || "—"}`);
+      metrics.push(`Authority signal: ${authorityLabel}`);
+      metrics.push(`Attainability: ${t.attainability}`);
       L.push(`*${metrics.join(" · ")}*`);
       L.push("");
       if (t.url) { L.push(`**URL:** ${t.url}`); L.push(""); }

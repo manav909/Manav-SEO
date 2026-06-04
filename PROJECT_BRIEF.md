@@ -458,3 +458,26 @@ Lessons for me, encoded as process discipline going forward:
 Vite build green at 40.43s. Compile clean.
 
 Operator action post-deploy: run the same "AI tools platform" prospect from earlier. With the corrected model string, all three lanes should now actually receive responses. Diagnostics will continue capturing raw responses so any remaining issues are immediately visible.
+
+Build 12.9 — Prospect teaser credibility upgrade [SHIPPED 2026-06-04]: Three changes responding to the senior DMS critique of the "AI tools platform" teaser:
+
+(1) VISIBLE AHREFS-VERIFY DISCLAIMER — added a prospect-facing blockquote at the top of every teaser explaining that DA and Spam ranges are estimated by Manav S from industry knowledge, NOT measured numbers from Ahrefs/Moz; explicitly tells the reader to verify in Ahrefs/Moz/Majestic before pitching to a client. Previously the verify-before-pitching discipline lived only in internal prompts. The disclaimer also names the engagement upsell: "The full engagement uses a connected backlink-data provider (Ahrefs/Moz) so every target ships with measured numbers, not estimates." Turns the limitation into a sales hook.
+
+(2) SPAM SCORE COLUMN — original complaint that started the BDE-metrics thread. Now in the teaser. ProspectTarget interface extended with spam_range field. Lane prompts updated to demand both da_range AND spam_range for every target. Renderer shows "DA: X-Y · Spam: A-B" on the metrics line. Same honesty discipline as DA: a range with example "1-5 clean" or "5-15 acceptable", never a precise number, never a value the model cannot honestly defend.
+
+(3) AUTHORITY SIGNAL REPLACES CONFIDENCE — the "confidence: high/medium/low" label was technically honest but confused non-technical buyers (a client reading "DA 60-75 confidence: high" thinks the model is hedging). Replaced with "Authority signal: established / likely / inferred" which reads as a clearer qualitative call. ProspectTarget interface gains authority_signal field. Old confidence field kept on the type for backward compatibility — renderer maps old confidence values to authority_signal labels (high→established, medium→likely, low→inferred) so previously-saved discoveries still render cleanly.
+
+Lane prompt updates: schema in all three lanes now shows both spam_range and authority_signal alongside da_range; DA_HONESTY_BLOCK extended with explicit rules for spam_range (lower is better, mainstream publishers 1-5, niche directories 5-15) and authority_signal (established = recognised brand encountered repeatedly in training, likely = solid site, inferred = pattern-matched best-effort).
+
+Renderer metrics line: "DA: 40-60 · Spam: 1-5 · Authority signal: established · Attainability: easy". Replaces previous "DA range: 40-60 · confidence: high · attainability: easy". Reads more like a sales artifact, less like an internal QA log.
+
+Honest caveats that remain unaddressed in 12.9 (intentional scope discipline):
+1. Sales CTA, contact details, booking link NOT baked in — operator answer was "I'll add by editing the Word doc before sending". The teaser stays a research artifact; conversion is operator-mediated.
+2. Still 3 categories — wider/deeper category expansion was a separate question, deferred to Build 12.10 (5-6 categories, 1-2 targets each).
+3. Spam ranges are still LLM-estimated, same caveat as DA. Real spam scores come only when Ahrefs/Moz adapter is wired (Build 12.7 scaffolded; not yet active). Disclaimer says so explicitly.
+4. No competitive gap analysis ("OutSystems has this link, you don't") — that requires URL-provided flow + competitor data; future build.
+5. Old saved discoveries with confidence values still render via the backward-compat mapping. New runs only produce authority_signal. Mixed renders will mostly look consistent because the mapping is direct.
+
+Single-file change to api/lib/prospect-discovery.ts. No schema migration. No client API or UI changes (the teaser is purely server-rendered markdown).
+
+Vite build green at 54.56s. Compile clean. No contractions, no hardcoding.
