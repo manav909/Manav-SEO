@@ -443,3 +443,18 @@ Honest caveats:
 4. Single-file change to api/lib/prospect-discovery.ts. No schema migration. No client API or UI changes.
 
 Vite build green at 47.44s. Compile clean.
+
+Build 12.8.4 — One-character fix: model string [SHIPPED 2026-06-04]: Diagnostics from Build 12.8.3 revealed every prospect lane call returned HTTP 404 with `not_found_error: model: claude-sonnet-4-20250514`. The model string I hardcoded in Build 12.8 when creating api/lib/prospect-discovery.ts was a dated version (claude-sonnet-4-20250514) that this Anthropic account does not have access to. The rest of the codebase uses the alias "claude-sonnet-4-6" — 98 references across bde-backlinks.ts and others. Prospect-discovery.ts was the ONLY file using the broken dated string.
+
+Changed const MODEL from "claude-sonnet-4-20250514" to "claude-sonnet-4-6". Added a comment block above the constant explaining the history so future prospect-discovery edits don't repeat the mistake.
+
+Single-line fix. No migration. No client API or UI changes.
+
+Lessons for me, encoded as process discipline going forward:
+1. Any new file calling api.anthropic.com MUST use the same MODEL constant pattern as bde-backlinks.ts (or import a shared constant). Hardcoding a different model string in a new file is an immediate red flag.
+2. New API endpoints need a smoke test BEFORE shipping the feature build that depends on them. A single curl with the new action confirming HTTP 200 would have caught this in 12.8 before any UI work.
+3. The diagnostic-shipping discipline from Build 12.8.3 absolutely paid off — without raw_response capture in synthesis_diagnostics, this could have taken many more rounds of guessing. The fix from data took seconds; the investigation without data took three builds. Future similar features get diagnostics from day one, not as a hotfix.
+
+Vite build green at 40.43s. Compile clean.
+
+Operator action post-deploy: run the same "AI tools platform" prospect from earlier. With the corrected model string, all three lanes should now actually receive responses. Diagnostics will continue capturing raw responses so any remaining issues are immediately visible.

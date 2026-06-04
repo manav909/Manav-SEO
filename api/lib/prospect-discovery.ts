@@ -29,7 +29,11 @@
 import { db } from "./db.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
-const MODEL = "claude-sonnet-4-20250514";
+// Build 12.8.4 — match the model alias used by the 98 other call sites in
+// this codebase (notably bde-backlinks.ts). The previous hardcoded value
+// "claude-sonnet-4-20250514" was not enabled on this Anthropic account and
+// returned 404 not_found_error on every single prospect lane call.
+const MODEL = "claude-sonnet-4-6";
 
 /* ─── Build 12.8.2 — Diagnostic persistence ─────────────────── */
 /* Same synthesis_diagnostics table used by bde-backlinks Build 12.5.
