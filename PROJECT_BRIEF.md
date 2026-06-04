@@ -379,3 +379,11 @@ Honest caveats:
 7. Prospect data (industry, name, URL) is currently stored without RLS protection — operator-level access only. Fine for single-operator deployment; needs RLS if multi-tenant.
 
 Vite build green at 25.43s. All 5 files compile clean. No contractions, no hardcoding.
+
+Build 12.8.1 — Hotfix: prospect_discovery_run routing [SHIPPED 2026-05-30]: My mistake in 12.8 — the three prospect_discovery_* routes were physically placed inside the `if (action.startsWith("backlink_"))` outer gate. Since "prospect_discovery_run" does NOT start with "backlink_", the outer guard rejected all three actions immediately and they fell through to "Unknown action: prospect_discovery_run".
+
+Fix: extracted the prospect routes into their own sibling block guarded by `action.startsWith("prospect_")`, placed immediately after the BACKLINK STRATEGY block and before GA4 INTEGRATION. Lazy import of prospect-discovery.js now only fires on actual prospect_* calls, not on every backlink_* call.
+
+Single-file change to api/task-engine.ts. No schema migration. Vite build green at 40.44s.
+
+Honest note: this should have been caught by manual route testing before shipping 12.8. Adding "post-deploy: curl the new route once to confirm it returns success, not Unknown action" to my mental checklist.
