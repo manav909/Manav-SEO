@@ -1036,3 +1036,404 @@ Extract the signals as JSON per the schema. Be conservative. Empty fields are ho
   }
   return { success: false, error: "Extraction failed after retries." };
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Build 12.11 — Guest Post Finder
+   Separate flow for sophisticated buyers requesting paid guest
+   post procurement with strict filters: DR threshold, dofollow,
+   niche specificity, budget per placement.
+
+   This is NOT the discovery teaser. The teaser is a sales artifact
+   for cold prospects. Guest Post Finder is an operator tool for
+   working an engaged buyer's spec.
+
+   Different in three ways from runProspectDiscovery:
+   1. Single category output (Guest Post Placement Candidates), not 3
+   2. Honors HARD filters from inputs (DR threshold, dofollow, budget)
+   3. Inline per-site annotations: "DR estimated", "recent articles
+      unverified", "dofollow unverified", "may be link-network adjacent"
+      — quiet honesty without a banner that softens the deliverable
+
+   Output is operator-facing first. Operator manually verifies in
+   Ahrefs / fetches recent articles / samples dofollow before sending
+   anything to the client. The shortlist is a discovery starting
+   point, not a vendor proposal.
+   ════════════════════════════════════════════════════════════════ */
+
+export interface GuestPostFinderInputs {
+  client_url?: string;             // optional but strongly recommended
+  industry: string;                // required
+  niche_keywords?: string[];       // narrowing terms — "AI tools" + "B2B SaaS"
+  geography?: string;
+  dr_threshold?: number;           // default 30
+  budget_min?: number;             // USD per placement, default 50
+  budget_max?: number;             // default 150
+  dofollow_required?: boolean;     // default true
+  competitors?: string[];          // sites the prospect's competitors have used
+  operator_notes?: string;         // free-text extra context
+}
+
+export interface GuestPostCandidate {
+  name: string;                            // site name
+  url: string;                             // site root URL — required
+  dr_range: string;                        // e.g. "35-50"
+  estimated_monthly_traffic?: string;      // e.g. "10k-50k" — rough
+  niche_fit: "ai" | "saas" | "tech" | "marketing" | "adjacent" | "general";
+  placement_path: "paid" | "editorial" | "either" | "unknown";
+  expected_price_band?: string;            // e.g. "$80-150" — operator must verify
+  dofollow_likelihood: "very_likely" | "likely" | "mixed" | "unlikely" | "unknown";
+  publishes_external_authors: "yes" | "occasionally" | "unknown";
+  why_this_fits: string;                   // 1-2 sentences on niche match
+  contact_path: string;                    // how to actually reach them
+  flags: string[];                         // inline honest annotations
+}
+
+export interface GuestPostFinderResult {
+  candidates: GuestPostCandidate[];
+  avoid_list: { name: string; reason: string }[];   // sites operator should NOT pitch
+  research_notes: string;                            // explored, gaps, recommendations
+}
+
+async function runGuestPostLane(inputs: GuestPostFinderInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<{ result: GuestPostFinderResult | null; tool_use_count: number; raw_text: string; failed?: string }> {
+  const drThreshold = inputs.dr_threshold ?? 30;
+  const budgetMin = inputs.budget_min ?? 50;
+  const budgetMax = inputs.budget_max ?? 150;
+  const dofollowRequired = inputs.dofollow_required !== false;
+
+  const niches = (inputs.niche_keywords || []).filter(k => k && k.trim()).slice(0, 8);
+  const competitors = (inputs.competitors || []).filter(c => c && c.trim()).slice(0, 8);
+
+  const system = `You are a senior link strategist building a vetted guest-post procurement shortlist for a client engagement. Your output goes to a senior operator (not directly to the buyer). The operator will manually verify your shortlist in Ahrefs and a crawler before pitching anything to the client.
+
+CLIENT BRIEF:
+- Industry: ${inputs.industry}
+${niches.length ? `- Niche narrowing keywords: ${niches.join(", ")}\n` : ""}${inputs.geography ? `- Geography: ${inputs.geography}\n` : ""}${inputs.client_url ? `- Client URL (linking from these placements TO this site): ${inputs.client_url}\n` : ""}- DR threshold (Ahrefs Domain Rating): ${drThreshold}+
+- Budget per placement: $${budgetMin}-${budgetMax}
+- Dofollow required: ${dofollowRequired ? "YES (hard filter)" : "preferred but not required"}
+${competitors.length ? `- Competitor sites known to use guest posts: ${competitors.join(", ")}\n` : ""}${inputs.operator_notes ? `- Operator notes: ${inputs.operator_notes}\n` : ""}
+
+HONESTY DISCIPLINE (non-negotiable):
+- DR ranges are LLM ESTIMATES based on training-data familiarity with the site. The operator MUST verify in Ahrefs before pitching.
+- Recent article cadence is UNKNOWN to you. The operator MUST fetch the site's /blog or recent posts before pitching.
+- Dofollow status is UNKNOWN to you. The operator MUST sample 1-2 recent outbound editorial links to verify.
+- Price bands are MARKET-ESTIMATED from typical rates in this niche. The site may quote differently. Operator confirms.
+- Every candidate gets at least ONE inline flag in the "flags" array calling out which unverified field matters most for that site.
+
+PROCUREMENT FILTERS:
+- Only include sites that PUBLISH GUEST POSTS or EDITORIAL CONTRIBUTIONS. NOT directories, NOT HARO platforms, NOT podcasts, NOT communities, NOT job boards. ACTUAL CONTENT SITES that take outside bylines.
+- Estimated DR must be AT OR ABOVE ${drThreshold}. If you're not confident a site clears that bar, do not include it.
+- Niche fit MUST match the client's industry (${inputs.industry}). General-purpose tech sites (e.g. Medium, Dev.to) only if you can defend tight topical fit.
+- Budget realism: tag each candidate with an expected_price_band. If a site clearly charges far above $${budgetMax}, do NOT include it in the main list — put it in research_notes as "next tier" reference only.
+- Sites you SUSPECT are link-network-adjacent (Outlook India, Hindustan Times, Disrupt sub-domains, anything with "guest post packages" advertised) → put in avoid_list, NOT main list.
+
+OUTPUT — return ONLY this JSON, no preamble, no markdown fences:
+{
+  "explored": "1-2 sentences on what you searched for and your confidence in this shortlist",
+  "candidates": [
+    {
+      "name": "site name",
+      "url": "https://… root domain",
+      "dr_range": "e.g. 35-50",
+      "estimated_monthly_traffic": "e.g. 10k-50k OR 50k-200k OR 200k+ OR unknown",
+      "niche_fit": "ai|saas|tech|marketing|adjacent|general",
+      "placement_path": "paid|editorial|either|unknown",
+      "expected_price_band": "e.g. $80-150 OR $150-300 OR free editorial OR unknown",
+      "dofollow_likelihood": "very_likely|likely|mixed|unlikely|unknown",
+      "publishes_external_authors": "yes|occasionally|unknown",
+      "why_this_fits": "1-2 sentences on topical fit for ${inputs.industry}",
+      "contact_path": "1-2 sentences on how to actually reach the editor (form, email, LinkedIn)",
+      "flags": ["DR estimated — verify in Ahrefs", "and 1-2 more if relevant"]
+    }
+  ],
+  "avoid_list": [
+    {"name": "site name", "reason": "1 sentence on why operator should NOT pitch"}
+  ],
+  "research_notes": "What you searched for, what you found vs didn't, any tier-up recommendations (e.g. 'at $200-400 these stronger options open up: ...')."
+}
+
+TARGET COUNT: 5-8 candidates in main list, 2-4 in avoid_list. Quality over quantity. If you cannot honestly name 5 at the DR/budget threshold, return fewer — empty seats are honest, fabricated seats kill credibility.`;
+
+  const user = `Build the guest-post procurement shortlist per the brief above. Use web_search if available to find specific sites currently accepting AI/SaaS/tech guest posts at the DR and budget thresholds. Verify each candidate against the procurement filters before including.`;
+
+  const callResult = await callAnthropicWithWebSearch({
+    system,
+    user,
+    label: "guest-post/finder",
+    maxTokens: 5500,
+    discovery_id: opts.discovery_id,
+    enable_web_search: opts.enable_web_search,
+  });
+
+  if (callResult.text) {
+    console.log(`[guest-post/finder] raw response (first 1500): ${callResult.text.slice(0, 1500)}`);
+  }
+
+  if (!callResult.text) {
+    return { result: null, tool_use_count: callResult.tool_use_count, raw_text: "", failed: "no response" };
+  }
+  const parsed = tolerantJsonParse(callResult.text);
+  if (!parsed.parsed) {
+    try {
+      await persistDiagnostic({
+        discovery_id: opts.discovery_id,
+        label: "guest-post/finder",
+        stop_reason: callResult.stop_reason || null,
+        parse_error: "tolerantJsonParse: all 6 strategies failed",
+        raw_response: callResult.text,
+        request_summary: { model: "claude-sonnet-4-6", max_tokens: 5500, system_length: system.length, user_length: user.length, web_search_enabled: opts.enable_web_search !== false },
+        attempt_number: 1,
+        duration_ms: 0,
+        tool_use_count: callResult.tool_use_count,
+      });
+    } catch { /* silent */ }
+    return { result: null, tool_use_count: callResult.tool_use_count, raw_text: callResult.text, failed: "parse failed" };
+  }
+  const p = parsed.parsed;
+  const candidates: GuestPostCandidate[] = Array.isArray(p.candidates) ? p.candidates : [];
+  const avoidList = Array.isArray(p.avoid_list) ? p.avoid_list : [];
+  const researchNotes = typeof p.research_notes === "string" ? p.research_notes : (typeof p.explored === "string" ? p.explored : "");
+  return {
+    result: { candidates, avoid_list: avoidList, research_notes: researchNotes },
+    tool_use_count: callResult.tool_use_count,
+    raw_text: callResult.text,
+  };
+}
+
+function renderGuestPostShortlist(opts: { inputs: GuestPostFinderInputs; result: GuestPostFinderResult; webSearchDisabled: boolean }): string {
+  const { inputs, result, webSearchDisabled } = opts;
+  const drThreshold = inputs.dr_threshold ?? 30;
+  const budgetMin = inputs.budget_min ?? 50;
+  const budgetMax = inputs.budget_max ?? 150;
+  const dofollowRequired = inputs.dofollow_required !== false;
+  const date = new Date().toLocaleDateString("en-GB");
+
+  const L: string[] = [];
+  L.push(`# Guest Post Procurement Shortlist`);
+  L.push("");
+  L.push(`**Industry:** ${inputs.industry}  `);
+  if (inputs.client_url) L.push(`**Client URL:** ${inputs.client_url}  `);
+  if (inputs.geography) L.push(`**Geography:** ${inputs.geography}  `);
+  L.push(`**DR threshold:** ${drThreshold}+  `);
+  L.push(`**Budget per placement:** $${budgetMin}-${budgetMax}  `);
+  L.push(`**Dofollow:** ${dofollowRequired ? "required" : "preferred"}  `);
+  L.push(`**Prepared by:** Manav S · Date: ${date}`);
+  L.push("");
+  L.push("---");
+  L.push("");
+  L.push(`**Operator-facing shortlist.** Each candidate below carries inline flags identifying which fields require manual verification (Ahrefs DR, recent article cadence, dofollow status, current pricing) before the candidate is pitched to the client. This shortlist is a discovery starting point, not a vendor proposal.`);
+  L.push("");
+  if (webSearchDisabled) {
+    L.push(`> _Note: Live web search was unavailable. Shortlist below is sourced from established industry knowledge only — recency-sensitive details (current pricing, current guest post programmes, recent editorial activity) particularly need Ahrefs and direct site verification._`);
+    L.push("");
+  }
+  L.push("---");
+  L.push("");
+
+  if (result.candidates.length === 0) {
+    L.push(`## No candidates surfaced`);
+    L.push("");
+    L.push(`The combination of DR≥${drThreshold}, budget $${budgetMin}-${budgetMax}, niche "${inputs.industry}"${dofollowRequired ? ", dofollow-required" : ""} did not produce candidates. Likely causes:`);
+    L.push("");
+    L.push(`- Budget too tight for the DR threshold in this vertical (try $${budgetMax * 2}-${budgetMax * 4})`);
+    L.push(`- Industry too narrow — consider broadening to adjacent verticals`);
+    L.push(`- Web search may have been unavailable on this run`);
+    L.push("");
+    if (result.research_notes) {
+      L.push(`**Research notes:** ${result.research_notes}`);
+      L.push("");
+    }
+  } else {
+    L.push(`## Candidates (${result.candidates.length})`);
+    L.push("");
+    for (const c of result.candidates) {
+      L.push(`### ${c.name}`);
+      L.push("");
+      const metricLine: string[] = [];
+      metricLine.push(`DR: ${c.dr_range}`);
+      if (c.estimated_monthly_traffic && c.estimated_monthly_traffic !== "unknown") metricLine.push(`Traffic: ${c.estimated_monthly_traffic}`);
+      metricLine.push(`Niche: ${c.niche_fit}`);
+      metricLine.push(`Placement: ${c.placement_path}`);
+      if (c.expected_price_band && c.expected_price_band !== "unknown") metricLine.push(`Price: ${c.expected_price_band}`);
+      metricLine.push(`Dofollow: ${c.dofollow_likelihood.replace(/_/g, " ")}`);
+      L.push(`*${metricLine.join(" · ")}*`);
+      L.push("");
+      L.push(`**URL:** ${c.url}`);
+      L.push("");
+      L.push(`**Why this fits:** ${c.why_this_fits}`);
+      L.push("");
+      L.push(`**How to reach them:** ${c.contact_path}`);
+      L.push("");
+      if (Array.isArray(c.flags) && c.flags.length) {
+        // Inline annotations — small, italicised, NOT a top banner
+        L.push(`_Verify before pitching: ${c.flags.join(" · ")}_`);
+        L.push("");
+      }
+      L.push("---");
+      L.push("");
+    }
+  }
+
+  if (Array.isArray(result.avoid_list) && result.avoid_list.length) {
+    L.push(`## Avoid in this niche`);
+    L.push("");
+    L.push(`The following sites surfaced during research but should NOT be pitched. Included here as a reference list:`);
+    L.push("");
+    for (const a of result.avoid_list) {
+      L.push(`- **${a.name}** — ${a.reason}`);
+    }
+    L.push("");
+    L.push("---");
+    L.push("");
+  }
+
+  if (result.research_notes) {
+    L.push(`## Research notes`);
+    L.push("");
+    L.push(result.research_notes);
+    L.push("");
+    L.push("---");
+    L.push("");
+  }
+
+  L.push(`## Operator verification checklist`);
+  L.push("");
+  L.push(`Before sending any of these candidates to the client, verify each for:`);
+  L.push("");
+  L.push(`- [ ] Ahrefs DR meets or exceeds ${drThreshold} (run a direct check)`);
+  L.push(`- [ ] Ahrefs organic traffic shows real search-driven visits (not just link-network referrals)`);
+  L.push(`- [ ] /blog or /articles section published at least 3 posts in the last 60 days`);
+  L.push(`- [ ] One sampled outbound editorial link from a recent post has rel="" or no rel attribute (dofollow)`);
+  L.push(`- [ ] Current published rate card or direct quote sits inside the $${budgetMin}-${budgetMax} band${budgetMax < 200 ? " (or explicitly flagged as next-tier)" : ""}`);
+  L.push(`- [ ] No surface signals of link-network membership (avoid sites with "guest post package" landing pages, sites that publish 30+ posts/month from external authors, sites whose About page lists no editorial team)`);
+  L.push("");
+  L.push("---");
+  L.push("");
+  L.push(`<small>Prepared by **Manav S** · SEO Season by Manav S · ${date}</small>`);
+
+  return L.join("\n");
+}
+
+export async function runGuestPostFinder(opts: {
+  inputs: GuestPostFinderInputs;
+  client_request_id?: string;
+}): Promise<{
+  success: boolean;
+  discovery_id?: string;
+  shortlist_md?: string;
+  candidates_count?: number;
+  avoid_count?: number;
+  llm_calls_used?: number;
+  web_searches_used?: number;
+  error?: string;
+}> {
+  const inputs = opts.inputs;
+  if (!inputs.industry || inputs.industry.trim().length < 2) {
+    return { success: false, error: "Industry is required." };
+  }
+
+  const startedAt = Date.now();
+  let llm_calls_used = 0;
+  let web_searches_used = 0;
+  let discovery_id: string | undefined;
+
+  // Insert tracking row in prospect_discoveries — same table as the teaser flow,
+  // industry column reused, context column gets a stringified summary so the
+  // operator can distinguish guest-post runs from discovery runs when listing.
+  try {
+    const contextSummary = `GUEST POST FINDER · DR≥${inputs.dr_threshold ?? 30} · budget $${inputs.budget_min ?? 50}-${inputs.budget_max ?? 150} · dofollow=${inputs.dofollow_required !== false}`;
+    const { data, error } = await db().from("prospect_discoveries").insert({
+      client_url: inputs.client_url || null,
+      industry: inputs.industry.trim(),
+      geography: inputs.geography || null,
+      context: contextSummary + (inputs.operator_notes ? `\n\n${inputs.operator_notes}` : ""),
+      status: "researching",
+      started_at: new Date().toISOString(),
+      client_request_id: opts.client_request_id || null,
+      progress_json: { stage: "researching", mode: "guest_post_finder" },
+    }).select("id").single();
+    if (!error && data) discovery_id = (data as any).id;
+  } catch (e: any) {
+    console.warn(`[guest-post] insert threw: ${e?.message}`);
+  }
+
+  const updateProgress = async (patch: any) => {
+    if (!discovery_id) return;
+    try {
+      const progress = { ...patch, mode: "guest_post_finder", elapsed_seconds: Math.round((Date.now() - startedAt) / 1000), client_request_id: opts.client_request_id || null };
+      await db().from("prospect_discoveries").update({ progress_json: progress, status: patch.status || undefined, updated_at: new Date().toISOString() }).eq("id", discovery_id);
+    } catch { /* silent */ }
+  };
+
+  const WALL_TIMEOUT_MS = 180_000;
+  let timedOut = false;
+  const timeoutHandle = setTimeout(() => {
+    timedOut = true;
+    updateProgress({ status: "timed_out", stage: "timed_out" });
+  }, WALL_TIMEOUT_MS);
+
+  try {
+    await updateProgress({ status: "researching", stage: "researching" });
+    if (timedOut) throw new Error("Aborted before research due to wall-time limit.");
+
+    // First attempt with web_search enabled
+    let laneResult = await runGuestPostLane(inputs, { discovery_id });
+    llm_calls_used++;
+    web_searches_used += laneResult.tool_use_count;
+
+    // Fallback to LLM-only if web_search yielded nothing
+    let webSearchDisabled = false;
+    if (laneResult.tool_use_count === 0 && (!laneResult.result || laneResult.result.candidates.length === 0)) {
+      console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — retry with web_search OFF`);
+      webSearchDisabled = true;
+      laneResult = await runGuestPostLane(inputs, { discovery_id, enable_web_search: false });
+      llm_calls_used++;
+    }
+
+    if (timedOut) throw new Error("Aborted before render due to wall-time limit.");
+
+    const result: GuestPostFinderResult = laneResult.result || { candidates: [], avoid_list: [], research_notes: laneResult.failed ? `Lane failed: ${laneResult.failed}` : "No data returned." };
+    await updateProgress({ status: "synthesizing", stage: "synthesizing" });
+
+    const shortlist_md = renderGuestPostShortlist({ inputs, result, webSearchDisabled });
+
+    if (discovery_id) {
+      try {
+        await db().from("prospect_discoveries").update({
+          teaser_md: shortlist_md,
+          targets_json: result.candidates,
+          status: "complete",
+          completed_at: new Date().toISOString(),
+          llm_calls_used,
+          web_searches_used,
+          progress_json: { stage: "complete", mode: "guest_post_finder", elapsed_seconds: Math.round((Date.now() - startedAt) / 1000) },
+          updated_at: new Date().toISOString(),
+        }).eq("id", discovery_id);
+      } catch { /* silent */ }
+    }
+
+    clearTimeout(timeoutHandle);
+    console.log(`[guest-post] complete in ${Math.round((Date.now() - startedAt) / 1000)}s · candidates=${result.candidates.length} · avoid=${result.avoid_list.length}`);
+    return {
+      success: true,
+      discovery_id,
+      shortlist_md,
+      candidates_count: result.candidates.length,
+      avoid_count: result.avoid_list.length,
+      llm_calls_used,
+      web_searches_used,
+    };
+  } catch (e: any) {
+    clearTimeout(timeoutHandle);
+    const msg = e?.message || "Guest post finder failed.";
+    if (discovery_id) {
+      try {
+        await db().from("prospect_discoveries").update({
+          status: timedOut ? "timed_out" : "failed",
+          error_message: msg,
+          updated_at: new Date().toISOString(),
+        }).eq("id", discovery_id);
+      } catch { /* silent */ }
+    }
+    return { success: false, discovery_id, error: msg };
+  }
+}

@@ -532,3 +532,42 @@ Lesson going forward: when reusing existing helper functions, grep one existing 
 Single-file change. No migration. No engine, no API, no client API.
 
 Vite build green at 25.28s. Compile clean.
+
+Build 12.11 — Guest Post Finder mode [SHIPPED 2026-06-04]: New procurement-mode flow for sophisticated buyers like BlendSpace requesting paid guest post placements with strict filters (DR threshold, dofollow required, niche, per-placement budget). This is NOT a sales-teaser variant; it is an OPERATOR TOOL aimed at working an engaged buyer's spec. The shortlist is delivered to the operator (you), who manually verifies in Ahrefs / fetches recent articles / samples dofollow before pitching anything to the client.
+
+UI: mode toggle inside the existing Prospect Finder tab — 'Discovery teaser' (default, original) vs 'Guest post procurement' (new). Mode toggle clears the result on switch to avoid mixing artifact types. Shared form fields (industry, geography, URL) are reused; mode-specific fields appear conditionally.
+
+Teaser-mode fields stay: Budget tier (low/medium/high/enterprise), Prospect name.
+
+Guest-post-mode-only fields (new section "Procurement filters"):
+- DR threshold (Ahrefs Domain Rating, default 30)
+- Budget min / max (USD, defaults $50-$150)
+- Niche keywords (comma-separated, narrows the search)
+- Known competitor sites (comma-separated, signals to model)
+- Dofollow required checkbox (default true, hard filter)
+
+The "Context" field is relabelled "Operator notes" in guest-post mode (different audience: operator-internal vs prospect-facing). The "Prospect URL" field is relabelled "Client URL" with stronger "recommended" hint (knowing what you're linking TO matters more for procurement than for cold teaser).
+
+ENGINE: new runGuestPostFinder() function in api/lib/prospect-discovery.ts. Different from runProspectDiscovery in three ways: (1) single category output (Guest Post Placement Candidates) instead of 3 lanes, (2) honors hard filters from inputs (DR threshold, dofollow, budget) in the prompt, (3) every candidate carries inline flags identifying which fields require manual verification — "DR estimated", "recent articles unverified", "dofollow unverified", "may be link-network adjacent" — quiet honesty per-site rather than a top banner.
+
+The lane prompt explicitly EXCLUDES directories, HARO platforms, podcasts, communities, job boards. Only sites that PUBLISH GUEST POSTS or EDITORIAL CONTRIBUTIONS. The procurement filters are HARD filters in the prompt: estimated DR must be at or above threshold; budget realism flag; sites suspected of link-network membership go to avoid_list, not main list.
+
+Output schema includes a separate "avoid_list" array of sites the model identified but considers unsuitable (with one-line reason each). Operator gets to see what was excluded and why — useful for the BlendSpace-style buyer who wants to know "what wouldn't you pitch and why."
+
+Render: operator-facing shortlist with named candidate sections (DR range, traffic estimate, niche fit, placement path paid/editorial, expected price band, dofollow likelihood, contact path, inline verification flags). Closing operator verification checklist (Ahrefs DR check, organic traffic check, recent post cadence check, dofollow sample check, rate-card confirmation, link-network signal check). Honest disclaimer banner ONLY appears when web_search was unavailable; otherwise the deliverable looks like a confident shortlist per operator answer.
+
+Same database table reused (prospect_discoveries) — guest-post runs are distinguished by progress_json.mode = 'guest_post_finder' and a contextual prefix in the context column ('GUEST POST FINDER · DR≥30 · budget $50-150 · dofollow=true'). No new migration. Operator can list mixed-mode runs from the same surface; future build can split if needed.
+
+API: new prospect_guest_post_run action in task-engine.ts, in the same prospect_* gate as Build 12.8.
+
+Honest caveats:
+1. DR ranges are still LLM estimates. Same caveat as DA in the teaser flow. The verification checklist + inline flags make this explicit per candidate.
+2. Recent article cadence is not actually checked. The model cannot fetch and parse the candidate site's /blog. The operator must do this manually. Future build 12.12 = recent-article crawler.
+3. Dofollow status is not verified. The model classifies likelihood from training-data familiarity ("Reddit links are likely nofollow"), but the actual rel attribute on a recent outbound link is not sampled. Same future build 12.12.
+4. Price bands are market-estimated from typical rates in this niche. The site may quote differently. No live pricing intel.
+5. Avoid-list quality depends on training-data familiarity with link-network surface signals. Won't catch every link farm but should catch the obvious ones (Outlook India guest-post packages, "Disrupt" sub-domain networks, etc.).
+6. For BlendSpace specifically: even with this build, the response should follow the 'push back on budget' email pattern. Build 12.11 produces a starting-point shortlist; the actual deliverable to that client requires Ahrefs verification work that this system does not do yet.
+
+Four files changed: api/lib/prospect-discovery.ts (engine), api/task-engine.ts (route), src/components/pm/api.ts (client function), src/components/pm/BacklinksPanel.tsx (mode toggle + procurement fields + branched run handler + mode-aware result block).
+
+Vite build green at 24.77s. Compile clean. No contractions, no hardcoding.

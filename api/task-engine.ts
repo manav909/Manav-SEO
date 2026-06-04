@@ -731,6 +731,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
         message: body.message || "",
       }));
     }
+    // Build 12.11 — Guest Post Finder (procurement mode)
+    if (action === "prospect_guest_post_run") {
+      return ok(res, await pd.runGuestPostFinder({
+        inputs: body.inputs || {},
+        client_request_id: body.client_request_id,
+      }));
+    }
   }
 
   /* ═══ GA4 INTEGRATION (Phase E) — ga4_* actions ═══ */

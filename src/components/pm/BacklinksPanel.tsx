@@ -24,7 +24,7 @@ import {
   backlinkAssetsList, backlinkAssetUpdate, backlinkCompetitorMap, backlinkCompetitorBatch, backlinkCompetitorList,
   backlinkProviderKeysList, backlinkProviderKeysUpsert, backlinkProviderKeysDelete,
   backlinkMetricsRefresh, backlinkAssetExportCsv, backlinkAssetExportReport,
-  prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals,
+  prospectDiscoveryRun, prospectDiscoveryStatus, prospectExtractSignals, prospectGuestPostRun,
   type BacklinkInputs, type BacklinkListItem, type CompareLens, type CompareSelectedLens, type BacklinkAsset, type CompetitorMapItem,
 } from '@/components/pm/api';
 import { downloadStakeholderReport, downloadStakeholderAsWord, openStakeholderReport, mdToHtml } from '@/lib/reportExport';
@@ -136,6 +136,14 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
   const [prospectProgress, setProspectProgress] = useState<{ stage: string; lanes_done: number; lanes_total: number; elapsed_seconds: number | null } | null>(null);
   const [prospectResult, setProspectResult] = useState<{ teaser_md: string; targets_count: number; discovery_id?: string } | null>(null);
   const [prospectError, setProspectError] = useState('');
+  // Build 12.11 — mode toggle + procurement fields
+  const [prospectMode, setProspectMode] = useState<'teaser' | 'guest_post'>('teaser');
+  const [gpDrThreshold, setGpDrThreshold] = useState<number>(30);
+  const [gpBudgetMin, setGpBudgetMin] = useState<number>(50);
+  const [gpBudgetMax, setGpBudgetMax] = useState<number>(150);
+  const [gpDofollowRequired, setGpDofollowRequired] = useState<boolean>(true);
+  const [gpNicheKeywords, setGpNicheKeywords] = useState<string>(''); // comma-separated input
+  const [gpCompetitors, setGpCompetitors] = useState<string>(''); // comma-separated input
   // Build 12.10 — Smart Paste state
   const [smartPasteOpen, setSmartPasteOpen] = useState(false);
   const [smartPasteText, setSmartPasteText] = useState('');
@@ -560,6 +568,72 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
     }
     setProspectRunning(true);
     setProspectResult(null);
+
+    // Build 12.11 — branch by mode. Guest post mode runs a single-lane
+    // procurement query; teaser mode runs the 3-lane discovery flow.
+    if (prospectMode === 'guest_post') {
+      setProspectProgress({ stage: 'starting', lanes_done: 0, lanes_total: 1, elapsed_seconds: 0 });
+      const clientReqId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      let pollHandle: any = null;
+      const startPolling = () => {
+        pollHandle = setInterval(async () => {
+          try {
+            const s = await prospectDiscoveryStatus({ client_request_id: clientReqId });
+            if (s.success) {
+              setProspectProgress({
+                stage: s.stage || s.status || 'running',
+                lanes_done: 0,
+                lanes_total: 1,
+                elapsed_seconds: typeof s.elapsed_seconds === 'number' ? s.elapsed_seconds : null,
+              });
+              if (s.status === 'failed' || s.status === 'timed_out') {
+                clearInterval(pollHandle);
+                setProspectError(s.error_message || `Run ${s.status}.`);
+              }
+            }
+          } catch { /* tolerate */ }
+        }, 3000);
+      };
+      const pollStartTimer = setTimeout(startPolling, 4000);
+
+      try {
+        const niches = gpNicheKeywords.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
+        const comps = gpCompetitors.split(',').map(s => s.trim()).filter(Boolean).slice(0, 8);
+        const r = await prospectGuestPostRun({
+          inputs: {
+            industry: prospectIndustry.trim(),
+            geography: prospectGeography.trim() || undefined,
+            client_url: prospectUrl.trim() || undefined,
+            niche_keywords: niches.length ? niches : undefined,
+            competitors: comps.length ? comps : undefined,
+            dr_threshold: gpDrThreshold,
+            budget_min: gpBudgetMin,
+            budget_max: gpBudgetMax,
+            dofollow_required: gpDofollowRequired,
+            operator_notes: prospectContext.trim() || undefined,
+          },
+          client_request_id: clientReqId,
+        });
+        clearTimeout(pollStartTimer);
+        if (pollHandle) clearInterval(pollHandle);
+        if (!r.success) {
+          setProspectError(r.error || 'Guest post finder failed.');
+          return;
+        }
+        setProspectResult({ teaser_md: r.shortlist_md || '', targets_count: r.candidates_count || 0, discovery_id: r.discovery_id });
+        setProspectProgress(null);
+        toast({ title: 'Shortlist ready', description: `${r.candidates_count} candidate${r.candidates_count === 1 ? '' : 's'}${typeof r.avoid_count === 'number' && r.avoid_count > 0 ? ` · ${r.avoid_count} on avoid list` : ''}.` });
+      } catch (e: any) {
+        clearTimeout(pollStartTimer);
+        if (pollHandle) clearInterval(pollHandle);
+        setProspectError(e?.message || 'Guest post finder failed.');
+      } finally {
+        setProspectRunning(false);
+      }
+      return;
+    }
+
+    // Teaser mode (original flow)
     setProspectProgress({ stage: 'starting', lanes_done: 0, lanes_total: 3, elapsed_seconds: 0 });
 
     const clientReqId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -627,14 +701,20 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
 
   const downloadProspectTeaserWord = () => {
     if (!prospectResult?.teaser_md) return;
-    const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
-    downloadStakeholderAsWord(prospectResult.teaser_md, { title, kind: 'Free Backlink Opportunity Report', generatedAt: new Date().toISOString() });
+    const title = prospectMode === 'guest_post'
+      ? `Guest Post Shortlist · ${prospectIndustry || 'Industry'}`
+      : `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
+    const kind = prospectMode === 'guest_post' ? 'Guest Post Procurement Shortlist' : 'Free Backlink Opportunity Report';
+    downloadStakeholderAsWord(prospectResult.teaser_md, { title, kind, generatedAt: new Date().toISOString() });
   };
 
   const previewProspectTeaser = () => {
     if (!prospectResult?.teaser_md) return;
-    const title = `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
-    openStakeholderReport(prospectResult.teaser_md, { title, kind: 'Free Backlink Opportunity Report', generatedAt: new Date().toISOString() });
+    const title = prospectMode === 'guest_post'
+      ? `Guest Post Shortlist · ${prospectIndustry || 'Industry'}`
+      : `Free Backlink Opportunities · ${prospectIndustry || 'Industry'}`;
+    const kind = prospectMode === 'guest_post' ? 'Guest Post Procurement Shortlist' : 'Free Backlink Opportunity Report';
+    openStakeholderReport(prospectResult.teaser_md, { title, kind, generatedAt: new Date().toISOString() });
   };
 
   /* ─── Build 12.10: Smart Paste handlers ─────────────────────── */
@@ -1629,7 +1709,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <Search className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-semibold">Prospect Finder · Free Backlink Teaser</h3>
+              <h3 className="text-sm font-semibold">Prospect Finder</h3>
               <div className="flex-1" />
               <button
                 onClick={openSmartPaste}
@@ -1639,8 +1719,29 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                 Smart paste
               </button>
             </div>
+
+            {/* Build 12.11 — mode toggle */}
+            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-muted/40 mb-3 w-fit">
+              <button
+                onClick={() => { setProspectMode('teaser'); setProspectResult(null); }}
+                className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'teaser' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Discovery teaser
+              </button>
+              <button
+                onClick={() => { setProspectMode('guest_post'); setProspectResult(null); }}
+                className={`text-[11px] px-3 py-1.5 rounded transition-colors ${prospectMode === 'guest_post' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                Guest post procurement
+              </button>
+            </div>
+
             <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-              For prospects who want to see what backlinks you can find for them — sometimes without sharing their URL. Produces a 1-page teaser (3 categories, 5-9 named targets) you can send as a discovery-call leave-behind. Uses live web search to find real publications + podcasts + communities in their industry. DA shown as ranges with confidence labels — never fake precision.
+              {prospectMode === 'teaser' ? (
+                <>For cold prospects who want to see what backlinks you can find for them — sometimes without sharing their URL. Produces a 1-page teaser (3 categories, 5-9 named targets) you can send as a discovery-call leave-behind.</>
+              ) : (
+                <>For engaged buyers requesting paid guest post placements with strict filters (DR threshold, dofollow, niche, budget). Produces an operator-facing shortlist of 5-8 candidate sites with inline flags identifying which fields require manual verification (Ahrefs DR, recent articles, dofollow, current pricing) before pitching to the client.</>
+              )}
               <br /><span className="text-foreground/80">Tip: paste a client email or brief into Smart paste to auto-fill these fields.</span>
             </p>
 
@@ -1665,31 +1766,76 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Geography <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
                   <input value={prospectGeography} onChange={e => setProspectGeography(e.target.value)} placeholder="UK / US / global" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
                 </div>
+                {prospectMode === 'teaser' && (
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Budget tier <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
+                    <select value={prospectBudget} onChange={e => setProspectBudget(e.target.value as any)} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background">
+                      <option value="">— not specified —</option>
+                      <option value="low">low</option>
+                      <option value="medium">medium</option>
+                      <option value="high">high</option>
+                      <option value="enterprise">enterprise</option>
+                    </select>
+                  </div>
+                )}
                 <div>
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Budget tier <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
-                  <select value={prospectBudget} onChange={e => setProspectBudget(e.target.value as any)} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background">
-                    <option value="">— not specified —</option>
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
-                    <option value="enterprise">enterprise</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Prospect URL <span className="text-muted-foreground/60 normal-case font-normal">· if shared</span></label>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                    {prospectMode === 'guest_post' ? 'Client URL' : 'Prospect URL'}
+                    {prospectMode === 'guest_post' ? <span className="text-muted-foreground/60 normal-case font-normal"> · recommended</span> : <span className="text-muted-foreground/60 normal-case font-normal"> · if shared</span>}
+                  </label>
                   <input value={prospectUrl} onChange={e => setProspectUrl(e.target.value)} placeholder="https://… (optional)" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Prospect name <span className="text-muted-foreground/60 normal-case font-normal">· optional, appears on teaser</span></label>
-                  <input value={prospectName} onChange={e => setProspectName(e.target.value)} placeholder="e.g. Acme Corp, or contact name" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
-                </div>
-                <div>
-                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Context <span className="text-muted-foreground/60 normal-case font-normal">· optional</span></label>
-                  <input value={prospectContext} onChange={e => setProspectContext(e.target.value)} placeholder="anything specific to emphasise" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                {prospectMode === 'teaser' && (
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Prospect name <span className="text-muted-foreground/60 normal-case font-normal">· optional, appears on teaser</span></label>
+                    <input value={prospectName} onChange={e => setProspectName(e.target.value)} placeholder="e.g. Acme Corp, or contact name" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                  </div>
+                )}
+                <div className={prospectMode === 'guest_post' ? 'sm:col-span-2' : ''}>
+                  <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">
+                    {prospectMode === 'guest_post' ? 'Operator notes' : 'Context'}
+                    <span className="text-muted-foreground/60 normal-case font-normal"> · optional</span>
+                  </label>
+                  <input value={prospectContext} onChange={e => setProspectContext(e.target.value)} placeholder={prospectMode === 'guest_post' ? 'avoid sites we previously rejected · client prefers technical angle · etc' : 'anything specific to emphasise'} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
                 </div>
               </div>
+
+              {/* Build 12.11 — procurement filters, guest_post mode only */}
+              {prospectMode === 'guest_post' && (
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Procurement filters</div>
+                  <div className="grid sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">DR threshold <span className="text-muted-foreground/60 normal-case font-normal">· Ahrefs</span></label>
+                      <input type="number" min={0} max={100} value={gpDrThreshold} onChange={e => setGpDrThreshold(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Budget min <span className="text-muted-foreground/60 normal-case font-normal">· USD</span></label>
+                      <input type="number" min={0} value={gpBudgetMin} onChange={e => setGpBudgetMin(Math.max(0, Number(e.target.value) || 0))} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Budget max <span className="text-muted-foreground/60 normal-case font-normal">· USD</span></label>
+                      <input type="number" min={0} value={gpBudgetMax} onChange={e => setGpBudgetMax(Math.max(0, Number(e.target.value) || 0))} className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Niche keywords <span className="text-muted-foreground/60 normal-case font-normal">· comma-separated</span></label>
+                      <input value={gpNicheKeywords} onChange={e => setGpNicheKeywords(e.target.value)} placeholder="AI tools, B2B SaaS, machine learning" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium block mb-1">Known competitor sites <span className="text-muted-foreground/60 normal-case font-normal">· comma-separated</span></label>
+                      <input value={gpCompetitors} onChange={e => setGpCompetitors(e.target.value)} placeholder="competitor1.com, competitor2.com" className="w-full text-xs px-3 py-2 rounded-lg border border-border bg-background" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-[11px] cursor-pointer select-none">
+                    <input type="checkbox" checked={gpDofollowRequired} onChange={e => setGpDofollowRequired(e.target.checked)} className="rounded" />
+                    <span>Require dofollow placement (hard filter — sites with mixed/nofollow patterns will be excluded)</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             {/* Run */}
@@ -1701,10 +1847,18 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   className="text-sm px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
                 >
                   {prospectRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                  {prospectRunning ? 'Finding…' : 'Find free backlinks'}
+                  {prospectRunning
+                    ? (prospectMode === 'guest_post' ? 'Researching…' : 'Finding…')
+                    : (prospectMode === 'guest_post' ? 'Build shortlist' : 'Find free backlinks')
+                  }
                 </button>
                 {!prospectRunning && (
-                  <div className="text-[10px] text-muted-foreground">3 lanes in parallel with live web search · typically 30-90s.</div>
+                  <div className="text-[10px] text-muted-foreground">
+                    {prospectMode === 'guest_post'
+                      ? 'Single-lane procurement research with live web search · typically 30-90s.'
+                      : '3 lanes in parallel with live web search · typically 30-90s.'
+                    }
+                  </div>
                 )}
               </div>
 
@@ -1713,8 +1867,11 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                   <div className="flex items-center justify-between text-[11px]">
                     <span className="font-medium text-foreground/90">
                       {prospectProgress.stage === 'starting' && 'Starting up…'}
-                      {prospectProgress.stage === 'researching' && `Researching: ${prospectProgress.lanes_done}/${prospectProgress.lanes_total} lanes complete`}
-                      {prospectProgress.stage === 'synthesizing' && 'Assembling the teaser…'}
+                      {prospectProgress.stage === 'researching' && (prospectMode === 'guest_post'
+                        ? 'Researching candidate sites with web search…'
+                        : `Researching: ${prospectProgress.lanes_done}/${prospectProgress.lanes_total} lanes complete`
+                      )}
+                      {prospectProgress.stage === 'synthesizing' && (prospectMode === 'guest_post' ? 'Assembling the shortlist…' : 'Assembling the teaser…')}
                       {!['starting', 'researching', 'synthesizing'].includes(prospectProgress.stage) && prospectProgress.stage}
                     </span>
                     {prospectProgress.elapsed_seconds !== null && (
@@ -1722,7 +1879,7 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                     )}
                   </div>
                   <div className="flex items-center gap-1">
-                    {[1, 2, 3].map(i => {
+                    {(prospectMode === 'guest_post' ? [1] : [1, 2, 3]).map(i => {
                       const done = (prospectProgress.lanes_done || 0) >= i;
                       const active = (prospectProgress.lanes_done || 0) === i - 1;
                       return (
@@ -1731,7 +1888,10 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
                     })}
                   </div>
                   <div className="text-[10px] text-muted-foreground italic">
-                    Live web search in progress — finding actual publications, podcasts, and communities in this industry.
+                    {prospectMode === 'guest_post'
+                      ? 'Live web search in progress — finding sites accepting guest posts at the DR and budget thresholds.'
+                      : 'Live web search in progress — finding actual publications, podcasts, and communities in this industry.'
+                    }
                   </div>
                 </div>
               )}
@@ -1750,8 +1910,13 @@ export default function BacklinksPanel({ projectId, bdeMode = false, leadId = nu
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                 <div>
-                  <h3 className="text-sm font-semibold">Teaser ready</h3>
-                  <div className="text-[11px] text-muted-foreground">{prospectResult.targets_count} target{prospectResult.targets_count === 1 ? '' : 's'} across 3 categories · honest DA ranges with confidence labels</div>
+                  <h3 className="text-sm font-semibold">{prospectMode === 'guest_post' ? 'Shortlist ready' : 'Teaser ready'}</h3>
+                  <div className="text-[11px] text-muted-foreground">
+                    {prospectMode === 'guest_post'
+                      ? <>{prospectResult.targets_count} candidate{prospectResult.targets_count === 1 ? '' : 's'} · inline flags identify which fields need manual verification before pitching</>
+                      : <>{prospectResult.targets_count} target{prospectResult.targets_count === 1 ? '' : 's'} across 3 categories · honest DA ranges with authority signals</>
+                    }
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={previewProspectTeaser} className="text-xs px-3 py-1.5 rounded border border-border hover:bg-muted">

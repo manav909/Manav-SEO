@@ -4617,3 +4617,23 @@ export async function prospectExtractSignals(opts: { message: string }):
   Promise<{ success?: boolean; signals?: ExtractedSignals; raw?: string; error?: string }> {
   return post(ENGINE, { action: 'prospect_extract_signals', ...opts });
 }
+
+/* ─── Build 12.11 — Guest Post Finder ─────────────────────────── */
+
+export interface GuestPostFinderInputs {
+  client_url?: string;
+  industry: string;
+  niche_keywords?: string[];
+  geography?: string;
+  dr_threshold?: number;
+  budget_min?: number;
+  budget_max?: number;
+  dofollow_required?: boolean;
+  competitors?: string[];
+  operator_notes?: string;
+}
+
+export async function prospectGuestPostRun(opts: { inputs: GuestPostFinderInputs; client_request_id?: string }):
+  Promise<{ success?: boolean; discovery_id?: string; shortlist_md?: string; candidates_count?: number; avoid_count?: number; llm_calls_used?: number; web_searches_used?: number; error?: string }> {
+  return post(ENGINE, { action: 'prospect_guest_post_run', ...opts });
+}
