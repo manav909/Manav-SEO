@@ -1204,27 +1204,29 @@ OUTPUT — return ONLY this JSON, no preamble, no markdown fences:
   "research_notes": "What you searched for, what you found vs didn't, any specific gaps or caveats not covered above."
 }
 
-TARGET COUNT: 40-50 candidates in main list, 5-10 tier_up_candidates (above budget), 3-6 avoid_list. This is a SALES-STAGE PROCUREMENT LIST — it competes against vendors who deliver high-volume lists fast. The buyer expects breadth at this stage; verification happens at proposal stage. Default to 45 candidates for mainstream niches like AI/SaaS/tech where the pool is genuinely large.
+TARGET COUNT: 22-28 candidates in main list, 4-7 tier_up_candidates (above budget), 2-4 avoid_list. This is a SALES-STAGE PROCUREMENT LIST that needs to land within a constrained Vercel function budget — depth-of-detail per candidate matters more than raw count. Default to 25 candidates. The list is still substantial enough to demonstrate research depth at sales stage; the operator can run the finder again for additional batches if more breadth is needed.
 
 The DR threshold is a SOFT FLOOR not a hard one — include sites in the DR(threshold-5) to DR(threshold+0) band when topical fit is strong, since LLM-estimated DR varies by ±5 from actual Ahrefs DR. So for DR30+, sites estimated at DR25-30 are acceptable when the niche fit is excellent.
 
-Every named site must be a REAL site you recognise from training data. Real sites with estimated metrics is industry-standard. Fake site names is fraud and kills the relationship the moment the buyer clicks one. If you genuinely cannot name 40 real sites in the niche, return what you can — but for AI/SaaS/tech/marketing/general-business there are well over 50 real sites that publish guest posts and you should be able to populate the list.
+Every named site must be a REAL site you recognise from training data. Real sites with estimated metrics is industry-standard. Fake site names is fraud and kills the relationship the moment the buyer clicks one. If you genuinely cannot name 22 real sites in the niche, return what you can — but for AI/SaaS/tech/marketing/general-business/hardware/storage/consumer-electronics there are well over 25 real sites that publish guest posts and you should be able to populate the list.
 
-The senior_strategist_note becomes UNNECESSARY at this list density — the list itself IS the demonstration of capability. Skip it; return empty string. Same for database_breadth_signal — skip, return empty string. These were for the 10-candidate curated shortlist shape; the 45-candidate procurement list does not need them.
+The senior_strategist_note becomes UNNECESSARY at this list density — the list itself IS the demonstration of capability. Skip it; return empty string. Same for database_breadth_signal — skip, return empty string. These were for the 10-candidate curated shortlist shape; the procurement list does not need them.
 
-research_methodology stays but tightened: 1-2 sentences max on the research approach.`;
+research_methodology stays but tightened: 1-2 sentences max on the research approach.
 
-  const user = `Build the guest-post procurement shortlist per the brief above. Use web_search if available to find specific sites currently accepting AI/SaaS/tech guest posts at the DR and budget thresholds. Verify each candidate against the procurement filters before including.`;
+EFFICIENCY: Prioritise sites you already know from training data. Use web_search sparingly — at most 3-4 searches — to fill specific gaps (e.g. "does site X still accept guest posts in 2026") rather than as a general discovery tool. The operator is on a serverless time budget; finish in 90-150 seconds.`;
+
+  const user = `Build the guest-post procurement shortlist per the brief above. Use web_search sparingly (at most 3-4 searches) for specific verifications; prioritise sites you already know from training data. Finish efficiently — the operator needs results within a tight time budget.`;
 
   const callResult = await callAnthropicWithWebSearch({
     system,
     user,
     label: "guest-post/finder",
-    maxTokens: 16000,
+    maxTokens: 9000,
     discovery_id: opts.discovery_id,
     enable_web_search: opts.enable_web_search,
     budget_ms: opts.budget_ms,
-    max_uses: opts.max_uses,
+    max_uses: opts.max_uses ?? 3,
   });
 
   if (callResult.text) {
