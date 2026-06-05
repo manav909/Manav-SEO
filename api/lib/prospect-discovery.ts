@@ -130,18 +130,29 @@ async function callAnthropicWithWebSearch(opts: {
       Used as fallback when web_search appears disabled on the API key
       so prospects still get useful (LLM-only) results. */
   enable_web_search?: boolean;
+  /** Build 12.21.1 — per-call abort budget. Defaults to 240_000ms to
+      preserve existing behaviour for teaser-flow callers that run in
+      parallel (each lane has full 240s). Callers in serial-with-fallback
+      paths (guest-post finder) MUST pass a tighter budget computed from
+      remaining wall time to avoid Vercel FUNCTION_INVOCATION_TIMEOUT. */
+  budget_ms?: number;
+  /** Build 12.21.1 — max web_search calls the model may invoke.
+      Defaults to 5; callers under tight budget can reduce to 3-4. */
+  max_uses?: number;
 }): Promise<{ text: string | null; web_searches: number; tool_use_count: number; stop_reason?: string }> {
   if (!ANTHROPIC_API_KEY) {
     console.error(`[${opts.label}] ANTHROPIC_API_KEY missing`);
     return { text: null, web_searches: 0, tool_use_count: 0 };
   }
   const enableTools = opts.enable_web_search !== false;
-  const requestSummary = { model: MODEL, max_tokens: opts.maxTokens, system_length: opts.system.length, user_length: opts.user.length, web_search_enabled: enableTools };
+  const budgetMs = Math.max(15_000, opts.budget_ms ?? 240_000);
+  const maxUses = Math.max(1, Math.min(10, opts.max_uses ?? 5));
+  const requestSummary = { model: MODEL, max_tokens: opts.maxTokens, system_length: opts.system.length, user_length: opts.user.length, web_search_enabled: enableTools, budget_ms: budgetMs, max_uses: maxUses };
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     if (attempt > 1) await new Promise(r => setTimeout(r, 2000));
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 240_000);
+    const timer = setTimeout(() => controller.abort(), budgetMs);
     const attemptStart = Date.now();
 
     try {
@@ -152,7 +163,7 @@ async function callAnthropicWithWebSearch(opts: {
         messages: [{ role: "user", content: opts.user }],
       };
       if (enableTools) {
-        body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }];
+        body.tools = [{ type: "web_search_20250305", name: "web_search", max_uses: maxUses }];
       }
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
@@ -170,7 +181,7 @@ async function callAnthropicWithWebSearch(opts: {
         const text = textBlocks.join("\n\n").trim();
         const toolUseCount = blocks.filter((b: any) => b.type === "tool_use" && b.name === "web_search").length;
         const stopReason = d?.stop_reason || null;
-        console.log(`[${opts.label}] ok in ${duration}ms · tool_uses=${toolUseCount} · text_len=${text.length} · stop=${stopReason} · tools_enabled=${enableTools}`);
+        console.log(`[${opts.label}] ok in ${duration}ms · tool_uses=${toolUseCount} · text_len=${text.length} · stop=${stopReason} · tools_enabled=${enableTools} · budget=${budgetMs}ms`);
 
         // Persist diagnostic when something feels off — empty text, 0 tool uses
         // with tools enabled (likely web_search not enabled on key), etc.
@@ -213,7 +224,7 @@ async function callAnthropicWithWebSearch(opts: {
     } catch (e: any) {
       clearTimeout(timer);
       const aborted = controller.signal.aborted;
-      console.error(`[${opts.label}] exc: ${e?.message}${aborted ? " (aborted by 240s timeout)" : ""}`);
+      console.error(`[${opts.label}] exc: ${e?.message}${aborted ? ` (aborted by ${budgetMs}ms budget)` : ""}`);
       await persistDiagnostic({
         discovery_id: opts.discovery_id,
         label: opts.label,
@@ -1124,7 +1135,7 @@ export interface GuestPostFinderResult {
   research_notes: string;
 }
 
-async function runGuestPostLane(inputs: GuestPostFinderInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean } = {}): Promise<{ result: GuestPostFinderResult | null; tool_use_count: number; raw_text: string; failed?: string }> {
+async function runGuestPostLane(inputs: GuestPostFinderInputs, opts: { discovery_id?: string | null; enable_web_search?: boolean; budget_ms?: number; max_uses?: number } = {}): Promise<{ result: GuestPostFinderResult | null; tool_use_count: number; raw_text: string; failed?: string }> {
   const drThreshold = inputs.dr_threshold ?? 30;
   const budgetMin = inputs.budget_min ?? 50;
   const budgetMax = inputs.budget_max ?? 150;
@@ -1212,6 +1223,8 @@ research_methodology stays but tightened: 1-2 sentences max on the research appr
     maxTokens: 16000,
     discovery_id: opts.discovery_id,
     enable_web_search: opts.enable_web_search,
+    budget_ms: opts.budget_ms,
+    max_uses: opts.max_uses,
   });
 
   if (callResult.text) {
@@ -1482,6 +1495,16 @@ export async function runGuestPostFinder(opts: {
     } catch { /* silent */ }
   };
 
+  /* Build 12.21.1 — total budget cap. Vercel function maxDuration is
+     300s (vercel.json). We give ourselves 280s of LLM work budget,
+     leaving 20s for DB writes + response serialization. Within that
+     budget the first call gets up to 180s (typical guest-post finder
+     completes in 90-150s) and the LLM-only fallback gets the remainder.
+     Previously the first call had a hardcoded 240s timeout and the
+     fallback another 240s — total potential 480s, blowing past Vercel's
+     300s and producing FUNCTION_INVOCATION_TIMEOUT. */
+  const TOTAL_WORK_BUDGET_MS = 280_000;
+  const FIRST_CALL_BUDGET_MS = 180_000;
   const WALL_TIMEOUT_MS = 250_000;
   let timedOut = false;
   const timeoutHandle = setTimeout(() => {
@@ -1493,18 +1516,39 @@ export async function runGuestPostFinder(opts: {
     await updateProgress({ status: "researching", stage: "researching" });
     if (timedOut) throw new Error("Aborted before research due to wall-time limit.");
 
-    // First attempt with web_search enabled
-    let laneResult = await runGuestPostLane(inputs, { discovery_id });
+    /* First attempt with web_search enabled, capped at FIRST_CALL_BUDGET_MS.
+       max_uses reduced from 5 to 4 — saves one round-trip of search latency
+       without materially degrading shortlist quality (the model rarely
+       benefits from a fifth search at this prompt structure). */
+    let laneResult = await runGuestPostLane(inputs, {
+      discovery_id,
+      budget_ms: FIRST_CALL_BUDGET_MS,
+      max_uses: 4,
+    });
     llm_calls_used++;
     web_searches_used += laneResult.tool_use_count;
 
-    // Fallback to LLM-only if web_search yielded nothing
+    /* Fallback to LLM-only if web_search yielded nothing.
+       Budget is whatever remains of TOTAL_WORK_BUDGET_MS minus a 5s
+       cushion. If less than 30s remains the fallback is skipped — an
+       LLM-only call needs at least ~20s to produce useful output and
+       running a doomed-to-timeout call wastes Vercel budget. */
     let webSearchDisabled = false;
     if (laneResult.tool_use_count === 0 && (!laneResult.result || laneResult.result.candidates.length === 0)) {
-      console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — retry with web_search OFF`);
-      webSearchDisabled = true;
-      laneResult = await runGuestPostLane(inputs, { discovery_id, enable_web_search: false });
-      llm_calls_used++;
+      const elapsedMs = Date.now() - startedAt;
+      const fallbackBudgetMs = TOTAL_WORK_BUDGET_MS - elapsedMs - 5_000;
+      if (fallbackBudgetMs >= 30_000) {
+        console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — retry with web_search OFF (budget ${fallbackBudgetMs}ms)`);
+        webSearchDisabled = true;
+        laneResult = await runGuestPostLane(inputs, {
+          discovery_id,
+          enable_web_search: false,
+          budget_ms: fallbackBudgetMs,
+        });
+        llm_calls_used++;
+      } else {
+        console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — skipping fallback, only ${fallbackBudgetMs}ms remaining of work budget`);
+      }
     }
 
     if (timedOut) throw new Error("Aborted before render due to wall-time limit.");
