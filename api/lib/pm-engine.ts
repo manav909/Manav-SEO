@@ -221,7 +221,12 @@ async function pmGatherRequirements(projectId: string) {
        mirror keeps project_knowledge in sync but a race or a stale
        pull could still leave Data Room behind; this guarantees the
        gather is always fresh. */
-    let gscFresh: { clicks: string; impressions: string; position: string; ctr: string; capturedAt: string } | null = null;
+    let gscFresh: {
+      clicks: string; impressions: string; position: string; ctr: string; capturedAt: string;
+      /* Build 12.19 — GEO surfaces captured to metrics_snapshots.extras by Build 12.16 pull */
+      aiOverviewImpressions: string; aiOverviewClicks: string; aiOverviewPresent: string;
+      discoverImpressions: string; discoverClicks: string;
+    } | null = null;
     let gscStaleDays: number | null = null;
     try {
       const { data: latestGsc } = await db().from("metrics_snapshots")
@@ -233,21 +238,32 @@ async function pmGatherRequirements(projectId: string) {
         const ageDays = (Date.now() - new Date((latestGsc as any).captured_at).getTime()) / 86_400_000;
         gscStaleDays = Math.floor(ageDays);
         if (ageDays <= 7) {
+          const ext = (latestGsc as any).extras || {};
           gscFresh = {
             clicks:      String((latestGsc as any).gsc_clicks ?? ""),
             impressions: String((latestGsc as any).gsc_impressions ?? ""),
             position:    Number((latestGsc as any).gsc_avg_position ?? 0).toFixed(2),
-            ctr:         (latestGsc as any).extras?.gsc_ctr != null
-                          ? (Number((latestGsc as any).extras.gsc_ctr) * 100).toFixed(2) + "%"
-                          : "",
+            ctr:         ext.gsc_ctr != null ? (Number(ext.gsc_ctr) * 100).toFixed(2) + "%" : "",
             capturedAt:  (latestGsc as any).captured_at,
+            /* Build 12.19 — GEO surfaces. Empty string when not yet captured
+               (project hasn't had a post-12.16 pull). Frontend treats empty
+               as "not yet measured" rather than "zero". */
+            aiOverviewImpressions: ext.gsc_ai_overview_impressions != null ? String(ext.gsc_ai_overview_impressions) : "",
+            aiOverviewClicks:      ext.gsc_ai_overview_clicks      != null ? String(ext.gsc_ai_overview_clicks)      : "",
+            aiOverviewPresent:     ext.gsc_ai_overview_present     != null ? String(ext.gsc_ai_overview_present)     : "",
+            discoverImpressions:   ext.gsc_discover_impressions    != null ? String(ext.gsc_discover_impressions)    : "",
+            discoverClicks:        ext.gsc_discover_clicks         != null ? String(ext.gsc_discover_clicks)         : "",
           };
         }
       }
     } catch { /* non-fatal */ }
 
     /* ── Same logic for GA4 (Phase E): if fresh, use it for analytics fields. */
-    let ga4Fresh: { sessions: string; conversions: string; bounceRate: string; capturedAt: string } | null = null;
+    let ga4Fresh: {
+      sessions: string; conversions: string; bounceRate: string; capturedAt: string;
+      /* Build 12.19 — AI platform referral surfaces */
+      aiReferralSessions: string; aiReferralConversions: string; aiPlatformsDetected: string;
+    } | null = null;
     let ga4StaleDays: number | null = null;
     try {
       const { data: latestGa4 } = await db().from("metrics_snapshots")
@@ -259,6 +275,7 @@ async function pmGatherRequirements(projectId: string) {
         const ageDays = (Date.now() - new Date((latestGa4 as any).captured_at).getTime()) / 86_400_000;
         ga4StaleDays = Math.floor(ageDays);
         if (ageDays <= 7) {
+          const ext = (latestGa4 as any).extras || {};
           ga4Fresh = {
             sessions:    String((latestGa4 as any).organic_sessions ?? ""),
             conversions: String((latestGa4 as any).conversions ?? ""),
@@ -266,6 +283,14 @@ async function pmGatherRequirements(projectId: string) {
                           ? Number((latestGa4 as any).bounce_rate).toFixed(2) + "%"
                           : "",
             capturedAt:  (latestGa4 as any).captured_at,
+            /* Build 12.19 — GA4 AI platform referral aggregates. platformsDetected
+               is stored as an array in extras; flatten to comma-separated string
+               for the data-room return shape (which is all string-typed). */
+            aiReferralSessions:    ext.ga4_ai_referral_sessions    != null ? String(ext.ga4_ai_referral_sessions)    : "",
+            aiReferralConversions: ext.ga4_ai_referral_conversions != null ? String(ext.ga4_ai_referral_conversions) : "",
+            aiPlatformsDetected:   Array.isArray(ext.ga4_ai_platforms_detected)
+                                    ? (ext.ga4_ai_platforms_detected as string[]).join(", ")
+                                    : "",
           };
         }
       }
@@ -278,11 +303,21 @@ async function pmGatherRequirements(projectId: string) {
         if (key === "gsc_total_impressions") return gscFresh.impressions;
         if (key === "gsc_avg_position")      return gscFresh.position;
         if (key === "gsc_ctr")               return gscFresh.ctr;
+        /* Build 12.19 — GEO fields from fresh snapshot */
+        if (key === "gsc_ai_overview_impressions") return gscFresh.aiOverviewImpressions;
+        if (key === "gsc_ai_overview_clicks")      return gscFresh.aiOverviewClicks;
+        if (key === "gsc_ai_overview_present")     return gscFresh.aiOverviewPresent;
+        if (key === "gsc_discover_impressions")    return gscFresh.discoverImpressions;
+        if (key === "gsc_discover_clicks")         return gscFresh.discoverClicks;
       }
       if (ga4Fresh) {
         if (key === "organic_sessions_monthly") return ga4Fresh.sessions;
         if (key === "conversions_monthly")      return ga4Fresh.conversions;
         if (key === "bounce_rate")              return ga4Fresh.bounceRate;
+        /* Build 12.19 — AI platform referral fields from fresh snapshot */
+        if (key === "ga4_ai_referral_sessions")    return ga4Fresh.aiReferralSessions;
+        if (key === "ga4_ai_referral_conversions") return ga4Fresh.aiReferralConversions;
+        if (key === "ga4_ai_platforms_detected")   return ga4Fresh.aiPlatformsDetected;
       }
       return dr("analytics", key);
     };
@@ -567,6 +602,24 @@ async function pmGatherRequirements(projectId: string) {
           rankTrackerSource:    dr("analytics", "rank_tracker_source"),
           lastManualRankCheck:  dr("analytics", "last_manual_rank_check"),
           lastManualRankNotes:  dr("analytics", "last_manual_rank_notes"),
+          /* Build 12.19 — GEO-era surfaces (AI Overview + AI platform referrals).
+             Pulled from latest metrics_snapshots row via fresh fetcher, or
+             from project_knowledge JSON summaries via dr fallback. Empty
+             string when project has no GSC/GA4 integration connected or has
+             not yet had a post-12.16 pull. */
+          gscAiOverviewImpressions:  analyticsField("gsc_ai_overview_impressions"),
+          gscAiOverviewClicks:       analyticsField("gsc_ai_overview_clicks"),
+          gscAiOverviewPresent:      analyticsField("gsc_ai_overview_present"),
+          gscDiscoverImpressions:    analyticsField("gsc_discover_impressions"),
+          gscDiscoverClicks:         analyticsField("gsc_discover_clicks"),
+          ga4AiReferralSessions:     analyticsField("ga4_ai_referral_sessions"),
+          ga4AiReferralConversions:  analyticsField("ga4_ai_referral_conversions"),
+          ga4AiPlatformsDetected:    analyticsField("ga4_ai_platforms_detected"),
+          /* Composite summaries as JSON strings (for consumers wanting the full breakdown) */
+          gscAiOverviewSummary:      dr("analytics", "gsc_ai_overview_summary"),
+          gscSearchAppearance:       dr("analytics", "gsc_search_appearance"),
+          ga4AiPlatformSummary:      dr("analytics", "ga4_ai_platform_summary"),
+          ga4AiPlatformReferrals:    dr("analytics", "ga4_ai_platform_referrals"),
         },
         technical: {
           pagesIndexed:   dr("technical", "pages_indexed"),

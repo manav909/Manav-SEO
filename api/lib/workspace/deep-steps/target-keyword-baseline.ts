@@ -44,6 +44,14 @@ interface TargetKeywordResult {
     paa_questions: string[];
     project_in_top_10: boolean;
     project_position_in_top_10: number | null;
+    /* Build 12.19 — AI Overview citation data per keyword. ai_overview_present
+       reflects whether SerpAPI saw an AI Overview at fetch time; cited_domains
+       lists the domains Google cites inside the AI Overview answer for THIS
+       query; project_cited tells the operator at a glance whether their site
+       is or is not currently earning a citation slot. */
+    ai_overview_present: boolean;
+    ai_overview_cited_domains: string[];
+    ai_overview_project_cited: boolean;
   } | null;
   /** GSC queries the site already gets impressions on that overlap semantically */
   adjacent_in_gsc: Array<{ query: string; impressions: number; clicks: number; avg_position: number; overlap_tokens: string[] }>;
@@ -52,6 +60,11 @@ interface TargetKeywordResult {
     category: "already_ranking" | "near_ranking" | "weak_visibility" | "no_history" | "better_adjacent_available";
     rationale: string;
     suggested_better_target: string | null;     // when better_adjacent_available
+    /* Build 12.19 — GEO modifier on the verdict. When AI Overview is
+       present for this query AND the site is cited, flag as GEO-strong;
+       when present but uncited, flag as GEO-displaced (someone else is
+       eating the citation slot); when not present, GEO is silent. */
+    geo_modifier: "geo_strong" | "geo_displaced" | "geo_neutral" | "unknown";
   };
 }
 
@@ -111,12 +124,25 @@ export async function gatherTargetKeywordBaseline(opts: {
           domain: domainOf(x.link || ""), url: String(x.link || ""), position: Number(x.position) || 0, title: String(x.title || ""),
         }));
         const projHit = top10.find(x => x.domain === projectDomain);
+        /* Build 12.19 — AI Overview citation extraction from SerpAPI
+           (data layer from Build 12.16). When ai_overview_references is
+           present we get the actual list of domains Google cites; if not
+           present but ai_overview flag is true, the AI Overview exists
+           but SerpAPI did not surface citation list (rare). */
+        const aoPresent = !!(r.ai_overview || (Array.isArray(r.ai_overview_references) && r.ai_overview_references.length > 0));
+        const aoRefs: string[] = Array.isArray(r.ai_overview_references)
+          ? r.ai_overview_references.map((x: any) => String(x?.domain || "")).filter(Boolean)
+          : [];
+        const aoProjectCited = aoRefs.some(d => d === projectDomain || d.endsWith("." + projectDomain) || projectDomain.endsWith("." + d));
         serp = {
           top_10_domains: Array.from(new Set(top10.map(x => x.domain).filter(Boolean))),
           features: Array.isArray(r.features) ? r.features : [],
           paa_questions: Array.isArray(r.paa) ? r.paa.slice(0, 5) : [],
           project_in_top_10: !!projHit,
           project_position_in_top_10: projHit ? projHit.position : null,
+          ai_overview_present: aoPresent,
+          ai_overview_cited_domains: aoRefs,
+          ai_overview_project_cited: aoProjectCited,
         };
       }
     } catch { /* leave serp null */ }
@@ -186,7 +212,21 @@ export async function gatherTargetKeywordBaseline(opts: {
       },
       serp,
       adjacent_in_gsc: topAdjacent,
-      verdict: { category, rationale, suggested_better_target: suggestedBetterTarget },
+      verdict: {
+        category,
+        rationale,
+        suggested_better_target: suggestedBetterTarget,
+        /* Build 12.19 — GEO modifier derived from SerpAPI AI Overview
+           citation data for this query. unknown when SerpAPI did not
+           return data (network failure, no API key, rate limit). */
+        geo_modifier: !serp
+          ? "unknown"
+          : !serp.ai_overview_present
+            ? "geo_neutral"
+            : serp.ai_overview_project_cited
+              ? "geo_strong"
+              : "geo_displaced",
+      },
     });
   }
 
@@ -198,6 +238,13 @@ export async function gatherTargetKeywordBaseline(opts: {
     }
     if (r.verdict.category === "better_adjacent_available") {
       worthDeeper.push(`Verify intent match between target "${r.keyword}" and adjacent "${r.verdict.suggested_better_target}" — visit both SERPs and assess whether the operator would accept the adjacent as a valid alternative.`);
+    }
+    /* Build 12.19 — GEO-specific worth_deeper flags */
+    if (r.verdict.geo_modifier === "geo_displaced" && r.serp?.ai_overview_cited_domains.length) {
+      worthDeeper.push(`AI Overview displacement for "${r.keyword}" — Google cites ${r.serp.ai_overview_cited_domains.slice(0, 3).join(", ")} but not this site. Audit those pages for the content patterns earning citation (Q-and-A structure, summary blocks, schema, named authors). Plan a citation displacement push.`);
+    }
+    if (r.verdict.geo_modifier === "geo_strong") {
+      worthDeeper.push(`AI Overview is citing this site for "${r.keyword}" — this is a defensive priority. Document the page content shape and replicate the pattern across other target keywords.`);
     }
   }
 
@@ -226,8 +273,8 @@ function renderReport(opts: { projectDomain: string; results: TargetKeywordResul
 
   // Headline summary table
   L.push(`## Summary\n`);
-  L.push(`| Keyword | Current rank | GSC impressions | Verdict |`);
-  L.push(`| --- | --- | --- | --- |`);
+  L.push(`| Keyword | Current rank | GSC impressions | AI Overview | Verdict |`);
+  L.push(`| --- | --- | --- | --- | --- |`);
   for (const r of results) {
     const rank = r.current_gsc.avg_position !== null ? r.current_gsc.avg_position.toFixed(1) : "—";
     const verdictShort = ({
@@ -237,7 +284,17 @@ function renderReport(opts: { projectDomain: string; results: TargetKeywordResul
       no_history: "No history — needs new content",
       better_adjacent_available: "Adjacent target available",
     } as any)[r.verdict.category];
-    L.push(`| ${r.keyword} | ${rank} | ${r.current_gsc.impressions} | ${verdictShort} |`);
+    /* Build 12.19 — GEO column shows AI Overview status for the keyword.
+       Cited = site appears in AI Overview citations; Displaced = AI
+       Overview shows but cites other domains; Neutral = no AI Overview
+       for this query; Unknown = SerpAPI did not return data. */
+    const geoCell = ({
+      geo_strong:    "✓ Cited",
+      geo_displaced: "✗ Displaced",
+      geo_neutral:   "— Not present",
+      unknown:       "—",
+    } as any)[r.verdict.geo_modifier];
+    L.push(`| ${r.keyword} | ${rank} | ${r.current_gsc.impressions} | ${geoCell} | ${verdictShort} |`);
   }
   L.push("");
 
@@ -276,6 +333,21 @@ function renderReport(opts: { projectDomain: string; results: TargetKeywordResul
       if (r.serp.paa_questions.length) {
         L.push(`- People-Also-Ask:`);
         for (const q of r.serp.paa_questions) L.push(`  - ${q}`);
+      }
+      /* Build 12.19 — AI Overview citation block. When AI Overview is
+         present for this query, surface the domains Google cites and
+         the site cited/uncited verdict. This is the headline GEO signal
+         per keyword. */
+      if (r.serp.ai_overview_present) {
+        if (r.serp.ai_overview_project_cited) {
+          L.push(`- **AI Overview is present AND citing ${projectDomain}** — defend this citation slot. Companions: ${r.serp.ai_overview_cited_domains.filter(d => d !== projectDomain).slice(0, 5).join(", ") || "(none)"}.`);
+        } else if (r.serp.ai_overview_cited_domains.length > 0) {
+          L.push(`- **AI Overview is present but cites other domains** — citation displacement opportunity. Currently cited: ${r.serp.ai_overview_cited_domains.slice(0, 6).join(", ")}.`);
+        } else {
+          L.push(`- AI Overview is present for this query but SerpAPI did not return the citation list. Manual SERP inspection recommended.`);
+        }
+      } else {
+        L.push(`- No AI Overview is currently showing for this query — classic organic SEO levers apply.`);
       }
     } else {
       L.push(`**SERP composition:** _Could not fetch live SERP for this keyword (SerpAPI returned no data or quota exhausted)._`);

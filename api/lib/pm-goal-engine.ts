@@ -37,7 +37,14 @@ import { projectScenario, type ActionInstance } from "./pm-scenario-engine.js";
 
 export type GoalMetric =
   | "clicks" | "impressions" | "sessions" | "conversions"
-  | "avg_position" | "ctr" | "health_score";
+  | "avg_position" | "ctr" | "health_score"
+  /* Build 12.19 — GEO-era goal metrics. ai_overview_impressions and clicks
+     come from gsc_ai_overview_summary; ai_platform_sessions and conversions
+     come from ga4_ai_platform_summary; geo_visibility_score is the composite
+     0-100 metric from Build 12.17/18. */
+  | "ai_overview_impressions" | "ai_overview_clicks"
+  | "ai_platform_sessions" | "ai_platform_conversions"
+  | "geo_visibility_score";
 
 export interface TrajectoryProjection {
   metric:             GoalMetric;
@@ -98,6 +105,14 @@ export async function getCurrentMetricValue(projectId: string, metric: GoalMetri
     const n = parseFloat(s.replace(/[%, ]/g, ""));
     return isNaN(n) ? null : n;
   };
+  /* Build 12.19 — helper to extract a metric from a JSON-encoded summary
+     object stored in project_knowledge (AI Overview / AI platform paths). */
+  const extractFromJson = async (fieldKey: string, prop: string): Promise<number | null> => {
+    const obj = await readJsonField<any>(projectId, fieldKey);
+    if (!obj || typeof obj !== "object") return null;
+    const v = Number(obj[prop]);
+    return Number.isFinite(v) ? v : null;
+  };
   switch (metric) {
     case "clicks":         return parse(await readField(projectId, "gsc_total_clicks"));
     case "impressions":    return parse(await readField(projectId, "gsc_total_impressions"));
@@ -106,6 +121,39 @@ export async function getCurrentMetricValue(projectId: string, metric: GoalMetri
     case "avg_position":   return parse(await readField(projectId, "gsc_avg_position"));
     case "ctr":            return parse(await readField(projectId, "gsc_ctr"));
     case "health_score":   return parse(await readField(projectId, "analytics_health_score"));
+    /* Build 12.19 — GEO metrics. Pull from JSON-encoded summary objects. */
+    case "ai_overview_impressions":  return await extractFromJson("gsc_ai_overview_summary", "total_impressions");
+    case "ai_overview_clicks":       return await extractFromJson("gsc_ai_overview_summary", "total_clicks");
+    case "ai_platform_sessions":     return await extractFromJson("ga4_ai_platform_summary", "sessions");
+    case "ai_platform_conversions":  return await extractFromJson("ga4_ai_platform_summary", "conversions");
+    case "geo_visibility_score": {
+      /* Composite — compute inline using same threshold logic as showcase
+         composer (Build 12.17) and intel engine (Build 12.18). */
+      const ao = await readJsonField<any>(projectId, "gsc_ai_overview_summary");
+      const ai = await readJsonField<any>(projectId, "ga4_ai_platform_summary");
+      let score = 0;
+      if (ao && ao.present && Number(ao.total_impressions || 0) > 0) {
+        const imp = Number(ao.total_impressions);
+        if (imp >= 50000) score += 60;
+        else if (imp >= 10000) score += 50;
+        else if (imp >= 1000) score += 35;
+        else if (imp >= 100) score += 20;
+        else score += 10;
+      }
+      if (ai && Number(ai.sessions || 0) > 0) {
+        const s = Number(ai.sessions);
+        const platformCount = Number(ai.source_count || 0);
+        let pts = 0;
+        if (s >= 5000) pts += 30;
+        else if (s >= 500) pts += 25;
+        else if (s >= 50) pts += 15;
+        else if (s > 0) pts += 8;
+        if (platformCount >= 3) pts += 10;
+        else if (platformCount >= 2) pts += 5;
+        score += Math.min(40, pts);
+      }
+      return Math.min(100, Math.max(0, Math.round(score)));
+    }
   }
 }
 
@@ -114,7 +162,10 @@ export async function getCurrentMetricValue(projectId: string, metric: GoalMetri
 async function getDailyHistory(projectId: string, metric: GoalMetric): Promise<Array<{ date: string; value: number }>> {
   /* GSC metrics → gsc_daily_trend_365d
      GA4 metrics → ga4_daily_trend_365d
-     health_score → derived from analytics_period_summary if needed */
+     AI platform metrics → ga4_ai_platform_daily (Build 12.16 data layer)
+     AI Overview metrics + geo_visibility_score → no daily series available
+       (GSC searchAppearance returns window totals only); these metrics
+       use trajectory math against checkpoints rather than daily history. */
   if (metric === "clicks" || metric === "impressions" || metric === "avg_position" || metric === "ctr") {
     const trend = await readJsonField<any[]>(projectId, "gsc_daily_trend_365d");
     if (!trend) return [];
@@ -125,7 +176,17 @@ async function getDailyHistory(projectId: string, metric: GoalMetric): Promise<A
     if (!trend) return [];
     return trend.map((r) => ({ date: r.date, value: Number(r[ga4FieldFor(metric)] || 0) }));
   }
-  /* health_score has no daily history; trajectory is harder. Use last 3 periods if available */
+  /* Build 12.19 — AI platform sessions and conversions have a daily series
+     from the GA4 sessionSource-filtered pull. AI Overview impressions /
+     clicks and geo_visibility_score do not have daily data. */
+  if (metric === "ai_platform_sessions" || metric === "ai_platform_conversions") {
+    const trend = await readJsonField<any[]>(projectId, "ga4_ai_platform_daily");
+    if (!trend) return [];
+    const field = metric === "ai_platform_sessions" ? "sessions" : "conversions";
+    return trend.map((r) => ({ date: r.date, value: Number(r[field] || 0) }));
+  }
+  /* health_score / ai_overview_* / geo_visibility_score have no daily history.
+     Trajectory math relies on baseline + target with linear interpolation. */
   return [];
 }
 

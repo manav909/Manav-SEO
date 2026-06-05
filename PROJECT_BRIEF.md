@@ -956,3 +956,81 @@ AI Overview citation gap analysis ("you should be cited but aren't, here is the 
 Six files changed: api/lib/intelligenceFabric.ts (+15 lines GEO protected fields), src/lib/intelligenceFabric.ts (+13 lines mirror), api/lib/pm-analytics-intel.ts (+162 lines geoSnapshot type + composer), api/lib/pm-analytics-intel-orchestrator.ts (+24 lines: 4 GEO reads + 4 GEO inputs passed through), api/lib/season-forecast-engine.ts (+84 lines GEO KPIs + helpers), api/lib/season-war-room.ts (+176 lines GEO reader + item builder).
 
 Vite build green at 47.31s. Compile clean across all 6 files. No new contractions in template literals.
+
+Build 12.19 — GEO-era data wired into pipelines, campaigns, and workspace deep-steps [SHIPPED 2026-06-05]: Tier 3 of the GEO multi-build program. Wires the Build 12.16 data layer into the project metrics engine, goal engine, scenario engine, campaign list, and the two workspace deep-steps that consume GSC/GA4 data.
+
+SCOPE CORRECTION: Original plan included seo-campaign-grouping.ts. On inspection that file does not consume GSC/GA4 data (only project_positioning). It works with raw keyword lists and positioning context; no GEO wiring needed. Dropped from scope. Six files in this build, not seven.
+
+(A) api/lib/pm-engine.ts (the main project metrics engine — feeds dashboards + reports):
+- gscFresh and ga4Fresh fresh-snapshot fetchers extended to capture all GEO surfaces from metrics_snapshots.extras: gsc_ai_overview_impressions/clicks/present, gsc_discover_impressions/clicks, ga4_ai_referral_sessions/conversions, ga4_ai_platforms_detected (joined to CSV from array shape).
+- analyticsField helper extended with 8 new dispatch cases. Each new key resolves to fresh-snapshot data when available, falls back to project_knowledge Data Room.
+- The analytics block in the data-room output now includes 8 new scalar fields (gscAiOverviewImpressions, gscAiOverviewClicks, gscAiOverviewPresent, gscDiscoverImpressions, gscDiscoverClicks, ga4AiReferralSessions, ga4AiReferralConversions, ga4AiPlatformsDetected) PLUS 4 JSON summary fields (gscAiOverviewSummary, gscSearchAppearance, ga4AiPlatformSummary, ga4AiPlatformReferrals) for consumers wanting the full breakdown.
+- Every downstream consumer that reads dataRoom.analytics now gets GEO data automatically without further work.
+
+(B) api/lib/pm-goal-engine.ts (goal tracking + trajectory projection):
+- GoalMetric type extended with 5 GEO metrics: ai_overview_impressions, ai_overview_clicks, ai_platform_sessions, ai_platform_conversions, geo_visibility_score.
+- getCurrentMetricValue extended with cases for each new metric. AI Overview metrics parse from gsc_ai_overview_summary JSON; AI platform metrics from ga4_ai_platform_summary JSON. geo_visibility_score computes inline using identical threshold logic to Build 12.17/18 (60 points AI Overview, 40 points AI platform referrals + multi-platform bonus).
+- getDailyHistory extended for ai_platform_sessions and ai_platform_conversions which have daily data from ga4_ai_platform_daily. AI Overview impressions and geo_visibility_score have NO daily series — honest acknowledgment in the comment; trajectory math will fall back to baseline+target linear interpolation.
+- Goal engine UI can now offer goals on AI Overview impressions, AI platform sessions, and GEO visibility score as first-class options.
+
+(C) api/lib/pm-scenario-engine.ts (scenario planning + action recommendations):
+- BaselineSnapshot extended with 6 GEO fields: ai_overview_impressions, ai_overview_clicks, ai_platform_sessions, ai_platform_conversions, ai_platform_count, geo_visibility_score.
+- getBaselineSnapshot rewritten to read the JSON summary fields (gsc_ai_overview_summary, ga4_ai_platform_summary), parse them, and compute the composite GEO score. Default 0 for missing data — same behaviour as other baseline fields, safe to run on projects without GEO data.
+- matchTrigger function extended with geo:* trigger format. Four signals: geo:ai_overview_absent (concern when GSC explicitly registers zero AI Overview rows), geo:ai_overview_present (opportunity when impressions > 0), geo:ai_platform_zero (concern when no AI referrals), geo:ai_platform_growing (opportunity when sessions > 50).
+- getSmartSuggestions extended to load AI Overview and AI platform summaries and wire them into the trigger context. Existing SEO_ACTION_LIBRARY does not yet define geo:* triggers (deferred to Build 12.20 alongside the forward-looking GEO capabilities), but the scaffolding is in place: when a new action is added with applicableWhen: ["geo:ai_overview_absent"], it will surface as a suggestion automatically.
+
+(D) api/lib/seo-campaign-routes.ts (campaign list view):
+- Promise.all extended with 2 new project_knowledge reads (gsc_ai_overview_summary, ga4_ai_platform_summary) so the campaign list endpoint can show GEO presence alongside classic GSC/GA4 metrics.
+- New `geo` block in the response payload: ai_overview (present + impressions + clicks + ctr + window), ai_platform_referrals (sessions + conversions + platforms_detected + window), visibility_score (0-100 composite), visibility_grade (absent/emerging/present/established/strong). Same threshold logic used everywhere else in the platform for consistency.
+- Null when project has no GEO data — clean omission, no fabrication.
+
+(E) api/lib/workspace/deep-steps/target-keyword-baseline.ts (per-keyword feasibility analysis):
+- TargetKeywordResult.serp extended with 3 AI Overview fields: ai_overview_present (boolean from SerpAPI), ai_overview_cited_domains (string[]), ai_overview_project_cited (boolean — whether the project domain appears in the citation list using subdomain-aware matching).
+- TargetKeywordResult.verdict extended with geo_modifier: geo_strong (AI Overview present AND citing this site), geo_displaced (present but citing competitors), geo_neutral (no AI Overview for this query), unknown (SerpAPI returned no data).
+- Summary table in the markdown report gains an "AI Overview" column showing the per-keyword GEO modifier as a tagged cell (✓ Cited / ✗ Displaced / — Not present / —).
+- Per-keyword detail section now includes an explicit AI Overview citation block: "AI Overview is present AND citing [domain]" or "AI Overview is present but cites other domains" or "No AI Overview is currently showing".
+- worth_deeper hints now flag GEO opportunities: displacement keywords with cited competitor list (audit those pages for replicable patterns), citation defenders (document the content shape and replicate).
+
+(F) api/lib/workspace/deep-steps/traffic-steps.ts (query landscape + trajectory + 4 other steps):
+- gatherQueryLandscape extended: project-level AI Overview summary surfaced at top of report (with honest negative result when present:false). Per-query SerpAPI AI Overview citation data captured (ai_overview_present, ai_overview_cited_domains, ai_overview_project_cited). evidence.geo_context block carries the project-level GEO data for downstream consumers. worth_deeper enriched with displacement counts and citation defender counts.
+- gatherTrajectory extended: snapshot SELECT now includes extras column. Trend computation extracts ai_overview_impressions, ai_platform_sessions, ai_platform_conversions from extras on both endpoints. Trajectory markdown table gains 3 new rows showing GEO movement over time. worth_deeper flags emergent channels ("AI Overview citations started in this window"), emerging AI platform traffic, and meaningful AI platform drops (30%+ decline).
+- gatherOnpageAudit, gatherCoreWebVitals, gatherInternalLinkGraph, gatherEngagementValue — no GEO wiring needed (pure on-page / GA4-page / link-graph steps that don't relate to AI search surfaces).
+
+HONEST CAVEATS:
+
+1. pm-engine: when a project has connected GSC/GA4 but has not yet had a post-Build 12.16 pull, the new analytics fields will return empty strings. Frontend consumers should treat empty as "not yet measured" rather than zero. The fall-through from gscFresh/ga4Fresh to Data Room dr() to empty string is the same pattern used for existing fields.
+
+2. pm-goal-engine: AI Overview impressions / clicks and geo_visibility_score have no daily series. Goals on these metrics rely on baseline + target with linear interpolation rather than regression on history. Honest about this limitation in the comment block; UI should either dim the trajectory chart for these metrics or render a "baseline → target" straight line.
+
+3. pm-scenario-engine: geo:* trigger format is scaffolded but no actions in SEO_ACTION_LIBRARY currently reference it. Calling getSmartSuggestions on a project with AI Overview data will not yet produce GEO-specific action recommendations — that requires Build 12.20 (forward-looking GEO capabilities) which will add the actions themselves. This build is the wiring; the actions come next.
+
+4. seo-campaign-routes: GEO block computed inline rather than imported from showcase composer. Threshold logic is duplicated. Recorded as documented coupling — three places now compute the composite GEO score (showcase composer, intel engine composeGeoSnapshot, campaign list inline). All must be updated together if thresholds change.
+
+5. target-keyword-baseline: AI Overview citation requires SerpAPI to be configured. Without SERPAPI_KEY the geo_modifier returns "unknown" for every keyword. UI should handle "unknown" gracefully (show as em-dash or "not measured").
+
+6. traffic-steps gatherTrajectory: the GEO trajectory rows show 0 cleanly when snapshots pre-date Build 12.16 capture (which started landing in Build 12.17 pm-reports). Projects with at least 2 post-12.17 snapshots will see real GEO movement. Earlier history will show 0→0 movement — not a bug, just a fact about when capture started.
+
+7. The 4 deep-steps in traffic-steps.ts that I did NOT touch (gatherOnpageAudit, gatherCoreWebVitals, gatherInternalLinkGraph, gatherEngagementValue) are domain-specific and don't relate to AI search surfaces. Wiring GEO into them would be busywork — they remain clean as-is.
+
+WHAT THIS UNLOCKS:
+- Project metrics dashboards now carry GEO fields in the analytics block. Any consumer reading dataRoom.analytics gets AI Overview + AI platform attribution without further work.
+- Goal engine can now offer 5 new GEO goal types (3 with daily history, 2 without).
+- Scenarios can now project AI-era impact when actions are wired to GEO triggers (next build).
+- Campaign list endpoint shows GEO visibility score per project — operator sees AI search engagement at a glance.
+- Per-keyword feasibility analyses now flag citation displacement opportunities and citation defenders.
+- Query landscape reports surface AI Overview citation data per query plus project-level GEO context.
+- Trajectory reports track AI Overview impressions, AI platform sessions, and AI platform conversions over time.
+
+WHAT IS NEXT — BUILD 12.20 (TIER 4 FORWARD-LOOKING GEO):
+The capabilities that don't exist anywhere else yet:
+1. AI Overview citation gap analysis ("you should be cited but aren't, here is the structural reason why") — per-keyword breakdown of content patterns earning citation vs. site's current patterns.
+2. AI Overview competitor citation displacement tracking — which domains take your citation slots, citation slot velocity, path to displace.
+3. Future-AI-Overview detection — flag when a query starts showing AI Overview for the first time, before classic CTR collapse.
+4. GEO action library — new SEO_ACTION_LIBRARY entries wired to the geo:* triggers scaffolded in Build 12.19.
+
+WHAT IS NEXT — BUILD 12.21 (STRETCH / VISION):
+Entity association strength scoring (predict citation likelihood from structured data + topical density). AI Overview content-structure templates extracted from cited content. Full AI-referral conversion attribution funnel.
+
+Six files changed: api/lib/pm-engine.ts (~80 lines: gscFresh + ga4Fresh GEO captures, analyticsField dispatch, 12 new analytics output fields), api/lib/pm-goal-engine.ts (~70 lines: GoalMetric extension, current-value cases, history paths with composite inline scoring), api/lib/pm-scenario-engine.ts (~90 lines: baseline GEO fields, getBaselineSnapshot rewrite with composite, matchTrigger geo:* branch with 4 signals, getSmartSuggestions context wiring), api/lib/seo-campaign-routes.ts (~80 lines: 2 new reads + parsing + geo block in response with inline composite), api/lib/workspace/deep-steps/target-keyword-baseline.ts (~75 lines: per-keyword AI Overview citation extraction, geo_modifier verdict, summary table + per-keyword detail + worth_deeper extensions), api/lib/workspace/deep-steps/traffic-steps.ts (~85 lines: gatherQueryLandscape AI Overview per-query + project-level summary + report rendering; gatherTrajectory extras-aware snapshot read with 3 GEO trend rows + worth_deeper flags).
+
+Vite build green at 47.98s. Compile clean across all 6 files. No new contractions in template literals.

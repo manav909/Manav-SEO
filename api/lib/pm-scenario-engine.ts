@@ -42,6 +42,16 @@ export interface BaselineSnapshot {
   conversions_30d:   number;
   health_score:      number;
   resilience_score:  number;
+  /* Build 12.19 — GEO-era baselines from Build 12.16 GSC + GA4 pulls.
+     Default to 0 when the project has no GSC/GA4 integration or has
+     not yet had a post-12.16 pull. Scenarios use these as the starting
+     point for projecting AI-era impact. */
+  ai_overview_impressions: number;
+  ai_overview_clicks:      number;
+  ai_platform_sessions:    number;
+  ai_platform_conversions: number;
+  ai_platform_count:       number;     /* number of distinct AI platforms detected */
+  geo_visibility_score:    number;     /* composite 0-100 */
 }
 
 export interface ProjectedMetric {
@@ -112,6 +122,9 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
       "analytics_cannibalization",
       "analytics_resilience_score",
       "analytics_health_score",
+      /* Build 12.19 — GEO inputs for AI-era suggestions */
+      "gsc_ai_overview_summary",
+      "ga4_ai_platform_summary",
     ]);
 
   const fieldMap: Record<string, string> = {};
@@ -128,6 +141,9 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
   const risingStars    = parse(fieldMap["analytics_rising_stars"])   || [];
   const fallingStars   = parse(fieldMap["analytics_falling_stars"])  || [];
   const cannibalization= parse(fieldMap["analytics_cannibalization"])|| [];
+  /* Build 12.19 — GEO summary objects for AI-era triggers */
+  const aiOverview     = parse(fieldMap["gsc_ai_overview_summary"]);
+  const aiPlatform     = parse(fieldMap["ga4_ai_platform_summary"]);
 
   /* Build a quick lookup of KPI key → health */
   const kpiHealth: Record<string, string> = {};
@@ -141,7 +157,7 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
      match the current state. If yes, add to suggestions. */
   for (const action of SEO_ACTION_LIBRARY) {
     for (const trigger of action.applicableWhen) {
-      const match = matchTrigger(trigger, { kpiHealth, risingStars, fallingStars, cannibalization });
+      const match = matchTrigger(trigger, { kpiHealth, risingStars, fallingStars, cannibalization, aiOverview, aiPlatform });
       if (!match) continue;
 
       const priority: SuggestedAction["priority"] =
@@ -188,8 +204,12 @@ function matchTrigger(trigger: string, ctx: {
   risingStars:      any[];
   fallingStars:     any[];
   cannibalization:  any[];
+  /* Build 12.19 — GEO context for AI-era triggers */
+  aiOverview?:      any | null;
+  aiPlatform?:      any | null;
 }): TriggerMatch | null {
-  /* Format: "kpi:<key>:<healthLevel>" OR "rising_stars:<opportunityOrAny>" OR "falling_stars:<severityOrAny>" OR "cannibalization:any" */
+  /* Format: "kpi:<key>:<healthLevel>" OR "rising_stars:<opportunityOrAny>" OR "falling_stars:<severityOrAny>" OR "cannibalization:any"
+     Build 12.19 added: "geo:ai_overview_absent" | "geo:ai_overview_present" | "geo:ai_platform_zero" | "geo:ai_platform_growing" */
   if (trigger.startsWith("kpi:")) {
     const parts = trigger.split(":");
     if (parts.length < 3) return null;
@@ -246,6 +266,63 @@ function matchTrigger(trigger: string, ctx: {
     };
   }
 
+  /* Build 12.19 — GEO trigger handling. These match against the AI Overview
+     and AI platform summaries pulled in getSmartSuggestions. Existing
+     action library doesn't define `geo:*` triggers yet (forward-looking
+     Build 12.20 work); this branch is the scaffolding for future actions
+     that recommend GEO-specific moves when AI surfaces are absent or
+     growing rapidly. */
+  if (trigger.startsWith("geo:")) {
+    const signal = trigger.slice("geo:".length);
+    const ao = ctx.aiOverview;
+    const ai = ctx.aiPlatform;
+    if (signal === "ai_overview_absent") {
+      if (ao && ao.present === false) {
+        return {
+          reason:     "AI Overview not yet citing this site — flagged GEO opportunity",
+          severity:   "concern",
+          triggerKpi: "ai_overview_absent",
+          payload:    ao,
+        };
+      }
+      return null;
+    }
+    if (signal === "ai_overview_present") {
+      if (ao && ao.present && Number(ao.total_impressions || 0) > 0) {
+        return {
+          reason:     `AI Overview citing this site (${ao.total_impressions} impressions in ${ao.window_days || 30}d)`,
+          severity:   "opportunity",
+          triggerKpi: "ai_overview_present",
+          payload:    ao,
+        };
+      }
+      return null;
+    }
+    if (signal === "ai_platform_zero") {
+      if (ai && Number(ai.sessions || 0) === 0) {
+        return {
+          reason:     "No AI platform referral traffic detected — citation push opportunity",
+          severity:   "concern",
+          triggerKpi: "ai_platform_zero",
+          payload:    ai,
+        };
+      }
+      return null;
+    }
+    if (signal === "ai_platform_growing") {
+      if (ai && Number(ai.sessions || 0) > 50) {
+        return {
+          reason:     `AI platforms sending ${ai.sessions} sessions — emerging channel`,
+          severity:   "opportunity",
+          triggerKpi: "ai_platform_growing",
+          payload:    ai,
+        };
+      }
+      return null;
+    }
+    return null;
+  }
+
   return null;
 }
 
@@ -294,6 +371,8 @@ export async function getBaselineSnapshot(projectId: string): Promise<BaselineSn
       "gsc_total_clicks","gsc_total_impressions","gsc_avg_position","gsc_ctr",
       "organic_sessions_monthly","conversions_monthly",
       "analytics_health_score","analytics_resilience_score",
+      /* Build 12.19 — GEO-era summary objects */
+      "gsc_ai_overview_summary","ga4_ai_platform_summary",
     ]);
 
   const m: Record<string, string> = {};
@@ -306,6 +385,44 @@ export async function getBaselineSnapshot(projectId: string): Promise<BaselineSn
     return isNaN(n) ? 0 : n;
   };
 
+  /* Build 12.19 — extract GEO numerics from JSON-encoded summary objects.
+     Returns 0 for any missing or malformed summary — same behaviour as
+     other baseline fields, makes scenarios safe to run on projects
+     without GEO data. */
+  const parseJsonField = <T>(s: string | undefined): T | null => {
+    if (!s) return null;
+    try { return JSON.parse(s) as T; } catch { return null; }
+  };
+  const ao = parseJsonField<any>(m.gsc_ai_overview_summary);
+  const ai = parseJsonField<any>(m.ga4_ai_platform_summary);
+
+  const aiOverviewImpr = ao && ao.present ? Number(ao.total_impressions || 0) : 0;
+  const aiOverviewClk  = ao && ao.present ? Number(ao.total_clicks || 0) : 0;
+  const aiSessions     = ai ? Number(ai.sessions || 0) : 0;
+  const aiConversions  = ai ? Number(ai.conversions || 0) : 0;
+  const aiPlatformCt   = ai ? Number(ai.source_count || 0) : 0;
+
+  /* Composite GEO score — same threshold logic used across Build 12.17/18 */
+  let geoScore = 0;
+  if (aiOverviewImpr > 0) {
+    if (aiOverviewImpr >= 50000) geoScore += 60;
+    else if (aiOverviewImpr >= 10000) geoScore += 50;
+    else if (aiOverviewImpr >= 1000) geoScore += 35;
+    else if (aiOverviewImpr >= 100) geoScore += 20;
+    else geoScore += 10;
+  }
+  if (aiSessions > 0) {
+    let pts = 0;
+    if (aiSessions >= 5000) pts += 30;
+    else if (aiSessions >= 500) pts += 25;
+    else if (aiSessions >= 50) pts += 15;
+    else if (aiSessions > 0) pts += 8;
+    if (aiPlatformCt >= 3) pts += 10;
+    else if (aiPlatformCt >= 2) pts += 5;
+    geoScore += Math.min(40, pts);
+  }
+  geoScore = Math.min(100, Math.max(0, Math.round(geoScore)));
+
   return {
     clicks_30d:        parseNum(m.gsc_total_clicks),
     impressions_30d:   parseNum(m.gsc_total_impressions),
@@ -315,6 +432,12 @@ export async function getBaselineSnapshot(projectId: string): Promise<BaselineSn
     conversions_30d:   parseNum(m.conversions_monthly),
     health_score:      parseNum(m.analytics_health_score),
     resilience_score:  parseNum(m.analytics_resilience_score),
+    ai_overview_impressions: aiOverviewImpr,
+    ai_overview_clicks:      aiOverviewClk,
+    ai_platform_sessions:    aiSessions,
+    ai_platform_conversions: aiConversions,
+    ai_platform_count:       aiPlatformCt,
+    geo_visibility_score:    geoScore,
   };
 }
 

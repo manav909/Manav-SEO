@@ -533,6 +533,8 @@ export async function bsClientLensLoad(body: any): Promise<any> {
       gscQueriesRow,
       gscPagesRow,
       ga4SummaryRow,
+      gscAiOverviewRow,
+      ga4AiPlatformRow,
     ] = await Promise.all([
       db().from("projects").select("id,name,url,status,created_at").eq("id", projectId).maybeSingle(),
       db().from("clients").select("id,client_name,client_url,company_name,brand_name").eq("id", projectId).maybeSingle(),
@@ -550,6 +552,15 @@ export async function bsClientLensLoad(body: any): Promise<any> {
       db().from("project_knowledge")
         .select("field_value,updated_at")
         .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "ga4_summary").maybeSingle(),
+      /* Build 12.19 — GEO summary reads. The campaign list view now shows
+         GEO presence alongside classic GSC/GA4 metrics so the operator
+         can see at a glance whether AI search is active for the project. */
+      db().from("project_knowledge")
+        .select("field_value,updated_at")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "gsc_ai_overview_summary").maybeSingle(),
+      db().from("project_knowledge")
+        .select("field_value,updated_at")
+        .eq("project_id", projectId).eq("category", "analytics").eq("field_key", "ga4_ai_platform_summary").maybeSingle(),
     ]);
 
     /* Identity — prefer client row over project row for naming */
@@ -624,6 +635,21 @@ export async function bsClientLensLoad(body: any): Promise<any> {
     try {
       const raw = (ga4SummaryRow as any)?.data?.field_value;
       if (raw) ga4 = JSON.parse(raw);
+    } catch { /* leave null */ }
+
+    /* Build 12.19 — GEO summaries (AI Overview + AI platform referrals).
+       Both null when project has no GEO data. The campaign list view
+       surfaces these alongside classic GSC/GA4 so the operator can see
+       AI search engagement at a glance. */
+    let gscAiOverview: any = null;
+    let ga4AiPlatform: any = null;
+    try {
+      const aoRaw = (gscAiOverviewRow as any)?.data?.field_value;
+      if (aoRaw) gscAiOverview = JSON.parse(aoRaw);
+    } catch { /* leave null */ }
+    try {
+      const aiRaw = (ga4AiPlatformRow as any)?.data?.field_value;
+      if (aiRaw) ga4AiPlatform = JSON.parse(aiRaw);
     } catch { /* leave null */ }
 
     /* Five pillars — aggregate status across campaigns. A pillar is "green"
@@ -736,6 +762,63 @@ export async function bsClientLensLoad(body: any): Promise<any> {
           ga4_connected: !!ga4,
           ga4_summary:   ga4,
         },
+        /* Build 12.19 — GEO presence block. Null when project has no AI
+           Overview attribution AND no AI platform referrals data. When
+           present, surfaces both the headline numbers and the composite
+           GEO Visibility Score (same threshold logic as showcase + intel
+           engines for consistency across reports). */
+        geo: (() => {
+          if (!gscAiOverview && !ga4AiPlatform) return null;
+
+          const aoImp = gscAiOverview?.present ? Number(gscAiOverview.total_impressions || 0) : 0;
+          const aoClk = gscAiOverview?.present ? Number(gscAiOverview.total_clicks || 0) : 0;
+          const aiSes = ga4AiPlatform ? Number(ga4AiPlatform.sessions || 0) : 0;
+          const aiConv = ga4AiPlatform ? Number(ga4AiPlatform.conversions || 0) : 0;
+          const aiPlatforms: string[] = ga4AiPlatform?.platforms_detected || [];
+
+          let geoScore = 0;
+          if (aoImp >= 50000) geoScore += 60;
+          else if (aoImp >= 10000) geoScore += 50;
+          else if (aoImp >= 1000) geoScore += 35;
+          else if (aoImp >= 100) geoScore += 20;
+          else if (aoImp > 0) geoScore += 10;
+          if (aiSes > 0) {
+            let pts = 0;
+            if (aiSes >= 5000) pts += 30;
+            else if (aiSes >= 500) pts += 25;
+            else if (aiSes >= 50) pts += 15;
+            else pts += 8;
+            if (aiPlatforms.length >= 3) pts += 10;
+            else if (aiPlatforms.length >= 2) pts += 5;
+            geoScore += Math.min(40, pts);
+          }
+          geoScore = Math.min(100, Math.max(0, Math.round(geoScore)));
+
+          let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
+          if (geoScore === 0) grade = 'absent';
+          else if (geoScore < 25) grade = 'emerging';
+          else if (geoScore < 55) grade = 'present';
+          else if (geoScore < 80) grade = 'established';
+          else grade = 'strong';
+
+          return {
+            ai_overview: gscAiOverview ? {
+              present:     !!gscAiOverview.present,
+              impressions: aoImp,
+              clicks:      aoClk,
+              ctr:         aoImp > 0 ? Number(((aoClk / aoImp) * 100).toFixed(2)) : 0,
+              window_days: Number(gscAiOverview.window_days || 30),
+            } : null,
+            ai_platform_referrals: ga4AiPlatform ? {
+              sessions:           aiSes,
+              conversions:        aiConv,
+              platforms_detected: aiPlatforms,
+              window_days:        Number(ga4AiPlatform.window_days || 30),
+            } : null,
+            visibility_score: geoScore,
+            visibility_grade: grade,
+          };
+        })(),
         pillars: pillarHealth,
         wins:    wins.slice(0, 6),
         forecast: campaigns.length > 0 ? {
