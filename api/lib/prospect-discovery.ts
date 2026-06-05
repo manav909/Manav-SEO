@@ -1504,7 +1504,7 @@ export async function runGuestPostFinder(opts: {
      fallback another 240s — total potential 480s, blowing past Vercel's
      300s and producing FUNCTION_INVOCATION_TIMEOUT. */
   const TOTAL_WORK_BUDGET_MS = 280_000;
-  const FIRST_CALL_BUDGET_MS = 180_000;
+  const FIRST_CALL_BUDGET_MS = 220_000;
   const WALL_TIMEOUT_MS = 250_000;
   let timedOut = false;
   const timeoutHandle = setTimeout(() => {
@@ -1517,28 +1517,40 @@ export async function runGuestPostFinder(opts: {
     if (timedOut) throw new Error("Aborted before research due to wall-time limit.");
 
     /* First attempt with web_search enabled, capped at FIRST_CALL_BUDGET_MS.
-       max_uses reduced from 5 to 4 — saves one round-trip of search latency
-       without materially degrading shortlist quality (the model rarely
-       benefits from a fifth search at this prompt structure). */
+       Build 12.21.2: budget restored to 220s after initial 180s proved too
+       tight — observed first calls consistently aborting at the deadline.
+       max_uses stays at 5 (default) — capping search count below what the
+       model wants does not save wall time, it only degrades the result. */
     let laneResult = await runGuestPostLane(inputs, {
       discovery_id,
       budget_ms: FIRST_CALL_BUDGET_MS,
-      max_uses: 4,
     });
     llm_calls_used++;
     web_searches_used += laneResult.tool_use_count;
 
-    /* Fallback to LLM-only if web_search yielded nothing.
-       Budget is whatever remains of TOTAL_WORK_BUDGET_MS minus a 5s
-       cushion. If less than 30s remains the fallback is skipped — an
-       LLM-only call needs at least ~20s to produce useful output and
-       running a doomed-to-timeout call wastes Vercel budget. */
+    /* Fallback to LLM-only ONLY when the first call returned a real
+       response (non-empty raw_text) with 0 tool uses + 0 candidates.
+       That signals "web_search disabled on API key" — the LLM-only
+       fallback can produce candidates from training data alone, and
+       typically runs in 60-100s.
+
+       Build 12.21.2 critical fix: previously the fallback also fired
+       when the first call ABORTED (raw_text empty, tool_use_count 0,
+       no result). The fallback then ate the remaining budget on a
+       call that would also abort, because the model is genuinely
+       slow on a 16K-token JSON generation regardless of tools. If
+       the first call could not finish in 220s with web_search, an
+       LLM-only retry in 55s cannot either. Skip it. */
     let webSearchDisabled = false;
-    if (laneResult.tool_use_count === 0 && (!laneResult.result || laneResult.result.candidates.length === 0)) {
+    const firstCallReturnedText = laneResult.raw_text && laneResult.raw_text.trim().length > 0;
+    const firstCallEmptyButReal = firstCallReturnedText
+      && laneResult.tool_use_count === 0
+      && (!laneResult.result || laneResult.result.candidates.length === 0);
+    if (firstCallEmptyButReal) {
       const elapsedMs = Date.now() - startedAt;
       const fallbackBudgetMs = TOTAL_WORK_BUDGET_MS - elapsedMs - 5_000;
       if (fallbackBudgetMs >= 30_000) {
-        console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — retry with web_search OFF (budget ${fallbackBudgetMs}ms)`);
+        console.warn(`[guest-post] first call returned empty (web_search disabled on key?) — retry with web_search OFF (budget ${fallbackBudgetMs}ms)`);
         webSearchDisabled = true;
         laneResult = await runGuestPostLane(inputs, {
           discovery_id,
@@ -1547,8 +1559,15 @@ export async function runGuestPostFinder(opts: {
         });
         llm_calls_used++;
       } else {
-        console.warn(`[guest-post] 0 tool uses + 0 candidates on first pass — skipping fallback, only ${fallbackBudgetMs}ms remaining of work budget`);
+        console.warn(`[guest-post] first call returned empty — skipping fallback, only ${fallbackBudgetMs}ms remaining of work budget`);
       }
+    } else if (!firstCallReturnedText) {
+      /* First call aborted or returned null text. The model is genuinely
+         slow on this workload — an LLM-only retry will not finish in the
+         remaining budget. Log honestly and proceed with whatever lane
+         result we have (which will produce an empty shortlist with a
+         clear failure note in the rendered markdown). */
+      console.warn(`[guest-post] first call returned no text (likely aborted at ${FIRST_CALL_BUDGET_MS}ms) — skipping fallback. The 16K-token generation is too slow for this Vercel function budget; consider reducing candidate count target or splitting into parallel calls.`);
     }
 
     if (timedOut) throw new Error("Aborted before render due to wall-time limit.");
