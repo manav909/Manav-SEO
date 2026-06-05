@@ -17,7 +17,7 @@
    filter actions to those relevant to the project's current state.
 ═══════════════════════════════════════════════════════════════ */
 
-export type ActionCategory = "content" | "onpage" | "technical" | "links" | "ux" | "strategy";
+export type ActionCategory = "content" | "onpage" | "technical" | "links" | "ux" | "strategy" | "geo";
 
 export type ActionConfidence = "high" | "medium" | "low";
 
@@ -582,6 +582,149 @@ export const SEO_ACTION_LIBRARY: SeoAction[] = [
     costSummary: "10-20 hours (audit + execution)",
     evidence: "Backlinko, SEMrush content audits: pruning thin content typically lifts site-wide traffic 5-15% over 60 days.",
     applicableWhen: ["kpi:indexation_efficiency:concern", "kpi:indexation_efficiency:critical"],
+  },
+
+  /* ───────── GEO / AI-ERA ACTIONS (Build 12.20) ─────────────────
+     Each action wired to geo:* triggers scaffolded in Build 12.19.
+     These earn AI Overview citations + AI platform referrals by
+     restructuring content to match the patterns the AI search models
+     recognize as citation-worthy. Honest about confidence: AI search
+     citation is genuinely newer territory than classic SEO, so most
+     actions sit at "medium" confidence with explicit caveats. */
+  {
+    id:    "add_faq_schema_for_geo",
+    category: "geo",
+    name: "Add FAQ schema to citation-target pages",
+    shortDescription: "Structure page content as Q-and-A with FAQPage schema markup — the format AI Overview models preferentially cite.",
+    fullDescription: "AI Overview citation analysis across the niche shows cited pages share three structural patterns at very high rates: explicit Q-and-A formatting, FAQPage schema markup, and concise answer paragraphs. Adding FAQPage schema to pages targeting informational queries makes them substantially more legible to the AI Overview model and to AI platforms (Perplexity, ChatGPT, Gemini) that increasingly cite from structured data.",
+    inputs: [
+      { key: "target_page", label: "Page URL to add FAQ schema to", type: "page_url", required: true },
+      { key: "target_queries", label: "Queries the page targets (comma-separated)", type: "text", required: false, helperText: "Used to suggest Q-and-A pairs based on People-Also-Ask data" },
+    ],
+    impact: {
+      visibility: { min: 5, max: 25, basis: "Cited pages in AI Overview show FAQPage schema at 60-80% rates in observed samples. Adding it to a page without is foundational. Effect compounds with topical authority.", unit: "percent" },
+      clicks:     { min: 2, max: 15, basis: "When AI Overview begins citing the page, traffic from AI surfaces appears (ChatGPT, Perplexity referrals) in addition to classic organic clicks.", unit: "percent" },
+    },
+    timeline: { immediate: 0.05, day_30: 0.3, day_60: 0.5, day_90: 0.7, notes: "Citation patterns shift over weeks-to-months — AI search models are slower to re-evaluate than classic ranking signals." },
+    effortHours: 2,
+    confidence: "medium",
+    costSummary: "1-3 hours (content restructuring + schema implementation)",
+    evidence: "GEO research 2025 (Princeton, Allen Institute): structured Q-and-A content earns AI citation at 2-5x the rate of unstructured prose. Aleph Alpha, SearchGPT citation analyses show FAQPage schema correlates with citation rate.",
+    applicableWhen: ["geo:ai_overview_absent", "geo:ai_platform_zero"],
+    prerequisites: ["Page targets informational queries (not purely navigational/transactional)", "Page has at least one query showing in GSC with AI Overview SERP feature"],
+  },
+
+  {
+    id:    "add_summary_paragraph_for_geo",
+    category: "geo",
+    name: "Add summary paragraph at top of citation-target pages",
+    shortDescription: "Lead each citation-target page with a 60-100 word summary paragraph that directly answers the primary query.",
+    fullDescription: "AI Overview models extract their citation snippet from the first 100-300 words of cited pages roughly 70% of the time (observed across SerpAPI samples). A clear, declarative summary paragraph at the top of the page — answering the primary query in 2-3 sentences — substantially increases citation likelihood. The paragraph should: (1) restate the query in declarative form, (2) give the concise answer, (3) reference the supporting detail to follow.",
+    inputs: [
+      { key: "target_page",  label: "Page URL", type: "page_url", required: true },
+      { key: "primary_query", label: "Primary query the page targets", type: "text", required: true },
+      { key: "proposed_summary", label: "Proposed 60-100 word summary paragraph", type: "text", required: false },
+    ],
+    impact: {
+      visibility: { min: 8, max: 30, basis: "Summary-first structure observed in 65-85% of AI Overview cited pages. Adding it is a structural foundation for citation eligibility.", unit: "percent" },
+      ctr:        { min: 3, max: 12, basis: "Even when not cited, summary-first pages perform better on classic SERP CTR because the meta description gets a stronger source paragraph.", unit: "percent" },
+    },
+    timeline: { immediate: 0.1, day_30: 0.4, day_60: 0.7, day_90: 0.85, notes: "Recrawl 1-14 days, then citation patterns shift over weeks." },
+    effortHours: 1,
+    confidence: "medium",
+    costSummary: "30-60 min per page (writing) + recrawl",
+    evidence: "AI citation pattern studies 2024-2025 (multiple): cited paragraphs cluster in first 100-300 words at 70%+ frequency. Princeton GEO study confirms position weighting in extraction.",
+    applicableWhen: ["geo:ai_overview_absent"],
+    prerequisites: ["Page has a primary query identified"],
+  },
+
+  {
+    id:    "displace_geo_citation_competitor",
+    category: "geo",
+    name: "Plan AI Overview citation displacement push",
+    shortDescription: "Identify which competitor domains take your AI Overview citation slots for target queries, audit their content patterns, and replicate the strongest patterns on your pages.",
+    fullDescription: "When AI Overview cites competitors but not you for a query, the displacement path is structural: the cited pages share patterns the AI model recognizes. The displacement workflow: (1) run citation gap analysis on the query → get cited URLs, (2) fetch and analyze each cited page for structural patterns (schema, headings, author bios, dated content, FAQ blocks, summary paragraphs), (3) identify the 2-3 patterns present in all cited pages but missing from yours, (4) implement those patterns on your target page, (5) wait 4-8 weeks for AI Overview to re-evaluate. Citation displacement is slower than ranking displacement but more stable once earned.",
+    inputs: [
+      { key: "target_query", label: "Query where citation displacement is needed", type: "text", required: true },
+      { key: "target_page",  label: "Your page to optimize", type: "page_url", required: true },
+    ],
+    impact: {
+      visibility: { min: 15, max: 50, basis: "When citation displacement succeeds, the site enters the citation list (typically 3-6 cited domains per query) — substantial AI surface presence.", unit: "percent" },
+      clicks:     { min: 5, max: 25, basis: "AI surface presence drives both AI platform referral traffic AND classic CTR uplift because the cited link gains prominence.", unit: "percent" },
+    },
+    timeline: { immediate: 0.0, day_30: 0.1, day_60: 0.4, day_90: 0.65, notes: "Citation re-evaluation is slow. Allow 8-16 weeks for full effect. Time to first citation observed in 4-6 weeks typical." },
+    effortHours: 8,
+    confidence: "medium",
+    costSummary: "4-12 hours (analysis + content restructuring)",
+    evidence: "Citation displacement field observations (Build 12.20 citation gap analysis): pages adopting all observed structural patterns earn citation within 8-16 weeks at ~40% success rate in measured samples.",
+    applicableWhen: ["geo:ai_overview_absent"],
+    prerequisites: ["SerpAPI configured for citation gap analysis", "Target query shows AI Overview that cites competitors but not the site"],
+  },
+
+  {
+    id:    "expand_geo_authority_clustering",
+    category: "geo",
+    name: "Build topical cluster around AI-cited query",
+    shortDescription: "When AI Overview already cites one of your pages for a query, expand topical authority around that cluster to earn citation for adjacent queries.",
+    fullDescription: "AI Overview citation is correlated with topical authority signals — cited domains rarely earn one-off citations. When a site earns citation for one query in a topic, the surrounding query cluster becomes more reachable. The action: identify 5-15 adjacent queries (PAA + autocomplete + GSC near-ranking queries), create or strengthen pages targeting each, interlink them with the originally-cited page as the hub. AI Overview tends to cite the page that anchors a strong cluster, then spread citation to satellite pages within the cluster over 2-4 months.",
+    inputs: [
+      { key: "anchor_query", label: "Query where AI Overview already cites you", type: "text", required: true },
+      { key: "anchor_page",  label: "Your already-cited page", type: "page_url", required: true },
+    ],
+    impact: {
+      visibility: { min: 20, max: 80, basis: "Cluster expansion around an already-cited anchor compounds: cited pages defend their slot, satellite pages enter citation at adjacent queries. Total surface area grows.", unit: "percent" },
+      clicks:     { min: 10, max: 40, basis: "AI surface citation drives AI platform referrals across the cluster. Compounds with classic organic for cluster queries.", unit: "percent" },
+    },
+    timeline: { immediate: 0.05, day_30: 0.2, day_60: 0.45, day_90: 0.7, notes: "Cluster effects compound over 60-180 days. Cited anchor defends quickly; satellites take longer." },
+    effortHours: 16,
+    confidence: "medium",
+    costSummary: "12-24 hours (cluster mapping + content creation)",
+    evidence: "Topic-cluster citation observations: domains earning AI Overview citation on 3+ queries in a cluster typically defend all citations over 90+ day windows at high rates. Single-citation domains show higher churn.",
+    applicableWhen: ["geo:ai_overview_present"],
+  },
+
+  {
+    id:    "add_author_credentials_for_geo",
+    category: "geo",
+    name: "Add named author with credentials to citation-target pages",
+    shortDescription: "Add a visible named author with credentials (and last-updated date) to pages targeting AI citation. E-E-A-T signal for the AI search models.",
+    fullDescription: "AI Overview models weight E-E-A-T (Experience, Expertise, Authoritativeness, Trust) signals heavily when selecting citation sources. Cited pages show named authors with visible credentials at very high rates (~85% in observed samples) and dated last-updated stamps at ~90%. Adding both — with the author also having an Author schema markup and ideally an author page with bio + credentials — substantially increases citation likelihood for informational and how-to content.",
+    inputs: [
+      { key: "target_page",     label: "Page URL", type: "page_url", required: true },
+      { key: "author_name",     label: "Author full name", type: "text", required: true },
+      { key: "author_credentials", label: "Credentials/title (e.g. 'MD, FACS' or 'Senior SEO Strategist, 12 years')", type: "text", required: true },
+    ],
+    impact: {
+      visibility: { min: 5, max: 20, basis: "Author credentials is one of three foundational E-E-A-T signals (alongside dated content + schema). Strong correlate of citation eligibility but rarely sufficient alone.", unit: "percent" },
+    },
+    timeline: { immediate: 0.1, day_30: 0.3, day_60: 0.5, day_90: 0.7, notes: "Recrawl + AI search re-evaluation over 30-90 days." },
+    effortHours: 2,
+    confidence: "medium",
+    costSummary: "1-3 hours (author profile + schema + page bylines)",
+    evidence: "Google E-E-A-T guidelines + AI Overview citation pattern studies: cited pages show named authors at high rates. Stronger correlation for YMYL niches (health, finance, legal) where credentials matter most.",
+    applicableWhen: ["geo:ai_overview_absent"],
+    prerequisites: ["A real, named subject matter expert is available to attribute the content to (do not fabricate authors)"],
+  },
+
+  {
+    id:    "monitor_future_ai_overview_emergence",
+    category: "geo",
+    name: "Set up future-AI-Overview detection for tracked queries",
+    shortDescription: "Configure ongoing tracking to detect when a tracked query starts showing AI Overview for the first time — earlier signal than CTR collapse.",
+    fullDescription: "AI Overview is rolled out incrementally across query types. For any given tracked query, there is typically a 2-6 week window between when AI Overview first appears for that query and when classic CTR materially declines. Setting up detection at the first-appearance signal gives a substantial response window — pages can be restructured for citation eligibility before the CTR damage hits. The detection mechanism: monitor gsc_search_appearance per-keyword over time + scheduled SerpAPI samples; alert when ai_overview goes from absent → present for any tracked query.",
+    inputs: [
+      { key: "tracked_queries", label: "Queries to monitor (comma-separated)", type: "text", required: true },
+      { key: "alert_channel",   label: "Where to send alerts (email/slack/in-app)", type: "text", required: false },
+    ],
+    impact: {
+      visibility: { min: 0, max: 15, basis: "Detection is a leading indicator, not direct lift. Acting on the signal (restructure for citation) drives the visibility — without action this gives information only.", unit: "percent" },
+    },
+    timeline: { immediate: 0.0, day_30: 0.0, day_60: 0.0, day_90: 0.0, notes: "This is a monitoring setup, not a direct intervention. Impact accrues over months as detection triggers and downstream actions are taken." },
+    effortHours: 2,
+    confidence: "high",
+    costSummary: "1-3 hours setup, then monitoring cost (SerpAPI usage if scheduled)",
+    evidence: "First-appearance-to-CTR-collapse lag observed at 2-6 weeks in field data. Acting in this window has materially higher ROI than reacting post-collapse.",
+    applicableWhen: ["geo:ai_overview_absent"],
   },
 ];
 

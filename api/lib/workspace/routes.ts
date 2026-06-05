@@ -188,6 +188,43 @@ export async function wsRunDeepSteps(body: any) {
       // clear note in the operator-visible report.
       await recordStepSkipped(runId, projectId, "target_keyword_baseline");
     }
+
+    /* Build 12.20 — forward-looking GEO deep-steps.
+       ai_overview_citation_gap: per-keyword "you should be cited but
+       aren't, here is the structural reason why" — runs SerpAPI per
+       target keyword, fetches cited pages, extracts structural
+       patterns, produces gap report against project's target page.
+       geo_displacement: aggregate competitor citation share + future
+       AI Overview surface emergence detection. */
+    if (targetKeywords.length && isEnabled("ai_overview_citation_gap")) {
+      try {
+        const { gatherAiOverviewCitationGap } = await import("./deep-steps/ai-overview-citation-gap.js");
+        const { evidence, report_md } = await gatherAiOverviewCitationGap({
+          projectId, targetUrls, targetKeywords,
+        });
+        await upsertStepReport(runId, projectId, "ai_overview_citation_gap", evidence, report_md, evidence.worth_deeper || []);
+        results["ai_overview_citation_gap"] = "ok";
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "ai_overview_citation_gap", e?.message || String(e));
+        results["ai_overview_citation_gap"] = `failed: ${e?.message}`;
+      }
+    } else if (isEnabled("ai_overview_citation_gap") && !targetKeywords.length) {
+      await recordStepSkipped(runId, projectId, "ai_overview_citation_gap");
+    }
+
+    if (isEnabled("geo_displacement")) {
+      try {
+        const { gatherGeoDisplacement } = await import("./deep-steps/geo-displacement.js");
+        const { evidence, report_md } = await gatherGeoDisplacement({
+          projectId, targetUrls, targetKeywords,
+        });
+        await upsertStepReport(runId, projectId, "geo_displacement", evidence, report_md, evidence.worth_deeper || []);
+        results["geo_displacement"] = "ok";
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "geo_displacement", e?.message || String(e));
+        results["geo_displacement"] = `failed: ${e?.message}`;
+      }
+    }
   } catch (e: any) {
     return { success: false, error: `deep steps failed: ${e?.message}`, results };
   }

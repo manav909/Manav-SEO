@@ -623,6 +623,41 @@ export async function gscPull(opts: {
         }));
         jsonRows.push({ key: "gsc_search_appearance", value: JSON.stringify(appearanceShaped) });
 
+        /* Build 12.20 — append a history snapshot for future-AI-Overview
+           detection. Read existing history (capped at last 12 entries to
+           bound row size — at one capture per pull, this gives ~3-6
+           months of comparison points for weekly/biweekly pull cadence).
+           detectFutureAiOverview() in geo-displacement.ts compares the
+           latest entry to the prior one to identify emergent surfaces. */
+        try {
+          const { data: existingHistory } = await db()
+            .from("project_knowledge")
+            .select("field_value")
+            .eq("project_id", opts.projectId)
+            .eq("category", "analytics")
+            .eq("field_key", "gsc_search_appearance_history")
+            .maybeSingle();
+          let history: any[] = [];
+          try {
+            if ((existingHistory as any)?.field_value) {
+              const parsed = JSON.parse((existingHistory as any).field_value);
+              if (Array.isArray(parsed)) history = parsed;
+            }
+          } catch { /* malformed previous history — start fresh */ }
+          history.push({
+            captured_at: new Date().toISOString(),
+            window_days: days,
+            appearances: appearanceShaped,
+          });
+          /* Keep last 12 entries only — older history gets dropped to
+             bound row size. At a weekly pull cadence this is ~3 months. */
+          if (history.length > 12) history = history.slice(-12);
+          jsonRows.push({ key: "gsc_search_appearance_history", value: JSON.stringify(history) });
+        } catch (e) {
+          /* History capture is best-effort — failure does not block the pull */
+          console.warn("[pm-gsc] gsc_search_appearance_history capture failed:", (e as any)?.message || e);
+        }
+
         /* Derive an AI Overview summary for fast consumer access — the
            audit and workspace deep-steps read this headline number
            without parsing the full breakdown. */

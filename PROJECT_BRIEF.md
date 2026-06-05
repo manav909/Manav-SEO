@@ -1034,3 +1034,53 @@ Entity association strength scoring (predict citation likelihood from structured
 Six files changed: api/lib/pm-engine.ts (~80 lines: gscFresh + ga4Fresh GEO captures, analyticsField dispatch, 12 new analytics output fields), api/lib/pm-goal-engine.ts (~70 lines: GoalMetric extension, current-value cases, history paths with composite inline scoring), api/lib/pm-scenario-engine.ts (~90 lines: baseline GEO fields, getBaselineSnapshot rewrite with composite, matchTrigger geo:* branch with 4 signals, getSmartSuggestions context wiring), api/lib/seo-campaign-routes.ts (~80 lines: 2 new reads + parsing + geo block in response with inline composite), api/lib/workspace/deep-steps/target-keyword-baseline.ts (~75 lines: per-keyword AI Overview citation extraction, geo_modifier verdict, summary table + per-keyword detail + worth_deeper extensions), api/lib/workspace/deep-steps/traffic-steps.ts (~85 lines: gatherQueryLandscape AI Overview per-query + project-level summary + report rendering; gatherTrajectory extras-aware snapshot read with 3 GEO trend rows + worth_deeper flags).
 
 Vite build green at 47.98s. Compile clean across all 6 files. No new contractions in template literals.
+
+Build 12.20 — Forward-looking GEO capabilities [SHIPPED 2026-06-05]: Tier 4 of the GEO multi-build program. NEW functionality (not wiring) — the capabilities that don't exist anywhere else in the platform yet. Seven files. Four are new, three are extensions to existing.
+
+NEW CAPABILITIES:
+
+(1) GEO action library — 6 new actions in pm-action-library.ts wired to the geo:* triggers scaffolded in Build 12.19. ActionCategory type extended with "geo". Actions: add_faq_schema_for_geo, add_summary_paragraph_for_geo, displace_geo_citation_competitor, expand_geo_authority_clustering, add_author_credentials_for_geo, monitor_future_ai_overview_emergence. Each with full impact estimates, timeline curves, evidence references, and prerequisites. Calling getSmartSuggestions on a project with AI Overview data now produces GEO-specific action recommendations.
+
+(2) AI Overview citation gap analysis — new library api/lib/geo-citation-gap.ts. Extracts structural patterns from cited competitor pages: FAQ schema, Article schema, HowTo schema, named author byline with credentials, last-updated date, summary paragraph at top, Q-and-A heading structure, TL;DR block. Compares against the project's target page. Identifies universal patterns (present in ALL cited pages = strongest signal), majority patterns (present in 50%+), and the specific gaps where the project is missing patterns that cited competitors universally have. Produces a senior-DMS narrative + ordered recommended actions.
+
+(3) Competitor citation displacement tracking — new library api/lib/geo-displacement.ts. Aggregates AI Overview citation lists across the project's target queries. Ranks competitor domains by citation count, computes citation share, and produces a per-competitor displacement assessment: how many queries does the project rank top-10 but not get cited (direct displacement candidates), how many is the competitor cited but project not in top-10 (long-term — classic SEO is prerequisite), estimated displaceable count, primary path narrative.
+
+(4) Future-AI-Overview surface emergence detection — function detectFutureAiOverview in api/lib/geo-displacement.ts. Compares two snapshots of gsc_search_appearance and identifies AI surfaces that emerged (previously zero impressions, now non-zero), grew substantially (50%+ delta), or contracted (30%+ drop). The leading indicator before classic CTR collapse — typical 2-6 week lag between AI Overview emergence on a query and CTR damage.
+
+(5) Workspace deep-steps exposing 2+4 above to operators:
+   - api/lib/workspace/deep-steps/ai-overview-citation-gap.ts — runs SerpAPI per target keyword, fetches cited pages, runs citation gap analysis, aggregates patterns across queries. Capped at 8 keywords per run (~48 HTTP calls, 60-120s wall-clock).
+   - api/lib/workspace/deep-steps/geo-displacement.ts — runs displacement analysis across operator-supplied keywords OR top 20 GSC queries by impressions when keywords absent. Also reads gsc_search_appearance_history to run emergence detection. Capped at 30 queries.
+
+EXTENSIONS:
+
+(6) api/lib/pm-gsc.ts — appends a date-stamped snapshot to a new gsc_search_appearance_history field on each pull. Rolling window of last 12 entries (~3 months at weekly pull cadence). Read existing → append → cap → write. Best-effort wrapped in try/catch — history capture failure does not block the pull. This is the data substrate that makes future-AI-Overview detection possible.
+
+(7) api/lib/workspace/routes.ts — registered both new deep-steps. ai_overview_citation_gap runs when targetKeywords supplied AND step is enabled. geo_displacement runs when step is enabled (no keyword precondition — falls back to top GSC queries). Both use the standard try/catch + upsertStepReport pattern.
+
+HONEST CAVEATS:
+
+- Pattern extraction in geo-citation-gap.ts is heuristic. Schema detection looks for ld+json blocks; FAQ detection looks for FAQPage schema OR Q-and-A heading patterns. False negatives possible on SPAs that render content client-side (the live HTML crawl returns the static HTML, which on SPAs may be a shell).
+- "Citation correlation" is causally weaker than the narrative suggests. Patterns observed in cited pages correlate with citation, but correlation is not causation. Reports phrase recommendations as "patterns observed in cited pages" rather than "do this to get cited." Honest framing.
+- Sample sizes per query are small (typically 3-6 cited domains). A single query's patterns are anecdote; aggregate across many queries is signal. The deep-step's aggregate_universal_patterns section is the more reliable layer.
+- Displacement analysis is a SNAPSHOT, not a time-series. True citation velocity tracking would require scheduled SerpAPI runs (multi-day comparison) which the platform does not yet have automation for. The snapshot view is still meaningfully useful but operators should re-run periodically to detect drift.
+- Future-AI-Overview detection requires AT LEAST 2 historical GSC snapshots. First snapshot was captured this period (Build 12.20). Detection becomes useful from the next pull onward. Honest negative result in the report when history is insufficient.
+- displace_geo_citation_competitor action triggers on geo:ai_overview_absent because Build 12.19 only scaffolded 4 trigger signals, not a dedicated geo:ai_overview_displaced. This means the action will sometimes surface for projects where AI Overview is absent entirely (rather than only when it's present-but-displacing). Build 12.21 candidate to add a dedicated displaced trigger using the per-query SerpAPI displacement data from the workspace deep-step.
+- SerpAPI cost: citation gap analysis at 8 keywords = 8 SerpAPI credits per run + 48 HTTP page fetches. Displacement analysis at 30 queries = 30 SerpAPI credits per run. These are NOT cheap deep-steps — operators should run them deliberately on important projects, not on every workspace run.
+
+WHAT THIS UNLOCKS:
+
+- Scenario engine can now produce GEO-specific action recommendations when projects have AI Overview attribution data. The 6 new actions plus the geo:* triggers from Build 12.19 close the loop.
+- Workspace runs on projects with target keywords now produce per-keyword "you should be cited but aren't, here is the structural reason why" reports.
+- Operators can identify the top competitor domains taking their citation slots and see a ranked priority order for displacement.
+- Future-AI-Overview detection now has the data substrate (history capture) and the detection function — from the next GSC pull onward, operators get a leading indicator of AI surface changes before classic CTR is affected.
+
+WHAT IS NEXT — BUILD 12.21 (STRETCH / VISION):
+- Entity association strength scoring (predict citation likelihood from structured data + topical density + brand entity signals like Knowledge Graph presence)
+- AI Overview content-structure template extraction — automatically generate page templates from cited content patterns observed across a niche
+- Full AI-referral conversion attribution funnel (GA4 sessionSource → landing page → conversion event linkage)
+- Add dedicated geo:ai_overview_displaced and geo:ai_overview_strong triggers wired to per-query SerpAPI data so action recommendations align more precisely with the project's GEO state
+- Extract the composite GEO score threshold logic to shared api/lib/geo-scoring.ts (currently inlined in 5+ places — documented coupling that's now ripe for refactor)
+
+Seven files changed: api/lib/pm-action-library.ts (ActionCategory + 6 new actions ~250 lines), api/lib/geo-citation-gap.ts (NEW, ~340 lines: pattern extraction + gap computation + orchestrator), api/lib/geo-displacement.ts (NEW, ~250 lines: displacement analysis + future-AI-Overview detection), api/lib/workspace/deep-steps/ai-overview-citation-gap.ts (NEW, ~280 lines: workspace step wrapping citation gap), api/lib/workspace/deep-steps/geo-displacement.ts (NEW, ~200 lines: workspace step combining displacement + emergence), api/lib/workspace/routes.ts (+45 lines: register 2 new steps), api/lib/pm-gsc.ts (+30 lines: history capture).
+
+Vite build green at 42.29s. Compile clean across all 7 files. No new contractions in template literals (1 pre-existing hit in routes.ts line 405 confirmed not from this build via git diff).
