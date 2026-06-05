@@ -33,6 +33,25 @@ const N = (v: any): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
+/* Build 12.17 — Extract a numeric metric from a JSON-encoded summary
+   object stored in project_knowledge. The Build 12.16 GSC + GA4 pulls
+   write the AI Overview / AI platform summaries as stringified JSON.
+   Returns null when the row is missing, malformed, or the requested
+   field is absent. Safe to call with any input. */
+function extractAiOverviewMetric(jsonStr: any, field: string): number | null {
+  if (!jsonStr) return null;
+  try {
+    const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr;
+    if (obj && typeof obj === 'object') {
+      const v = obj[field];
+      if (v == null) return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+  } catch { /* malformed JSON — treat as null */ }
+  return null;
+}
+
 function genToken(): string {
   /* unguessable share token — 32 hex chars */
   const bytes = new Uint8Array(16);
@@ -81,6 +100,16 @@ export async function captureMetricsSnapshot(opts: SnapshotOptions): Promise<{
         bounce_rate:      N(km.analytics?.bounce_rate),
         pages_indexed:    N(km.technical?.pages_indexed),
         crawl_errors:     N(km.technical?.crawl_errors),
+        /* Build 12.17 — AI Overview + AI platform referrals as first-class
+           snapshot metrics. Stored on metrics_snapshots so they appear in
+           reports, dashboards, and chart engines alongside classic KPIs.
+           Pulled from the summary objects produced by Build 12.16 GSC and
+           GA4 pulls; reduce to flat numbers for snapshot storage. */
+        gsc_ai_overview_impressions:  extractAiOverviewMetric(km.analytics?.gsc_ai_overview_summary, 'total_impressions'),
+        gsc_ai_overview_clicks:       extractAiOverviewMetric(km.analytics?.gsc_ai_overview_summary, 'total_clicks'),
+        ga4_ai_referral_sessions:     extractAiOverviewMetric(km.analytics?.ga4_ai_platform_summary, 'sessions'),
+        ga4_ai_referral_conversions:  extractAiOverviewMetric(km.analytics?.ga4_ai_platform_summary, 'conversions'),
+        ga4_ai_referral_platforms:    extractAiOverviewMetric(km.analytics?.ga4_ai_platform_summary, 'source_count'),
       };
     }
 

@@ -162,8 +162,7 @@ export interface ShowcaseData {
       climbing:           Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
       plateau:            Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
       underperforming:    Array<{ page: string; clicks: number; impressions: number; position: number; ctr: number }>;
-    };
-    tier_counts: {
+    };  tier_counts: {
       hero:               number;
       climbing:           number;
       plateau:            number;
@@ -175,6 +174,49 @@ export interface ShowcaseData {
       plateau:            string;
       underperforming:    string;
     };
+  };
+
+  /* ───────────────────────────────────────────────────────────
+     Build 12.17 — AI SEARCH VISIBILITY (GEO-era data)
+     Surfaces measured first-party data from GSC searchAppearance
+     (AI Overview impressions/clicks) and GA4 sessionSource filtered
+     to AI platforms (ChatGPT, Perplexity, Gemini, Claude, Copilot).
+     null when no project integrations connected OR when no data in
+     window. Honest about what each number means.
+  ─────────────────────────────────────────────────────────── */
+  ai_search_visibility: null | {
+    /* GSC AI Overview attribution — measured impressions and clicks
+       from being cited inside Google AI Overview answers. */
+    ai_overview: null | {
+      present:                  boolean;
+      impressions:              number;        // 0 when present=false
+      clicks:                   number;
+      ctr:                      number;        // % already computed
+      window_days:              number;
+      breakdown?:               Array<{ appearance: string; impressions: number; clicks: number }>;
+      narrative:                string;        // senior-DMS interpretation of the number
+      action:                   string;        // specific recommendation derived from the number
+    };
+    /* GA4 AI-platform referral attribution — sessions arriving from
+       ChatGPT, Perplexity, Gemini, Claude, Copilot referral domains. */
+    platform_referrals: null | {
+      total_sessions:           number;
+      total_users:              number;
+      total_engaged_sessions:   number;
+      total_conversions:        number;
+      platforms_detected:       string[];      // sortable list of source domains seen
+      per_platform:             Array<{ source: string; sessions: number; conversions: number; engaged_sessions: number }>;
+      window_days:              number;
+      narrative:                string;
+      action:                   string;
+      growth_signal:            'rising' | 'flat' | 'falling' | 'unknown';   // derived from daily series
+    };
+    /* GEO Visibility Score — composite metric across AI Overview
+       presence, AI platform referrals, and citation breadth. Single
+       trackable KPI for the GEO surface. 0-100 scale. */
+    geo_visibility_score:       number;
+    geo_visibility_grade:       'absent' | 'emerging' | 'present' | 'established' | 'strong';
+    geo_visibility_explainer:   string;
   };
 
   /* ───────────────────────────────────────────────────────────
@@ -243,6 +285,7 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
       projectR,
       campaignsR,
       gscPagesR, gscQueriesR, ga4R, gscDailyR,
+      gscAiOverviewR, gscSearchAppearanceR, ga4AiSummaryR, ga4AiReferralsR, ga4AiDailyR,
       activityR,
       forecastR,
     ] = await Promise.all([
@@ -277,6 +320,32 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
         .eq('project_id', projectId)
         .eq('category', 'analytics').eq('field_key', 'gsc_daily_trend_365d').maybeSingle(),
 
+      /* Build 12.17 — GEO / AI surface attribution (Build 12.16 data layer) */
+      db().from('project_knowledge')
+        .select('field_value, updated_at')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics').eq('field_key', 'gsc_ai_overview_summary').maybeSingle(),
+
+      db().from('project_knowledge')
+        .select('field_value, updated_at')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics').eq('field_key', 'gsc_search_appearance').maybeSingle(),
+
+      db().from('project_knowledge')
+        .select('field_value, updated_at')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics').eq('field_key', 'ga4_ai_platform_summary').maybeSingle(),
+
+      db().from('project_knowledge')
+        .select('field_value, updated_at')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics').eq('field_key', 'ga4_ai_platform_referrals').maybeSingle(),
+
+      db().from('project_knowledge')
+        .select('field_value, updated_at')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics').eq('field_key', 'ga4_ai_platform_daily').maybeSingle(),
+
       db().from('activity_log')
         .select('headline, detail, event_type, severity, created_at')
         .eq('project_id', projectId)
@@ -299,6 +368,12 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
     const gscQueries: any[]      = safeParseArray((gscQueriesR as any).data?.field_value);
     const ga4: any               = safeParseObj((ga4R as any).data?.field_value);
     const gscDaily: any[]        = safeParseArray((gscDailyR as any).data?.field_value);
+    /* Build 12.17 — GEO / AI surface attribution */
+    const gscAiOverview: any         = safeParseObj((gscAiOverviewR as any).data?.field_value);
+    const gscSearchAppearance: any[] = safeParseArray((gscSearchAppearanceR as any).data?.field_value);
+    const ga4AiSummary: any          = safeParseObj((ga4AiSummaryR as any).data?.field_value);
+    const ga4AiReferrals: any[]      = safeParseArray((ga4AiReferralsR as any).data?.field_value);
+    const ga4AiDaily: any[]          = safeParseArray((ga4AiDailyR as any).data?.field_value);
     const activity: any[]        = ((activityR as any).data) || [];
     const forecastRows: any[]    = ((forecastR as any).data) || [];
 
@@ -367,6 +442,21 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
           status:      dataSourceStatusFromTs((ga4R as any).data?.updated_at),
           last_synced: ((ga4R as any).data?.updated_at) || null,
         },
+        /* Build 12.17 — AI surface data sources (subset of GSC/GA4) */
+        ...(gscAiOverview ? [{
+          name:        'GSC AI Overview attribution (searchAppearance)',
+          status:      dataSourceStatusFromTs((gscAiOverviewR as any).data?.updated_at),
+          last_synced: ((gscAiOverviewR as any).data?.updated_at) || null,
+          note:        gscAiOverview.present ? 'AI Overview impressions captured for this property' : 'No AI Overview attribution in this window',
+        }] : []),
+        ...(ga4AiSummary ? [{
+          name:        'GA4 AI platform referrals (sessionSource)',
+          status:      dataSourceStatusFromTs((ga4AiSummaryR as any).data?.updated_at),
+          last_synced: ((ga4AiSummaryR as any).data?.updated_at) || null,
+          note:        ga4AiSummary.source_count > 0
+            ? `Detected referral platforms: ${(ga4AiSummary.platforms_detected || []).join(', ')}`
+            : 'No AI platform referrals detected in this window',
+        }] : []),
       ],
       honest_gaps: buildHonestGaps({ gscPages, gscQueries, ga4, activeCampaigns }),
       audit_run_count: Object.values(reportsByCampaign).reduce((sum: number, arr: any[]) => sum + arr.length, 0),
@@ -378,6 +468,18 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
     const keyword_movers    = composeKeywordMovers(gscQueries, reportsByCampaign, activeCampaigns);
     const intent_distribution = composeIntentDistribution(gscQueries);
     const content_health    = composeContentHealth(gscPages);
+
+    /* Build 12.17 — AI search visibility composer. Returns null when no
+       AI Overview attribution and no AI platform referral data are
+       available. Otherwise builds the GEO-era visibility block with
+       senior-DMS interpretive narratives + actions. */
+    const ai_search_visibility = composeAiSearchVisibility({
+      gscAiOverview,
+      gscSearchAppearance,
+      ga4AiSummary,
+      ga4AiReferrals,
+      ga4AiDaily,
+    });
 
     /* ─── PHASE 22.3 — CAMPAIGN REPORT SECTIONS ───────────────────── */
     const research_findings = composeResearchFindings({ gscQueries, gscPages, ga4, activeCampaigns, reportsByCampaign });
@@ -406,6 +508,7 @@ export async function assembleShowcase(opts: { projectId: string }): Promise<{
         keyword_movers,
         intent_distribution,
         content_health,
+        ai_search_visibility,
         research_findings,
         execution_stats,
         weekly_journey,
@@ -1182,6 +1285,202 @@ function composeContentHealth(gscPages: any[]): ShowcaseData['content_health'] {
       plateau:         'Rewrite titles + meta to lift CTR. Test 2 variants over 4 weeks.',
       underperforming: 'Re-evaluate search intent fit. Consolidate or redirect if duplicative.',
     },
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   BUILD 12.17 — AI SEARCH VISIBILITY COMPOSER
+
+   Senior-DMS lens on GEO-era data. Reads measured GSC searchAppearance
+   (AI Overview attribution) and GA4 sessionSource (AI platform referrals)
+   from project_knowledge. Produces interpretive narratives + specific
+   actions for each surface, then derives a composite GEO visibility
+   score 0-100 with grade.
+
+   Returns null only when BOTH data sources are missing — i.e. project
+   has no GSC AND no GA4 integration, or pull has never run.
+══════════════════════════════════════════════════════════════════════ */
+
+function composeAiSearchVisibility(input: {
+  gscAiOverview: any | null;
+  gscSearchAppearance: any[];
+  ga4AiSummary: any | null;
+  ga4AiReferrals: any[];
+  ga4AiDaily: any[];
+}): ShowcaseData['ai_search_visibility'] {
+  const { gscAiOverview, gscSearchAppearance, ga4AiSummary, ga4AiReferrals, ga4AiDaily } = input;
+
+  /* If we have neither data source, nothing to render. The showcase
+     will simply omit this section, which is the correct behaviour
+     for projects without GSC/GA4 connected. */
+  if (!gscAiOverview && !ga4AiSummary) return null;
+
+  /* ── AI OVERVIEW BLOCK ─────────────────────────────────────────── */
+  let aiOverviewBlock: NonNullable<ShowcaseData['ai_search_visibility']>['ai_overview'] = null;
+  if (gscAiOverview) {
+    const present = !!gscAiOverview.present;
+    const imp = Number(gscAiOverview.total_impressions || 0);
+    const clk = Number(gscAiOverview.total_clicks || 0);
+    const ctr = imp > 0 ? Number(((clk / imp) * 100).toFixed(2)) : 0;
+    const window_days = Number(gscAiOverview.window_days || 30);
+    const breakdown = (Array.isArray(gscAiOverview.breakdown) ? gscAiOverview.breakdown : []).map((b: any) => ({
+      appearance: String(b.appearance || ''),
+      impressions: Number(b.impressions || 0),
+      clicks: Number(b.clicks || 0),
+    }));
+
+    let narrative: string;
+    let action: string;
+    if (present && imp > 0) {
+      /* Real attribution — interpret based on magnitude + CTR */
+      if (imp > 10000) {
+        narrative = `Google is citing this site inside AI Overview answers ${imp.toLocaleString()} times over the last ${window_days} days. AI Overview is now a primary visibility surface — the site is earning meaningful attention from the new SERP shape.`;
+        action = ctr < 1.0
+          ? `Strong impression volume but CTR of ${ctr}% is below typical AI Overview click-through. Investigate the cited snippet content — buyers are seeing the answer but not clicking through. Optimize the cited paragraph for click-magnet phrasing (specifics, numbers, next-step CTAs).`
+          : `Maintain the content patterns driving these citations. Audit the top-cited pages, document what structural and content patterns Google is rewarding, and replicate those patterns across pages targeting similar query intents.`;
+      } else if (imp > 1000) {
+        narrative = `AI Overview is showing this site ${imp.toLocaleString()} times in the last ${window_days} days. Real emerging citation footprint — site is starting to be recognized as a citation-worthy source for its queries.`;
+        action = `Identify which queries are triggering the citations (review GSC searchAppearance filtered to AI Overview, then check actual SERPs). Double down on the content format that earned the citation — structured Q-and-A, summary blocks at the top, clear source attribution within the page.`;
+      } else {
+        narrative = `AI Overview cited this site ${imp.toLocaleString()} times in the last ${window_days} days — an early signal that the content shape is partially recognized by the AI Overview model from Google.`;
+        action = `Foundation is in place but volume is low. Strengthen E-E-A-T signals (named authors with credentials, original research data, dated content, schema markup). AI Overview citation correlates strongly with structured authority signals — invest there.`;
+      }
+    } else {
+      /* Honest negative result */
+      narrative = `AI Overview attribution is not detected in GSC for the last ${window_days} days. Either AI Overview is not surfacing this site for its target queries, or impression volume sits below the GSC reporting threshold.`;
+      action = `GEO opportunity flagged. AI Overview now appears for an estimated 20-30% of informational queries in most niches. To earn citation slots: structure content with explicit Q-and-A, add summary paragraphs at the top of articles, mark up FAQ schema, build topical authority via clustered content, and ensure named authors with credentials are present on every page. Citation typically begins to show 2-4 months after structural changes.`;
+    }
+
+    aiOverviewBlock = { present, impressions: imp, clicks: clk, ctr, window_days, breakdown, narrative, action };
+  }
+
+  /* ── PLATFORM REFERRALS BLOCK ─────────────────────────────────── */
+  let referralsBlock: NonNullable<ShowcaseData['ai_search_visibility']>['platform_referrals'] = null;
+  if (ga4AiSummary) {
+    const sessions = Number(ga4AiSummary.sessions || 0);
+    const users = Number(ga4AiSummary.totalUsers || 0);
+    const engaged = Number(ga4AiSummary.engagedSessions || 0);
+    const conversions = Number(ga4AiSummary.conversions || 0);
+    const platforms = Array.isArray(ga4AiSummary.platforms_detected) ? ga4AiSummary.platforms_detected : [];
+    const window_days = Number(ga4AiSummary.window_days || 30);
+
+    const perPlatform = (Array.isArray(ga4AiReferrals) ? ga4AiReferrals : []).map((r: any) => ({
+      source: String(r.source || ''),
+      sessions: Number(r.sessions || 0),
+      conversions: Number(r.conversions || 0),
+      engaged_sessions: Number(r.engagedSessions || 0),
+    })).sort((a, b) => b.sessions - a.sessions);
+
+    /* Derive growth signal from daily series — last 7 days vs prior 7 days */
+    let growthSignal: 'rising' | 'flat' | 'falling' | 'unknown' = 'unknown';
+    if (Array.isArray(ga4AiDaily) && ga4AiDaily.length >= 14) {
+      const sorted = [...ga4AiDaily].sort((a, b) => (a.date > b.date ? 1 : -1));
+      const recent = sorted.slice(-7);
+      const prior = sorted.slice(-14, -7);
+      const rs = recent.reduce((s, d) => s + Number(d.sessions || 0), 0);
+      const ps = prior.reduce((s, d) => s + Number(d.sessions || 0), 0);
+      if (ps === 0 && rs === 0) growthSignal = 'flat';
+      else if (ps === 0 && rs > 0) growthSignal = 'rising';
+      else {
+        const delta = (rs - ps) / ps;
+        if (delta > 0.15) growthSignal = 'rising';
+        else if (delta < -0.15) growthSignal = 'falling';
+        else growthSignal = 'flat';
+      }
+    }
+
+    let narrative: string;
+    let action: string;
+    if (sessions > 0) {
+      const topPlatform = perPlatform[0]?.source || platforms[0] || 'AI platforms';
+      const convRate = sessions > 0 ? ((conversions / sessions) * 100).toFixed(1) : '0';
+      if (sessions > 500) {
+        narrative = `AI platforms are now a meaningful traffic source — ${sessions.toLocaleString()} sessions in the last ${window_days} days from ${platforms.length} detected platforms, led by ${topPlatform}. Conversion rate of ${convRate}% across the channel.`;
+        action = growthSignal === 'rising'
+          ? `Channel is growing — protect and accelerate. Map which pages earn the referrals and ensure they have clear CTAs aligned with the conversational query intent (different from typical organic landing pages — visitor has already had an explanatory AI conversation before clicking).`
+          : `Solid base volume but ${growthSignal === 'falling' ? 'declining' : 'flat'} trend. Investigate why ${topPlatform} is or is not citing the site recently — content freshness, competitor displacement, or AI platform algorithm changes are likely drivers.`;
+      } else if (sessions > 50) {
+        narrative = `Early AI platform referral traffic detected — ${sessions.toLocaleString()} sessions in ${window_days} days from ${platforms.join(', ')}. The site is being cited by AI conversational interfaces.`;
+        action = `Channel is emerging. Build on it deliberately: ensure your most authoritative pages have explicit summary paragraphs (AI platforms quote these), original research with cited statistics (AI platforms cite these), and clear "what to do next" guidance (AI platforms recommend next steps to users).`;
+      } else {
+        narrative = `${sessions} sessions from AI platforms in the last ${window_days} days — initial signal that the site is becoming citable in AI-powered search interfaces.`;
+        action = `Foundation is here but volume is small. Audit which specific pages drew the referrals — these are the content shapes that AI platforms recognize. Replicate the structure across similar topical content.`;
+      }
+    } else {
+      narrative = `No AI platform referral traffic detected from ChatGPT, Perplexity, Gemini, Claude, or Copilot in the last ${window_days} days. The site is not yet appearing in AI-powered search results, OR users finding the site via AI are not clicking through.`;
+      action = `GEO opportunity. AI platforms cite sources for the queries they answer — to earn those citation slots: (1) structure content with explicit summary paragraphs at the top of every page, (2) include named author credentials and dated last-updated stamps, (3) add original research data and statistics, (4) implement comprehensive schema markup (Article, FAQ, HowTo), (5) build topical authority through internal linking clusters. Citation typically begins 2-4 months after structural changes are deployed.`;
+    }
+
+    referralsBlock = {
+      total_sessions:         sessions,
+      total_users:            users,
+      total_engaged_sessions: engaged,
+      total_conversions:      conversions,
+      platforms_detected:     platforms,
+      per_platform:           perPlatform,
+      window_days,
+      narrative,
+      action,
+      growth_signal:          growthSignal,
+    };
+  }
+
+  /* ── GEO VISIBILITY SCORE ──────────────────────────────────────
+     Composite metric across the two surfaces. Logarithmic-ish curve
+     so meaningful presence (not just any presence) earns the higher
+     grades. */
+  let score = 0;
+  if (aiOverviewBlock?.present && aiOverviewBlock.impressions > 0) {
+    /* AI Overview contributes 60 points max */
+    const imp = aiOverviewBlock.impressions;
+    if (imp >= 50000) score += 60;
+    else if (imp >= 10000) score += 50;
+    else if (imp >= 1000) score += 35;
+    else if (imp >= 100) score += 20;
+    else score += 10;
+  }
+  if (referralsBlock && referralsBlock.total_sessions > 0) {
+    /* AI platform referrals contribute 40 points max */
+    const s = referralsBlock.total_sessions;
+    const platformCount = referralsBlock.platforms_detected.length;
+    let referralPoints = 0;
+    if (s >= 5000) referralPoints += 30;
+    else if (s >= 500) referralPoints += 25;
+    else if (s >= 50) referralPoints += 15;
+    else if (s > 0) referralPoints += 8;
+    /* Bonus for multi-platform presence — being cited by 3+ AI platforms
+       indicates broad authority, not platform-specific quirk */
+    if (platformCount >= 3) referralPoints += 10;
+    else if (platformCount >= 2) referralPoints += 5;
+    score += Math.min(40, referralPoints);
+  }
+  score = Math.min(100, Math.max(0, Math.round(score)));
+
+  let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
+  let explainer: string;
+  if (score === 0) {
+    grade = 'absent';
+    explainer = `No detectable presence in AI Overview attribution or AI platform referrals. This is the GEO baseline — significant opportunity in the next 6-12 months as AI search adoption accelerates and citation slots are still contestable.`;
+  } else if (score < 25) {
+    grade = 'emerging';
+    explainer = `Early signal of citation in AI search surfaces. The site is being recognized but at low volume. Foundational structural improvements now compound through 2026 as citation traffic scales.`;
+  } else if (score < 55) {
+    grade = 'present';
+    explainer = `Established presence in AI search — citation footprint exists across surfaces. Above the threshold where most sites currently sit. Continued investment in content structure and entity authority will deepen presence.`;
+  } else if (score < 80) {
+    grade = 'established';
+    explainer = `Strong AI search visibility — the site is a regularly-cited source across multiple AI surfaces. Defending this position requires continued content freshness and active monitoring as competitive citation displacement intensifies.`;
+  } else {
+    grade = 'strong';
+    explainer = `Exceptional AI search visibility — among the citation-leader tier for this niche. This is the position competitors will spend the next 12-18 months attempting to displace. Maintain through content velocity and continued structural rigor.`;
+  }
+
+  return {
+    ai_overview:                aiOverviewBlock,
+    platform_referrals:         referralsBlock,
+    geo_visibility_score:       score,
+    geo_visibility_grade:       grade,
+    geo_visibility_explainer:   explainer,
   };
 }
 

@@ -98,20 +98,47 @@ async function runCrux(url: string): Promise<any> {
   } catch { return null; }
 }
 
-/* ─── Load all GSC data for the project ────────────────────────── */
+/* ─── Load all GSC + GA4 data for the project ────────────────────
+   Build 12.17 — extended to include AI Overview attribution and AI
+   platform referral summaries so the deep engine can reason about
+   GEO-era surfaces alongside classic search performance. */
 async function loadGsc(projectId: string): Promise<{
   topPages: any[]; topQueries: any[]; queryPagePairs: any[];
+  aiOverviewSummary: any | null; ga4AiSummary: any | null; searchAppearance: any[];
 }> {
   try {
     const r = await withTimeout(
       db().from("project_knowledge").select("field_key,field_value")
-        .eq("project_id", projectId).in("field_key", ["gsc_top_pages", "gsc_top_queries", "gsc_query_page_pairs"]),
+        .eq("project_id", projectId).in("field_key", [
+          "gsc_top_pages", "gsc_top_queries", "gsc_query_page_pairs",
+          "gsc_ai_overview_summary", "gsc_search_appearance",
+          "ga4_ai_platform_summary",
+        ]),
       "gsc"
     );
     const rows = ((r as any)?.data || []) as any[];
-    const parse = (k: string) => { const row = rows.find(x => x.field_key === k); return row ? JSON.parse(row.field_value || "[]") : []; };
-    return { topPages: parse("gsc_top_pages"), topQueries: parse("gsc_top_queries"), queryPagePairs: parse("gsc_query_page_pairs") };
-  } catch { return { topPages: [], topQueries: [], queryPagePairs: [] }; }
+    const parseArr = (k: string) => {
+      const row = rows.find(x => x.field_key === k);
+      try { return row ? JSON.parse(row.field_value || "[]") : []; } catch { return []; }
+    };
+    const parseObj = (k: string) => {
+      const row = rows.find(x => x.field_key === k);
+      try { return row ? JSON.parse(row.field_value || "null") : null; } catch { return null; }
+    };
+    return {
+      topPages:           parseArr("gsc_top_pages"),
+      topQueries:         parseArr("gsc_top_queries"),
+      queryPagePairs:     parseArr("gsc_query_page_pairs"),
+      aiOverviewSummary:  parseObj("gsc_ai_overview_summary"),
+      ga4AiSummary:       parseObj("ga4_ai_platform_summary"),
+      searchAppearance:   parseArr("gsc_search_appearance"),
+    };
+  } catch {
+    return {
+      topPages: [], topQueries: [], queryPagePairs: [],
+      aiOverviewSummary: null, ga4AiSummary: null, searchAppearance: [],
+    };
+  }
 }
 
 /* ─── Resolve the campaign's target pages ──────────────────────── */
@@ -402,7 +429,7 @@ export async function runDeepPillarAnalysis(opts: {
   let dataBlock = "";
 
   if (["visibility", "query_opportunity", "internal_links", "monitoring"].includes(opts.pillar)) {
-    const { topPages, topQueries, queryPagePairs } = await loadGsc(opts.projectId);
+    const { topPages, topQueries, queryPagePairs, aiOverviewSummary, ga4AiSummary, searchAppearance } = await loadGsc(opts.projectId);
     const targetPairs = queryPagePairs.filter((p: any) => targetSet.has(norm(p.page)))
       .sort((a: any, b: any) => (b.impressions || 0) - (a.impressions || 0));
     const targetPages = topPages.filter((p: any) => targetSet.has(norm(p.page || p.url || "")));
@@ -414,6 +441,42 @@ export async function runDeepPillarAnalysis(opts: {
     dataBlock += `VISIBLE TARGET PAGES (GSC):\n${targetPages.slice(0, 20).map((p: any) => `- ${(p.page || p.url || "").replace(/^https?:\/\/[^/]+/, "") || "/"}: pos ${(p.position || 0).toFixed(1)}, ${p.impressions || 0} impr, ${p.clicks || 0} clicks`).join("\n") || "- none"}\n\n`;
     dataBlock += `REAL QUERY-PAGE PAIRS (GSC joined data — facts):\n${targetPairs.slice(0, 25).map((p: any) => `- "${p.query}" -> ${p.page.replace(/^https?:\/\/[^/]+/, "") || "/"}: ${p.impressions} impr, ${p.clicks} clicks, CTR ${p.ctr}%, pos ${p.position?.toFixed(1)}`).join("\n") || "- none"}\n\n`;
     dataBlock += `TOP SITE QUERIES:\n${topQueries.slice(0, 15).map((q: any) => `- "${q.query || q.keyword}": pos ${(q.position || 0).toFixed(1)}, ${q.impressions || 0} impr, ${q.clicks || 0} clicks`).join("\n") || "- none"}\n`;
+
+    /* Build 12.17 — AI Overview + AI platform referral attribution.
+       These are measured first-party signals from GSC searchAppearance
+       and GA4 sessionSource. They are the GEO-era equivalent of the
+       classic clicks/impressions data above. The LLM should treat them
+       as evidence at the same confidence level. */
+    if (aiOverviewSummary) {
+      dataBlock += `\n## VERIFIED GSC AI OVERVIEW ATTRIBUTION (searchAppearance dimension)\n`;
+      if (aiOverviewSummary.present) {
+        dataBlock += `AI Overview is citing this site: ${aiOverviewSummary.total_impressions} impressions, ${aiOverviewSummary.total_clicks} clicks over the last ${aiOverviewSummary.window_days} days.\n`;
+        const aoCtr = aiOverviewSummary.total_impressions > 0 ? ((aiOverviewSummary.total_clicks / aiOverviewSummary.total_impressions) * 100).toFixed(2) : '0.00';
+        dataBlock += `AI Overview CTR: ${aoCtr}% (compare to typical organic CTR for context).\n`;
+        if (Array.isArray(aiOverviewSummary.breakdown) && aiOverviewSummary.breakdown.length > 0) {
+          dataBlock += `Breakdown by appearance type:\n${aiOverviewSummary.breakdown.slice(0, 5).map((b: any) => `- ${b.appearance}: ${b.impressions} impr, ${b.clicks} clicks`).join("\n")}\n`;
+        }
+      } else {
+        dataBlock += `AI Overview is NOT yet citing this site in this window. This is a flagged GEO opportunity — the searchAppearance dimension explicitly registered zero AI Overview rows.\n`;
+      }
+    }
+    if (Array.isArray(searchAppearance) && searchAppearance.length > 0) {
+      dataBlock += `\n## FULL SERP-FEATURE BREAKDOWN (GSC)\n${searchAppearance.slice(0, 12).map((r: any) => `- ${r.appearance}: ${r.impressions} impr, ${r.clicks} clicks, CTR ${r.ctr}%, pos ${(r.position || 0).toFixed(1)}`).join("\n")}\n`;
+    }
+    if (ga4AiSummary) {
+      dataBlock += `\n## VERIFIED GA4 AI PLATFORM REFERRALS (sessionSource filtered to known AI platforms)\n`;
+      if (ga4AiSummary.sessions > 0) {
+        dataBlock += `Sessions from AI platforms: ${ga4AiSummary.sessions} | Conversions: ${ga4AiSummary.conversions} | Window: ${ga4AiSummary.window_days} days\n`;
+        dataBlock += `Detected platforms: ${(ga4AiSummary.platforms_detected || []).join(", ") || "(none in this window)"}\n`;
+        const aiConvRate = ga4AiSummary.sessions > 0 ? ((ga4AiSummary.conversions / ga4AiSummary.sessions) * 100).toFixed(1) : '0.0';
+        dataBlock += `AI platform conversion rate: ${aiConvRate}%\n`;
+      } else {
+        dataBlock += `No AI platform referral traffic detected in the last ${ga4AiSummary.window_days} days. Either the site is not yet cited in ChatGPT/Perplexity/Gemini/Claude/Copilot answers, or users finding it via AI are not clicking through.\n`;
+      }
+    }
+    if (aiOverviewSummary || ga4AiSummary) {
+      dataBlock += `\nWhen building recommendations for this pillar, treat AI Overview attribution and AI platform referrals as first-class measured signals. If the site has AI Overview citations, recommend defending and expanding them. If it does not, GEO opportunity is a real recommendation track — not a hedge, but a specific action.\n`;
+    }
 
     // SerpAPI for query_opportunity — top quick-win query
     if (opts.pillar === "query_opportunity") {

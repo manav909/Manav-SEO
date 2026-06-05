@@ -837,3 +837,54 @@ Honest caveats:
 Seven files changed: api/lib/pm-gsc.ts (+115 lines: searchAppearance + Discover + News sub-queries, shape helpers, project_knowledge writes, snapshot extras), api/lib/pm-ga4.ts (+126 lines: AI platform referral source + daily sub-queries, project_knowledge writes, snapshot extras), api/lib/serpapi.ts (+40 lines: ai_overview_references type + parser + cache normalization), api/run-analysis.ts (+75 lines: visibility agent project_knowledge read, ai_platform_referrals field, ranking agent SerpAPI enrichment, ceiling update), api/lib/workspace/shared.ts (+34 lines: loadGsc new fields), api/lib/workspace/deep-steps/gsc-visibility.ts (~65 lines: evidence type + assembly + 3 new report sections), src/pages/Audit.tsx (+30 lines: visibility row updates, per-keyword AI Overview citation chips, markdown export updates).
 
 Vite build green at 25.37s. No new contractions in template literals introduced by this build (pre-existing in main not touched). Compile clean across all 7 files.
+
+Build 12.17 — GEO-era data wired into client-facing surfaces [SHIPPED 2026-06-05]: Operator escalation after Build 12.16: "I need everything to use this data, even in pipelines, campaigns and every module and everywhere in the software." Audit revealed Build 12.16 produced and stored the new GSC AI Overview attribution + GA4 AI platform referrals + SerpAPI ai_overview.references but only 3 of 40 GSC-consuming files actually read the new keys (run-analysis visibility agent, workspace shared loadGsc, workspace gsc-visibility deep step). Twelve major report engines + project intelligence engines were still working with classic 5-dimension GSC data only.
+
+Multi-build program kicked off. Build 12.17 = client-facing surfaces (Tier 1, the surfaces clients literally read). Builds 12.18-12.21 cover strategy engines, pipelines/campaigns, and forward-looking GEO capabilities.
+
+THREE FILES IN THIS BUILD:
+
+(A) api/lib/client-showcase-engine.ts (the showcase report sent to clients):
+- ShowcaseData type extended with `ai_search_visibility` field. Block contains ai_overview (impressions + clicks + CTR + breakdown + narrative + action), platform_referrals (sessions + users + engaged + conversions + per-platform + growth_signal + narrative + action), and a composite geo_visibility_score (0-100) with grade (absent/emerging/present/established/strong) and explainer.
+- Promise.all extended to also read gsc_ai_overview_summary, gsc_search_appearance, ga4_ai_platform_summary, ga4_ai_platform_referrals, ga4_ai_platform_daily from project_knowledge.
+- Composer composeAiSearchVisibility(): senior-DMS lens that interprets the data — narratives vary by impression magnitude (50k+/10k+/1k+/100+/below threshold), CTR range, presence/absence; actions are specific (e.g. "GEO opportunity flagged — structure content with explicit Q-and-A, add summary paragraphs at top of articles, mark up FAQ schema, build topical authority via clustered content, citation typically begins 2-4 months after structural changes"). Not just reporting numbers — recommending behaviour based on them.
+- GEO Visibility Score: composite 0-100 (60 points AI Overview, 40 points AI platform referrals + multi-platform bonus). Logarithmic scaling so meaningful presence earns higher grades than token presence. Grade buckets are clear thresholds: absent (0), emerging (1-24), present (25-54), established (55-79), strong (80-100). Each grade carries strategic context — "this is the position competitors will spend the next 12-18 months attempting to displace."
+- transparency.data_sources now includes GSC AI Overview attribution and GA4 AI platform referrals as named sources with last_synced timestamps. Buyer can see the provenance.
+- Returns null only when neither GSC AI Overview nor GA4 AI Platform data exists. For any project with one or both integrations connected, the new section appears in the showcase output.
+
+(B) api/lib/pm-reports.ts (project KPI snapshots that feed dashboards + reports):
+- captureMetricsSnapshot() now also captures gsc_ai_overview_impressions, gsc_ai_overview_clicks, ga4_ai_referral_sessions, ga4_ai_referral_conversions, ga4_ai_referral_platforms as first-class snapshot metrics.
+- New helper extractAiOverviewMetric(jsonStr, field): safely extracts a numeric metric from a JSON-encoded summary object stored in project_knowledge. Handles malformed JSON, missing fields, non-numeric values without throwing.
+- Implication: metrics_snapshots table now carries AI Overview + AI platform referral time-series data per project. Any chart engine, KPI dashboard, or trend report that reads metrics_snapshots gets the new attribution automatically without further work.
+
+(C) api/lib/season-pillar-deep-engine.ts (the deep pillar analysis engine that generates the heaviest strategy output):
+- Internal loadGsc() extended to also load aiOverviewSummary, ga4AiSummary, searchAppearance from project_knowledge.
+- For pillars where GSC data is loaded (visibility, query_opportunity, internal_links, monitoring), the dataBlock fed to the LLM now includes "VERIFIED GSC AI OVERVIEW ATTRIBUTION" and "VERIFIED GA4 AI PLATFORM REFERRALS" sections.
+- Key sentence appended to the prompt: "When building recommendations for this pillar, treat AI Overview attribution and AI platform referrals as first-class measured signals. If the site has AI Overview citations, recommend defending and expanding them. If it does not, GEO opportunity is a real recommendation track — not a hedge, but a specific action."
+- Honest negative case included: when AI Overview is explicitly absent in this window, the prompt sees "This is a flagged GEO opportunity — the searchAppearance dimension explicitly registered zero AI Overview rows." Confident negative result, not data gap.
+
+WHAT THIS UNLOCKS:
+- Showcase reports sent to clients now contain a substantial AI Search Visibility section with measured numbers, senior interpretation, specific actions, AND a single trackable GEO score.
+- Project metrics snapshots gain AI Overview + AI platform referrals as first-class KPIs — every consumer downstream (dashboards, trend charts, executive summaries that read metrics_snapshots) gets the new attribution automatically.
+- Deep pillar reports now reason about AI Overview attribution at the prompt level — recommendations are shaped by whether the site is or isn't being cited.
+
+HONEST CAVEATS:
+1. Showcase: returns null ai_search_visibility for projects with no GSC + no GA4 connected. No change to those projects. New section only appears when there is integration data to display.
+2. pm-reports: extractAiOverviewMetric returns null for malformed/missing JSON. metrics_snapshots rows for projects without the new data simply have null in the new columns. Safe.
+3. Deep engine: prompt token budget. The AI Overview / AI platform sections add ~300-500 tokens per pillar run when data is present. Existing maxTokens already accommodate this; no maxTokens change needed.
+4. The deep engine's senior-DMS reasoning IS the LLM's reasoning. The prompt block tells it to treat AI Overview as first-class signal, but the actual quality of recommendations depends on the model's interpretation. Tested with claude-sonnet-4-6 (the working model); output quality is good but not deterministic.
+5. GEO Visibility Score thresholds are calibrated against typical 2026 data ranges. They will likely need recalibration in 2027 as AI Overview adoption scales and the baseline shifts upward. Acceptable — the score is a relative position indicator, not an absolute benchmark.
+6. Honest gaps and transparency in the showcase explicitly mention which data sources backed each section. No fabrication, no hedging.
+
+WHAT IS NEXT (TIER 2 — BUILD 12.18, NEXT SESSION):
+Strategy and intelligence engines: season-war-room.ts, season-forecast-engine.ts, pm-analytics-intel.ts, intelligenceFabric.ts. Same pattern — read the new keys, inject into prompts/reports/source-tracing.
+
+WHAT IS NEXT (TIER 3 — BUILD 12.19):
+Pipelines and campaigns: pm-engine.ts, pm-goal-engine.ts, pm-scenario-engine.ts, seo-campaign-routes.ts, seo-campaign-grouping.ts, workspace deep-steps target-keyword-baseline.ts + traffic-steps.ts.
+
+WHAT IS NEXT (TIER 4 — BUILD 12.20):
+Forward-looking GEO capabilities. AI Overview citation gap analysis ("you should be cited but aren't, here is why"). AI Overview competitor displacement tracking. Future-AI-Overview detection (flag when a query starts showing AI Overview for the first time).
+
+Three files changed: api/lib/client-showcase-engine.ts (+220 lines: type extension, Promise.all reads, composeAiSearchVisibility function with senior-DMS narrative + action + GEO score), api/lib/pm-reports.ts (+25 lines: new snapshot fields, extractAiOverviewMetric helper), api/lib/season-pillar-deep-engine.ts (+50 lines: extended loadGsc, AI Overview + AI referrals injected into pillar dataBlock).
+
+Vite build green at 33.42s. Compile clean across all 3 files. No new contractions in template literals after fix pass.
