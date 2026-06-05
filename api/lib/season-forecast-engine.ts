@@ -28,7 +28,15 @@ export type ForecastKpi =
   | 'impressions'
   | 'ctr'
   | 'organic_sessions'
-  | 'conversions';
+  | 'conversions'
+  /* Build 12.18 — GEO-era forecast surfaces. ai_overview_impressions
+     tracks GSC searchAppearance citations; ai_platform_sessions tracks
+     GA4 sessionSource referral traffic from ChatGPT/Perplexity/Gemini/
+     Claude/Copilot; geo_visibility_score is the composite 0-100 metric
+     produced by the showcase composer (Build 12.17). */
+  | 'ai_overview_impressions'
+  | 'ai_platform_sessions'
+  | 'geo_visibility_score';
 
 export interface ForecastInput {
   projectId:        string;
@@ -101,24 +109,37 @@ function confidenceBandWidth(kpi: ForecastKpi, difficulty?: string): number {
      Higher difficulty = wider bands (less certainty). */
   const diffMult = { low: 0.7, medium: 1.0, high: 1.4, very_high: 1.9 }[difficulty || 'medium'] || 1.0;
   const baseWidth: Record<ForecastKpi, number> = {
-    rank_position:    0.40 * diffMult,   // rank is noisy
-    clicks:           0.55 * diffMult,
-    impressions:      0.45 * diffMult,
-    ctr:              0.30 * diffMult,
-    organic_sessions: 0.50 * diffMult,
-    conversions:      0.70 * diffMult,   // conversions are the noisiest
+    rank_position:           0.40 * diffMult,   // rank is noisy
+    clicks:                  0.55 * diffMult,
+    impressions:             0.45 * diffMult,
+    ctr:                     0.30 * diffMult,
+    organic_sessions:        0.50 * diffMult,
+    conversions:             0.70 * diffMult,   // conversions are the noisiest
+    /* Build 12.18 — GEO-era forecast confidence. AI Overview attribution
+       is genuinely volatile (Google adjusts the surface frequently) so
+       bands are wider than classic clicks. AI platform sessions are
+       similarly volatile because platforms change citation behaviour
+       independently. GEO composite score sits in the middle. */
+    ai_overview_impressions: 0.75 * diffMult,
+    ai_platform_sessions:    0.80 * diffMult,
+    geo_visibility_score:    0.50 * diffMult,
   };
   return baseWidth[kpi] || 0.5;
 }
 
 function defaultTargetDayOffset(kpi: ForecastKpi, difficulty?: string): number {
   const base: Record<ForecastKpi, number> = {
-    rank_position:    60,
-    clicks:           60,
-    impressions:      45,
-    ctr:              60,
-    organic_sessions: 60,
-    conversions:      90,
+    rank_position:           60,
+    clicks:                  60,
+    impressions:             45,
+    ctr:                     60,
+    organic_sessions:        60,
+    conversions:             90,
+    /* GEO forecasts have longer time horizons because structural changes
+       take 2-4 months to begin earning citations. */
+    ai_overview_impressions: 120,
+    ai_platform_sessions:    120,
+    geo_visibility_score:    180,    // composite shifts slowly
   };
   const diffAdd = { low: -15, medium: 0, high: 15, very_high: 30 }[difficulty || 'medium'] || 0;
   return Math.max(14, (base[kpi] || 60) + diffAdd);
@@ -184,6 +205,51 @@ async function readBaseline(
           return { value: avg, source: 'ga4', measuredAt: (data as any).updated_at };
         }
       }
+    }
+
+    /* Build 12.18 — GEO-era baseline readers. AI Overview impressions
+       come from gsc_ai_overview_summary; AI platform sessions come
+       from ga4_ai_platform_summary; geo_visibility_score is computed
+       fresh from both — there is no persisted historical baseline
+       for the composite, so we return 0 as the conservative baseline. */
+    if (kpi === 'ai_overview_impressions' && targetEntityKind === 'project') {
+      const { data } = await db().from("project_knowledge")
+        .select("field_value, updated_at")
+        .eq("project_id", projectId)
+        .eq("category", "analytics")
+        .eq("field_key", "gsc_ai_overview_summary")
+        .maybeSingle();
+      if ((data as any)?.field_value) {
+        try {
+          const obj = JSON.parse((data as any).field_value);
+          if (obj && typeof obj === 'object') {
+            const v = Number(obj.total_impressions || 0);
+            return { value: v, source: 'gsc_ai_overview', measuredAt: (data as any).updated_at };
+          }
+        } catch { /* malformed JSON — fall through to null */ }
+      }
+    }
+    if (kpi === 'ai_platform_sessions' && targetEntityKind === 'project') {
+      const { data } = await db().from("project_knowledge")
+        .select("field_value, updated_at")
+        .eq("project_id", projectId)
+        .eq("category", "analytics")
+        .eq("field_key", "ga4_ai_platform_summary")
+        .maybeSingle();
+      if ((data as any)?.field_value) {
+        try {
+          const obj = JSON.parse((data as any).field_value);
+          if (obj && typeof obj === 'object') {
+            const v = Number(obj.sessions || 0);
+            return { value: v, source: 'ga4_ai_platform', measuredAt: (data as any).updated_at };
+          }
+        } catch { /* malformed */ }
+      }
+    }
+    if (kpi === 'geo_visibility_score' && targetEntityKind === 'project') {
+      /* Composite metric — no persisted historical baseline. Start at 0
+         (the floor) so any forecast represents pure incremental gain. */
+      return { value: 0, source: 'geo_composite', measuredAt: null };
     }
   } catch { /* fallthrough */ }
   return { value: null, source: null, measuredAt: null };
@@ -338,6 +404,24 @@ function defaultTargetForKpi(kpi: ForecastKpi, baseline: number, difficulty?: st
     if (baseline <= 3) return Math.max(1, baseline - 1);
     const improvement = (baseline - 3) * 0.6 * diffMult;
     return Math.max(3, Math.round(baseline - improvement));
+  }
+  /* Build 12.18 — GEO score target. Default is +20 points unless that
+     would exceed 100; never project the score above 100 (its ceiling). */
+  if (kpi === 'geo_visibility_score') {
+    const target = Math.min(100, baseline + Math.round(20 * diffMult));
+    return target;
+  }
+  /* AI Overview and AI platform sessions: 5-10x baseline because these
+     surfaces grow non-linearly once citation patterns are established.
+     At baseline=0 (no current presence), seed with a modest target so
+     forecasts are not zero-locked. */
+  if (kpi === 'ai_overview_impressions') {
+    if (baseline === 0) return Math.round(500 * diffMult);
+    return Math.round(baseline * 5 * diffMult);
+  }
+  if (kpi === 'ai_platform_sessions') {
+    if (baseline === 0) return Math.round(50 * diffMult);
+    return Math.round(baseline * 4 * diffMult);
   }
   /* For traffic metrics: 2-4x baseline depending on difficulty */
   const mult = (3.0 * diffMult);

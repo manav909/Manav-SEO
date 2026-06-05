@@ -186,6 +186,35 @@ export interface AnalyticsIntelligence {
   /* Composite scores */
   overallHealthScore: number;       /* 0..100 — weighted mix of KPI health */
   algorithmResilience: number;      /* 0..100 — stability-weighted */
+  /* Build 12.18 — GEO / AI-era attribution snapshot. Sits as a top-level
+     block (not folded into PeriodSummary) because GSC searchAppearance
+     returns window totals, not daily-grain data. AI platform referrals
+     DO have a daily series; geoSnapshot.platform_referrals.weeklyTrend
+     carries the 7-vs-7-day growth signal derived from that series. */
+  geoSnapshot: null | {
+    aiOverview: null | {
+      present:           boolean;
+      impressions:       number;
+      clicks:            number;
+      ctr:               number;
+      windowDays:        number;
+      breakdown:         Array<{ appearance: string; impressions: number; clicks: number }>;
+    };
+    platformReferrals: null | {
+      sessions:           number;
+      users:              number;
+      conversions:        number;
+      platformCount:      number;
+      platformsDetected:  string[];
+      perPlatform:        Array<{ source: string; sessions: number; conversions: number }>;
+      windowDays:         number;
+      weeklyTrend:        'rising' | 'flat' | 'falling' | 'unknown';
+      weeklyDeltaPct:     number | null;     // last 7d vs prior 7d
+    };
+    geoVisibilityScore:  number;     /* 0..100 composite */
+    geoVisibilityGrade:  'absent' | 'emerging' | 'present' | 'established' | 'strong';
+    measuredAt:          string;
+  };
 }
 
 /* ─── Period derivation from daily-trend data ────────────────── */
@@ -1045,6 +1074,13 @@ export function buildAnalyticsIntelligence(input: {
    *  detection. Optional; defaults to empty array when GSC hasn't pulled
    *  the pair dimension yet (older data, or pre-2026-05-24 cron runs). */
   gscQueryPagePairs?: Array<{ query: string; page: string; clicks: number; position: number }>;
+  /* Build 12.18 — GEO-era inputs from Build 12.16 pull. All optional;
+     the engine produces geoSnapshot=null when neither GSC AI Overview
+     nor GA4 AI platform data is provided. */
+  gscAiOverviewSummary?: any | null;
+  ga4AiPlatformSummary?: any | null;
+  ga4AiPlatformReferrals?: Array<{ source: string; sessions: number; conversions: number; engagedSessions?: number }>;
+  ga4AiPlatformDaily?: Array<{ date: string; sessions: number; users?: number; conversions?: number }>;
   brandNames:      string[];
   baselineDate:    string | null;
 }): AnalyticsIntelligence {
@@ -1075,6 +1111,18 @@ export function buildAnalyticsIntelligence(input: {
     ? detectCannibalization(input.gscQueryPagePairs)
     : [];
 
+  /* Build 12.18 — GEO snapshot composition. Combines GSC AI Overview
+     attribution + GA4 AI platform referrals + derives the composite
+     GEO Visibility Score with the same threshold logic used by the
+     showcase composer in Build 12.17 (keeps the score consistent
+     across surfaces). */
+  const geoSnapshot = composeGeoSnapshot({
+    gscAiOverviewSummary:   input.gscAiOverviewSummary || null,
+    ga4AiPlatformSummary:   input.ga4AiPlatformSummary || null,
+    ga4AiPlatformReferrals: input.ga4AiPlatformReferrals || [],
+    ga4AiPlatformDaily:     input.ga4AiPlatformDaily || [],
+  });
+
   return {
     generatedAt: new Date().toISOString(),
     periods, deltas, kpis,
@@ -1083,6 +1131,120 @@ export function buildAnalyticsIntelligence(input: {
     cannibalization,
     queryVelocity:   velocity,
     ...composite,
+    geoSnapshot,
+  };
+}
+
+/* Build 12.18 — Compose GEO snapshot from GSC + GA4 AI-era data. Returns
+   null when neither data source is provided. Uses the same composite
+   scoring as showcase composer in Build 12.17 so the score reads
+   identically across reports. */
+function composeGeoSnapshot(input: {
+  gscAiOverviewSummary: any | null;
+  ga4AiPlatformSummary: any | null;
+  ga4AiPlatformReferrals: Array<{ source: string; sessions: number; conversions: number; engagedSessions?: number }>;
+  ga4AiPlatformDaily: Array<{ date: string; sessions: number; users?: number; conversions?: number }>;
+}): AnalyticsIntelligence['geoSnapshot'] {
+  const { gscAiOverviewSummary, ga4AiPlatformSummary, ga4AiPlatformReferrals, ga4AiPlatformDaily } = input;
+  if (!gscAiOverviewSummary && !ga4AiPlatformSummary) return null;
+
+  /* AI Overview block */
+  let aiOverview: NonNullable<AnalyticsIntelligence['geoSnapshot']>['aiOverview'] = null;
+  if (gscAiOverviewSummary) {
+    const present = !!gscAiOverviewSummary.present;
+    const imp = Number(gscAiOverviewSummary.total_impressions || 0);
+    const clk = Number(gscAiOverviewSummary.total_clicks || 0);
+    aiOverview = {
+      present,
+      impressions: imp,
+      clicks:      clk,
+      ctr:         imp > 0 ? Number(((clk / imp) * 100).toFixed(2)) : 0,
+      windowDays:  Number(gscAiOverviewSummary.window_days || 30),
+      breakdown:   Array.isArray(gscAiOverviewSummary.breakdown) ? gscAiOverviewSummary.breakdown.map((b: any) => ({
+        appearance:  String(b.appearance || ''),
+        impressions: Number(b.impressions || 0),
+        clicks:      Number(b.clicks || 0),
+      })) : [],
+    };
+  }
+
+  /* Platform referrals block + 7-vs-7 day growth signal */
+  let platformReferrals: NonNullable<AnalyticsIntelligence['geoSnapshot']>['platformReferrals'] = null;
+  if (ga4AiPlatformSummary) {
+    let weeklyTrend: 'rising' | 'flat' | 'falling' | 'unknown' = 'unknown';
+    let weeklyDeltaPct: number | null = null;
+    if (Array.isArray(ga4AiPlatformDaily) && ga4AiPlatformDaily.length >= 14) {
+      const sorted = [...ga4AiPlatformDaily].sort((a, b) => (a.date > b.date ? 1 : -1));
+      const recent = sorted.slice(-7).reduce((s, d) => s + Number(d.sessions || 0), 0);
+      const prior  = sorted.slice(-14, -7).reduce((s, d) => s + Number(d.sessions || 0), 0);
+      if (prior === 0 && recent === 0) { weeklyTrend = 'flat'; weeklyDeltaPct = 0; }
+      else if (prior === 0 && recent > 0) { weeklyTrend = 'rising'; weeklyDeltaPct = null; }
+      else if (prior > 0) {
+        const delta = (recent - prior) / prior;
+        weeklyDeltaPct = Number((delta * 100).toFixed(1));
+        if (delta > 0.15) weeklyTrend = 'rising';
+        else if (delta < -0.15) weeklyTrend = 'falling';
+        else weeklyTrend = 'flat';
+      }
+    }
+    platformReferrals = {
+      sessions:           Number(ga4AiPlatformSummary.sessions || 0),
+      users:              Number(ga4AiPlatformSummary.totalUsers || 0),
+      conversions:        Number(ga4AiPlatformSummary.conversions || 0),
+      platformCount:      Number(ga4AiPlatformSummary.source_count || 0),
+      platformsDetected:  Array.isArray(ga4AiPlatformSummary.platforms_detected) ? ga4AiPlatformSummary.platforms_detected : [],
+      perPlatform:        (ga4AiPlatformReferrals || []).map(r => ({
+        source: String(r.source || ''),
+        sessions: Number(r.sessions || 0),
+        conversions: Number(r.conversions || 0),
+      })),
+      windowDays:         Number(ga4AiPlatformSummary.window_days || 30),
+      weeklyTrend,
+      weeklyDeltaPct,
+    };
+  }
+
+  /* GEO Visibility composite score — same threshold logic as showcase
+     composer in Build 12.17. Keeping the math centralised here would
+     be ideal but cross-engine import would create a circular dep; the
+     score is small enough to inline in both. If thresholds change,
+     update both places. */
+  let score = 0;
+  if (aiOverview?.present && aiOverview.impressions > 0) {
+    const imp = aiOverview.impressions;
+    if (imp >= 50000) score += 60;
+    else if (imp >= 10000) score += 50;
+    else if (imp >= 1000) score += 35;
+    else if (imp >= 100) score += 20;
+    else score += 10;
+  }
+  if (platformReferrals && platformReferrals.sessions > 0) {
+    const s = platformReferrals.sessions;
+    const platformCount = platformReferrals.platformCount;
+    let referralPoints = 0;
+    if (s >= 5000) referralPoints += 30;
+    else if (s >= 500) referralPoints += 25;
+    else if (s >= 50) referralPoints += 15;
+    else if (s > 0) referralPoints += 8;
+    if (platformCount >= 3) referralPoints += 10;
+    else if (platformCount >= 2) referralPoints += 5;
+    score += Math.min(40, referralPoints);
+  }
+  score = Math.min(100, Math.max(0, Math.round(score)));
+
+  let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
+  if (score === 0) grade = 'absent';
+  else if (score < 25) grade = 'emerging';
+  else if (score < 55) grade = 'present';
+  else if (score < 80) grade = 'established';
+  else grade = 'strong';
+
+  return {
+    aiOverview,
+    platformReferrals,
+    geoVisibilityScore: score,
+    geoVisibilityGrade: grade,
+    measuredAt:         new Date().toISOString(),
   };
 }
 

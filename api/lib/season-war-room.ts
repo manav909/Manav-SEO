@@ -39,10 +39,10 @@ const MAX_FEED_ITEMS_CASUAL = 5;    // casual mode
 ══════════════════════════════════════════════════════════════════════ */
 
 export type Severity = 'critical' | 'warning' | 'info' | 'celebrate';
-export type Category = 'pm' | 'pillar' | 'gsc' | 'ga4' | 'inbox' | 'integration' | 'campaign';
+export type Category = 'pm' | 'pillar' | 'gsc' | 'ga4' | 'geo' | 'inbox' | 'integration' | 'campaign';
 
 export interface UnifiedSource {
-  kind:           'briefing' | 'pillar_report' | 'panel_recheck' | 'gsc' | 'opportunity' | 'analytics_intel' | 'integration';
+  kind:           'briefing' | 'pillar_report' | 'panel_recheck' | 'gsc' | 'geo' | 'opportunity' | 'analytics_intel' | 'integration';
   label:          string;
   last_refresh?:  string;
   table?:         string;
@@ -114,6 +114,7 @@ export async function getWarRoomBriefingV2(opts: {
       integrations,
       gscQueries,
       analyticsIntel,
+      geoAttribution,
     ] = await Promise.all([
       readBriefingAttention(projectId),
       readPillarReports(projectId, twoWeeksAgo),
@@ -123,6 +124,7 @@ export async function getWarRoomBriefingV2(opts: {
       readIntegrations(projectId),
       readGscTopQueries(projectId),
       readAnalyticsIntel(projectId),
+      readGeoAttribution(projectId),
     ]);
 
     /* Step 2 — build the feed items from each source */
@@ -137,6 +139,8 @@ export async function getWarRoomBriefingV2(opts: {
     items.push(...itemsFromAnomalies(analyticsIntel));
     items.push(...itemsFromFailedPillarRuns(pillarReports));
     items.push(...itemsFromStaleIntegrations(integrations));
+    /* Build 12.18 — GEO-era items from measured AI Overview + AI platform data */
+    items.push(...itemsFromGeoAttribution(geoAttribution, integrations));
 
     /* The 1 celebratory item */
     const winItem = itemFromRisingStars(analyticsIntel);
@@ -334,6 +338,50 @@ async function readAnalyticsIntel(projectId: string): Promise<any | null> {
     intel._refresh = (data as any).updated_at;
     return intel;
   } catch { return null; }
+}
+
+/* Build 12.18 — Reader for GEO-era attribution. Returns both the GSC
+   AI Overview summary and the GA4 AI platform referral summary plus
+   their freshness timestamps so the war room can cite "as of X" on
+   every claim it makes. */
+async function readGeoAttribution(projectId: string): Promise<{
+  aiOverview: any | null;
+  ga4AiPlatform: any | null;
+  searchAppearance: any[];
+  ga4AiDaily: any[];
+  refresh: string | null;
+}> {
+  try {
+    const { data } = await db().from("project_knowledge")
+      .select("field_key, field_value, updated_at")
+      .eq("project_id", projectId)
+      .eq("category", "analytics")
+      .in("field_key", [
+        "gsc_ai_overview_summary",
+        "ga4_ai_platform_summary",
+        "gsc_search_appearance",
+        "ga4_ai_platform_daily",
+      ]);
+    const rows = ((data as any) || []) as any[];
+    const findObj = (k: string) => {
+      const r = rows.find(x => x.field_key === k);
+      try { return r ? JSON.parse(r.field_value || "null") : null; } catch { return null; }
+    };
+    const findArr = (k: string) => {
+      const r = rows.find(x => x.field_key === k);
+      try { return r ? JSON.parse(r.field_value || "[]") : []; } catch { return []; }
+    };
+    const freshest = rows.map(r => r.updated_at).filter(Boolean).sort().pop() || null;
+    return {
+      aiOverview:       findObj("gsc_ai_overview_summary"),
+      ga4AiPlatform:    findObj("ga4_ai_platform_summary"),
+      searchAppearance: findArr("gsc_search_appearance"),
+      ga4AiDaily:       findArr("ga4_ai_platform_daily"),
+      refresh:          freshest,
+    };
+  } catch {
+    return { aiOverview: null, ga4AiPlatform: null, searchAppearance: [], ga4AiDaily: [], refresh: null };
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════
@@ -597,6 +645,134 @@ function itemsFromStaleIntegrations(integrations: any): UnifiedPriorityItem[] {
       computed_at: new Date().toISOString(),
     });
   }
+  return out;
+}
+
+/* Build 12.18 — GEO-era war room items from measured AI Overview +
+   AI platform referrals. Each item carries provenance (source kind,
+   table, last refresh) and a specific action the operator can take.
+   Honest about both positive findings (AI Overview citations earned)
+   and negative findings (no AI Overview attribution = flagged GEO
+   opportunity, not a hedge). */
+function itemsFromGeoAttribution(
+  geo: { aiOverview: any | null; ga4AiPlatform: any | null; searchAppearance: any[]; ga4AiDaily: any[]; refresh: string | null },
+  integrations: any
+): UnifiedPriorityItem[] {
+  const out: UnifiedPriorityItem[] = [];
+  const now = new Date().toISOString();
+
+  /* === AI OVERVIEW ATTRIBUTION FINDING ============================ */
+  if (geo.aiOverview) {
+    const source: UnifiedSource = {
+      kind:         'geo',
+      label:        'GSC AI Overview attribution (searchAppearance)',
+      last_refresh: geo.refresh || integrations.gsc?.last_pull_at || undefined,
+      table:        'project_knowledge.gsc_ai_overview_summary',
+    };
+    if (geo.aiOverview.present && (geo.aiOverview.total_impressions || 0) > 0) {
+      const imp = geo.aiOverview.total_impressions;
+      const clk = geo.aiOverview.total_clicks || 0;
+      const ctr = imp > 0 ? ((clk / imp) * 100).toFixed(2) : '0.00';
+      const sev: Severity = imp >= 10000 ? 'celebrate' : 'info';
+      out.push({
+        id:        'geo-ai-overview-presence',
+        category:  'geo' as Category,
+        severity:  sev,
+        title:     `AI Overview citing this site — ${imp.toLocaleString()} impressions`,
+        detail:    `Over the last ${geo.aiOverview.window_days || 30} days: ${imp.toLocaleString()} impressions, ${clk.toLocaleString()} clicks, ${ctr}% CTR. Defend and expand the queries earning citation.`,
+        source,
+        action: {
+          label:   'Analyse cited content',
+          kind:    'chat_command' as const,
+          payload: 'Which pages of mine are being cited in AI Overview right now and what content patterns are they sharing?',
+        },
+        priority_score: scoreItem(sev, 0, sev === 'celebrate' ? 1.3 : 1.0),
+        computed_at: now,
+      });
+    } else if (geo.aiOverview.present === false) {
+      /* Honest negative — a real GEO opportunity flagged as such */
+      out.push({
+        id:        'geo-ai-overview-opportunity',
+        category:  'geo' as Category,
+        severity:  'warning',
+        title:     'No AI Overview citations yet — GEO opportunity flagged',
+        detail:    `GSC searchAppearance dimension explicitly registered zero AI Overview rows over the last ${geo.aiOverview.window_days || 30} days. AI Overview now appears for ~20-30% of informational queries in most niches and is the fastest-changing surface in search. Structural changes typically begin earning citations in 2-4 months.`,
+        source,
+        action: {
+          label:   'Plan GEO push',
+          kind:    'chat_command' as const,
+          payload: 'Build a 90-day GEO plan to earn AI Overview citations — structured content recommendations, schema additions, and topical authority strategy.',
+        },
+        priority_score: scoreItem('warning', 0, 1.2),
+        computed_at: now,
+      });
+    }
+  }
+
+  /* === GA4 AI PLATFORM REFERRALS FINDING =========================== */
+  if (geo.ga4AiPlatform) {
+    const source: UnifiedSource = {
+      kind:         'geo',
+      label:        'GA4 AI platform referrals (sessionSource)',
+      last_refresh: geo.refresh || integrations.ga4?.last_pull_at || undefined,
+      table:        'project_knowledge.ga4_ai_platform_summary',
+    };
+    const sessions = Number(geo.ga4AiPlatform.sessions || 0);
+    const platforms = Array.isArray(geo.ga4AiPlatform.platforms_detected) ? geo.ga4AiPlatform.platforms_detected : [];
+
+    /* Compute 7-vs-7-day growth signal */
+    let growthLabel = '';
+    let growthBoost = 1.0;
+    if (Array.isArray(geo.ga4AiDaily) && geo.ga4AiDaily.length >= 14) {
+      const sorted = [...geo.ga4AiDaily].sort((a, b) => (a.date > b.date ? 1 : -1));
+      const recent = sorted.slice(-7).reduce((s, d) => s + Number(d.sessions || 0), 0);
+      const prior  = sorted.slice(-14, -7).reduce((s, d) => s + Number(d.sessions || 0), 0);
+      if (prior === 0 && recent > 0) { growthLabel = ' — rising fast (new channel)'; growthBoost = 1.4; }
+      else if (prior > 0) {
+        const delta = (recent - prior) / prior;
+        if (delta > 0.5)       { growthLabel = ` — up ${Math.round(delta * 100)}% week-on-week`; growthBoost = 1.4; }
+        else if (delta > 0.15) { growthLabel = ` — up ${Math.round(delta * 100)}% week-on-week`; growthBoost = 1.2; }
+        else if (delta < -0.5)  { growthLabel = ` — down ${Math.round(Math.abs(delta) * 100)}% week-on-week`; growthBoost = 1.3; }
+        else if (delta < -0.15) { growthLabel = ` — down ${Math.round(Math.abs(delta) * 100)}% week-on-week`; growthBoost = 1.1; }
+      }
+    }
+
+    if (sessions > 0) {
+      const sev: Severity = sessions >= 500 ? 'celebrate' : 'info';
+      out.push({
+        id:        'geo-ai-platform-referrals',
+        category:  'geo' as Category,
+        severity:  sev,
+        title:     `AI platforms sent ${sessions.toLocaleString()} sessions${growthLabel}`,
+        detail:    `Detected platforms: ${platforms.join(', ') || '(unknown)'} over ${geo.ga4AiPlatform.window_days || 30} days. ${geo.ga4AiPlatform.conversions || 0} conversions attributed. Map which pages earn the referrals — those are your AI-citation-ready content shapes to replicate.`,
+        source,
+        action: {
+          label:   'Audit referral pages',
+          kind:    'chat_command' as const,
+          payload: 'Which pages received AI platform referral traffic and what structural patterns do they share? Build a replication playbook.',
+        },
+        priority_score: scoreItem(sev, 0, growthBoost),
+        computed_at: now,
+      });
+    } else {
+      out.push({
+        id:        'geo-ai-platform-zero',
+        category:  'geo' as Category,
+        severity:  'warning',
+        title:     'No AI platform referral traffic detected',
+        detail:    `No sessions from ChatGPT, Perplexity, Gemini, Claude, or Copilot in the last ${geo.ga4AiPlatform.window_days || 30} days. AI platforms increasingly drive citation traffic — sites without presence here will lose share as the surface matures.`,
+        source,
+        action: {
+          label:   'Plan AI citation push',
+          kind:    'chat_command' as const,
+          payload: 'Build a plan to earn citations in ChatGPT, Perplexity, Gemini, Claude, and Copilot — content structure, schema, and entity authority recommendations.',
+        },
+        priority_score: scoreItem('warning', 0, 1.15),
+        computed_at: now,
+      });
+    }
+  }
+
   return out;
 }
 

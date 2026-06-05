@@ -888,3 +888,71 @@ Forward-looking GEO capabilities. AI Overview citation gap analysis ("you should
 Three files changed: api/lib/client-showcase-engine.ts (+220 lines: type extension, Promise.all reads, composeAiSearchVisibility function with senior-DMS narrative + action + GEO score), api/lib/pm-reports.ts (+25 lines: new snapshot fields, extractAiOverviewMetric helper), api/lib/season-pillar-deep-engine.ts (+50 lines: extended loadGsc, AI Overview + AI referrals injected into pillar dataBlock).
 
 Vite build green at 33.42s. Compile clean across all 3 files. No new contractions in template literals after fix pass.
+
+Build 12.18 — GEO-era data wired into strategy and intelligence engines [SHIPPED 2026-06-05]: Tier 2 of the GEO multi-build program. Closes the gap between Build 12.16 data layer + Build 12.17 client-facing surfaces and the deeper strategy engines that drive war room reports, forecasts, analytics intelligence, and the source-tracing fabric.
+
+SIX FILES IN THIS BUILD:
+
+(A) api/lib/intelligenceFabric.ts + src/lib/intelligenceFabric.ts (mirrored server + client):
+- PROTECTED_FIELDS map extended with all Build 12.16/17 GEO metrics under "metrics" category: analytics.gsc_ai_overview_impressions, gsc_ai_overview_clicks, gsc_ai_overview_present, gsc_discover_impressions, gsc_discover_clicks, ga4_ai_referral_sessions, ga4_ai_referral_conversions, ga4_ai_referral_platforms. Plus metrics.geo_visibility_score and metrics.geo_visibility_grade for the composite KPI introduced in Build 12.17.
+- Source confidence stays as-is (gsc_live=95, ga_live=95). The new fields inherit the existing tier because they come from the same authenticated source.
+- Implication: every consumer that uses the fabric (proposed field updates, weighted confidence computation, action thresholds) now correctly handles GEO-era metrics with proper protected-field semantics and source attribution.
+
+(B) api/lib/season-war-room.ts:
+- Category type extended with 'geo'. UnifiedSource kind extended with 'geo'.
+- New readGeoAttribution(projectId) reader pulls gsc_ai_overview_summary + ga4_ai_platform_summary + gsc_search_appearance + ga4_ai_platform_daily in a single parallel read; returns freshest updated_at across all four rows as the source provenance timestamp.
+- New itemsFromGeoAttribution() item builder generates up to 4 war-room items per project: (1) AI Overview presence finding with celebrate severity if 10k+ impressions, info otherwise, action "Analyse cited content" → chat command; (2) AI Overview absence finding with warning severity + "Plan GEO push" action when present:false; (3) AI platform referrals finding with 7-vs-7d growth signal embedded in title ("up 32% week-on-week"), celebrate at 500+ sessions; (4) AI platform zero-traffic warning with "Plan AI citation push" action.
+- Growth signal math: when ga4_ai_platform_daily has ≥14 days, compute recent-7-day total vs prior-7-day total; classify rising/flat/falling at ±15% threshold; impact-weighted into priority_score so growing channels surface above flat ones.
+- Items compete with existing items in priority_score sort; if AI Overview attribution is meaningful for the project (high impressions or rapid growth) the items rank high; if not they get pushed out by other findings. Honest behavior — no forced ranking.
+- Scorecard cell for GEO deliberately deferred to keep the build focused. ScorecardCellClient type in src/components/pm/api.ts and the ProjectPulse.tsx render would both need widening; queued for a future build.
+
+(C) api/lib/season-forecast-engine.ts:
+- ForecastKpi type extended with 'ai_overview_impressions', 'ai_platform_sessions', 'geo_visibility_score'.
+- readBaseline() extended with paths for each new KPI: AI Overview impressions from gsc_ai_overview_summary.total_impressions, AI platform sessions from ga4_ai_platform_summary.sessions, GEO score returns 0 as conservative baseline (no persisted historical data for the composite).
+- confidenceBandWidth() returns wider bands for GEO KPIs: 0.75 for AI Overview impressions, 0.80 for AI platform sessions, 0.50 for GEO score. These surfaces are genuinely more volatile than classic clicks/impressions because Google adjusts the AI Overview surface frequently and AI platforms change citation behaviour independently.
+- defaultTargetDayOffset() returns longer horizons: 120 days for AI Overview impressions, 120 days for AI platform sessions, 180 days for GEO score. Reflects the senior-DMS reality that structural changes take 2-4 months to begin earning citations and the composite score shifts slowly.
+- defaultTargetForKpi() seeds non-zero targets when baseline is 0: 500 for AI Overview impressions (entering visibility), 50 for AI platform sessions (channel emergence), +20 points for GEO score. With non-zero baselines, multipliers are 5x for AI Overview, 4x for AI platform sessions — reflecting non-linear growth once citation patterns are established.
+
+(D) api/lib/pm-analytics-intel.ts:
+- AnalyticsIntelligence type extended with geoSnapshot block: aiOverview (present + impressions + clicks + ctr + breakdown), platformReferrals (sessions + users + conversions + platformCount + platformsDetected + perPlatform + weeklyTrend + weeklyDeltaPct), geoVisibilityScore (0-100), geoVisibilityGrade (absent/emerging/present/established/strong), measuredAt.
+- geoSnapshot sits as a top-level block on AnalyticsIntelligence (not folded into PeriodSummary) because GSC searchAppearance returns window totals, not daily-grain data we could fold into per-period deltas. AI platform referrals DO have a daily series; weeklyTrend is derived from it.
+- buildAnalyticsIntelligence() signature extended with 4 optional inputs: gscAiOverviewSummary, ga4AiPlatformSummary, ga4AiPlatformReferrals, ga4AiPlatformDaily.
+- New inline composeGeoSnapshot() function builds the snapshot from inputs. Uses identical composite-score threshold logic to the showcase composer from Build 12.17 (kept inline rather than cross-engine import to avoid circular dependency; both must be updated if thresholds change).
+- Implication: the analytics_intel_bundle that war-room and other consumers read now carries geoSnapshot when GSC/GA4 AI data is present.
+
+(E) api/lib/pm-analytics-intel-orchestrator.ts:
+- Promise.all readJsonField block extended with 4 GEO reads: gsc_ai_overview_summary, ga4_ai_platform_summary, ga4_ai_platform_referrals, ga4_ai_platform_daily.
+- buildAnalyticsIntelligence() call extended to pass all 4 GEO inputs. Without this wiring, geoSnapshot would always be null even when the underlying project_knowledge data is present.
+- THIS IS THE CRITICAL PIECE. The intel engine has the type definitions and the composer function, but only the orchestrator-level wiring makes the engine actually receive the data. Without it, geoSnapshot would always be null even when GSC/GA4 data is present in project_knowledge.
+
+HONEST CAVEATS:
+
+1. War room item builders fire when ANY GEO data exists in project_knowledge — they include explicit "AI Overview is NOT yet citing this site" items as warning severity. This is the right pattern for GEO opportunity flagging but may surprise operators who expect items only on positive findings.
+
+2. War room scorecard cell for GEO deferred. The 5 existing cells (health/velocity/quality/risk/roi_hint) stay as-is. Adding a 6th GEO cell touches ScorecardCellClient type in src/components/pm/api.ts and ProjectPulse.tsx pickToneForCell render — both widening would need to be coordinated. Queued for future build.
+
+3. Forecast bands for GEO KPIs are calibrated against 2026 baselines and will likely need recalibration in 2027 as AI Overview adoption scales. Acceptable — bands are a relative confidence indicator, not an absolute prediction.
+
+4. composeGeoSnapshot() math is duplicated between client-showcase-engine.ts (Build 12.17) and pm-analytics-intel.ts (this build). Both must be updated together if thresholds change. Cross-engine import would create a circular dep; inlining is the lesser evil. Recorded as documented coupling.
+
+5. The intel engine still uses the classic gsc_top_queries/gsc_top_pages data for KPI computation. The new geoSnapshot is additive — it does NOT replace or modify any existing KPI. This is deliberate: existing KPIs are stable and proven; geoSnapshot is the GEO-era extension.
+
+6. Source confidence tier for GEO fields equals classic GSC/GA4 (95). This is honest — the data comes from the same authenticated GSC and GA4 APIs as classic clicks/impressions. If anything, AI Overview attribution is MORE confidently first-party because searchAppearance is a specific GSC dimension, not a derived metric.
+
+7. War room growth signal requires ≥14 days of ga4_ai_platform_daily data to compute. For projects with shorter histories, weeklyTrend returns 'unknown' and the war room item omits the trend label from the title. Honest negative result, not a hedge.
+
+WHAT THIS UNLOCKS:
+- War room reports now surface AI Overview citation findings (positive + negative) and AI platform referral findings (with growth signals) alongside classic GSC/PM/Pillar items, ranked by impact.
+- Forecasts can now be created on three new KPIs: ai_overview_impressions, ai_platform_sessions, geo_visibility_score. The /forecast UI does not yet expose these as KPI options (will need a small UI update in a later build to pick them), but the engine accepts them and produces sensible trajectories.
+- analytics_intel_bundle carries geoSnapshot for every project where GSC/GA4 AI data is present, making it available to every downstream consumer.
+- intelligenceFabric correctly registers all GEO fields as protected metrics, so source-tracing and field-update approval flows handle them with proper semantics.
+
+WHAT IS NEXT — BUILD 12.19 (TIER 3 PIPELINES + CAMPAIGNS):
+pm-engine.ts (main project metrics engine), pm-goal-engine.ts (goal tracking), pm-scenario-engine.ts (scenario planning), seo-campaign-routes.ts + seo-campaign-grouping.ts (campaign layer), workspace deep-steps still missing: target-keyword-baseline.ts + traffic-steps.ts.
+
+WHAT IS NEXT — BUILD 12.20 (TIER 4 FORWARD-LOOKING GEO):
+AI Overview citation gap analysis ("you should be cited but aren't, here is the structural reason why"). AI Overview competitor citation displacement tracking. Future-AI-Overview detection (flag when a query starts showing AI Overview for the first time, before CTR collapse).
+
+Six files changed: api/lib/intelligenceFabric.ts (+15 lines GEO protected fields), src/lib/intelligenceFabric.ts (+13 lines mirror), api/lib/pm-analytics-intel.ts (+162 lines geoSnapshot type + composer), api/lib/pm-analytics-intel-orchestrator.ts (+24 lines: 4 GEO reads + 4 GEO inputs passed through), api/lib/season-forecast-engine.ts (+84 lines GEO KPIs + helpers), api/lib/season-war-room.ts (+176 lines GEO reader + item builder).
+
+Vite build green at 47.31s. Compile clean across all 6 files. No new contractions in template literals.

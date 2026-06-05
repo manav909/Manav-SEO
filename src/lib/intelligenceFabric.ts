@@ -106,12 +106,25 @@ export const PROTECTED_FIELDS: Record<string, ProtectedCategory> = {
   "analytics.gsc_total_clicks":           "metrics",
   "analytics.gsc_avg_position":           "metrics",
   "analytics.conversions_monthly":        "metrics",
+  /* Build 12.18 — GEO / AI surface attribution metrics. Keep in sync
+     with server-side intelligenceFabric.ts. Confidence tier matches
+     classic GSC/GA4 metrics because the source is the same. */
+  "analytics.gsc_ai_overview_impressions":  "metrics",
+  "analytics.gsc_ai_overview_clicks":       "metrics",
+  "analytics.gsc_ai_overview_present":      "metrics",
+  "analytics.gsc_discover_impressions":     "metrics",
+  "analytics.gsc_discover_clicks":          "metrics",
+  "analytics.ga4_ai_referral_sessions":     "metrics",
+  "analytics.ga4_ai_referral_conversions":  "metrics",
+  "analytics.ga4_ai_referral_platforms":    "metrics",
   /* System-computed metrics (metrics table — READ-ONLY, never written via approval) */
   "metrics.llm_visibility_score":         "metrics",
   "metrics.eeat_score":                   "metrics",
   "metrics.algorithm_health_score":       "metrics",
   "metrics.content_authority_score":      "metrics",
   "metrics.overall_growth_score":         "metrics",
+  "metrics.geo_visibility_score":         "metrics",
+  "metrics.geo_visibility_grade":         "metrics",
   /* Competitors (project_knowledge category=competitor) */
   "competitor.competitor_1":              "competitors",
   "competitor.competitor_1_dr":           "competitors",

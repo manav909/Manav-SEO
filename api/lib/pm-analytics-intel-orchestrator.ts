@@ -102,6 +102,13 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     gscQueryPagePairs,
     baselineDateRaw,
     projectName,
+    /* Build 12.18 — GEO-era fields produced by Build 12.16 GSC + GA4
+       pulls. All four are optional; the intel engine produces
+       geoSnapshot=null when none are present. */
+    gscAiOverviewSummary,
+    ga4AiPlatformSummary,
+    ga4AiPlatformReferrals,
+    ga4AiPlatformDaily,
   ] = await Promise.all([
     readJsonField<GscDailyRow[]>(projectId,    "gsc_daily_trend_365d"),
     readJsonField<Ga4DailyRow[]>(projectId,    "ga4_daily_trend_365d"),
@@ -116,6 +123,12 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     readJsonField<Array<{ query: string; page: string; clicks: number; position: number }>>(projectId, "gsc_query_page_pairs"),
     readScalarField(projectId, "organic_sessions_baseline_date"),
     readProjectName(projectId),
+    /* GEO-era reads — feed buildAnalyticsIntelligence so geoSnapshot
+       gets composed instead of always being null. */
+    readJsonField<any>(projectId, "gsc_ai_overview_summary"),
+    readJsonField<any>(projectId, "ga4_ai_platform_summary"),
+    readJsonField<Array<{ source: string; sessions: number; conversions: number; engagedSessions?: number }>>(projectId, "ga4_ai_platform_referrals"),
+    readJsonField<Array<{ date: string; sessions: number; users?: number; conversions?: number }>>(projectId, "ga4_ai_platform_daily"),
   ]);
 
   /* No data yet — bail with null. Common on a project that's never
@@ -162,6 +175,13 @@ export async function recomputeAnalyticsIntel(projectId: string): Promise<Analyt
     ga4Devices:         mapGa4Dim(ga4Devices,   "device"),
     ga4Countries:       mapGa4Dim(ga4Countries, "country"),
     gscQueryPagePairs:  gscQueryPagePairs || [],
+    /* Build 12.18 — GEO-era inputs. When the GSC/GA4 pull has not yet
+       captured these (cron pre-12.16, project newly connected), they
+       arrive as null/[] and composeGeoSnapshot returns null. */
+    gscAiOverviewSummary:   gscAiOverviewSummary || null,
+    ga4AiPlatformSummary:   ga4AiPlatformSummary || null,
+    ga4AiPlatformReferrals: ga4AiPlatformReferrals || [],
+    ga4AiPlatformDaily:     ga4AiPlatformDaily || [],
     brandNames,
     baselineDate:       baselineDateRaw,
   });

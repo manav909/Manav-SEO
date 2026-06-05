@@ -36,6 +36,21 @@ export const PROTECTED_FIELDS: Record<string, ProtectedCategory> = {
   "analytics.gsc_total_clicks": "metrics",
   "analytics.gsc_avg_position": "metrics",
   "analytics.conversions_monthly": "metrics",
+  /* Build 12.18 — GEO / AI surface attribution metrics. These are
+     measured first-party values from GSC searchAppearance and GA4
+     sessionSource (Build 12.16 data layer). Treated as protected
+     metrics at the same trust tier as classic GSC clicks/impressions
+     because they come from the same authenticated source. */
+  "analytics.gsc_ai_overview_impressions":  "metrics",
+  "analytics.gsc_ai_overview_clicks":       "metrics",
+  "analytics.gsc_ai_overview_present":      "metrics",
+  "analytics.gsc_discover_impressions":     "metrics",
+  "analytics.gsc_discover_clicks":          "metrics",
+  "analytics.ga4_ai_referral_sessions":     "metrics",
+  "analytics.ga4_ai_referral_conversions":  "metrics",
+  "analytics.ga4_ai_referral_platforms":    "metrics",
+  "metrics.geo_visibility_score":           "metrics",
+  "metrics.geo_visibility_grade":           "metrics",
   "metrics.llm_visibility_score": "metrics", "metrics.eeat_score": "metrics",
   "metrics.algorithm_health_score": "metrics", "metrics.content_authority_score": "metrics",
   "metrics.overall_growth_score": "metrics",
