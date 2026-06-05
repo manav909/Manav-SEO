@@ -226,10 +226,11 @@ function renderAuditAsMarkdown(result: any, opts: AuditExportOpts = {}): string 
     L.push(`_${s.visibility.ceiling || ''}_`);
     L.push('');
     L.push(...renderDataPoint('Perplexity AI mentions', d.perplexity_citations));
+    L.push(...renderDataPoint('Google AI Overview impressions', d.google_ai_citations));
+    L.push(...renderDataPoint('AI platform referral sessions', d.ai_platform_referrals));
     L.push(...renderDataPoint('ChatGPT citations', d.chatgpt_citations));
     L.push(...renderDataPoint('Brand mentions (Google)', d.brand_mentions));
     L.push(...renderDataPoint('LLM visibility score', d.llm_visibility_score));
-    L.push(`- **Google AI Overview presence:** — · _not verifiable from automated analysis (requires authenticated Google session)_`);
     L.push('');
     L.push('---');
     L.push('');
@@ -253,6 +254,15 @@ function renderAuditAsMarkdown(result: any, opts: AuditExportOpts = {}): string 
         L.push(`- **"${k.keyword}"** — ${k.positionLabel || '—'} · _${confLabel(k.confidence ?? 78)}_`);
         if (k.snippet) L.push(`  - _"${k.snippet}"_`);
         if (k.limitation) L.push(`  - _${k.limitation}_`);
+        /* Build 12.16 — AI Overview citation list per query */
+        if (Array.isArray(k.ai_overview_citations)) {
+          if (k.ai_overview_citations.length > 0) {
+            const tag = k.ai_overview_site_cited ? '✓ this site cited' : 'this site not cited';
+            L.push(`  - AI Overview cites · ${tag} · ${k.ai_overview_citations.slice(0, 8).join(', ')}`);
+          } else {
+            L.push(`  - No AI Overview present for this query.`);
+          }
+        }
       }
     }
     if (Array.isArray(d.competitor_data) && d.competitor_data.length) {
@@ -948,10 +958,23 @@ export default function Audit() {
 
                 {/* Agent 3: AI Visibility */}
                 {s?.visibility && (
-                  <SectionCard title="AI Visibility Tester" agent="Agent 3 — Live Perplexity test, brand mention count, LLM readiness estimate"
+                  <SectionCard title="AI Visibility Tester" agent="Agent 3 — Live Perplexity test + GSC AI Overview attribution + GA4 AI-platform referrals"
                     ceiling={s.visibility.ceiling} icon={Sparkles} color="hsl(var(--primary))" data={s.visibility.data}>
                     <DataRow label="Perplexity AI Mentions"  value={s.visibility.data.perplexity_citations?.value}  confidence={s.visibility.data.perplexity_citations?.confidence}  limitations={s.visibility.data.perplexity_citations?.limitations} />
-                    <DataRow label="Google AI Overview"      value={null} confidence={0} limitations={['Requires authenticated Google session — not verifiable in automated analysis']} />
+                    {/* Build 12.16 — Google AI Overview now reads measured GSC searchAppearance when project linked */}
+                    <DataRow
+                      label="Google AI Overview Impressions"
+                      value={s.visibility.data.google_ai_citations?.value}
+                      confidence={s.visibility.data.google_ai_citations?.confidence ?? 0}
+                      limitations={s.visibility.data.google_ai_citations?.limitations}
+                    />
+                    {/* Build 12.16 — AI platform referrals from GA4 (ChatGPT, Perplexity, Gemini, Claude, Copilot) */}
+                    <DataRow
+                      label="AI Platform Referral Sessions"
+                      value={s.visibility.data.ai_platform_referrals?.value}
+                      confidence={s.visibility.data.ai_platform_referrals?.confidence ?? 0}
+                      limitations={s.visibility.data.ai_platform_referrals?.limitations}
+                    />
                     <DataRow label="ChatGPT Citations"       value={s.visibility.data.chatgpt_citations?.value}     confidence={s.visibility.data.chatgpt_citations?.confidence}     limitations={s.visibility.data.chatgpt_citations?.limitations} />
                     <DataRow label="Brand Mentions (Google)" value={s.visibility.data.brand_mentions?.value}        confidence={s.visibility.data.brand_mentions?.confidence}        limitations={s.visibility.data.brand_mentions?.limitations} />
                     <DataRow label="LLM Visibility Score"    value={s.visibility.data.llm_visibility_score?.value}  confidence={s.visibility.data.llm_visibility_score?.confidence}  limitations={s.visibility.data.llm_visibility_score?.limitations} />
@@ -970,6 +993,8 @@ export default function Audit() {
                         </div>
                         {s.ranking.data.keyword_rankings.map((k: any, i: number) => {
                           const col = k.found && k.page===1?'text-green-400':k.found&&k.page===2?'text-yellow-400':k.found?'text-orange-400':'text-muted-foreground';
+                          const aiCites: string[] | null = Array.isArray(k.ai_overview_citations) ? k.ai_overview_citations : null;
+                          const hasAi = aiCites !== null && aiCites.length > 0;
                           return (
                             <div key={i} className="py-2 border-b border-border/40 last:border-0">
                               <div className="flex items-center justify-between mb-1">
@@ -981,6 +1006,20 @@ export default function Audit() {
                               </div>
                               {k.snippet && <p className="text-xs text-muted-foreground italic truncate">"{k.snippet}"</p>}
                               <p className="text-xs text-muted-foreground/60 mt-0.5">{k.limitation}</p>
+                              {/* Build 12.16 — AI Overview citation domains for this query */}
+                              {hasAi && (
+                                <div className="mt-1.5 flex items-start gap-1.5 flex-wrap">
+                                  <span className={`text-[10px] font-mono uppercase tracking-wider ${k.ai_overview_site_cited ? 'text-cyan-400' : 'text-muted-foreground/70'}`}>
+                                    AI Overview cites {k.ai_overview_site_cited ? '· ✓ this site included' : '· this site not cited'}:
+                                  </span>
+                                  {aiCites!.slice(0, 6).map((d: string, di: number) => (
+                                    <span key={di} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{d}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {aiCites !== null && aiCites.length === 0 && (
+                                <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">No AI Overview present for this query.</p>
+                              )}
                             </div>
                           );
                         })}

@@ -377,7 +377,7 @@ export async function ga4Pull(opts: {
     fetched.totals = true;
 
     /* ── 2-7. Top N by dimensions + daily trend + 365d trend (parallel) ─── */
-    const [topPages, topCountries, topDevices, topSources, dailyTrend, fullTrend365] = await Promise.all([
+    const [topPages, topCountries, topDevices, topSources, dailyTrend, fullTrend365, aiReferralSources, aiReferralDaily] = await Promise.all([
       runReport({
         dateRanges: [{ startDate, endDate }],
         dimensions: [{ name: "landingPagePlusQueryString" }],
@@ -441,6 +441,59 @@ export async function ga4Pull(opts: {
         orderBys:   [{ dimension: { dimensionName: "date" } }],
         limit:      1000,
       }),
+      /* Build 12.16 — AI platform referral sources. Filter sessionSource
+         to the known AI platforms emitting referral traffic. No medium
+         filter because GA4 categorises these inconsistently (sometimes
+         referral, sometimes organic). The dimension is sessionSource
+         with a contains-OR pattern. */
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "sessionSource" }],
+        metrics:    [
+          { name: "sessions" },
+          { name: "totalUsers" },
+          { name: "engagedSessions" },
+          { name: "conversions" },
+        ],
+        dimensionFilter: {
+          orGroup: {
+            expressions: [
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "chatgpt",    caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "perplexity", caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "gemini",     caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "claude",     caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "copilot",    caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "character.ai", caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "you.com",    caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "neeva",      caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "phind",      caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "kagi",       caseSensitive: false } } },
+            ],
+          },
+        },
+        orderBys: [{ desc: true, metric: { metricName: "sessions" } }],
+        limit:    20,
+      }),
+      /* Build 12.16 — daily series of AI-platform referrals so the
+         chart engine can render the growth curve over time */
+      runReport({
+        dateRanges: [{ startDate, endDate }],
+        dimensions: [{ name: "date" }],
+        metrics:    [{ name: "sessions" }, { name: "totalUsers" }, { name: "conversions" }],
+        dimensionFilter: {
+          orGroup: {
+            expressions: [
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "chatgpt",    caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "perplexity", caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "gemini",     caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "claude",     caseSensitive: false } } },
+              { filter: { fieldName: "sessionSource", stringFilter: { matchType: "CONTAINS", value: "copilot",    caseSensitive: false } } },
+            ],
+          },
+        },
+        orderBys: [{ dimension: { dimensionName: "date" } }],
+        limit:    1000,
+      }),
     ]);
 
     /* ── Shape helpers ───────────────────────────────────────────── */
@@ -474,6 +527,13 @@ export async function ga4Pull(opts: {
     fetched.daily_trend         = !!(dailyTrend?.rows?.length);
 
     /* write a metrics_snapshot row */
+    /* Build 12.16 — compute AI referral totals locally for ride-along on snapshot row */
+    const aiReferralTotalSessions = aiReferralSources?.rows?.reduce((s: number, r: any) =>
+      s + Number(r.metricValues?.[0]?.value || 0), 0) || 0;
+    const aiReferralTotalConversions = aiReferralSources?.rows?.reduce((s: number, r: any) =>
+      s + Number(r.metricValues?.[3]?.value || 0), 0) || 0;
+    const aiPlatformsList = (aiReferralSources?.rows || []).map((r: any) => r.dimensionValues?.[0]?.value).filter(Boolean);
+
     await db().from("metrics_snapshots").insert({
       project_id:       opts.projectId,
       organic_sessions: totals.sessions,
@@ -488,6 +548,10 @@ export async function ga4Pull(opts: {
         ga4_property:         i.resource_id,
         ga4_filter:           "organic",
         top_landing_pages:    topPagesShaped.slice(0, 10),
+        /* Build 12.16 — AI referral attribution */
+        ga4_ai_referral_sessions:    aiReferralTotalSessions,
+        ga4_ai_referral_conversions: aiReferralTotalConversions,
+        ga4_ai_platforms_detected:   aiPlatformsList,
       },
     });
 
@@ -573,6 +637,68 @@ export async function ga4Pull(opts: {
           };
         }).filter(Boolean);
         jsonRows.push({ key: "ga4_daily_trend_365d", value: JSON.stringify(trendShaped) });
+      }
+
+      /* Build 12.16 — AI platform referrals (sessions, users, engaged, conv per source) */
+      if (aiReferralSources?.rows?.length) {
+        const aiSourcesShaped = aiReferralSources.rows.map((r: any) => {
+          const v = (r.metricValues || []).map((x: any) => Number(x?.value || 0));
+          return {
+            source:           r.dimensionValues?.[0]?.value || "(unknown)",
+            sessions:         v[0] || 0,
+            totalUsers:       v[1] || 0,
+            engagedSessions:  v[2] || 0,
+            conversions:      v[3] || 0,
+          };
+        });
+        const aiTotals = aiSourcesShaped.reduce((acc: any, r: any) => ({
+          sessions:        acc.sessions        + r.sessions,
+          totalUsers:      acc.totalUsers      + r.totalUsers,
+          engagedSessions: acc.engagedSessions + r.engagedSessions,
+          conversions:     acc.conversions     + r.conversions,
+        }), { sessions: 0, totalUsers: 0, engagedSessions: 0, conversions: 0 });
+        jsonRows.push({ key: "ga4_ai_platform_referrals", value: JSON.stringify(aiSourcesShaped) });
+        jsonRows.push({ key: "ga4_ai_platform_summary", value: JSON.stringify({
+          ...aiTotals,
+          source_count: aiSourcesShaped.length,
+          window_days:  days,
+          measured_at:  new Date().toISOString(),
+          platforms_detected: aiSourcesShaped.map((r: any) => r.source),
+        }) });
+      } else {
+        /* Explicitly mark "no AI traffic detected" so the audit / workspace
+           surfaces can render that as a confident negative result rather
+           than a "data missing" hedge. */
+        jsonRows.push({ key: "ga4_ai_platform_summary", value: JSON.stringify({
+          sessions:           0,
+          totalUsers:         0,
+          engagedSessions:    0,
+          conversions:        0,
+          source_count:       0,
+          window_days:        days,
+          measured_at:        new Date().toISOString(),
+          platforms_detected: [],
+          note:               "No referral traffic from AI search platforms detected in this window. Either the site is not yet being cited in AI search surfaces, or visit volume is too low to register.",
+        }) });
+      }
+
+      /* Build 12.16 — AI referral daily series for chart engine */
+      if (aiReferralDaily?.rows?.length) {
+        const aiDailyShaped = aiReferralDaily.rows.map((r: any) => {
+          const date = r.dimensionValues?.[0]?.value;
+          if (!date || date.length !== 8) return null;
+          const iso = `${date.slice(0,4)}-${date.slice(4,6)}-${date.slice(6,8)}`;
+          const v = (r.metricValues || []).map((x: any) => Number(x?.value || 0));
+          return {
+            date:        iso,
+            sessions:    v[0] || 0,
+            users:       v[1] || 0,
+            conversions: v[2] || 0,
+          };
+        }).filter(Boolean);
+        if (aiDailyShaped.length > 0) {
+          jsonRows.push({ key: "ga4_ai_platform_daily", value: JSON.stringify(aiDailyShaped) });
+        }
       }
 
       const allRows = [...scalarRows, ...jsonRows];

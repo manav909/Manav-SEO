@@ -453,7 +453,7 @@ export async function gscPull(opts: {
 
     /* ── 2-8. Top N by dimensions + 365d daily trend + prev-30d
               queries + query×page pairs (parallel) ─────────────── */
-    const [topQueries, topPages, topCountries, topDevices, dailyTrend, fullTrend365, prevPeriodQueries, queryPagePairs] = await Promise.all([
+    const [topQueries, topPages, topCountries, topDevices, dailyTrend, fullTrend365, prevPeriodQueries, queryPagePairs, searchAppearance, discoverData, newsData] = await Promise.all([
       runQuery({ dimensions: ["query"],   rowLimit: 50 }),
       runQuery({ dimensions: ["page"],    rowLimit: 50 }),
       runQuery({ dimensions: ["country"], rowLimit: 20 }),
@@ -476,6 +476,21 @@ export async function gscPull(opts: {
          when a site has many higher-traffic pages. 1000 rows covers all but
          the largest sites without meaningful payload cost (~80-120KB JSON). */
       runQuery({ dimensions: ["query", "page"], rowLimit: 1000 }),
+      /* Build 12.16 — searchAppearance dimension. This is the GSC field
+         that breaks impressions/clicks down by SERP feature type. Values
+         we care about: aiOverview, aiOverviewWithCitation, featuredSnippet,
+         richResult, videoResult, weblite, ampBlue, ampTopStories. This
+         dimension cannot be combined with others. If the property has no
+         data in this dimension (small site, or feature recently launched),
+         GSC returns empty rows — handled as no-op below. */
+      runQuery({ dimensions: ["searchAppearance"], rowLimit: 30 }),
+      /* Build 12.16 — Discover surface impressions/clicks. GSC's `discover`
+         searchType is separate from web search and increasingly important
+         as a referral surface. Many properties have no Discover data; that
+         is fine, we just skip the save. */
+      runQuery({ dimensions: ["date"], rowLimit: 90, searchType: "discover" } as any),
+      /* Build 12.16 — News surface (for properties that show in Google News) */
+      runQuery({ dimensions: ["query"], rowLimit: 25, searchType: "news" } as any),
     ]);
 
     /* ── Shape helpers ───────────────────────────────────────────── */
@@ -500,6 +515,20 @@ export async function gscPull(opts: {
     fetched.daily_trend   = Array.isArray(dailyTrend) && dailyTrend.length > 0;
 
     /* write a metrics_snapshot row so the chart engine + reports pick this up */
+    /* Build 12.16 — compute AI Overview + Discover totals locally so they
+       can ride along on the metrics_snapshots row for chart consumers */
+    const aiOverviewRows = Array.isArray(searchAppearance)
+      ? searchAppearance.filter((r: any) => /aiOverview/i.test(r.keys?.[0] || ""))
+      : [];
+    const aiOverviewImpr  = aiOverviewRows.reduce((s: number, r: any) => s + Number(r.impressions || 0), 0);
+    const aiOverviewClk   = aiOverviewRows.reduce((s: number, r: any) => s + Number(r.clicks      || 0), 0);
+    const discoverImpr    = Array.isArray(discoverData)
+      ? discoverData.reduce((s: number, r: any) => s + Number(r.impressions || 0), 0)
+      : 0;
+    const discoverClk     = Array.isArray(discoverData)
+      ? discoverData.reduce((s: number, r: any) => s + Number(r.clicks || 0), 0)
+      : 0;
+
     await db().from("metrics_snapshots").insert({
       project_id:        opts.projectId,
       gsc_clicks:        totals.clicks,
@@ -507,11 +536,17 @@ export async function gscPull(opts: {
       gsc_avg_position:  totals.position,
       source:            source,
       extras: {
-        gsc_window_days: days,
-        gsc_ctr:         totals.ctr,
-        gsc_property:    i.resource_id,
-        top_queries:     topQueriesShaped.slice(0, 10),
-        top_pages:       topPagesShaped.slice(0, 10),
+        gsc_window_days:           days,
+        gsc_ctr:                   totals.ctr,
+        gsc_property:              i.resource_id,
+        top_queries:               topQueriesShaped.slice(0, 10),
+        top_pages:                 topPagesShaped.slice(0, 10),
+        /* Build 12.16 — new AI / GEO / surface attribution */
+        gsc_ai_overview_impressions: aiOverviewImpr,
+        gsc_ai_overview_clicks:      aiOverviewClk,
+        gsc_ai_overview_present:     aiOverviewRows.length > 0,
+        gsc_discover_impressions:    discoverImpr,
+        gsc_discover_clicks:         discoverClk,
       },
     });
 
@@ -572,6 +607,86 @@ export async function gscPull(opts: {
       if (topPagesShaped.length     > 0) jsonRows.push({ key: "gsc_top_pages",     value: JSON.stringify(topPagesShaped) });
       if (topCountriesShaped.length > 0) jsonRows.push({ key: "gsc_top_countries", value: JSON.stringify(topCountriesShaped) });
       if (topDevicesShaped.length   > 0) jsonRows.push({ key: "gsc_top_devices",   value: JSON.stringify(topDevicesShaped) });
+
+      /* Build 12.16 — searchAppearance. Each row's key is the appearance
+         type (e.g. "aiOverview", "featuredSnippet"). We extract AI Overview
+         attribution specifically because it is the headline GEO number,
+         while keeping the full breakdown available for any consumer that
+         wants the long tail. */
+      if (Array.isArray(searchAppearance) && searchAppearance.length > 0) {
+        const appearanceShaped = searchAppearance.map((r: any) => ({
+          appearance:  r.keys?.[0] || "(unknown)",
+          clicks:      Number(r.clicks || 0),
+          impressions: Number(r.impressions || 0),
+          ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+          position:    Number((r.position || 0).toFixed(2)),
+        }));
+        jsonRows.push({ key: "gsc_search_appearance", value: JSON.stringify(appearanceShaped) });
+
+        /* Derive an AI Overview summary for fast consumer access — the
+           audit and workspace deep-steps read this headline number
+           without parsing the full breakdown. */
+        const aiRows = appearanceShaped.filter((r: any) =>
+          /aiOverview/i.test(r.appearance) || /^ai_overview/i.test(r.appearance)
+        );
+        if (aiRows.length > 0) {
+          const aiSummary = {
+            present:           true,
+            total_impressions: aiRows.reduce((s: number, r: any) => s + r.impressions, 0),
+            total_clicks:      aiRows.reduce((s: number, r: any) => s + r.clicks, 0),
+            breakdown:         aiRows,
+            window_days:       days,
+            measured_at:       new Date().toISOString(),
+          };
+          jsonRows.push({ key: "gsc_ai_overview_summary", value: JSON.stringify(aiSummary) });
+          fetched.gsc_ai_overview_impressions = aiSummary.total_impressions;
+          fetched.gsc_ai_overview_clicks      = aiSummary.total_clicks;
+        } else {
+          /* Property has data in other SERP features but no AI Overview
+             surface yet — surface the negative result explicitly so the
+             audit can say "AI Overview not yet appearing" with confidence. */
+          jsonRows.push({ key: "gsc_ai_overview_summary", value: JSON.stringify({
+            present:    false,
+            note:       "AI Overview attribution not present in searchAppearance breakdown for this window.",
+            window_days: days,
+            measured_at: new Date().toISOString(),
+          }) });
+        }
+      }
+
+      /* Build 12.16 — Discover surface daily series */
+      if (Array.isArray(discoverData) && discoverData.length > 0) {
+        const discoverShaped = discoverData.map((r: any) => ({
+          date:        r.keys?.[0] || "",
+          clicks:      Number(r.clicks || 0),
+          impressions: Number(r.impressions || 0),
+          ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+        })).filter((r: any) => r.date);
+        const discoverTotals = discoverShaped.reduce((acc: any, r: any) => ({
+          clicks:      acc.clicks      + r.clicks,
+          impressions: acc.impressions + r.impressions,
+        }), { clicks: 0, impressions: 0 });
+        jsonRows.push({ key: "gsc_discover_daily", value: JSON.stringify(discoverShaped) });
+        jsonRows.push({ key: "gsc_discover_summary", value: JSON.stringify({
+          ...discoverTotals,
+          window_days: days,
+          measured_at: new Date().toISOString(),
+        }) });
+        fetched.gsc_discover_clicks      = discoverTotals.clicks;
+        fetched.gsc_discover_impressions = discoverTotals.impressions;
+      }
+
+      /* Build 12.16 — News surface query set (for properties in Google News) */
+      if (Array.isArray(newsData) && newsData.length > 0) {
+        const newsShaped = newsData.map((r: any) => ({
+          query:       r.keys?.[0] || "(unknown)",
+          clicks:      Number(r.clicks || 0),
+          impressions: Number(r.impressions || 0),
+          ctr:         Number(((r.ctr || 0) * 100).toFixed(2)),
+          position:    Number((r.position || 0).toFixed(2)),
+        }));
+        jsonRows.push({ key: "gsc_news_top_queries", value: JSON.stringify(newsShaped) });
+      }
 
       /* Phase 1J — Raw data used by intel engine. Stored as JSON so the
          intel recompute can read them without re-querying GSC. */

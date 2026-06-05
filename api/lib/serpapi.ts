@@ -50,6 +50,12 @@ import { createHash } from 'crypto';
 export interface SerpFeatures {
   /* Boolean presence flags — what's on the SERP */
   ai_overview:        boolean;
+  /* Build 12.16 — when an AI Overview is present, capture WHICH domains
+     Google cited inside it. This is the most actionable GEO signal —
+     "the AI Overview for your keyword cites these 5 sites." Empty array
+     when ai_overview is false or SerpAPI did not return references. */
+  ai_overview_references: { url: string; domain: string; title?: string }[];
+  ai_overview_reference_count: number;
   featured_snippet:   boolean;
   featured_snippet_owner: string | null;   /* domain of the page in the featured snippet */
   people_also_ask:    boolean;
@@ -169,6 +175,12 @@ async function readCache(cacheKey: string): Promise<SerpFeatures | null> {
       ...parsed,
       top_100_urls:    Array.isArray(parsed?.top_100_urls)    ? parsed.top_100_urls    : (Array.isArray(parsed?.top_10_urls)    ? parsed.top_10_urls    : []),
       top_100_domains: Array.isArray(parsed?.top_100_domains) ? parsed.top_100_domains : (Array.isArray(parsed?.top_10_domains) ? parsed.top_10_domains : []),
+      /* Build 12.16 — older cache rows pre-date the AI Overview reference
+         extraction. Default to empty arrays so consumers can rely on the
+         fields existing. Stale cache rows will repopulate naturally on
+         next refresh (within the 7-day TTL). */
+      ai_overview_references:      Array.isArray(parsed?.ai_overview_references)      ? parsed.ai_overview_references      : [],
+      ai_overview_reference_count: typeof parsed?.ai_overview_reference_count === 'number' ? parsed.ai_overview_reference_count : (Array.isArray(parsed?.ai_overview_references) ? parsed.ai_overview_references.length : 0),
       cache_hit:       true,
     };
     return normalized;
@@ -215,6 +227,32 @@ function parseSerpApiResponse(json: any, query: string, country: string): SerpFe
   /* AI Overview */
   const ai_overview = !!(json?.ai_overview);
 
+  /* Build 12.16 — extract citation list (domains Google cites inside
+     the AI Overview answer for this query). SerpAPI exposes this as
+     ai_overview.references which is an array of { link, title, source }.
+     Some responses use ai_overview.text_blocks[].reference_indexes
+     pointing into a flat references array; we normalise both shapes
+     into a clean domain list with up to one entry per unique domain. */
+  let ai_overview_references: { url: string; domain: string; title?: string }[] = [];
+  if (ai_overview) {
+    const refsRaw = Array.isArray(json.ai_overview?.references) ? json.ai_overview.references : [];
+    const seenDomains = new Set<string>();
+    for (const r of refsRaw) {
+      const url = typeof r?.link === 'string' ? r.link : (typeof r?.url === 'string' ? r.url : '');
+      if (!url) continue;
+      const domain = extractDomainFromUrl(url);
+      if (!domain || seenDomains.has(domain)) continue;
+      seenDomains.add(domain);
+      ai_overview_references.push({
+        url,
+        domain,
+        title: typeof r?.title === 'string' ? r.title : (typeof r?.source === 'string' ? r.source : undefined),
+      });
+      if (ai_overview_references.length >= 20) break;
+    }
+  }
+  const ai_overview_reference_count = ai_overview_references.length;
+
   /* Featured snippet (SerpAPI answer_box) */
   const ab = json?.answer_box;
   const featured_snippet = !!(ab && (ab.type === 'organic_result' || ab.type === 'paragraph' || ab.type === 'list' || ab.snippet || ab.answer));
@@ -256,6 +294,8 @@ function parseSerpApiResponse(json: any, query: string, country: string): SerpFe
 
   return {
     ai_overview,
+    ai_overview_references,
+    ai_overview_reference_count,
     featured_snippet,
     featured_snippet_owner,
     people_also_ask,

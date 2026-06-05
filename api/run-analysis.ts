@@ -438,7 +438,7 @@ Return ONLY the JSON. No other text.`;
    Google AI: inferred from page signals
    Confidence ceiling: 82% (AI results vary by user/region)
 ══════════════════════════════════════════════════ */
-async function runVisibilityAgent(url: string, brand_name: string, brandMentions: number) {
+async function runVisibilityAgent(url: string, brand_name: string, brandMentions: number, projectId: string | null = null) {
   const domain = url.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
 
   const [perplexityResult] = await Promise.all([
@@ -451,6 +451,34 @@ async function runVisibilityAgent(url: string, brand_name: string, brandMentions
     'Google AI Overview varies significantly by search query and user location',
     'All AI citation counts are point-in-time snapshots, not persistent metrics',
   ];
+
+  /* Build 12.16 — when a project is linked, attempt to read measured
+     AI Overview attribution from GSC and AI-platform referral traffic
+     from GA4. These are real first-party numbers (impressions, sessions)
+     from the client's own analytics — verified data, not estimated. */
+  let gscAiSummary: any = null;
+  let ga4AiSummary: any = null;
+  if (projectId) {
+    try {
+      const { db } = await import('./lib/db.js');
+      const { data: rows } = await db()
+        .from('project_knowledge')
+        .select('field_key, field_value')
+        .eq('project_id', projectId)
+        .eq('category', 'analytics')
+        .in('field_key', ['gsc_ai_overview_summary', 'ga4_ai_platform_summary']);
+      for (const r of rows || []) {
+        try {
+          const v = typeof r.field_value === 'string' ? JSON.parse(r.field_value) : r.field_value;
+          if (r.field_key === 'gsc_ai_overview_summary') gscAiSummary = v;
+          if (r.field_key === 'ga4_ai_platform_summary') ga4AiSummary = v;
+        } catch { /* malformed cached row — skip silently */ }
+      }
+    } catch (e) {
+      /* DB read failure should never break the visibility agent — log and move on */
+      console.warn(`[run-analysis] could not read AI signals from project_knowledge: ${(e as any)?.message || e}`);
+    }
+  }
 
   /* Estimate LLM visibility from composite signals */
   const llmEstimate = Math.min(100, Math.round(
@@ -465,6 +493,57 @@ async function runVisibilityAgent(url: string, brand_name: string, brandMentions
     (perplexityResult.mentions > 2 ? 3 : perplexityResult.mentions > 0 ? 1 : 0)
   );
 
+  /* Build 12.16 — google_ai_citations: replace the legacy "not verifiable"
+     stub with measured GSC searchAppearance data when available. The GSC
+     aiOverview / aiOverviewWithCitation rows are literal verified
+     first-party data from the client's own Search Console, so confidence
+     becomes 95 (highest verified tier). When no project linked or GSC
+     data not available, the legacy stub is preserved. */
+  let googleAiCitations;
+  if (gscAiSummary?.present) {
+    googleAiCitations = dp(
+      gscAiSummary.total_impressions,
+      95,
+      [`Google Search Console searchAppearance dimension (window: ${gscAiSummary.window_days}d)`],
+      [`Impressions from Google AI Overview surface only — represents how many times the site was shown inside an AI Overview answer`]
+    );
+  } else if (gscAiSummary && gscAiSummary.present === false) {
+    googleAiCitations = dp(
+      0,
+      90,
+      [`Google Search Console searchAppearance dimension (window: ${gscAiSummary.window_days}d)`],
+      [`No AI Overview attribution detected in GSC for this window — either site is not yet cited in AI Overviews, or visibility is too low to register`]
+    );
+  } else {
+    googleAiCitations = dp(
+      null,
+      0,
+      [],
+      ['Google AI Overview requires GSC access OR authenticated Google session to verify — not currently verifiable without project link']
+    );
+  }
+
+  /* Build 12.16 — ai_platform_referrals: NEW field surfacing measured
+     GA4 referral traffic from ChatGPT / Perplexity / Gemini / Claude /
+     Copilot. Only populated when project_id is linked AND GA4 pull has
+     run. This is verified first-party data — actual sessions logged in
+     the client's own GA4 property. */
+  const aiPlatformReferrals = ga4AiSummary
+    ? dp(
+        ga4AiSummary.sessions,
+        ga4AiSummary.source_count > 0 ? 95 : 90,
+        [`GA4 sessionSource dimension filtered to known AI platforms (window: ${ga4AiSummary.window_days}d)`],
+        ga4AiSummary.source_count > 0
+          ? [`Detected platforms: ${(ga4AiSummary.platforms_detected || []).join(', ')}. ${ga4AiSummary.conversions} conversions attributed.`]
+          : [ga4AiSummary.note || 'No AI platform referrals detected in this window']
+      )
+    : dp(
+        null,
+        0,
+        [],
+        ['AI platform referral attribution requires GA4 access — not available without project link with GA4 integration']
+      );
+
   return {
     perplexity_citations: dp(
       perplexityResult.mentions,
@@ -472,12 +551,8 @@ async function runVisibilityAgent(url: string, brand_name: string, brandMentions
       perplexityResult.verified ? ['Live Perplexity.ai search test'] : [],
       perplexityResult.verified ? [limitations[0]] : ['Perplexity test failed — network or access issue']
     ),
-    google_ai_citations: dp(
-      null, /* Cannot reliably verify without logged-in Google session */
-      0,
-      [],
-      ['Google AI Overview requires authenticated Google session to reliably test — not currently verifiable']
-    ),
+    google_ai_citations: googleAiCitations,
+    ai_platform_referrals: aiPlatformReferrals,
     chatgpt_citations: dp(
       chatgptEstimate,
       28, /* Hard cap — this is estimated */
@@ -514,16 +589,52 @@ async function runRankingAgent(url: string, keywords: string[], competitors: str
     'Competitors checked for domain presence only, not specific page rankings',
   ];
 
+  /* Build 12.16 — when SERPAPI_KEY is set, fetch SERP features alongside
+     the live Google scrape to capture AI Overview citation domains per
+     keyword. Optional path — if no key, this is a silent no-op. */
+  const hasSerpApi = !!(process.env.SERPAPI_KEY || '').trim();
+  let fetchSerpFeatures: ((query: string, opts: any) => Promise<any>) | null = null;
+  if (hasSerpApi) {
+    try {
+      const mod = await import('./lib/serpapi.js');
+      fetchSerpFeatures = mod.fetchSerpFeatures as any;
+    } catch (e) {
+      console.warn(`[run-analysis] could not import serpapi module: ${(e as any)?.message || e}`);
+    }
+  }
+
   /* Check keywords with delay to avoid rate limiting */
   const rankingResults: any[] = [];
   for (let i = 0; i < Math.min(keywords.length, 6); i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 1000));
     const result = await checkGoogleRank(keywords[i], domain);
+
+    /* Build 12.16 — optionally enrich with SerpAPI AI Overview references */
+    let aiOverviewCitations: string[] | null = null;
+    let aiOverviewSiteCited: boolean | null = null;
+    if (fetchSerpFeatures) {
+      try {
+        const features = await fetchSerpFeatures(keywords[i], {});
+        if (features?.ai_overview && Array.isArray(features.ai_overview_references)) {
+          aiOverviewCitations = features.ai_overview_references.map((r: any) => r.domain).slice(0, 10);
+          aiOverviewSiteCited = aiOverviewCitations.some((d: string) => d.includes(domain) || domain.includes(d));
+        } else if (features) {
+          aiOverviewCitations = [];
+          aiOverviewSiteCited = false;
+        }
+      } catch (e) {
+        /* SerpAPI per-query failure is non-fatal — log and continue */
+        console.warn(`[run-analysis] SerpAPI fetch failed for "${keywords[i]}": ${(e as any)?.message || e}`);
+      }
+    }
+
     rankingResults.push({
       keyword: keywords[i],
       ...result,
+      ai_overview_citations: aiOverviewCitations,
+      ai_overview_site_cited: aiOverviewSiteCited,
       confidence: 78,
-      source: 'Live Google SERP',
+      source: aiOverviewCitations !== null ? 'Live Google SERP + SerpAPI AI Overview check' : 'Live Google SERP',
       limitation: 'Position may vary ±2-3 by location/personalization',
     });
   }
@@ -775,7 +886,7 @@ async function _run_analysis_h(req: VercelRequest, res: VercelResponse) {
     const [technical, content, visibility, ranking] = await Promise.all([
       runTechnicalAgent(normalizedUrl, html, sitemap, indexedCount),
       runContentAgent(normalizedUrl, html, keywords, brand_name),
-      runVisibilityAgent(normalizedUrl, brand_name, brandMentions),
+      runVisibilityAgent(normalizedUrl, brand_name, brandMentions, project_id || null),
       runRankingAgent(normalizedUrl, keywords, competitors),
     ]);
 
@@ -808,7 +919,7 @@ async function _run_analysis_h(req: VercelRequest, res: VercelResponse) {
         },
         visibility: {
           agent:  'AI Visibility Tester',
-          ceiling: 'Max confidence 82% — AI results vary by user/region. ChatGPT capped at 28% — no public API',
+          ceiling: 'Max confidence 95% when GSC + GA4 linked (measured first-party data). Otherwise 82% — AI results vary by user/region. ChatGPT capped at 28% — no public API',
           data:   visibility,
         },
         ranking: {

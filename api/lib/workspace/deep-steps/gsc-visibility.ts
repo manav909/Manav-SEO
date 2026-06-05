@@ -28,6 +28,11 @@ export interface VisibilityEvidence {
   site_ctr_curve: Record<number, { ctr: number; samples: number; impressions: number }>;  // THIS site's real curve (impression-weighted)
   near_ranking: Array<{ query: string; page: string; position: number; impressions: number }>; // pos 4-20
   indexation_checks: Array<{ url: string; status_ok: boolean; noindex: boolean; canonical: string; loaded: boolean }>;
+  /* Build 12.16 — GEO / AI surface attribution from GSC */
+  ai_overview_summary: any | null;     // { present, total_impressions, total_clicks, window_days } or null
+  search_appearance: any[];            // full searchAppearance breakdown
+  discover_summary: any | null;        // { clicks, impressions, window_days } or null
+  news_top_queries: any[];             // top queries on Google News surface
   provenance: SourcedFact[];
   worth_deeper: string[];
 }
@@ -95,6 +100,20 @@ export async function gatherGscVisibility(opts: {
   const lowCtr = targetPairs.filter(p => p.position <= 10 && p.impressions > 50 && p.ctr < (curve[Math.round(p.position)]?.ctr || 0) * 0.6);
   if (lowCtr.length) worth_deeper.push(`${lowCtr.length} pairs rank top-10 but earn CTR well below this site's own curve — title/meta or SERP-feature investigation.`);
 
+  /* Build 12.16 — surface AI Overview / Discover / News attribution. */
+  if (gsc.aiOverviewSummary?.present) {
+    provenance.push({ value: gsc.aiOverviewSummary.total_impressions, source: "GSC searchAppearance dimension", fetched_at: gsc.fetchedAt, note: `AI Overview impressions (window: ${gsc.aiOverviewSummary.window_days}d)` });
+    worth_deeper.push(`AI Overview is showing the site ${gsc.aiOverviewSummary.total_impressions} times in this window with ${gsc.aiOverviewSummary.total_clicks} clicks — analyse which queries trigger and what content earns the citation.`);
+  } else if (gsc.aiOverviewSummary && gsc.aiOverviewSummary.present === false) {
+    worth_deeper.push(`No AI Overview attribution in GSC for this window — either the site is not yet cited in AI Overview answers or impression volume is too low to register. GEO opportunity flagged.`);
+  }
+  if (gsc.discoverSummary && (gsc.discoverSummary.impressions || 0) > 0) {
+    provenance.push({ value: gsc.discoverSummary.impressions, source: "GSC Discover surface", fetched_at: gsc.fetchedAt, note: `Discover impressions (window: ${gsc.discoverSummary.window_days}d)` });
+  }
+  if (Array.isArray(gsc.newsTopQueries) && gsc.newsTopQueries.length > 0) {
+    provenance.push({ value: gsc.newsTopQueries.length, source: "GSC News surface queries", fetched_at: gsc.fetchedAt });
+  }
+
   const evidence: VisibilityEvidence = {
     step_key: "gsc_visibility",
     generated_at: now,
@@ -107,6 +126,11 @@ export async function gatherGscVisibility(opts: {
     site_ctr_curve: curve,
     near_ranking: nearRanking,
     indexation_checks: checks as any[],
+    /* Build 12.16 — GEO / AI surface attribution */
+    ai_overview_summary: gsc.aiOverviewSummary || null,
+    search_appearance:   gsc.searchAppearance  || [],
+    discover_summary:    gsc.discoverSummary   || null,
+    news_top_queries:    gsc.newsTopQueries    || [],
     provenance,
     worth_deeper,
   };
@@ -171,6 +195,57 @@ function renderVisibilityReport(e: VisibilityEvidence): string {
     L.push(`| ${p.query} | ${path(p.page)} | ${p.impressions} | ${p.clicks} | ${p.ctr}% | ${p.position.toFixed(1)} |`);
   }
   L.push("");
+
+  /* Build 12.16 — AI Overview attribution from GSC searchAppearance */
+  L.push(`## AI Overview & SERP-feature attribution (GSC searchAppearance)`);
+  if (e.ai_overview_summary?.present) {
+    L.push(`**AI Overview is appearing for this site.** Over the last ${e.ai_overview_summary.window_days} days:`);
+    L.push("");
+    L.push(`- **Impressions in AI Overview surface:** ${e.ai_overview_summary.total_impressions}`);
+    L.push(`- **Clicks from AI Overview surface:** ${e.ai_overview_summary.total_clicks}`);
+    L.push(`- **Click-through rate:** ${e.ai_overview_summary.total_impressions > 0 ? ((e.ai_overview_summary.total_clicks / e.ai_overview_summary.total_impressions) * 100).toFixed(2) : '0.00'}%`);
+    L.push("");
+  } else if (e.ai_overview_summary && e.ai_overview_summary.present === false) {
+    L.push(`_No AI Overview attribution detected in GSC for this window._ Either the site is not yet being cited inside AI Overview answers, or the surface is showing the site below the GSC reporting threshold.`);
+    L.push("");
+  } else {
+    L.push(`_GSC searchAppearance dimension not loaded for this project._`);
+    L.push("");
+  }
+  if (Array.isArray(e.search_appearance) && e.search_appearance.length > 0) {
+    L.push(`**Full SERP-feature breakdown:**`);
+    L.push("");
+    L.push(`| Appearance type | Impressions | Clicks | CTR | Avg position |`);
+    L.push(`|---|---|---|---|---|`);
+    for (const r of e.search_appearance) {
+      L.push(`| ${r.appearance} | ${r.impressions} | ${r.clicks} | ${r.ctr}% | ${r.position.toFixed(1)} |`);
+    }
+    L.push("");
+  }
+
+  /* Build 12.16 — Discover surface */
+  if (e.discover_summary && (e.discover_summary.impressions || 0) > 0) {
+    L.push(`## Google Discover surface`);
+    L.push("");
+    L.push(`- **Impressions:** ${e.discover_summary.impressions}`);
+    L.push(`- **Clicks:** ${e.discover_summary.clicks}`);
+    L.push(`- **Window:** last ${e.discover_summary.window_days} days`);
+    L.push("");
+    L.push(`_Discover is the Google algorithmic feed surface — separate from web search. Visibility here typically grows from E-E-A-T signals + topic authority rather than keyword targeting._`);
+    L.push("");
+  }
+
+  /* Build 12.16 — News surface */
+  if (Array.isArray(e.news_top_queries) && e.news_top_queries.length > 0) {
+    L.push(`## Google News surface — top queries`);
+    L.push("");
+    L.push(`| Query | Impressions | Clicks | CTR | Avg position |`);
+    L.push(`|---|---|---|---|---|`);
+    for (const r of e.news_top_queries.slice(0, 15)) {
+      L.push(`| ${r.query} | ${r.impressions} | ${r.clicks} | ${r.ctr}% | ${r.position.toFixed(1)} |`);
+    }
+    L.push("");
+  }
 
   if (e.worth_deeper.length) {
     L.push(`## Worth investigating further (handed to the panel)`);

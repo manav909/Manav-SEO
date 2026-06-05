@@ -776,3 +776,64 @@ Honest caveats:
 Two files changed: api/seo-agent.ts (inferKeywordFromContent helper + gate change + stream preamble), src/components/SeoEngine.tsx (drop strict keyword gate, update labels).
 
 Vite build green at 29.28s. Compile clean. No contractions, no hardcoding.
+
+Build 12.16 — GEO / AI-era data layer [SHIPPED 2026-06-05]: Operator question prompted audit of whether the platform is capturing the new GSC AI Overview attribution, GA4 AI-platform referrals, and SerpAPI AI Overview citations that are now real measured first-party data clients can verify in their own tools. Audit found significant gaps: GSC pull was limited to the classic 5-dimension search analytics surface, GA4 was filtering for sessionMedium=organic without breaking down sessionSource for AI-platform referrals, SerpAPI was capturing ai_overview as a boolean but discarding the references array. All three closed in this single coherent build because splitting would leave consumer surfaces showing half a picture.
+
+(A) GSC PULL EXTENSION — api/lib/pm-gsc.ts:
+- Promise.all now includes three new sub-queries: searchAppearance dimension (AI Overview impression/click attribution), Discover surface daily series, News surface top queries.
+- Shape helpers added for the new dimensions; searchAppearance rows extracted include aiOverview, aiOverviewWithCitation, featuredSnippet, richResult, videoResult, ampBlue, ampTopStories.
+- New project_knowledge field_keys: gsc_search_appearance (full breakdown), gsc_ai_overview_summary (headline derived: present, total_impressions, total_clicks, breakdown, window_days), gsc_discover_daily, gsc_discover_summary, gsc_news_top_queries.
+- gsc_ai_overview_summary stores present:false with note when searchAppearance ran but had no aiOverview rows. This gives consumers a confident negative result, not a "data missing" hedge.
+- metrics_snapshots.extras now also carries gsc_ai_overview_impressions, gsc_ai_overview_clicks, gsc_ai_overview_present, gsc_discover_impressions, gsc_discover_clicks for chart consumers.
+
+(B) GA4 PULL EXTENSION — api/lib/pm-ga4.ts:
+- Promise.all now includes two new sub-queries: aiReferralSources (broken down by sessionSource, filtered to known AI platforms via OR-group contains-filters on chatgpt, perplexity, gemini, claude, copilot, character.ai, you.com, neeva, phind, kagi) and aiReferralDaily (date-series of the same filtered traffic).
+- New project_knowledge field_keys: ga4_ai_platform_referrals (per-source breakdown), ga4_ai_platform_summary (totals + platforms_detected list + window_days + measured_at), ga4_ai_platform_daily (date series).
+- ga4_ai_platform_summary stores sessions:0 with a clear note when no AI platform traffic detected — same confident-negative-result pattern as GSC AI Overview.
+- metrics_snapshots.extras now also carries ga4_ai_referral_sessions, ga4_ai_referral_conversions, ga4_ai_platforms_detected list.
+
+(C) SERPAPI EXTENSION — api/lib/serpapi.ts:
+- SerpFeatures type extended with ai_overview_references[] (array of {url, domain, title?}) and ai_overview_reference_count.
+- parseSerpApiResponse now extracts the ai_overview.references array when present, deduplicating by domain, capping at 20 unique domains per query.
+- Cache normalization handles older cached rows pre-dating these fields safely (defaults to empty array).
+- This means for any query where SerpAPI detects an AI Overview, we now capture WHICH domains Google cites inside the AI Overview answer — the most actionable GEO signal available.
+
+(D) AUDIT VISIBILITY AGENT REWIRE — api/run-analysis.ts:
+- runVisibilityAgent signature now accepts optional projectId. When set, reads gsc_ai_overview_summary and ga4_ai_platform_summary from project_knowledge.
+- google_ai_citations field transformed: from legacy "Cannot verify without authenticated Google session" stub (confidence 0) to measured data when GSC linked (confidence 95). When project linked but no AI Overview attribution in window, returns 0 at confidence 90 with note. Falls back to legacy stub only when no project linked.
+- NEW field ai_platform_referrals: measured GA4 AI-platform sessions, confidence 95 when project linked with detected traffic, 90 when project linked but no AI traffic, 0 with explicit note when no project.
+- Visibility ceiling text updated: "Max confidence 95% when GSC + GA4 linked (measured first-party data). Otherwise 82%..."
+- runRankingAgent now also optionally enriches each keyword with SerpAPI AI Overview citations. Only fires when SERPAPI_KEY env var is set — silent no-op otherwise. Per-keyword fields: ai_overview_citations (array of domains) and ai_overview_site_cited (boolean).
+
+(E) AUDIT UI + EXPORT — src/pages/Audit.tsx:
+- Visibility section card "Agent 3" tagline updated to reflect GSC + GA4 attribution.
+- "Google AI Overview" row replaced with "Google AI Overview Impressions" using the new measured data point.
+- New "AI Platform Referral Sessions" row added between Google AI Overview and ChatGPT Citations.
+- Ranking section: per-keyword block now renders an "AI Overview cites · ✓ this site included | this site not cited" line followed by the cited domains as chips. When SerpAPI ran but no AI Overview present, shows "No AI Overview present for this query." When SerpAPI was not configured, the field is null and no chip line renders.
+- renderAuditAsMarkdown helper updated to include AI Overview citations + AI platform referrals in the exported Word doc. Buyer reading the audit sees real first-party numbers from their own GSC/GA4 alongside the cited-domain list per keyword.
+
+(F) WORKSPACE LOADGSC + DEEP STEP — api/lib/workspace/shared.ts + api/lib/workspace/deep-steps/gsc-visibility.ts:
+- loadGsc() return shape now includes aiOverviewSummary, searchAppearance, discoverSummary, newsTopQueries. Backward-compatible defaults to null/[] for old consumers.
+- gsc-visibility deep step VisibilityEvidence type extended with the four new GEO fields. Report markdown gains three new sections: "AI Overview & SERP-feature attribution (GSC searchAppearance)" with full breakdown table, "Google Discover surface" when impressions exist, "Google News surface — top queries" when present.
+- worth_deeper hints now flag AI Overview opportunities: positive ("AI Overview is showing the site X times in this window with Y clicks — analyse which queries trigger") and negative ("No AI Overview attribution — GEO opportunity flagged").
+
+HONESTY DISCIPLINE:
+- Every new field carries provenance ("GSC searchAppearance dimension (window: 30d)", "GA4 sessionSource dimension filtered to known AI platforms").
+- Confidence labels: 95 for measured first-party GSC/GA4 data; 90 for measured-but-zero-traffic; 0 for not-verifiable-without-tool-access.
+- "Present:false" pattern in both gsc_ai_overview_summary and ga4_ai_platform_summary surfaces zero-traffic states as confident negative results, not data gaps.
+- The existing audit honesty architecture (confidence + limitations[] per data point + cross-verification + ceiling statements) flows through to all new fields unchanged.
+
+For prospect-audit use case (BlendSpace-style lead with no project linked): the new fields gracefully degrade — google_ai_citations falls back to "requires GSC access" stub, ai_platform_referrals falls back to "requires GA4 access" stub, AI Overview citations per keyword still work if SERPAPI_KEY is set. The audit's value when run on a random URL doesn't change; the value when run on a linked project gains four new data points the client can verify in their own tools.
+
+Honest caveats:
+1. The searchAppearance dimension's API behaviour for very small sites or recently-added properties returns empty rows even when the site IS appearing in AI Overviews — GSC has a minimum impression threshold for reporting. The "present:false" state in this case is technically "below GSC reporting threshold" rather than "definitely not appearing." Acceptable.
+2. GA4 AI-platform detection is via sessionSource string-contains. GA4 categorisation of these sources changed multiple times in 2024-2025 — some traffic appears with sessionSource="chatgpt.com" and some with "chat.openai.com". The OR-group filter catches both common patterns but may miss exotic referral string shapes.
+3. SerpAPI AI Overview check adds ~1-2s per keyword to the audit ranking phase (6 keywords max = ~6-12s added when key is set). Acceptable.
+4. SerpAPI per-query cost: 1 SerpAPI search credit per keyword. At 6 keywords per audit, that is 6 credits per audit. Operator should be aware before running audits at scale.
+5. The "this site cited" / "this site not cited" boolean uses simple domain string-match against the cited domain list. For sites with multiple subdomains or recently changed root domains, may produce false negatives. Acceptable for sales-stage signal.
+6. Workspace deep-step's new sections only render when there is data. Empty state gracefully suppressed to avoid clutter in reports for properties that have no AI Overview / Discover / News surface presence.
+7. Existing cached project_knowledge data does NOT auto-populate the new fields — operator needs to re-run the GSC/GA4 pull (button in Integrations panel) to get the new attribution data into the cache. First refresh after deploy is when the new data appears.
+
+Seven files changed: api/lib/pm-gsc.ts (+115 lines: searchAppearance + Discover + News sub-queries, shape helpers, project_knowledge writes, snapshot extras), api/lib/pm-ga4.ts (+126 lines: AI platform referral source + daily sub-queries, project_knowledge writes, snapshot extras), api/lib/serpapi.ts (+40 lines: ai_overview_references type + parser + cache normalization), api/run-analysis.ts (+75 lines: visibility agent project_knowledge read, ai_platform_referrals field, ranking agent SerpAPI enrichment, ceiling update), api/lib/workspace/shared.ts (+34 lines: loadGsc new fields), api/lib/workspace/deep-steps/gsc-visibility.ts (~65 lines: evidence type + assembly + 3 new report sections), src/pages/Audit.tsx (+30 lines: visibility row updates, per-keyword AI Overview citation chips, markdown export updates).
+
+Vite build green at 25.37s. No new contractions in template literals introduced by this build (pre-existing in main not touched). Compile clean across all 7 files.

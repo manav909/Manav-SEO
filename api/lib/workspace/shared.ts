@@ -75,6 +75,11 @@ export interface GscData {
   topPages: any[];
   topQueries: any[];
   queryPagePairs: any[];   // {query, page, clicks, impressions, ctr, position}
+  /* Build 12.16 — GEO / AI surface attribution */
+  aiOverviewSummary: any | null;     // { present, total_impressions, total_clicks, breakdown, ... } or null
+  searchAppearance: any[];           // full searchAppearance breakdown (aiOverview, featuredSnippet, richResult, ...)
+  discoverSummary: any | null;       // { clicks, impressions, window_days, ... } or null
+  newsTopQueries: any[];             // top queries on Google News surface
   fetchedAt: string;
 }
 
@@ -84,7 +89,15 @@ export async function loadGsc(projectId: string): Promise<GscData> {
     const r = await withTimeout(
       db().from("project_knowledge").select("field_key,field_value,updated_at")
         .eq("project_id", projectId)
-        .in("field_key", ["gsc_top_pages", "gsc_top_queries", "gsc_query_page_pairs"]),
+        .in("field_key", [
+          "gsc_top_pages",
+          "gsc_top_queries",
+          "gsc_query_page_pairs",
+          "gsc_ai_overview_summary",
+          "gsc_search_appearance",
+          "gsc_discover_summary",
+          "gsc_news_top_queries",
+        ]),
       "gsc"
     );
     const rows = ((r as any)?.data || []) as any[];
@@ -92,14 +105,26 @@ export async function loadGsc(projectId: string): Promise<GscData> {
       const row = rows.find(x => x.field_key === k);
       try { return row ? JSON.parse(row.field_value || "[]") : []; } catch { return []; }
     };
+    const parseObj = (k: string) => {
+      const row = rows.find(x => x.field_key === k);
+      try { return row ? JSON.parse(row.field_value || "null") : null; } catch { return null; }
+    };
     return {
-      topPages: parse("gsc_top_pages"),
-      topQueries: parse("gsc_top_queries"),
-      queryPagePairs: parse("gsc_query_page_pairs"),
+      topPages:           parse("gsc_top_pages"),
+      topQueries:         parse("gsc_top_queries"),
+      queryPagePairs:     parse("gsc_query_page_pairs"),
+      aiOverviewSummary:  parseObj("gsc_ai_overview_summary"),
+      searchAppearance:   parse("gsc_search_appearance"),
+      discoverSummary:    parseObj("gsc_discover_summary"),
+      newsTopQueries:     parse("gsc_news_top_queries"),
       fetchedAt,
     };
   } catch {
-    return { topPages: [], topQueries: [], queryPagePairs: [], fetchedAt };
+    return {
+      topPages: [], topQueries: [], queryPagePairs: [],
+      aiOverviewSummary: null, searchAppearance: [], discoverSummary: null, newsTopQueries: [],
+      fetchedAt,
+    };
   }
 }
 
@@ -156,19 +181,28 @@ export async function resolveTargetUrls(campaignId: string | undefined, projectI
 }
 
 /* ─── CrUX field data (small, project-agnostic wrapper) ──────── */
-export async function fetchCrux(url: string, ms = 12000): Promise<{ url: string; lcp_ms: number | null; cls: number | null; inp_ms: number | null } | null> {
+export async function fetchCrux(target: string, ms = 12000): Promise<{ target: string; level: "url" | "origin"; lcp_ms: number | null; cls: number | null; inp_ms: number | null } | null> {
   const key = process.env.PAGESPEED_API_KEY || "";
   if (!key) return null;
+  // If caller passes a full URL, query URL-level. If they pass an origin
+  // (e.g. "https://www.example.com"), query origin-level. CrUX uses different
+  // body fields ("url" vs "origin") and origin-level returns aggregate field
+  // data for the whole domain when URL-level has insufficient traffic.
+  const isOrigin = /^https?:\/\/[^/]+\/?$/.test(target.trim());
+  const body = isOrigin
+    ? { origin: target.replace(/\/$/, ""), formFactor: "PHONE" }
+    : { url: target, formFactor: "PHONE" };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
     const r = await fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${key}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-      body: JSON.stringify({ url, formFactor: "PHONE" }),
+      body: JSON.stringify(body),
     }).then(x => x.json());
     const m = (r as any)?.record?.metrics; if (!m) return null;
     return {
-      url,
+      target,
+      level: isOrigin ? "origin" : "url",
       lcp_ms: m.largest_contentful_paint?.percentiles?.p75 ?? null,
       cls: m.cumulative_layout_shift?.percentiles?.p75 ?? null,
       inp_ms: m.interaction_to_next_paint?.percentiles?.p75 ?? null,
