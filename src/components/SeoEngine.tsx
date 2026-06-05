@@ -166,8 +166,8 @@ export const SeoEngine = ({
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim() || !keyword.trim()) {
-      toast({ title: 'Missing fields', description: 'Please add a URL and a keyword.', variant: 'destructive' });
+    if (!url.trim()) {
+      toast({ title: 'URL required', description: 'Add the website URL to audit. Keyword optional — will be inferred from content if blank.', variant: 'destructive' });
       return;
     }
 
@@ -384,10 +384,10 @@ export const SeoEngine = ({
           {/* Keyword + chips */}
           <div className="space-y-2">
             <Label htmlFor="keyword" className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-              Primary Keyword or Topic
+              Primary Keyword or Topic <span className="normal-case text-muted-foreground/60 tracking-normal">· optional, inferred from content if blank</span>
             </Label>
             <Input
-              id="keyword" type="text" placeholder="e.g. project management software"
+              id="keyword" type="text" placeholder="e.g. project management software · or leave blank to auto-infer"
               value={keyword} onChange={e => setKeyword(e.target.value)} disabled={loading}
               className="h-12 text-base bg-background/60 border-border focus-visible:ring-primary focus-visible:ring-offset-0"
             />

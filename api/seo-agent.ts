@@ -71,6 +71,66 @@ async function fetchWebsiteContent(url: string, maxChars = 8000): Promise<string
   }
 }
 
+/* ─── Build 12.15 — keyword auto-inference ─────────────────────────
+   For prospect-audit use case where the operator does not know the
+   target keyword for a random lead URL. Reads the fetched website
+   content and infers the most likely primary keyword the site would
+   try to rank for. Returns null if inference fails — caller falls
+   back to a generic anchor. */
+async function inferKeywordFromContent(websiteContent: string, url: string): Promise<string | null> {
+  if (!websiteContent || websiteContent.length < 100) return null;
+  if (websiteContent.startsWith("Could not fetch") || websiteContent.startsWith("Website returned empty") || websiteContent.startsWith("Website took too long")) return null;
+
+  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+  if (!ANTHROPIC_API_KEY) return null;
+
+  const system = `You are an SEO strategist. Given website content, identify the SINGLE most likely primary keyword this site would target in organic search.
+
+Rules:
+- 2-5 words maximum
+- Specific enough to be a real search query, not a category label
+- Lowercase, no quotes
+- If the site sells a product, the keyword should be the product category buyers search for
+- If the site is a content site, the keyword should be the topic it ranks for
+- Return ONLY the keyword phrase, nothing else, no preamble, no explanation`;
+
+  const user = `URL: ${url}
+
+Website content (first 4000 chars):
+${websiteContent.slice(0, 4000)}
+
+Primary keyword:`;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 50,
+        system,
+        messages: [{ role: "user", content: user }],
+      }),
+    });
+    clearTimeout(timer);
+    if (!r.ok) return null;
+    const d = await r.json();
+    const blocks = d?.content || [];
+    const text = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "").join(" ").trim();
+    // Normalise — strip quotes, trim to first line, sanity-check length
+    const cleaned = text.replace(/^["'`]+|["'`]+$/g, "").split("\n")[0].trim().toLowerCase();
+    if (!cleaned || cleaned.length < 2 || cleaned.length > 80) return null;
+    // Reject if the model returned a sentence or an explanation
+    if (cleaned.split(/\s+/).length > 8) return null;
+    return cleaned;
+  } catch {
+    return null;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────
    CONTEXT BUILDER
 ───────────────────────────────────────────────────────────────── */
@@ -220,14 +280,36 @@ async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
     ? { websiteChars: 15000, maxTokens: 16000 }
     : { websiteChars: 8000,  maxTokens: 8000  };
 
-  if (!url || !keyword || !deliverableType) {
-    return res.status(200).json({ error: "Missing required fields: url, keyword, deliverableType." });
+  if (!url || !deliverableType) {
+    return res.status(200).json({ error: "Missing required fields: url, deliverableType." });
   }
   if (!SYSTEM_PROMPTS[deliverableType]) {
     return res.status(200).json({ error: `Invalid deliverableType. Must be one of: ${Object.keys(SYSTEM_PROMPTS).join(", ")}.` });
   }
 
   const websiteContent = await fetchWebsiteContent(url, cfg.websiteChars);
+
+  /* Build 12.15 — if operator did not provide a keyword (prospect-audit
+     use case where they do not know the target keyword for a random
+     lead URL), infer one from the fetched content. The inferred
+     keyword is surfaced to the operator at the top of the streamed
+     output so they know what was used as the anchor. */
+  let inferredKeyword: string | null = null;
+  if (!keyword) {
+    inferredKeyword = await inferKeywordFromContent(websiteContent, url);
+    if (inferredKeyword) {
+      keyword = inferredKeyword;
+    } else {
+      // Last-resort fallback — use the bare domain as anchor. Not great but
+      // unblocks the run; the report will be more general than ideal.
+      try {
+        const u = new URL(url.startsWith("http") ? url : `https://${url}`);
+        keyword = u.hostname.replace(/^www\./i, "").split(".")[0];
+      } catch {
+        keyword = "primary topic";
+      }
+    }
+  }
 
   /* ── Load market persona for this project (buyer psychology layer) ── */
   let personaSection = "";
@@ -301,6 +383,11 @@ ${mode === 'deep' ? `- DEEP MODE: Be exhaustive. Every section should have maxim
     "Cache-Control": "no-cache, no-transform",
     "Transfer-Encoding": "chunked",
   });
+
+  // Build 12.15 — surface inferred keyword to operator at top of stream
+  if (inferredKeyword) {
+    res.write(`> **Note:** No keyword was provided. The strategy below is anchored to **"${inferredKeyword}"**, inferred from the site content. If a different primary keyword is more relevant, re-run with it specified.\n\n---\n\n`);
+  }
 
   let fullOutput = "";
 

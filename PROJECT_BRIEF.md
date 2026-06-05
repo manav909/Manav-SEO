@@ -736,3 +736,43 @@ Honest caveats:
 Single file changed: src/pages/Audit.tsx (added imports, added renderAuditAsMarkdown helper function, added buyerName state, added exportAuditWord + previewAuditTab handlers, added Buyer Name form input, added Download Word + Preview in tab buttons to both action rows).
 
 Vite build green at 39.49s. Compile clean. No contractions, no hardcoding.
+
+Build 12.15 — Strategy mode works on URL alone [SHIPPED 2026-06-04]: Operator reported deep strategy audit refused to run without a keyword. Two gates were enforcing this — client UI in src/components/SeoEngine.tsx line 169 ('Please add a URL and a keyword') and server in api/seo-agent.ts line 223 ('Missing required fields: url, keyword, deliverableType'). Both removed for the prospect-audit use case where operator does not know the lead's target keyword.
+
+Fix: keyword auto-inference when missing.
+
+ENGINE (api/seo-agent.ts):
+- Added inferKeywordFromContent(websiteContent, url) helper — single Anthropic call to claude-sonnet-4-6, max_tokens 50, 30s timeout. Prompts the model to return a 2-5 word lowercase keyword the site would target in organic search. Strict output sanitisation: strip quotes, take first line, reject >8 words (would indicate the model returned a sentence), reject if too short/long.
+- Server gate now requires only url + deliverableType. Keyword is optional.
+- When operator provides no keyword: fetch website content first (always done anyway), then call inferKeywordFromContent. If inference succeeds, use it. If inference fails (no API key, model error, malformed response, fetch failed), fall back to bare domain hostname as anchor ('blendspace' from 'blendspace.ai'). Last-resort fallback gets 'primary topic' so the run never blocks.
+- Stream preamble: when keyword was inferred, the first thing written to the response is a markdown blockquote noting which keyword was inferred and that operator can re-run with a different one. Operator sees this inline before the report starts streaming so they know exactly what was used as the anchor.
+
+CLIENT UI (src/components/SeoEngine.tsx):
+- handleGenerate gate now only requires url. Updated toast copy: 'URL required. Keyword optional — will be inferred from content if blank.'
+- Keyword input label updated: 'Primary Keyword or Topic · optional, inferred from content if blank'
+- Placeholder updated: 'e.g. project management software · or leave blank to auto-infer'
+
+Honest discipline:
+- Inferred keyword is NEVER silent. The blockquote at the top of the stream tells the operator and (if exported) the client what keyword anchored the analysis. Avoids the failure mode where the report reads strangely because it was anchored to a keyword nobody knew about.
+- If inference fails AND fallback fires, the anchor is the bare domain ('blendspace' / 'acme'). Report will be more generic in this case but never blocks. The blockquote is NOT shown for the bare-domain fallback because operator might think the system "found" a keyword when really it just used the domain.
+- inferKeywordFromContent reuses the website content already fetched for the main analysis — no second crawl. Minimal extra latency, ~2-5s added to the run.
+
+For the BlendSpace-style prospect-audit workflow with strategy mode:
+1. Open /audit, switch to Strategy mode
+2. Paste prospect URL — leave keyword blank
+3. Pick deliverable (Technical / On-Page / Off-Page / GEO)
+4. Pick mode (Standard / Deep)
+5. Click Generate — wait ~30-90s for Standard, longer for Deep
+6. Top of streamed output shows "Note: No keyword was provided. The strategy below is anchored to '[inferred keyword]', inferred from the site content."
+7. Read the report. If the inferred keyword is wrong, paste a different one in the keyword field and re-run.
+
+Honest caveats:
+1. Inferred keyword is a single best-guess. For sites with multiple distinct service lines, the model picks the most prominent one. Operator may want to re-run for each.
+2. Keyword inference adds ~2-5s to the strategy run. Net acceptable.
+3. The auto-saved report (when projectId is set) stores the inferred keyword in the keywords array. If operator runs without keyword AND without projectId (typical prospect-audit case), no save happens — same as before this build.
+4. The inferred-keyword blockquote IS visible in the exported Word doc if operator downloads. This is intentional — the client sees the same disclosure the operator did. Honesty is consistent across all surfaces.
+5. The bare-domain fallback (when inference fails entirely) does NOT show the blockquote. Operator may not notice the report was generated with a weak anchor. Acceptable trade-off — alternative was either failing the run entirely or showing a confusing "we used the domain as keyword" message.
+
+Two files changed: api/seo-agent.ts (inferKeywordFromContent helper + gate change + stream preamble), src/components/SeoEngine.tsx (drop strict keyword gate, update labels).
+
+Vite build green at 29.28s. Compile clean. No contractions, no hardcoding.
