@@ -20,6 +20,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { computeGeoVisibilityScore } from "./geo-scoring.js";
 import {
   SEO_ACTION_LIBRARY, getActionById,
   type SeoAction, type ImpactRange, type ActionCategory,
@@ -125,6 +126,11 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
       /* Build 12.19 — GEO inputs for AI-era suggestions */
       "gsc_ai_overview_summary",
       "ga4_ai_platform_summary",
+      /* Build 12.21 — displacement summary persisted by the
+         geo_displacement deep-step. Enables geo:ai_overview_displaced
+         and geo:ai_overview_strong triggers. Null when the deep-step
+         has not yet run on this project. */
+      "geo_displacement_summary",
     ]);
 
   const fieldMap: Record<string, string> = {};
@@ -144,6 +150,8 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
   /* Build 12.19 — GEO summary objects for AI-era triggers */
   const aiOverview     = parse(fieldMap["gsc_ai_overview_summary"]);
   const aiPlatform     = parse(fieldMap["ga4_ai_platform_summary"]);
+  /* Build 12.21 — displacement summary (null when deep-step has not run) */
+  const geoDisplacement = parse(fieldMap["geo_displacement_summary"]);
 
   /* Build a quick lookup of KPI key → health */
   const kpiHealth: Record<string, string> = {};
@@ -157,7 +165,7 @@ export async function getSmartSuggestions(projectId: string, maxResults: number 
      match the current state. If yes, add to suggestions. */
   for (const action of SEO_ACTION_LIBRARY) {
     for (const trigger of action.applicableWhen) {
-      const match = matchTrigger(trigger, { kpiHealth, risingStars, fallingStars, cannibalization, aiOverview, aiPlatform });
+      const match = matchTrigger(trigger, { kpiHealth, risingStars, fallingStars, cannibalization, aiOverview, aiPlatform, geoDisplacement });
       if (!match) continue;
 
       const priority: SuggestedAction["priority"] =
@@ -207,9 +215,13 @@ function matchTrigger(trigger: string, ctx: {
   /* Build 12.19 — GEO context for AI-era triggers */
   aiOverview?:      any | null;
   aiPlatform?:      any | null;
+  /* Build 12.21 — displacement summary (from geo_displacement deep-step) */
+  geoDisplacement?: any | null;
 }): TriggerMatch | null {
   /* Format: "kpi:<key>:<healthLevel>" OR "rising_stars:<opportunityOrAny>" OR "falling_stars:<severityOrAny>" OR "cannibalization:any"
-     Build 12.19 added: "geo:ai_overview_absent" | "geo:ai_overview_present" | "geo:ai_platform_zero" | "geo:ai_platform_growing" */
+     Build 12.19 added: "geo:ai_overview_absent" | "geo:ai_overview_present" | "geo:ai_platform_zero" | "geo:ai_platform_growing"
+     Build 12.21 added: "geo:ai_overview_displaced" | "geo:ai_overview_strong" — both require the geo_displacement deep-step
+     to have run at least once on the project (otherwise geoDisplacement is null and these triggers do not fire). */
   if (trigger.startsWith("kpi:")) {
     const parts = trigger.split(":");
     if (parts.length < 3) return null;
@@ -320,6 +332,43 @@ function matchTrigger(trigger: string, ctx: {
       }
       return null;
     }
+    /* Build 12.21 — per-query displacement signals. These require the
+       geo_displacement deep-step to have written its summary; null
+       means the deep-step has not yet run on this project. */
+    if (signal === "ai_overview_displaced") {
+      const d = ctx.geoDisplacement;
+      if (!d) return null;
+      /* Fire when there are competitors holding citation slots AND the
+         project has demonstrable top-10 organic overlap with them — i.e.
+         displacement is realistic, not just a wish. */
+      const topCompetitor = Array.isArray(d.top_competitors) ? d.top_competitors[0] : null;
+      const hasTop10Overlap = Array.isArray(d.top_competitors) &&
+        d.top_competitors.some((c: any) => Number(c?.project_ranks_top_10 || 0) > 0);
+      if (topCompetitor && hasTop10Overlap && Number(d.project_citation_share_pct || 0) < 30) {
+        return {
+          reason:     `${topCompetitor.domain} holds ${topCompetitor.citation_count} citation slots where this site has top-10 overlap — direct displacement opportunity.`,
+          severity:   "concern",
+          triggerKpi: "ai_overview_displaced",
+          payload:    d,
+        };
+      }
+      return null;
+    }
+    if (signal === "ai_overview_strong") {
+      const d = ctx.geoDisplacement;
+      if (!d) return null;
+      /* Fire when the project holds a meaningful share of citation slots
+         across analyzed queries — defender posture. */
+      if (Number(d.project_citation_count || 0) >= 3 && Number(d.project_citation_share_pct || 0) >= 15) {
+        return {
+          reason:     `Project holds ${d.project_citation_count} citations (${d.project_citation_share_pct}% share) across analyzed queries — defender posture.`,
+          severity:   "opportunity",
+          triggerKpi: "ai_overview_strong",
+          payload:    d,
+        };
+      }
+      return null;
+    }
     return null;
   }
 
@@ -402,26 +451,15 @@ export async function getBaselineSnapshot(projectId: string): Promise<BaselineSn
   const aiConversions  = ai ? Number(ai.conversions || 0) : 0;
   const aiPlatformCt   = ai ? Number(ai.source_count || 0) : 0;
 
-  /* Composite GEO score — same threshold logic used across Build 12.17/18 */
-  let geoScore = 0;
-  if (aiOverviewImpr > 0) {
-    if (aiOverviewImpr >= 50000) geoScore += 60;
-    else if (aiOverviewImpr >= 10000) geoScore += 50;
-    else if (aiOverviewImpr >= 1000) geoScore += 35;
-    else if (aiOverviewImpr >= 100) geoScore += 20;
-    else geoScore += 10;
-  }
-  if (aiSessions > 0) {
-    let pts = 0;
-    if (aiSessions >= 5000) pts += 30;
-    else if (aiSessions >= 500) pts += 25;
-    else if (aiSessions >= 50) pts += 15;
-    else if (aiSessions > 0) pts += 8;
-    if (aiPlatformCt >= 3) pts += 10;
-    else if (aiPlatformCt >= 2) pts += 5;
-    geoScore += Math.min(40, pts);
-  }
-  geoScore = Math.min(100, Math.max(0, Math.round(geoScore)));
+  /* Build 12.21 — uses shared scoring from geo-scoring.ts (extracted
+     from prior inlined copies). Threshold changes propagate from a
+     single edit; behavior is identical to inlined version. */
+  const geoScore = computeGeoVisibilityScore({
+    aiOverviewImpressions: aiOverviewImpr,
+    aiOverviewPresent:     ao?.present === true,
+    aiPlatformSessions:    aiSessions,
+    aiPlatformCount:       aiPlatformCt,
+  });
 
   return {
     clicks_30d:        parseNum(m.gsc_total_clicks),

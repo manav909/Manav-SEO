@@ -142,6 +142,45 @@ export async function gatherGeoDisplacement(opts: {
     worth_deeper,
   };
 
+  /* Build 12.21 — persist a compact summary to project_knowledge so the
+     scenario engine can fire geo:ai_overview_displaced and
+     geo:ai_overview_strong triggers without re-running SerpAPI. The
+     summary is small (citation share + top 3 competitors + emergence
+     flag) and the field overwrites on each run so storage stays bounded.
+     Failure is non-fatal — trigger firing degrades gracefully. */
+  if (displacement) {
+    try {
+      const summary = {
+        captured_at: now,
+        queries_analyzed: displacement.queries_analyzed,
+        project_citation_count: displacement.project_citation_count,
+        project_citation_share_pct: displacement.project_citation_share_pct,
+        total_citation_slots: displacement.total_citation_slots,
+        top_competitors: displacement.competitors.slice(0, 3).map(c => ({
+          domain: c.domain,
+          citation_count: c.citation_count,
+          citation_share_pct: c.citation_share_pct,
+          project_ranks_top_10: c.displacement.project_ranks_top_10,
+        })),
+        emergence_signal_count: emergence?.filter(e => e.previously_zero).length || 0,
+      };
+      await db().from("project_knowledge")
+        .upsert({
+          project_id: projectId,
+          category:   "analytics",
+          field_key:  "geo_displacement_summary",
+          field_value: JSON.stringify(summary),
+          source:     "geo_displacement_deep_step",
+          source_name: "GEO Displacement Analysis",
+          data_date: now.slice(0, 10),
+          updated_at: now,
+        }, { onConflict: "project_id,category,field_key" });
+    } catch (e) {
+      /* Best-effort — failure doesn't block the deep-step output */
+      console.warn("[geo_displacement] summary persist failed:", (e as any)?.message || e);
+    }
+  }
+
   return { evidence, report_md: renderReport(evidence) };
 }
 

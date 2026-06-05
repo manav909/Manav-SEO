@@ -657,8 +657,8 @@ export const SEO_ACTION_LIBRARY: SeoAction[] = [
     confidence: "medium",
     costSummary: "4-12 hours (analysis + content restructuring)",
     evidence: "Citation displacement field observations (Build 12.20 citation gap analysis): pages adopting all observed structural patterns earn citation within 8-16 weeks at ~40% success rate in measured samples.",
-    applicableWhen: ["geo:ai_overview_absent"],
-    prerequisites: ["SerpAPI configured for citation gap analysis", "Target query shows AI Overview that cites competitors but not the site"],
+    applicableWhen: ["geo:ai_overview_displaced"],
+    prerequisites: ["SerpAPI configured for citation gap analysis", "geo_displacement workspace step has run on this project at least once", "Target query shows AI Overview that cites competitors but not the site"],
   },
 
   {
@@ -680,7 +680,7 @@ export const SEO_ACTION_LIBRARY: SeoAction[] = [
     confidence: "medium",
     costSummary: "12-24 hours (cluster mapping + content creation)",
     evidence: "Topic-cluster citation observations: domains earning AI Overview citation on 3+ queries in a cluster typically defend all citations over 90+ day windows at high rates. Single-citation domains show higher churn.",
-    applicableWhen: ["geo:ai_overview_present"],
+    applicableWhen: ["geo:ai_overview_strong"],
   },
 
   {

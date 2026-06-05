@@ -16,6 +16,7 @@
      bs_seo_opportunity_dismiss
 ═══════════════════════════════════════════════════════════════ */
 
+import { computeGeoVisibility } from "./geo-scoring.js";
 import {
   listCampaigns,
   getCampaignDetail,
@@ -776,30 +777,15 @@ export async function bsClientLensLoad(body: any): Promise<any> {
           const aiConv = ga4AiPlatform ? Number(ga4AiPlatform.conversions || 0) : 0;
           const aiPlatforms: string[] = ga4AiPlatform?.platforms_detected || [];
 
-          let geoScore = 0;
-          if (aoImp >= 50000) geoScore += 60;
-          else if (aoImp >= 10000) geoScore += 50;
-          else if (aoImp >= 1000) geoScore += 35;
-          else if (aoImp >= 100) geoScore += 20;
-          else if (aoImp > 0) geoScore += 10;
-          if (aiSes > 0) {
-            let pts = 0;
-            if (aiSes >= 5000) pts += 30;
-            else if (aiSes >= 500) pts += 25;
-            else if (aiSes >= 50) pts += 15;
-            else pts += 8;
-            if (aiPlatforms.length >= 3) pts += 10;
-            else if (aiPlatforms.length >= 2) pts += 5;
-            geoScore += Math.min(40, pts);
-          }
-          geoScore = Math.min(100, Math.max(0, Math.round(geoScore)));
-
-          let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
-          if (geoScore === 0) grade = 'absent';
-          else if (geoScore < 25) grade = 'emerging';
-          else if (geoScore < 55) grade = 'present';
-          else if (geoScore < 80) grade = 'established';
-          else grade = 'strong';
+          /* Build 12.21 — composite score uses shared geo-scoring module
+             (extracted from prior inlined copies). Threshold logic is
+             single-source; behaviour identical to inlined version. */
+          const { score: geoScore, grade } = computeGeoVisibility({
+            aiOverviewImpressions: aoImp,
+            aiOverviewPresent:     gscAiOverview?.present === true,
+            aiPlatformSessions:    aiSes,
+            aiPlatformCount:       aiPlatforms.length,
+          });
 
           return {
             ai_overview: gscAiOverview ? {

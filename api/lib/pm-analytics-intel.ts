@@ -25,6 +25,8 @@
    power scope-based charts, and feed the upcoming What-If Simulator.
 ═══════════════════════════════════════════════════════════════ */
 
+import { computeGeoVisibility } from "./geo-scoring.js";
+
 /* ─── Types ──────────────────────────────────────────────────── */
 
 export interface GscDailyRow {
@@ -1204,40 +1206,17 @@ function composeGeoSnapshot(input: {
     };
   }
 
-  /* GEO Visibility composite score — same threshold logic as showcase
-     composer in Build 12.17. Keeping the math centralised here would
-     be ideal but cross-engine import would create a circular dep; the
-     score is small enough to inline in both. If thresholds change,
-     update both places. */
-  let score = 0;
-  if (aiOverview?.present && aiOverview.impressions > 0) {
-    const imp = aiOverview.impressions;
-    if (imp >= 50000) score += 60;
-    else if (imp >= 10000) score += 50;
-    else if (imp >= 1000) score += 35;
-    else if (imp >= 100) score += 20;
-    else score += 10;
-  }
-  if (platformReferrals && platformReferrals.sessions > 0) {
-    const s = platformReferrals.sessions;
-    const platformCount = platformReferrals.platformCount;
-    let referralPoints = 0;
-    if (s >= 5000) referralPoints += 30;
-    else if (s >= 500) referralPoints += 25;
-    else if (s >= 50) referralPoints += 15;
-    else if (s > 0) referralPoints += 8;
-    if (platformCount >= 3) referralPoints += 10;
-    else if (platformCount >= 2) referralPoints += 5;
-    score += Math.min(40, referralPoints);
-  }
-  score = Math.min(100, Math.max(0, Math.round(score)));
-
-  let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
-  if (score === 0) grade = 'absent';
-  else if (score < 25) grade = 'emerging';
-  else if (score < 55) grade = 'present';
-  else if (score < 80) grade = 'established';
-  else grade = 'strong';
+  /* Build 12.21 — composite score uses shared geo-scoring module
+     (extracted from prior inlined copies). The circular-dep concern
+     noted in the prior comment was resolved by placing the scoring
+     module in a dependency-free location. Threshold logic is single
+     source. */
+  const { score, grade } = computeGeoVisibility({
+    aiOverviewImpressions: aiOverview?.impressions || 0,
+    aiOverviewPresent:     aiOverview?.present === true,
+    aiPlatformSessions:    platformReferrals?.sessions || 0,
+    aiPlatformCount:       platformReferrals?.platformCount || 0,
+  });
 
   return {
     aiOverview,

@@ -27,6 +27,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { computeGeoVisibilityScore, geoScoringInputsFromSummaries } from "./geo-scoring.js";
 import {
   SEO_ACTION_LIBRARY,
   type SeoAction, type ImpactRange,
@@ -127,32 +128,15 @@ export async function getCurrentMetricValue(projectId: string, metric: GoalMetri
     case "ai_platform_sessions":     return await extractFromJson("ga4_ai_platform_summary", "sessions");
     case "ai_platform_conversions":  return await extractFromJson("ga4_ai_platform_summary", "conversions");
     case "geo_visibility_score": {
-      /* Composite — compute inline using same threshold logic as showcase
-         composer (Build 12.17) and intel engine (Build 12.18). */
+      /* Build 12.21 — uses extracted shared scoring from geo-scoring.ts.
+         Threshold logic is single-source; this caller passes the raw
+         summary objects through the canonical helper. */
       const ao = await readJsonField<any>(projectId, "gsc_ai_overview_summary");
       const ai = await readJsonField<any>(projectId, "ga4_ai_platform_summary");
-      let score = 0;
-      if (ao && ao.present && Number(ao.total_impressions || 0) > 0) {
-        const imp = Number(ao.total_impressions);
-        if (imp >= 50000) score += 60;
-        else if (imp >= 10000) score += 50;
-        else if (imp >= 1000) score += 35;
-        else if (imp >= 100) score += 20;
-        else score += 10;
-      }
-      if (ai && Number(ai.sessions || 0) > 0) {
-        const s = Number(ai.sessions);
-        const platformCount = Number(ai.source_count || 0);
-        let pts = 0;
-        if (s >= 5000) pts += 30;
-        else if (s >= 500) pts += 25;
-        else if (s >= 50) pts += 15;
-        else if (s > 0) pts += 8;
-        if (platformCount >= 3) pts += 10;
-        else if (platformCount >= 2) pts += 5;
-        score += Math.min(40, pts);
-      }
-      return Math.min(100, Math.max(0, Math.round(score)));
+      return computeGeoVisibilityScore(geoScoringInputsFromSummaries({
+        aiOverviewSummary: ao,
+        aiPlatformSummary: ai,
+      }));
     }
   }
 }

@@ -24,6 +24,7 @@
 ══════════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { computeGeoVisibility } from "./geo-scoring.js";
 
 /* ════════════════════════════════════════════════════════════════════
    TYPES — the data contract the frontend will render against
@@ -1426,52 +1427,26 @@ function composeAiSearchVisibility(input: {
   }
 
   /* ── GEO VISIBILITY SCORE ──────────────────────────────────────
-     Composite metric across the two surfaces. Logarithmic-ish curve
-     so meaningful presence (not just any presence) earns the higher
-     grades. */
-  let score = 0;
-  if (aiOverviewBlock?.present && aiOverviewBlock.impressions > 0) {
-    /* AI Overview contributes 60 points max */
-    const imp = aiOverviewBlock.impressions;
-    if (imp >= 50000) score += 60;
-    else if (imp >= 10000) score += 50;
-    else if (imp >= 1000) score += 35;
-    else if (imp >= 100) score += 20;
-    else score += 10;
-  }
-  if (referralsBlock && referralsBlock.total_sessions > 0) {
-    /* AI platform referrals contribute 40 points max */
-    const s = referralsBlock.total_sessions;
-    const platformCount = referralsBlock.platforms_detected.length;
-    let referralPoints = 0;
-    if (s >= 5000) referralPoints += 30;
-    else if (s >= 500) referralPoints += 25;
-    else if (s >= 50) referralPoints += 15;
-    else if (s > 0) referralPoints += 8;
-    /* Bonus for multi-platform presence — being cited by 3+ AI platforms
-       indicates broad authority, not platform-specific quirk */
-    if (platformCount >= 3) referralPoints += 10;
-    else if (platformCount >= 2) referralPoints += 5;
-    score += Math.min(40, referralPoints);
-  }
-  score = Math.min(100, Math.max(0, Math.round(score)));
+     Build 12.21 — uses shared scoring from geo-scoring.ts (extracted
+     from prior inlined copy). Threshold logic single-source; behavior
+     identical to inlined version. */
+  const { score, grade } = computeGeoVisibility({
+    aiOverviewImpressions: aiOverviewBlock?.impressions || 0,
+    aiOverviewPresent:     aiOverviewBlock?.present === true,
+    aiPlatformSessions:    referralsBlock?.total_sessions || 0,
+    aiPlatformCount:       referralsBlock?.platforms_detected.length || 0,
+  });
 
-  let grade: 'absent' | 'emerging' | 'present' | 'established' | 'strong';
   let explainer: string;
   if (score === 0) {
-    grade = 'absent';
     explainer = `No detectable presence in AI Overview attribution or AI platform referrals. This is the GEO baseline — significant opportunity in the next 6-12 months as AI search adoption accelerates and citation slots are still contestable.`;
   } else if (score < 25) {
-    grade = 'emerging';
     explainer = `Early signal of citation in AI search surfaces. The site is being recognized but at low volume. Foundational structural improvements now compound through 2026 as citation traffic scales.`;
   } else if (score < 55) {
-    grade = 'present';
     explainer = `Established presence in AI search — citation footprint exists across surfaces. Above the threshold where most sites currently sit. Continued investment in content structure and entity authority will deepen presence.`;
   } else if (score < 80) {
-    grade = 'established';
     explainer = `Strong AI search visibility — the site is a regularly-cited source across multiple AI surfaces. Defending this position requires continued content freshness and active monitoring as competitive citation displacement intensifies.`;
   } else {
-    grade = 'strong';
     explainer = `Exceptional AI search visibility — among the citation-leader tier for this niche. This is the position competitors will spend the next 12-18 months attempting to displace. Maintain through content velocity and continued structural rigor.`;
   }
 

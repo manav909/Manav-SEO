@@ -1084,3 +1084,49 @@ WHAT IS NEXT — BUILD 12.21 (STRETCH / VISION):
 Seven files changed: api/lib/pm-action-library.ts (ActionCategory + 6 new actions ~250 lines), api/lib/geo-citation-gap.ts (NEW, ~340 lines: pattern extraction + gap computation + orchestrator), api/lib/geo-displacement.ts (NEW, ~250 lines: displacement analysis + future-AI-Overview detection), api/lib/workspace/deep-steps/ai-overview-citation-gap.ts (NEW, ~280 lines: workspace step wrapping citation gap), api/lib/workspace/deep-steps/geo-displacement.ts (NEW, ~200 lines: workspace step combining displacement + emergence), api/lib/workspace/routes.ts (+45 lines: register 2 new steps), api/lib/pm-gsc.ts (+30 lines: history capture).
 
 Vite build green at 42.29s. Compile clean across all 7 files. No new contractions in template literals (1 pre-existing hit in routes.ts line 405 confirmed not from this build via git diff).
+
+Build 12.21 — Composite GEO scoring extracted + precise displacement triggers [SHIPPED 2026-06-05]: Stretch/vision tier of the GEO multi-build program. Two genuine improvements on top of Build 12.20: (a) extracted the composite GEO score logic from 5 inlined copies into a shared module, and (b) added two precise triggers (geo:ai_overview_displaced + geo:ai_overview_strong) that fire on real displacement data from the geo_displacement deep-step rather than the proxy signals used in Build 12.20.
+
+This entry SUPERSEDES the deferred items from Build 12.20's "Build 12.21 next" list — content-structure template generation and entity association heuristic scoring are NOT in this build. They remain genuine stretch items; if field evidence demands them, a future Build 12.22 can add them. Shipping smaller and verified > shipping ambitious and partial.
+
+NOTE ON DEPLOY SEQUENCING: Build 12.20 was NOT in main when Build 12.21 work began. This deploy command covers BOTH builds in a single commit. After this, main contains 12.16 → 12.21 contiguously.
+
+WHAT 12.21 CHANGES:
+
+(1) api/lib/geo-scoring.ts (NEW, ~145 lines) — single source of truth for the composite GEO Visibility Score and grade ladder. Exports computeGeoVisibility, computeGeoVisibilityScore, computeGeoVisibilityGrade, geoScoringInputsFromSummaries. Threshold tables for AI Overview points (0-60), AI platform points (0-30 base + 0-10 multi-platform bonus), and grade bands (absent/emerging/present/established/strong) live in one place. Behavior identical to the inlined copies — pure refactor.
+
+(2-6) Five callers migrated to use the shared module:
+- api/lib/pm-goal-engine.ts — geo_visibility_score case in getCurrentMetricValue (~30 lines removed, 6 added)
+- api/lib/pm-scenario-engine.ts — getBaselineSnapshot composite computation (~20 lines removed, 6 added)
+- api/lib/seo-campaign-routes.ts — geo block in campaign list response (~25 lines removed, 7 added)
+- api/lib/client-showcase-engine.ts — composeAiSearchVisibility (~45 lines removed, 7 added; preserved the per-grade explainer narratives which are showcase-specific and not part of scoring)
+- api/lib/pm-analytics-intel.ts — composeGeoSnapshot in intel bundle (~25 lines removed, 7 added; the prior comment claiming "cross-engine import would create a circular dep" was wrong — the new geo-scoring module is dependency-free and importable everywhere)
+
+(7) api/lib/workspace/deep-steps/geo-displacement.ts — added project_knowledge upsert of a compact geo_displacement_summary on every successful deep-step run. Stores: queries_analyzed, project_citation_count, project_citation_share_pct, total_citation_slots, top 3 competitors with citation counts + project top-10 overlap counts, emergence signal count. Wrapped in try/catch — persist failure does not block the deep-step output. This is the data substrate that makes the precise triggers possible.
+
+(8) api/lib/pm-scenario-engine.ts — getSmartSuggestions extended to read geo_displacement_summary from project_knowledge. matchTrigger ctx extended with geoDisplacement field. Two new trigger branches added:
+- geo:ai_overview_displaced — fires when there are competitors holding citation slots AND the project has demonstrable top-10 organic overlap with them AND project's citation share is under 30%. Means displacement is realistic, not just a wish. Senior-DMS phrasing: "X holds N citation slots where this site has top-10 overlap — direct displacement opportunity."
+- geo:ai_overview_strong — fires when the project holds 3+ citations AND citation share is 15%+ across analyzed queries. Defender posture trigger.
+
+(9) api/lib/pm-action-library.ts — two action triggers upgraded to use the new precise triggers now that they exist:
+- displace_geo_citation_competitor: applicableWhen changed from ["geo:ai_overview_absent"] to ["geo:ai_overview_displaced"]. Now surfaces ONLY when there's real displacement data, not as a fallback when AI Overview is absent entirely. Prerequisites list updated to note that geo_displacement deep-step must have run.
+- expand_geo_authority_clustering: applicableWhen changed from ["geo:ai_overview_present"] to ["geo:ai_overview_strong"]. Now surfaces ONLY when the project actually holds substantial citation share, not as a generic suggestion whenever AI Overview is present.
+
+HONEST CAVEATS:
+
+- The two new triggers require the geo_displacement workspace deep-step to have run on the project at least once. On fresh projects without a workspace run, these actions will not surface — they replace less-precise triggers from Build 12.20 (geo:ai_overview_absent and geo:ai_overview_present) which were noisy proxies. Cleaner suggestion behavior at the cost of requiring deep-step runs as prerequisite.
+- The four foundational GEO actions (add_faq_schema_for_geo, add_summary_paragraph_for_geo, add_author_credentials_for_geo, monitor_future_ai_overview_emergence) still trigger on geo:ai_overview_absent because they apply broadly when AI Overview citation is missing — these are deliberately less-precise to give projects useful suggestions before they've run the displacement deep-step.
+- Threshold tables in geo-scoring.ts are heuristic and chosen to map to senior-DMS judgment. They are NOT validated against an external benchmark. When field evidence accumulates, adjust here — single edit propagates to all 5 callers.
+- The deferred items from Build 12.20's next-up list (entity association scoring, AI Overview content-structure template extraction, conversion attribution funnel) are NOT in this build. They remain genuine stretch — would need real model design and validation, not just code. Future Build 12.22 candidates.
+
+VERIFICATION:
+
+- esbuild compile across all 13 touched files: green
+- vite build: green at 44.33s
+- Contraction scan on 12.21 added lines: clean
+- Pure refactor (5 callers): produces identical scores to inlined version because thresholds unchanged
+
+DEPLOY COMBINES BUILD 12.20 + 12.21:
+This single commit ships everything from Build 12.20 plus the 12.21 refactor and new triggers. After deploy, main contains the contiguous GEO program 12.16 → 12.21.
+
+Files changed (13 total): 6 NEW (geo-scoring.ts, geo-citation-gap.ts, geo-displacement.ts, ai-overview-citation-gap.ts, workspace/deep-steps/geo-displacement.ts, plus restored 12.20 file)  — wait, that's 5 new actually. The full list: api/lib/geo-scoring.ts NEW, api/lib/geo-citation-gap.ts NEW (12.20), api/lib/geo-displacement.ts NEW (12.20), api/lib/workspace/deep-steps/ai-overview-citation-gap.ts NEW (12.20), api/lib/workspace/deep-steps/geo-displacement.ts NEW (12.20), api/lib/pm-action-library.ts MODIFIED (12.20+12.21), api/lib/pm-goal-engine.ts MODIFIED (12.21), api/lib/pm-scenario-engine.ts MODIFIED (12.21), api/lib/seo-campaign-routes.ts MODIFIED (12.21), api/lib/client-showcase-engine.ts MODIFIED (12.21), api/lib/pm-analytics-intel.ts MODIFIED (12.21), api/lib/pm-gsc.ts MODIFIED (12.20), api/lib/workspace/routes.ts MODIFIED (12.20).
