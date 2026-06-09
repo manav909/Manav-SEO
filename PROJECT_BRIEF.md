@@ -11,7 +11,10 @@
 | 12.20 | Forward-looking GEO capabilities (citation gap, displacement, emergence) | SHIPPED (in 04f3e23) |
 | 12.21 | GEO scoring extraction + precise displacement triggers | SHIPPED (in 04f3e23) |
 | 12.21.1/2/3 | Guest-post finder timeout machinery + work reduction | SHIPPED (in 04f3e23) |
-| 12.22 | Content-structure templates + GEO deep-step registration fix | THIS SESSION — see Build 12.22 entry below. Deploy command in chat. |
+| 12.22 | Content-structure templates + GEO deep-step registration fix | BUILT this session — deploy pending confirmation on main. See Build 12.22 entry below. |
+| 12.23a | Chat-driven wizard brain (capability registry + archetypes + classify/plan) | BUILT this session — deploy pending. Backend only, no layout. See Build 12.23a entry below. |
+
+**DEPLOY-ORDER NOTE (2026-06-09):** 12.22 and 12.23a were both built this session, layered on `04f3e23`, and neither has been confirmed on main. 12.23a touches only NEW wizard files + an additive `wizard_` block in `task-engine.ts` (12.22 did not touch task-engine, so this applies cleanly regardless). If 12.22 is not yet on main, deploy 12.22 first. Do not assume either is live without `git log` confirmation.
 
 **VERIFIED FINDING — orphaned GEO deep-steps (corrected this session):** The Build 12.20 deep-steps `ai_overview_citation_gap` and `geo_displacement` dispatched in `workspace/routes.ts` but were NEVER reachable: they were absent from `STEP_DEFS` and every goal's `needs`, and `isEnabled()` returns `false` for any step not in the composed config (`return s ? s.enabled !== false : false`). A real run always has a composed config, so they never ran. The brief's old post-deploy verification ("confirm the citation-gap deep-step renders") was never actually possible. Build 12.22 registers them so they execute.
 
@@ -1335,8 +1338,41 @@ VERIFICATION OWED AFTER DEPLOY:
 
 ## OUTSTANDING / NEXT SESSION QUICK START
 
+### Build 12.23a — Chat-driven wizard brain [BUILT 2026-06-09, deploy pending]
+The flagship feature Manav asked for: paste a client chat, the software classifies WHICH wizard archetype the engagement is and produces the full stage plan with honest per-stage readiness, using real platform capabilities behind the scenes. This turn ships the BRAIN (classify + plan); execution and UI are sequenced below.
+
+Files (all new except the dispatch edit; no new api/*.ts, no migration, no layout):
+- `api/lib/capability-registry.ts` — code-grounded ground truth of every engine: id, real engine reference, inputs, output, limits, mode (auto / needs_connection / needs_input / manual_dms / not_supported). The anti-fabrication anchor — the planner can only reference what is here. Encodes the known gaps explicitly (site_wide_url_classification, url_inventory_export, gsc_csv_ingestion = not_supported) and the FAQ correction (structure for AEO, not rich results).
+- `api/lib/wizard-archetypes.ts` — 5 wizard types (seo_audit_roadmap, page_optimization, content_authority, geo_aeo, technical_remediation), each an ordered stage list mapping to capability ids.
+- `api/lib/wizard-engine.ts` — `handleWizard(action, body)`: `wizard_archetypes` (list) and `wizard_classify` (one LLM call → archetype + requirements + exclusions + deliverable_format + ymyl, then deterministic stage plan with readiness, gaps, manual_calls, summary). Stateless, freeze-safe.
+- `api/task-engine.ts` — additive `wizard_` dispatch block mirroring `ws_`.
+
+Verified: nodenext --strict clean on all 3 new files; node --check passes; no contractions in template literals; deterministic plan logic correct by construction. LLM classify path validates on first real run (no API key in build env). Run `wizard_classify` on Simon's chat → expect `seo_audit_roadmap`, with `classify_urls` and `export` BLOCKED (gap engines), `deep_dive` manual_review (YMYL), rest ready/needs_connection.
+
+### Build 12.23b — Wizard execution + the three gap-engines [NEXT, not built]
+Two things, because the most common wizard (audit) cannot complete without them:
+1. Gap-engines (flip their registry mode from not_supported → auto): `site_wide_url_classification` (keep/improve/merge/redirect/noindex/delete across all URLs from GSC metrics + thin/cannibalisation signals), `url_inventory_export` (Sheets/Excel), `gsc_csv_ingestion` (upload path when OAuth not given).
+2. `wizard_run_stage` orchestration: execute each ready stage via the live engines (wsCreateRun + wsRunDeepSteps for analysis stages, runTechnicalAudit for deep-dive, the new gap-engines for classify/export), persist per-stage status (likely a `wizard_runs` table — needs a migration), stream status for the click-next UI.
+GATING: field-validate the GEO work first (still owed); do not stack execution on unvalidated foundations blind.
+
+### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
+The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
+
+### Field validation still owed (unchanged, highest leverage, needs real runs)
+1. Guest-post 12.21.3 (biwintech run — 60-150s, 22-28 candidates).
+2. GEO scoring thresholds across 10-20 real projects.
+3. 12.22 content templates against real cited pages.
+4. NEW: run `wizard_classify` on 3-5 real client chats — does it pick the right archetype and extract exclusions faithfully?
+
 ### Deploy queue
-- **Build 12.22** (this session): `geo-content-template.ts` (lib), `geo-content-template.ts` (deep-step), `goals.ts`, `routes.ts`, + this brief. Single commit. No migration (reuses `step_reports`). No new api/*.ts.
+- **Build 12.22** (prior turn): geo-content-template lib + deep-step, goals.ts, routes.ts, brief. Confirm on main first.
+- **Build 12.23a** (this turn): capability-registry.ts, wizard-archetypes.ts, wizard-engine.ts, task-engine.ts, brief. Single commit. No migration. No new api/*.ts.
+
+### What NOT to do
+- Do not build the wizard UI without an explicit layout unfreeze.
+- Do not wire wizard execution (12.23b) before field-validating the GEO work.
+- Do not let the wizard ever report a stage "done" that did not run, or claim a capability absent from the registry — that is the whole point of the registry.
+- Do not bake any client-specific value (Simon, smartfundingsolutions, the 50/10-20 split) into the engine — chats are input only.
 
 ### Field validation owed (HIGHEST LEVERAGE — needs operator's real runs, not code)
 1. **Guest-post 12.21.3** — run biwintech (Storage/memory, DR30+, $50-150, dofollow, US). Expect 60-150s, 22-28 candidates. If still failing or 22-28 too few → parallel batched generation (deliberate scope, NOT a fourth budget-tune).

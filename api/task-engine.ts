@@ -787,6 +787,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     if (wsResult !== null) return ok(res, wsResult);
   }
 
+  // Build 12.23a — chat-driven wizard (classify + plan). Mirrors ws_ dispatch.
+  if (typeof action === "string" && action.startsWith("wizard_")) {
+    const { handleWizard } = await import("./lib/wizard-engine.js");
+    const wzResult = await handleWizard(action, body);
+    if (wzResult !== null) return ok(res, wzResult);
+  }
+
 
   // ═══ INLINE BDE ACTIONS (override dynamic-import versions below) ═══
 
