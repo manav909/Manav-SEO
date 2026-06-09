@@ -229,5 +229,20 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.23b — first executable stage engine: site-wide URL classification.
+     Runs the `classify_urls` stage of the audit wizard against a project's
+     stored GSC data. No new crawl cost. */
+  if (action === "wizard_classify_urls") {
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    try {
+      const { classifyUrls } = await import("./url-classifier.js");
+      const report = await classifyUrls({ projectId });
+      return { success: true, report };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "url classification failed" };
+    }
+  }
+
   return null; // not a wizard action — let the caller fall through
 }

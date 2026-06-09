@@ -1349,11 +1349,19 @@ Files (all new except the dispatch edit; no new api/*.ts, no migration, no layou
 
 Verified: nodenext --strict clean on all 3 new files; node --check passes; no contractions in template literals; deterministic plan logic correct by construction. LLM classify path validates on first real run (no API key in build env). Run `wizard_classify` on Simon's chat → expect `seo_audit_roadmap`, with `classify_urls` and `export` BLOCKED (gap engines), `deep_dive` manual_review (YMYL), rest ready/needs_connection.
 
-### Build 12.23b — Wizard execution + the three gap-engines [NEXT, not built]
-Two things, because the most common wizard (audit) cannot complete without them:
-1. Gap-engines (flip their registry mode from not_supported → auto): `site_wide_url_classification` (keep/improve/merge/redirect/noindex/delete across all URLs from GSC metrics + thin/cannibalisation signals), `url_inventory_export` (Sheets/Excel), `gsc_csv_ingestion` (upload path when OAuth not given).
-2. `wizard_run_stage` orchestration: execute each ready stage via the live engines (wsCreateRun + wsRunDeepSteps for analysis stages, runTechnicalAudit for deep-dive, the new gap-engines for classify/export), persist per-stage status (likely a `wizard_runs` table — needs a migration), stream status for the click-next UI.
-GATING: field-validate the GEO work first (still owed); do not stack execution on unvalidated foundations blind.
+### Build 12.23b — Wizard execution + the three gap-engines [IN PROGRESS]
+Building one solid engine per turn rather than three half-finished. The three gap-engines are independent of the GEO field-validation gate (pure GSC-data work), so safe to build now; only the final execution-orchestration that fires GEO analysis stages stays gated.
+
+**12.23b-1 — Site-wide URL classification engine [BUILT 2026-06-09, deploy pending].**
+- NEW `api/lib/url-classifier.ts` → `classifyUrls({projectId})`. Consumes stored GSC data (loadGsc) — zero new crawl. Aggregates per-URL from topPages (authoritative) + the 1000 query-page pairs (derived, flagged), reuses `detectCannibalization` (pm-analytics-intel.ts) and the site's own CTR-by-position curve (siteCtrCurve). Classifies each URL: keep / improve / merge / redirect / review_for_pruning, each with reason, confidence, priority (from estimated recoverable clicks), and an honest note. Light heuristic page-type guess from URL path.
+- HONESTY (by design): keep/improve/merge are confident; redirect is a flagged candidate needing human confirmation of the canonical target; noindex and delete are NEVER asserted — low-value pages are surfaced as review_for_pruning with an explicit note that a content crawl + sitemap diff is required to decide. Zero-impression/orphaned pages are not visible without a sitemap pull. All caveats are in the report's `limits`.
+- EDIT `api/lib/capability-registry.ts` — flipped `site_wide_url_classification` from not_supported → auto (engine: url-classifier.ts). The audit wizard's `classify_urls` stage now reports ready instead of blocked.
+- EDIT `api/lib/wizard-engine.ts` — added `wizard_classify_urls` action (first executable stage engine; routes via the existing 12.23a `wizard_` dispatch — no task-engine change).
+- Verified: nodenext --strict clean on all touched files; node --check passes; no template-literal contractions. Live run validates on a real connected project (no API/DB in build env).
+
+**12.23b-2 (NEXT) — URL inventory export engine** (Sheets/Excel of the classified table). Flip `url_inventory_export` → auto.
+**12.23b-3 — GSC CSV ingestion** (upload path when OAuth not granted). Flip `gsc_csv_ingestion` → auto.
+**12.23b-4 — `wizard_run_stage` orchestration** (run ready stages via live engines, persist per-stage status — likely a `wizard_runs` table = migration). GATED: field-validate the GEO work first; the GEO analysis stages it fires are still unvalidated.
 
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
@@ -1366,7 +1374,8 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 
 ### Deploy queue
 - **Build 12.22** (prior turn): geo-content-template lib + deep-step, goals.ts, routes.ts, brief. Confirm on main first.
-- **Build 12.23a** (this turn): capability-registry.ts, wizard-archetypes.ts, wizard-engine.ts, task-engine.ts, brief. Single commit. No migration. No new api/*.ts.
+- **Build 12.23a** (prior turn): capability-registry.ts, wizard-archetypes.ts, wizard-engine.ts, task-engine.ts, brief.
+- **Build 12.23b-1** (this turn): url-classifier.ts (NEW), capability-registry.ts (latest, supersedes 12.23a), wizard-engine.ts (latest, supersedes 12.23a), brief. Single commit. No migration. No new api/*.ts. Depends on 12.23a's task-engine.ts (`wizard_` dispatch) + wizard-archetypes.ts being on main.
 
 ### What NOT to do
 - Do not build the wizard UI without an explicit layout unfreeze.

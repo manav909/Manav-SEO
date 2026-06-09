@@ -193,12 +193,12 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {
     id: "site_wide_url_classification",
-    label: "Site-wide URL classification (keep/improve/merge/redirect/noindex/delete)",
-    engine: "(none — not built)",
-    inputs_required: ["gsc_metrics_per_url", "thin-content + cannibalisation signals"],
-    output: "Every URL classified into keep / improve / merge / redirect / noindex / delete with a reason and priority.",
-    limits: "No engine exists. This is the spine of an audit deliverable and the first gap to close (Build 12.23b). Until then, this stage reports blocked.",
-    mode: "not_supported",
+    label: "Site-wide URL classification (keep/improve/merge/redirect/review-for-pruning)",
+    engine: "url-classifier.ts → classifyUrls",
+    inputs_required: ["GSC property connected and pulled"],
+    output: "Every URL with GSC impressions classified into keep / improve / merge / redirect / review_for_pruning, each with reason, confidence, priority and recommended action, plus cannibalisation groups.",
+    limits: "Covers only URLs with GSC impressions (top pages + up to 1000 query-page pairs). keep/improve/merge are confident; redirect is a flagged candidate; noindex and delete are never asserted — low-value pages are surfaced as review_for_pruning pending a content crawl and sitemap diff. Zero-impression/orphaned pages are not visible without a sitemap pull.",
+    mode: "auto",
   },
   url_inventory_export: {
     id: "url_inventory_export",
