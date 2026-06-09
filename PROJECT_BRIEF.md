@@ -1,5 +1,126 @@
 # PROJECT_BRIEF — SEO Season · Quantum Intelligence Workspace
 
+---
+
+## CURRENT DEPLOY STATE (as of 2026-06-05, end of session)
+
+**Main branch:** `f961c50` — Build 12.19 (the most recent SHIPPED commit). Verify with `git log --oneline -1` in `/Users/manav909/code/Manav-SEO`.
+
+**Staged but NOT yet deployed** (all sitting in `/mnt/user-data/outputs/b1221/` from the GEO bundle, plus `/mnt/user-data/outputs/prospect-discovery.ts` from the hotfix chain):
+
+| Build | What | Status | Where |
+|---|---|---|---|
+| 12.20 | Forward-looking GEO capabilities (citation gap, displacement, emergence) | Staged in b1221/ | 7 files |
+| 12.21 | GEO scoring extraction + precise displacement triggers | Staged in b1221/ | Same bundle, 6 additional files |
+| 12.21.1 | Guest-post finder FUNCTION_INVOCATION_TIMEOUT — budget threading + skip-fallback | SHIPPED | (in main, was a separate small commit) |
+| 12.21.2 | Guest-post finder budget tuning (220s first call, skip-fallback-on-abort) | SHIPPED | (in main) |
+| 12.21.3 | Guest-post finder work reduction (40-50→22-28, maxTokens 16000→9000, max_uses 5→3) | Staged | /mnt/user-data/outputs/prospect-discovery.ts |
+
+**ACTUAL CURRENT MAIN:** Need to verify with `git log --oneline -5`. The session notes suggest 12.21.1 and 12.21.2 were shipped via the deploy commands given but I have not personally confirmed they landed. New session should sync and check.
+
+**Deploy priority order if catching up from scratch:**
+1. Deploy `prospect-discovery.ts` (12.21.3) immediately — guest-post procurement is broken in production until this lands
+2. Verify in Vercel logs that runs complete in 60-150s and return 22-28 candidates
+3. Deploy the GEO bundle (12.20 + 12.21 combined) — no production fire here, just feature work waiting
+4. Verify the two new workspace deep-steps render correctly on a project with target keywords + AI Overview data
+
+---
+
+## WORKING METHOD (read first in any new session)
+
+This section captures Manav's standing rules so a new chat can continue without re-stating them. These come from the userMemories layer but are duplicated here for session-portability.
+
+### Session start ritual
+
+1. Re-clone the repo: `git clone https://github.com/manav909/Manav-SEO` (or `cd` into the existing clone and `git pull origin main`)
+2. Re-upload `PROJECT_BRIEF.md` + `ARCHITECTURE.md` to the chat
+3. Confirm TS baseline = 26 frontend errors (do not reduce), API function count = 12 (do not add new `api/*.ts`)
+4. Verify the current `git log --oneline -5` matches what this brief claims is in main
+
+### Code rules
+
+- **NEVER patch — complete files only.** Always present the full file via `present_files`, never deltas
+- **NEVER add new `api/*.ts` files.** The 12 serverless functions are stable. New `api/lib/*.ts` IS allowed (libraries, not endpoints)
+- **Read existing code BEFORE changing it.** Grep / view the structure first, then plan the edit
+- **Ask before adding new components or files** — propose first, get approval, then build
+- **Distinguish "noted in past sessions" from "verified to still exist."** If a past brief says a bug exists, check in current main code before working on it
+- **Surface contradictions between documentation and reality.** Never paper over
+
+### Verification discipline (before claiming "fixed" or "done")
+
+- `npx vite build` must complete green
+- `ReferenceError` count in the bundle must be 0
+- Distinctive content markers must be present in the output (grep for unique phrases from the new code to confirm it's actually in the file)
+- For backend changes: `npx esbuild <file> --bundle=false --platform=node --target=node18` must compile clean
+- Never claim "fixed" without verifying. Honest negative results are better than dressed-up failures
+
+### Deploy ritual (macOS zsh, ~/Downloads)
+
+- Manav downloads files from `present_files` into `~/Downloads`, pastes ONE `&&` chain
+- Format: `cd /Users/manav909/code/Manav-SEO && cp ~/Downloads/file.ts api/lib/file.ts && [more cp lines] && git add <list> && git commit --no-verify -m 'msg' && git push`
+- **Always** use `~/Downloads/<filename>` paths — never placeholders
+- Commit messages: plain ASCII inside single quotes, NO inline `#` (it gets eaten by zsh)
+- For SQL migrations: apply in Supabase Dashboard FIRST, then deploy the code that depends on them
+- After any force-push: follow with an empty commit (`git commit --allow-empty -m 'rebuild'`) to guarantee Vercel rebuilds
+
+### The HARD RITUAL
+
+After delivering ANY build/block/deploy code, the SAME response must also:
+- Include regenerated `PROJECT_BRIEF.md` via `present_files` alongside the code files
+- Provide the deploy command as a SINGLE `&&` chain covering BOTH the code files AND `PROJECT_BRIEF.md` in one commit + push
+- This is not optional. Do not ask.
+
+### Voice and character (JARVIS-meets-Vision)
+
+- Honest, dryly intelligent, **zero sycophancy**
+- State mistakes concretely. Never claim "fixed" without verifying
+- Hard fact-check via web search; never synthesis dressed as fact; cite sources; distinguish training-data from verified
+- Pushback when Manav is wrong, with reasoning. Never defensive when corrected
+- Pro mode = operator-grade dense. Casual mode = calm contemplative
+
+### The BACKBONE rule (permanent quality gate — Senior Digital Marketing Specialist)
+
+Every report, brief, strategy, or recommendation must satisfy:
+1. **NO synthesis as fact.** Fill gaps with authentic tools (GSC / GA4 / live crawl / SerpAPI), not LLM-fabricated numbers
+2. **PRE-DELETE check.** If a feature helps client/analyst/results, do NOT delete — annotate or defer instead
+3. **Source-trace every claim** with confidence (`intelligenceFabric` is the substrate for this)
+4. **Complete automation, monitorable.** Output that requires manual intervention to be useful is incomplete
+5. **Output survives senior practitioner challenge.** A senior SEO specialist or client should not be able to pick the output apart easily
+
+The BACKBONE rule **overrides shortcuts**. When a faster solution would violate BACKBONE, ship the slower correct version.
+
+### Role-playing quality gates
+
+Run reports / briefs / strategies through multiple role lenses sequentially before delivery. Active roles:
+- Digital Marketing Specialist
+- Senior SEO Specialist
+- SEO Executive (junior)
+- Client
+- PM
+- Content Writer
+- Sales
+- Brand Specialist
+- Investor
+
+Manav names which role(s) per task. Default for pillar review = Senior SEO + Client.
+
+### Layout pause (in effect)
+
+Do NOT touch layout without explicit "yes proceed with layout" from Manav. Default response to layout complaints: acknowledge, log to backlog, do not build. Open layout backlog from Phase 21:
+- Casual mode empty left space when sidebar closed
+- Persistent left rail redesign respecting Pro mode's existing 2-column grid
+
+### Session handoff
+
+At end of session, suggest updates to `PROJECT_BRIEF.md` covering:
+- What shipped
+- What's in-flight (working tree, not yet committed)
+- What's pending
+- What was rejected and why
+
+---
+
+
 _Last updated: 2026-05-28 (Builds 3c + 5 shipped). Re-upload at session start. Single source of truth for the Workspace architecture and build order._
 
 ---
@@ -1130,3 +1251,109 @@ DEPLOY COMBINES BUILD 12.20 + 12.21:
 This single commit ships everything from Build 12.20 plus the 12.21 refactor and new triggers. After deploy, main contains the contiguous GEO program 12.16 → 12.21.
 
 Files changed (13 total): 6 NEW (geo-scoring.ts, geo-citation-gap.ts, geo-displacement.ts, ai-overview-citation-gap.ts, workspace/deep-steps/geo-displacement.ts, plus restored 12.20 file)  — wait, that's 5 new actually. The full list: api/lib/geo-scoring.ts NEW, api/lib/geo-citation-gap.ts NEW (12.20), api/lib/geo-displacement.ts NEW (12.20), api/lib/workspace/deep-steps/ai-overview-citation-gap.ts NEW (12.20), api/lib/workspace/deep-steps/geo-displacement.ts NEW (12.20), api/lib/pm-action-library.ts MODIFIED (12.20+12.21), api/lib/pm-goal-engine.ts MODIFIED (12.21), api/lib/pm-scenario-engine.ts MODIFIED (12.21), api/lib/seo-campaign-routes.ts MODIFIED (12.21), api/lib/client-showcase-engine.ts MODIFIED (12.21), api/lib/pm-analytics-intel.ts MODIFIED (12.21), api/lib/pm-gsc.ts MODIFIED (12.20), api/lib/workspace/routes.ts MODIFIED (12.20).
+
+---
+
+Build 12.21.1 — Guest-post finder FUNCTION_INVOCATION_TIMEOUT hotfix [SHIPPED 2026-06-05]: Operator reported FUNCTION_INVOCATION_TIMEOUT error on Backlinks → Guest Post Procurement feature in production.
+
+DIAGNOSIS: `vercel.json` configures `task-engine.ts` with maxDuration: 300. `runGuestPostFinder` had an internal WALL_TIMEOUT_MS = 250s flag-only (not actual abort). The Anthropic call inside `callAnthropicWithWebSearch` had a hardcoded `AbortController` of 240s per attempt. The guest-post finder runs the lane TWICE serially (first with web_search enabled, then a fallback with web_search disabled if first attempt returned 0 candidates). Worst case: 240s + 2s sleep + 240s = 482s of LLM work in a 300s function budget. Vercel kills at 300s, operator gets FUNCTION_INVOCATION_TIMEOUT.
+
+FIX (single-file: api/lib/prospect-discovery.ts):
+- Added budget_ms and max_uses parameters to callAnthropicWithWebSearch (both optional, defaults preserve existing behavior for 3 teaser-flow callers that use this function with maxTokens:3500 in parallel)
+- Threaded budget_ms through runGuestPostLane
+- runGuestPostFinder now enforces TOTAL_WORK_BUDGET_MS = 280s split: first call 180s, fallback uses remaining budget minus 5s cushion, skip fallback if less than 30s remains
+- Reduced max_uses from 5 to 4 for guest-post lane specifically
+- Vercel + DB writes + response: 20s margin
+
+OUTCOME: Eliminated FUNCTION_INVOCATION_TIMEOUT but exposed the underlying problem — the LLM call was genuinely taking longer than 180s on this workload. See 12.21.2.
+
+---
+
+Build 12.21.2 — Guest-post finder budget tuning + fallback condition fix [SHIPPED 2026-06-05]: Operator's deploy of 12.21.1 produced new logs showing BOTH calls aborting:
+- First call (web_search ON, budget 180s): aborted at 180s
+- Fallback (web_search OFF, budget 94s): aborted at 94s
+
+DIAGNOSIS (corrected from 12.21.1): The 180s first-call budget was too tight — the model genuinely needs ~220s for this prompt (16K-token JSON generation for 40-50 candidates). The fallback was firing wastefully because the condition didn't distinguish "first call aborted" from "first call returned no candidates" — both produce tool_use_count:0 and result:null, but only the latter is the "web_search disabled on API key" scenario the fallback was designed for.
+
+FIX (same file):
+- Restored first-call budget to 220s (FIRST_CALL_BUDGET_MS = 220_000)
+- Tightened fallback condition: requires `raw_text.length > 0` AND tool_use_count === 0 AND empty candidates. Distinguishes a real but empty response from an aborted call
+- Restored max_uses to default 5 (the 5→4 change saved no wall time and only degraded results)
+- Added explicit log line when fallback is skipped due to abort
+
+OUTCOME: Prevented wasted fallback retry but the first call still aborted in operator's test (biwintech storage/memory niche). Underlying issue: 16K-token JSON generation for 40-50 candidates is too much work for the 220s budget. See 12.21.3.
+
+---
+
+Build 12.21.3 — Guest-post finder work reduction [STAGED 2026-06-05, not yet deployed]: Operator's deploy of 12.21.2 produced empty shortlist with "Lane failed: no response" for biwintech (Storage/memory + DR30+ + $50-150 + dofollow + US). The model genuinely cannot complete the 16K-token JSON within Vercel function budget.
+
+DIAGNOSIS (corrected from 12.21.1/2): The work itself is too large. 40-50 candidates × ~330 tokens each = ~15K tokens of JSON. At model generation rate ~100 tokens/sec = ~150 seconds of generation alone, plus web_search round-trips. The previous fixes prevented timeout-level failures but the LLM was still aborting. Three sequential fixes on the same bug, each correct for what it fixed, none individually solved the user-visible problem. Should have gone straight to work reduction in 12.21.1.
+
+FIX (same file, prompt + parameter changes):
+- TARGET COUNT: 40-50 → 22-28 candidates in main list (default 25)
+- tier_up_candidates: 5-10 → 4-7
+- avoid_list: 3-6 → 2-4
+- maxTokens: 16000 → 9000 (matches smaller output)
+- Prompt-level efficiency note added: "Prioritise sites you already know from training data. Use web_search sparingly — at most 3-4 searches — to fill specific gaps... finish in 90-150 seconds."
+- User message updated to reinforce efficiency
+- max_uses default for guest-post lane: 5 → 3 (callers that don't explicitly pass max_uses now get 3; other lanes unaffected because they don't go through this code path)
+
+All timeout-prevention machinery from 12.21.1 and 12.21.2 RETAINED as belt:
+- TOTAL_WORK_BUDGET_MS = 280s
+- FIRST_CALL_BUDGET_MS = 220s
+- WALL_TIMEOUT_MS = 250s flag
+- Fallback skip-on-abort logic with raw_text non-empty check
+
+TRADE-OFF: Operator delivers 22-28 candidates per run instead of 40-50. Field of buyers who expect 40+ candidates as procurement-stage signal: workflow is to run the finder twice with slightly different niche framings (e.g. first run focused on hardware-review sites, second run on tech-enterprise publications) and combine.
+
+VERIFICATION OWED: After deploy, check Vercel logs for `[guest-post/finder] ok in Xms · tool_uses=Y · text_len=Z · stop=end_turn` with X between 60000-150000. Confirm 22-28 candidates returned. If still failing OR if 22-28 is consistently too few, the next escalation is PARALLEL BATCHED GENERATION (3 parallel Anthropic calls of 12-15 candidates each, dedupe by domain, return 40-50 in ~90s wall time). That's real engineering work (~150-200 lines: orchestration, prompt variation, dedup, partial-failure handling) and should be a deliberate decision in a clean session, NOT a fourth emergency hotfix.
+
+LESSON for future session: when a bug fix iterates 3+ times on the same issue without resolving it, stop budget-tuning and look at the work itself. The first fix in this series should have been the work-reduction. Diagnostic-driven iteration (look at logs, tune budget, ship, repeat) burned operator time when prompt-level engineering would have worked first time.
+
+---
+
+## OUTSTANDING / NEXT SESSION QUICK START
+
+### Immediate deploy queue (in order)
+
+1. **prospect-discovery.ts (Build 12.21.3)** — `/mnt/user-data/outputs/prospect-discovery.ts`. Guest-post procurement broken in production until this lands. Single-file deploy.
+
+2. **GEO bundle (Builds 12.20 + 12.21 combined)** — `/mnt/user-data/outputs/b1221/` (13 code files + brief). Feature work, no production fire. Deploy command sits in the previous session's chat.
+
+### Verification owed after each deploy
+
+After 12.21.3:
+- Run guest-post procurement against biwintech (Storage/memory + DR30+ + $50-150 + dofollow + US)
+- Confirm completion in 60-150s with 22-28 candidates
+- If still failing: parallel batched generation is the next escalation (NOT a fourth budget-tune)
+- If 22-28 candidates consistently too few for buyers: same — parallel batching
+
+After GEO bundle:
+- Workspace deep-step `ai_overview_citation_gap` renders correctly on a project with target keywords + AI Overview SerpAPI data
+- Workspace deep-step `geo_displacement` renders correctly (with empty emergence section on first run — that's expected, needs 2+ post-12.20 GSC pulls for emergence to populate)
+- Smart suggestions surface the 6 new GEO actions when triggers fire (geo:ai_overview_absent fires foundational actions; geo:ai_overview_displaced + geo:ai_overview_strong require geo_displacement deep-step to have run at least once on the project)
+- Composite GEO scores in scenarios, goals, showcase, intel, campaign list all agree (they will, all calling computeGeoVisibility from geo-scoring.ts — but worth a sanity check)
+
+### Genuine options for what's next, in order of usefulness
+
+1. **Field-validate the GEO scoring thresholds** (HIGHEST LEVERAGE). Once GEO bundle is live, run it across 10-20 real projects. Check whether grade bands (absent / emerging / present / established / strong) match what a senior DMS would say about each project. If not, tune `geo-scoring.ts` in one place — that's why it was extracted in 12.21. This is the most important next move because it determines whether the GEO program matches reality or is just well-structured code.
+
+2. **Parallel batched guest-post generation** IF 22-28 candidates from 12.21.3 isn't enough. 3 parallel Anthropic calls × 12-15 candidates each, dedupe, ~90s wall time, ~150-200 lines. Real engineering, clean session.
+
+3. **Frozen layout backlog from Phase 21** (requires explicit unfreeze). Casual mode empty left space, persistent left rail redesign respecting Pro mode 2-column grid. Manav must say "yes proceed with layout" to thaw.
+
+4. **Build 12.22 = entity association heuristic scoring**. Needs DESIGN DISCUSSION first, not just code. Questions: what signals to trust (schema markup, brand mention density, GSC topical cluster depth, Knowledge Graph presence)? Output shape (per-query, per-page, per-topic)? Validation plan? Then code.
+
+5. **Build 12.22 = content-structure template generation**. Given patterns extracted in 12.20's citation gap analysis, generate concrete page templates the operator hands to writers. Less ambitious than entity scoring, more concrete. ~3-4 files.
+
+### Recommendation if continuing fresh
+
+Deploy 12.21.3 first (guest-post bleeding now). Then GEO bundle (feature work waiting). Verify both. Then do field validation of GEO scoring (#1 above). Don't move to 12.22 candidates until you've actually USED 12.20/21 against real projects — half the assumptions built into them might need adjustment based on what you see in production.
+
+### What NOT to do next session
+
+- Don't reflexively start Build 12.22. The GEO program is functionally complete; the next move is verification, not more building
+- Don't ship a fourth budget-tune on the guest-post timeout. If 12.21.3 fails, go to parallel batching with deliberate scope
+- Don't touch layout. Frozen until explicit unfreeze
+- Don't claim a bug is fixed without running the verification ritual (vite build green, ReferenceError=0, distinctive content markers present)
+- Don't compress the BACKBONE rule for speed — if a faster path would violate it, ship the slower correct version
