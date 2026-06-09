@@ -244,5 +244,19 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.23b-2 — export the classified URL inventory to a spreadsheet
+     (multi-sheet xlsx + CSV, base64 for client download). */
+  if (action === "wizard_export_inventory") {
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    try {
+      const { exportUrlInventory } = await import("./url-inventory-export.js");
+      const file = await exportUrlInventory({ projectId });
+      return file.success ? { success: true, file } : { success: false, error: file.error, file };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "url inventory export failed" };
+    }
+  }
+
   return null; // not a wizard action — let the caller fall through
 }

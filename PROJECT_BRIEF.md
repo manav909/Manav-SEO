@@ -1359,8 +1359,13 @@ Building one solid engine per turn rather than three half-finished. The three ga
 - EDIT `api/lib/wizard-engine.ts` — added `wizard_classify_urls` action (first executable stage engine; routes via the existing 12.23a `wizard_` dispatch — no task-engine change).
 - Verified: nodenext --strict clean on all touched files; node --check passes; no template-literal contractions. Live run validates on a real connected project (no API/DB in build env).
 
-**12.23b-2 (NEXT) — URL inventory export engine** (Sheets/Excel of the classified table). Flip `url_inventory_export` → auto.
-**12.23b-3 — GSC CSV ingestion** (upload path when OAuth not granted). Flip `gsc_csv_ingestion` → auto.
+**12.23b-2 — URL inventory export engine [BUILT 2026-06-09, deploy pending].**
+- NEW `api/lib/url-inventory-export.ts` → `exportUrlInventory({projectId})` (and `serializeUrlInventory(report)` for reuse). Runs the classifier, then builds a multi-sheet .xlsx via the platform's existing SheetJS dep (dynamic import, matches pm-compare.ts): "URL Inventory" (URL, page type, clicks, impressions, CTR, avg position, query count, current issue, recommended action, action detail, priority, confidence, notes, data source), "Cannibalisation", and "Notes & Limits" (classification meanings + the report's honest limits). Returns xlsx as base64 + a CSV fallback. CSV always returned even if the workbook build fails.
+- EDIT `api/lib/capability-registry.ts` — flipped `url_inventory_export` → auto. The audit wizard's `export` stage now reports ready.
+- EDIT `api/lib/wizard-engine.ts` — added `wizard_export_inventory` action.
+- Verified: nodenext --strict clean; node --check passes; no template-literal contractions. Live validates on a connected project.
+
+**12.23b-3 (NEXT) — GSC CSV ingestion** (upload path when OAuth not granted). Flip `gsc_csv_ingestion` → auto.
 **12.23b-4 — `wizard_run_stage` orchestration** (run ready stages via live engines, persist per-stage status — likely a `wizard_runs` table = migration). GATED: field-validate the GEO work first; the GEO analysis stages it fires are still unvalidated.
 
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
@@ -1376,6 +1381,7 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 - **Build 12.22** (prior turn): geo-content-template lib + deep-step, goals.ts, routes.ts, brief. Confirm on main first.
 - **Build 12.23a** (prior turn): capability-registry.ts, wizard-archetypes.ts, wizard-engine.ts, task-engine.ts, brief.
 - **Build 12.23b-1** (this turn): url-classifier.ts (NEW), capability-registry.ts (latest, supersedes 12.23a), wizard-engine.ts (latest, supersedes 12.23a), brief. Single commit. No migration. No new api/*.ts. Depends on 12.23a's task-engine.ts (`wizard_` dispatch) + wizard-archetypes.ts being on main.
+- **Build 12.23b-2** (this turn): url-inventory-export.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration. Depends on 12.23b-1's url-classifier.ts.
 
 ### What NOT to do
 - Do not build the wizard UI without an explicit layout unfreeze.

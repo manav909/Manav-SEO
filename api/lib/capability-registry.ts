@@ -203,11 +203,11 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
   url_inventory_export: {
     id: "url_inventory_export",
     label: "URL inventory spreadsheet export (Sheets / Excel)",
-    engine: "(none — not built)",
-    inputs_required: ["A classified URL table"],
-    output: "A spreadsheet of all URLs with metrics, issue, recommended action, priority and notes.",
-    limits: "No engine exists. The platform emits markdown/HTML/PDF reports, not a spreadsheet export of a URL table (Build 12.23b).",
-    mode: "not_supported",
+    engine: "url-inventory-export.ts → exportUrlInventory",
+    inputs_required: ["A classified URL table (from site_wide_url_classification)"],
+    output: "A multi-sheet .xlsx (URL Inventory, Cannibalisation, Notes & Limits) plus a CSV, with URL, page type, clicks, impressions, CTR, average position, current issue, recommended action, priority and notes.",
+    limits: "Carries the classifier's honesty through to the file: redirect is a candidate, review_for_pruning needs a crawl + sitemap, and only URLs with GSC impressions are included. Returned as base64 for client download.",
+    mode: "auto",
   },
 };
 
