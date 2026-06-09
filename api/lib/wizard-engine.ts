@@ -258,5 +258,34 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.23b-3 — ingest a GSC CSV export when OAuth is not granted. */
+  if (action === "wizard_ingest_gsc_csv") {
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    try {
+      const { ingestGscCsv } = await import("./gsc-csv-ingest.js");
+      const report = await ingestGscCsv({ projectId, csvs: body?.csvs, csvText: body?.csvText, filename: body?.filename });
+      return report.success ? { success: true, report } : { success: false, error: report.error || report.summary, report };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "gsc csv ingestion failed" };
+    }
+  }
+
+  /* Build 12.23b-4 — execute one wizard stage via its real engine. Stateless;
+     the UI holds run progress. Each result carries an honest validation flag. */
+  if (action === "wizard_run_stage") {
+    const projectId = String(body?.projectId || "").trim();
+    const archetypeId = String(body?.archetypeId || "").trim();
+    const stageId = String(body?.stageId || "").trim();
+    if (!projectId || !archetypeId || !stageId) return { success: false, error: "projectId, archetypeId and stageId are required." };
+    try {
+      const { runWizardStage } = await import("./wizard-run.js");
+      const result = await runWizardStage({ projectId, archetypeId, stageId, inputs: body?.inputs });
+      return { success: result.status !== "error", result };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "wizard stage execution failed" };
+    }
+  }
+
   return null; // not a wizard action — let the caller fall through
 }

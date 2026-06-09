@@ -1365,8 +1365,24 @@ Building one solid engine per turn rather than three half-finished. The three ga
 - EDIT `api/lib/wizard-engine.ts` — added `wizard_export_inventory` action.
 - Verified: nodenext --strict clean; node --check passes; no template-literal contractions. Live validates on a connected project.
 
-**12.23b-3 (NEXT) — GSC CSV ingestion** (upload path when OAuth not granted). Flip `gsc_csv_ingestion` → auto.
-**12.23b-4 — `wizard_run_stage` orchestration** (run ready stages via live engines, persist per-stage status — likely a `wizard_runs` table = migration). GATED: field-validate the GEO work first; the GEO analysis stages it fires are still unvalidated.
+**12.23b-3 — GSC CSV ingestion engine [BUILT 2026-06-09, deploy pending].**
+- NEW `api/lib/gsc-csv-ingest.ts` → `ingestGscCsv({projectId, csvs[] | csvText})`. Minimal RFC-4180 parser (no new dep). Detects export type from headers (pages / queries / combined query-page pairs), normalises CTR to percent and position, writes to the exact project_knowledge fields the live pull uses. Downstream engines read it transparently via loadGsc.
+- HONESTY: standard GSC UI export has Pages and Queries but NOT query-page pairs (API-only) — so cannibalisation + CTR-opportunity flagging stay limited under UI-export-only until a combined export is supplied; a Pages export carries up to ~1000 rows. Ingestion overwrites the matching field.
+- EDIT `capability-registry.ts` (flip `gsc_csv_ingestion` → auto) + `wizard-engine.ts` (`wizard_ingest_gsc_csv` action).
+- Verified: nodenext --strict clean; node --check; parser unit-tested standalone (detection, quoted-comma, CTR normalisation); no template-literal contractions.
+
+**ALL THREE GAP-ENGINES NOW BUILT.** The audit wizard's previously-blocked stages (`classify_urls`, `export`) report ready; the CSV alternative input path exists.
+
+**12.23b-4 — Wizard stage orchestration [BUILT 2026-06-09, deploy pending].**
+- NEW `api/lib/wizard-run.ts` → `runWizardStage({projectId, archetypeId, stageId, inputs})`. Runs ONE stage via its real engine and returns status + output. STATELESS (no wizard_runs table, no migration — run progress belongs to the UI layer). Routing: site_wide_url_classification → classifyUrls; url_inventory_export → exportUrlInventory; keyword_cannibalization → loadGsc + detectCannibalization; client_report_narrative → wsSolveClientReport (needs runId+context); technical_audit_deep/title_meta_h1_reco → runTechnicalAudit (needs campaignId); workspace/GEO-backed → wsCreateRun + wsRunDeepSteps (goal per archetype); gsc presence check via loadGsc; manual_dms → "manual" status with guidance; missing inputs → needs_input/needs_connection.
+- HONESTY: every result carries a `validation` flag — "established" for production-proven engines, "unvalidated" for the session-built engines (url-classifier, export, csv-ingest) and the GEO steps. GEO-firing stages get an explicit note to scrutinise output against real SERPs. Per-stage execution keeps the human in the loop — the GEO gate is honoured by the flag + confirm-per-stage model, not bypassed.
+- EDIT `api/lib/wizard-engine.ts` — added `wizard_run_stage` action.
+- Verified: nodenext --strict clean on wizard-run.ts + wizard-engine.ts; node --check passes; no template-literal contractions.
+- NOTE (honest, not mine): wizard-run.ts imports runTechnicalAudit (seo-technical-audit.ts) and wsCreateRun (routes.ts), so their PRE-EXISTING strict errors now appear in this file's typecheck graph — seo-technical-audit.ts:524/531/3000 + deep-report:404 (4 errors at base 04f3e23, confirmed via stash) and routes.ts:464. seo-technical-audit.ts is already imported by task-engine.ts, so this adds nothing to the build's error surface. Vercel transpiles api/ (no strict typecheck), so these do not break deploys. Documented backend baseline is now: the original 4 + routes.ts:444 + seo-technical-audit.ts (4) + deep-report.ts:404 + shared.ts Postgrest noise. None introduced this session.
+
+**HEADLESS WIZARD COMPLETE.** classify chat → plan → run each stage via real engines with honest validation flags. The only remaining piece is the UI.
+
+**12.23c — Wizard UI [GATED on explicit "yes proceed with layout"].** The click-next screen with live per-stage status, calling wizard_classify then wizard_run_stage per stage. This is layout — frozen until Manav unfreezes. Persistence (a wizard_runs table) would come with it if run history needs to survive for display.
 
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
@@ -1382,6 +1398,8 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 - **Build 12.23a** (prior turn): capability-registry.ts, wizard-archetypes.ts, wizard-engine.ts, task-engine.ts, brief.
 - **Build 12.23b-1** (this turn): url-classifier.ts (NEW), capability-registry.ts (latest, supersedes 12.23a), wizard-engine.ts (latest, supersedes 12.23a), brief. Single commit. No migration. No new api/*.ts. Depends on 12.23a's task-engine.ts (`wizard_` dispatch) + wizard-archetypes.ts being on main.
 - **Build 12.23b-2** (this turn): url-inventory-export.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration. Depends on 12.23b-1's url-classifier.ts.
+- **Build 12.23b-3** (this turn): gsc-csv-ingest.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration.
+- **Build 12.23b-4** (this turn): wizard-run.ts (NEW), wizard-engine.ts (latest), brief. Single commit. No migration. No registry change. Depends on the gap-engines + workspace pipeline being on main.
 
 ### What NOT to do
 - Do not build the wizard UI without an explicit layout unfreeze.
