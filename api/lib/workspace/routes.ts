@@ -212,6 +212,26 @@ export async function wsRunDeepSteps(body: any) {
       await recordStepSkipped(runId, projectId, "ai_overview_citation_gap");
     }
 
+    /* Build 12.22 — content-structure templates. Consumes the
+       ai_overview_citation_gap evidence written above (no new crawl) and
+       turns each per-query gap report into a writer-ready page template.
+       Placed AFTER citation-gap so its step_report row exists for the read. */
+    if (targetKeywords.length && isEnabled("geo_content_template")) {
+      try {
+        const { gatherGeoContentTemplate } = await import("./deep-steps/geo-content-template.js");
+        const { evidence, report_md } = await gatherGeoContentTemplate({
+          runId, projectId, targetUrls, targetKeywords,
+        });
+        await upsertStepReport(runId, projectId, "geo_content_template", evidence, report_md, evidence.worth_deeper || []);
+        results["geo_content_template"] = "ok";
+      } catch (e: any) {
+        await recordStepFailure(runId, projectId, "geo_content_template", e?.message || String(e));
+        results["geo_content_template"] = `failed: ${e?.message}`;
+      }
+    } else if (isEnabled("geo_content_template") && !targetKeywords.length) {
+      await recordStepSkipped(runId, projectId, "geo_content_template");
+    }
+
     if (isEnabled("geo_displacement")) {
       try {
         const { gatherGeoDisplacement } = await import("./deep-steps/geo-displacement.js");

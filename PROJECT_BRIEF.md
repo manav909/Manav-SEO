@@ -2,27 +2,24 @@
 
 ---
 
-## CURRENT DEPLOY STATE (as of 2026-06-05, end of session)
+## CURRENT DEPLOY STATE (verified 2026-06-09 against live main)
 
-**Main branch:** `f961c50` — Build 12.19 (the most recent SHIPPED commit). Verify with `git log --oneline -1` in `/Users/manav909/code/Manav-SEO`.
+**Main branch:** `04f3e23` — verified by re-clone. This single commit already merged the GEO bundle (12.20 + 12.21) AND the 12.21.3 guest-post work-reduction hotfix. The "staged but not deployed" queue from the 2026-06-05 session is OBSOLETE — everything in it shipped. API functions = 12 (confirmed).
 
-**Staged but NOT yet deployed** (all sitting in `/mnt/user-data/outputs/b1221/` from the GEO bundle, plus `/mnt/user-data/outputs/prospect-discovery.ts` from the hotfix chain):
+| Build | What | Status |
+|---|---|---|
+| 12.20 | Forward-looking GEO capabilities (citation gap, displacement, emergence) | SHIPPED (in 04f3e23) |
+| 12.21 | GEO scoring extraction + precise displacement triggers | SHIPPED (in 04f3e23) |
+| 12.21.1/2/3 | Guest-post finder timeout machinery + work reduction | SHIPPED (in 04f3e23) |
+| 12.22 | Content-structure templates + GEO deep-step registration fix | THIS SESSION — see Build 12.22 entry below. Deploy command in chat. |
 
-| Build | What | Status | Where |
-|---|---|---|---|
-| 12.20 | Forward-looking GEO capabilities (citation gap, displacement, emergence) | Staged in b1221/ | 7 files |
-| 12.21 | GEO scoring extraction + precise displacement triggers | Staged in b1221/ | Same bundle, 6 additional files |
-| 12.21.1 | Guest-post finder FUNCTION_INVOCATION_TIMEOUT — budget threading + skip-fallback | SHIPPED | (in main, was a separate small commit) |
-| 12.21.2 | Guest-post finder budget tuning (220s first call, skip-fallback-on-abort) | SHIPPED | (in main) |
-| 12.21.3 | Guest-post finder work reduction (40-50→22-28, maxTokens 16000→9000, max_uses 5→3) | Staged | /mnt/user-data/outputs/prospect-discovery.ts |
+**VERIFIED FINDING — orphaned GEO deep-steps (corrected this session):** The Build 12.20 deep-steps `ai_overview_citation_gap` and `geo_displacement` dispatched in `workspace/routes.ts` but were NEVER reachable: they were absent from `STEP_DEFS` and every goal's `needs`, and `isEnabled()` returns `false` for any step not in the composed config (`return s ? s.enabled !== false : false`). A real run always has a composed config, so they never ran. The brief's old post-deploy verification ("confirm the citation-gap deep-step renders") was never actually possible. Build 12.22 registers them so they execute.
 
-**ACTUAL CURRENT MAIN:** Need to verify with `git log --oneline -5`. The session notes suggest 12.21.1 and 12.21.2 were shipped via the deploy commands given but I have not personally confirmed they landed. New session should sync and check.
+**VERIFIED FINDING — undocumented 5th backend TS error:** `api/lib/workspace/routes.ts` has a pre-existing `ClientReportOpts 'mode'` error (line 444 in the un-edited file; shifts with edits above it). It is NOT in the documented baseline of 4 (seo-campaign-engine.ts:1021, season-war-room.ts:223, seo-campaign-grouping.ts:877, seo-war-room.ts:220). Left untouched per the don't-reduce-baseline rule, but it exists. Also note `shared.ts` carries pre-existing Supabase Postgrest-vs-Promise typing noise at lines 90/164/172 under strict nodenext — tolerated by the project tsconfig, not introduced here.
 
-**Deploy priority order if catching up from scratch:**
-1. Deploy `prospect-discovery.ts` (12.21.3) immediately — guest-post procurement is broken in production until this lands
-2. Verify in Vercel logs that runs complete in 60-150s and return 22-28 candidates
-3. Deploy the GEO bundle (12.20 + 12.21 combined) — no production fire here, just feature work waiting
-4. Verify the two new workspace deep-steps render correctly on a project with target keywords + AI Overview data
+**Field validation still owed (unchanged, needs operator's real-project runs):**
+- Whether 12.21.3 actually fixed the guest-post timeout (run biwintech: Storage/memory, DR30+, $50-150, dofollow, US → expect 60-150s, 22-28 candidates).
+- Whether the GEO grade bands in `geo-scoring.ts` match senior-DMS judgment across 10-20 real projects.
 
 ---
 
@@ -1312,48 +1309,48 @@ LESSON for future session: when a bug fix iterates 3+ times on the same issue wi
 
 ---
 
+Build 12.22 — Content-structure template generation + GEO deep-step registration fix [SHIPPED 2026-06-09]: Two things in one build, because the headline feature was useless without the fix.
+
+THE FIX (root cause): The Build 12.20 GEO deep-steps `ai_overview_citation_gap` and `geo_displacement` dispatched in `workspace/routes.ts` but were dead in practice — absent from `STEP_DEFS` and every goal's `needs`. `isEnabled()` returns `false` for any step not in the composed run config, and a real run always has a config, so they never executed. 12.22 registers all three GEO steps in `STEP_DEFS` (goals.ts) and adds them to the goals where AI Overview presence is strategically relevant:
+- `topical_authority` += ai_overview_citation_gap, geo_displacement, geo_content_template (content goal — primary home)
+- `keyword_ranking` += ai_overview_citation_gap
+- `traffic_growth` += ai_overview_citation_gap, geo_displacement
+Conversion and page_growth deliberately excluded — they do not need the SerpAPI+crawl cost. ai_overview_citation_gap and geo_content_template are `conditional_on_target_keywords` (need keywords that trigger an AI Overview).
+
+THE FEATURE: content-structure template generation. Turns the citation-gap patterns into a writer-ready page template per query — section order, word-count and Q-and-A targets, schema to add, and optional query-specific heading scaffolding.
+- NEW `api/lib/geo-content-template.ts` — pure transformation library. `generateContentTemplate(report)` builds a deterministic skeleton from observed cited-page patterns (prevalence-classified: universal/majority/minority/absent; medians for summary words, Q-and-A count, body length; schema recommended only when present on a majority). `buildSiteWideStandard(templates)` surfaces sections recurring across the majority of queries — the highest-leverage output. `enrichTemplates(templates)` runs ONE batched LLM call (claude-sonnet-4-6 via workspace/llm.ts) for query-specific suggested headings + one-line "cover" notes; hard-constrained to structural scaffolding only — forbidden from inventing facts, stats, prices, or citation guarantees; failure is non-fatal (templates render deterministically, enriched stays false).
+- NEW `api/lib/workspace/deep-steps/geo-content-template.ts` — deep-step. Performs NO crawling: reads the latest-version `ai_overview_citation_gap` evidence from `step_reports` for the run and transforms it, so zero new SerpAPI/HTTP cost and templates stay grounded in the exact pages the gap step observed. REQUIRES citation-gap to have run first; when its evidence is absent, skips honestly with an instruction to enable it (no fabricated template). Renders site-wide standard first, then per-query writer briefs, with project-page gap flags inline.
+- MODIFIED `api/lib/workspace/routes.ts` — dispatches `geo_content_template` immediately AFTER `ai_overview_citation_gap` (so the evidence row exists for the read), same conditional+skip pattern as the other GEO steps.
+
+DESIGN NOTE — why content-template, not entity-association scoring (the other 12.22 candidate): entity-association is another predictive heuristic layered on the not-yet-field-validated GEO thresholds. Building an unvalidated score on an unvalidated score doubles down on the exact risk the brief warns about. Content-template is a transformation of already-observed data — concrete, writer-usable, low epistemic risk. Entity-association remains a future candidate, gated on a design discussion and on GEO threshold field validation.
+
+VERIFICATION (2026-06-09): nodenext --strict typecheck clean on both new files; `node --check` passes on emitted JS; `.js` extensions on all relative imports (db import corrected to `../../db.js` — deep-steps is two levels below api/lib); no contractions in template literals; 12 API functions intact; frontend untouched so TS=26 baseline unchanged. Pre-existing errors left untouched: routes.ts ClientReportOpts:444, shared.ts Postgrest 90/164/172, and the documented backend 4.
+
+VERIFICATION OWED AFTER DEPLOY:
+- Run a workspace with `topical_authority` goal on a project with target keywords that show an AI Overview. Confirm: `ai_overview_citation_gap` now actually runs (it never did before), `geo_content_template` follows it and produces per-query templates + a site-wide standard, and `geo_displacement` runs.
+- Confirm the content-template step skips gracefully (honest message, not an error) on a project whose keywords have no AI Overview.
+- Sanity-check that a generated template reads like something a writer could execute without further explanation. If not, the rendering in the deep-step's `renderReport` is where to adjust.
+
+---
+
 ## OUTSTANDING / NEXT SESSION QUICK START
 
-### Immediate deploy queue (in order)
+### Deploy queue
+- **Build 12.22** (this session): `geo-content-template.ts` (lib), `geo-content-template.ts` (deep-step), `goals.ts`, `routes.ts`, + this brief. Single commit. No migration (reuses `step_reports`). No new api/*.ts.
 
-1. **prospect-discovery.ts (Build 12.21.3)** — `/mnt/user-data/outputs/prospect-discovery.ts`. Guest-post procurement broken in production until this lands. Single-file deploy.
-
-2. **GEO bundle (Builds 12.20 + 12.21 combined)** — `/mnt/user-data/outputs/b1221/` (13 code files + brief). Feature work, no production fire. Deploy command sits in the previous session's chat.
-
-### Verification owed after each deploy
-
-After 12.21.3:
-- Run guest-post procurement against biwintech (Storage/memory + DR30+ + $50-150 + dofollow + US)
-- Confirm completion in 60-150s with 22-28 candidates
-- If still failing: parallel batched generation is the next escalation (NOT a fourth budget-tune)
-- If 22-28 candidates consistently too few for buyers: same — parallel batching
-
-After GEO bundle:
-- Workspace deep-step `ai_overview_citation_gap` renders correctly on a project with target keywords + AI Overview SerpAPI data
-- Workspace deep-step `geo_displacement` renders correctly (with empty emergence section on first run — that's expected, needs 2+ post-12.20 GSC pulls for emergence to populate)
-- Smart suggestions surface the 6 new GEO actions when triggers fire (geo:ai_overview_absent fires foundational actions; geo:ai_overview_displaced + geo:ai_overview_strong require geo_displacement deep-step to have run at least once on the project)
-- Composite GEO scores in scenarios, goals, showcase, intel, campaign list all agree (they will, all calling computeGeoVisibility from geo-scoring.ts — but worth a sanity check)
+### Field validation owed (HIGHEST LEVERAGE — needs operator's real runs, not code)
+1. **Guest-post 12.21.3** — run biwintech (Storage/memory, DR30+, $50-150, dofollow, US). Expect 60-150s, 22-28 candidates. If still failing or 22-28 too few → parallel batched generation (deliberate scope, NOT a fourth budget-tune).
+2. **GEO scoring thresholds** — once the now-reachable GEO steps run across 10-20 real projects, check whether the grade bands (absent/emerging/present/established/strong) in `geo-scoring.ts` match senior-DMS judgment. Tune in one place if not.
+3. **12.22 content templates** — read a few generated templates against real cited pages. Are the recommended structures right? Is the LLM heading enrichment useful or noise?
 
 ### Genuine options for what's next, in order of usefulness
+1. **Field-validate everything above before building more.** The GEO program is functionally complete and now actually reachable; the next move is USING it on real projects, not adding features on unvalidated foundations.
+2. **Parallel batched guest-post generation** IF 12.21.3's 22-28 candidates is too few. ~150-200 lines, deliberate scope, clean session.
+3. **Build 12.23 = entity association heuristic scoring** — needs a DESIGN DISCUSSION first (which signals: schema, brand-mention density, GSC topical cluster depth, Knowledge Graph presence; output shape; validation plan), AND should wait until GEO thresholds are field-validated.
+4. **Frozen Phase 21 layout backlog** — requires explicit "yes proceed with layout" to thaw.
 
-1. **Field-validate the GEO scoring thresholds** (HIGHEST LEVERAGE). Once GEO bundle is live, run it across 10-20 real projects. Check whether grade bands (absent / emerging / present / established / strong) match what a senior DMS would say about each project. If not, tune `geo-scoring.ts` in one place — that's why it was extracted in 12.21. This is the most important next move because it determines whether the GEO program matches reality or is just well-structured code.
-
-2. **Parallel batched guest-post generation** IF 22-28 candidates from 12.21.3 isn't enough. 3 parallel Anthropic calls × 12-15 candidates each, dedupe, ~90s wall time, ~150-200 lines. Real engineering, clean session.
-
-3. **Frozen layout backlog from Phase 21** (requires explicit unfreeze). Casual mode empty left space, persistent left rail redesign respecting Pro mode 2-column grid. Manav must say "yes proceed with layout" to thaw.
-
-4. **Build 12.22 = entity association heuristic scoring**. Needs DESIGN DISCUSSION first, not just code. Questions: what signals to trust (schema markup, brand mention density, GSC topical cluster depth, Knowledge Graph presence)? Output shape (per-query, per-page, per-topic)? Validation plan? Then code.
-
-5. **Build 12.22 = content-structure template generation**. Given patterns extracted in 12.20's citation gap analysis, generate concrete page templates the operator hands to writers. Less ambitious than entity scoring, more concrete. ~3-4 files.
-
-### Recommendation if continuing fresh
-
-Deploy 12.21.3 first (guest-post bleeding now). Then GEO bundle (feature work waiting). Verify both. Then do field validation of GEO scoring (#1 above). Don't move to 12.22 candidates until you've actually USED 12.20/21 against real projects — half the assumptions built into them might need adjustment based on what you see in production.
-
-### What NOT to do next session
-
-- Don't reflexively start Build 12.22. The GEO program is functionally complete; the next move is verification, not more building
-- Don't ship a fourth budget-tune on the guest-post timeout. If 12.21.3 fails, go to parallel batching with deliberate scope
-- Don't touch layout. Frozen until explicit unfreeze
-- Don't claim a bug is fixed without running the verification ritual (vite build green, ReferenceError=0, distinctive content markers present)
-- Don't compress the BACKBONE rule for speed — if a faster path would violate it, ship the slower correct version
+### What NOT to do
+- Don't reflexively start the next build. Field-validate the reachable GEO steps first.
+- Don't ship a fourth guest-post budget-tune. If 12.21.3 fails, go to parallel batching.
+- Don't touch layout without explicit unfreeze.
+- Don't claim a step "renders correctly" without an operator run — the orphaned-step finding proves documentation can drift from what actually executes.

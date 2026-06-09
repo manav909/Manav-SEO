@@ -61,6 +61,15 @@ export const STEP_DEFS: Record<string, StepDef> = {
   engagement_value:      { key: "engagement_value",      label: "Engagement & Conversion Value", sources: ["ga4", "ga4_conv"],     depth_levels: ["standard"],         default_depth: "standard" },
   authority_signals:     { key: "authority_signals",     label: "Authority & E-E-A-T Signals", sources: ["backlinks", "serpapi"],  depth_levels: ["standard", "deep"], default_depth: "standard" },
   trajectory:            { key: "trajectory",            label: "Trajectory (historical trend)", sources: ["gsc", "ga4"],          depth_levels: ["standard"],         default_depth: "standard" },
+  /* Build 12.20 / 12.22 — forward-looking GEO (Generative Engine Optimization)
+     deep-steps. Registered here so they are reachable from goal selection and
+     the step picker; before this they dispatched in routes but isEnabled()
+     returned false because no goal listed them, leaving them dead in practice.
+     ai_overview_citation_gap + geo_content_template need target keywords that
+     trigger an AI Overview, so they are conditional. */
+  ai_overview_citation_gap: { key: "ai_overview_citation_gap", label: "AI Overview Citation Gap", sources: ["serpapi", "crawl"], depth_levels: ["standard"], default_depth: "standard", conditional_on_target_keywords: true },
+  geo_displacement:         { key: "geo_displacement",         label: "GEO Displacement & Emergence", sources: ["serpapi", "gsc"], depth_levels: ["standard"], default_depth: "standard" },
+  geo_content_template:     { key: "geo_content_template",     label: "AI Overview Content Templates", sources: ["serpapi", "crawl"], depth_levels: ["standard"], default_depth: "standard", conditional_on_target_keywords: true },
 };
 
 /* ─── Goal definitions: each declares the steps it needs ───────── */
@@ -77,7 +86,7 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   keyword_ranking: {
     id: "keyword_ranking", label: "Keyword Ranking",
     description: "Rank specific keywords higher on the SERP.",
-    needs: ["gsc_visibility", "competitor_intel", "query_landscape", "onpage_audit", "internal_link_graph", "trajectory", "target_keyword_baseline"],
+    needs: ["gsc_visibility", "competitor_intel", "query_landscape", "onpage_audit", "internal_link_graph", "trajectory", "target_keyword_baseline", "ai_overview_citation_gap"],
     pillars: ["visibility", "query_opportunity", "on_page_health", "internal_links", "monitoring"],
     panel_framing: "Focus on closing the gap to page 1 for target keywords: what competitors ranking above have, on-page deficits, internal anchor + authority flow to the target page, the keyword's recent trajectory, and the fastest ranking levers. When operator-supplied target keywords exist, also cross-check them against GSC visibility — surface better-intent adjacent keywords the site already ranks for, and produce an honest feasibility verdict per target.",
   },
@@ -91,7 +100,7 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   traffic_growth: {
     id: "traffic_growth", label: "Traffic Growth",
     description: "Grow organic traffic, optionally by type (commercial / informational / local / branded).",
-    needs: ["gsc_visibility", "query_landscape", "competitor_intel", "onpage_audit", "core_web_vitals", "internal_link_graph", "engagement_value", "trajectory", "target_keyword_baseline"],
+    needs: ["gsc_visibility", "query_landscape", "competitor_intel", "onpage_audit", "core_web_vitals", "internal_link_graph", "engagement_value", "trajectory", "target_keyword_baseline", "ai_overview_citation_gap", "geo_displacement"],
     pillars: ["visibility", "query_opportunity", "on_page_health", "technical_performance", "internal_links", "engagement", "monitoring"],
     panel_framing: "Find every realistic path to more traffic for this site and industry: quick-win recovery, untapped query clusters, competitor displacement, indexation fixes, and converting existing traffic. Size each with the site's own CTR curve. When operator-supplied target keywords exist, evaluate them honestly (current rank, feasibility, better adjacent options in GSC).",
   },
@@ -112,7 +121,7 @@ export const GOAL_DEFS: Record<string, GoalDef> = {
   topical_authority: {
     id: "topical_authority", label: "Topical / Content Authority",
     description: "Own a topic cluster through comprehensive, authoritative content.",
-    needs: ["query_landscape", "competitor_intel", "onpage_audit", "internal_link_graph", "gsc_visibility", "trajectory", "target_keyword_baseline"],
+    needs: ["query_landscape", "competitor_intel", "onpage_audit", "internal_link_graph", "gsc_visibility", "trajectory", "target_keyword_baseline", "ai_overview_citation_gap", "geo_displacement", "geo_content_template"],
     pillars: ["query_opportunity", "on_page_health", "internal_links", "visibility", "monitoring"],
     panel_framing: "Map the topic's query space, find coverage gaps vs. competitors, see which cluster pages are already surfacing vs. invisible, design the cluster + internal linking to own it, and track cluster momentum.",
   },
