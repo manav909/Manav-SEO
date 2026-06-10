@@ -50,7 +50,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -73,7 +73,7 @@ export async function runWizardStage(opts: {
   stageId?:     string;
   capabilityIds?: string[];   // dynamic path: run these capabilities directly
   stageLabel?:  string;       // dynamic path: the client's deliverable label
-  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string };
+  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[] };
 }): Promise<WizardStageResult> {
   const { projectId } = opts;
   const inputs = opts.inputs || {};
@@ -136,6 +136,14 @@ export async function runWizardStage(opts: {
       const report = await mapTopicalAuthority({ projectId });
       if (report.cluster_count === 0) return result("needs_connection", "topical-authority.ts", report, report.summary);
       return result("completed", "topical-authority.ts", report, report.summary);
+    }
+
+    if (caps.includes("competitor_benchmark")) {
+      const comps = Array.isArray(inputs.competitors) ? inputs.competitors.map(String).filter(Boolean) : [];
+      if (comps.length === 0) return result("needs_input", "competitor-benchmark.ts", null, `Supply competitor domains (inputs.competitors) — this engine does not auto-pick competitors, by design.`);
+      const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
+      const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords });
+      return result(report.queries_analyzed > 0 ? "completed" : "needs_connection", "competitor-benchmark.ts", report, report.summary);
     }
 
     if (caps.includes("gsc_csv_ingestion")) {

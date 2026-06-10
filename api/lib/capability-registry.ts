@@ -93,6 +93,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Maps existing authority and thin spots from queries the site already earns impressions on — not net-new keyword opportunities (that needs keyword research from a separate source). Intent labels are rule-based heuristics; clustering is lexical, not semantic. Limited to the stored GSC dataset.",
     mode: "auto",
   },
+  competitor_benchmark: {
+    id: "competitor_benchmark",
+    label: "Competitor organic benchmarking (keyword-gap + content-gap)",
+    engine: "competitor-benchmark.ts → benchmarkCompetitors",
+    inputs_required: ["A curated list of competitor domains (operator-supplied)", "GSC data or target keywords for the query set"],
+    output: "Per-query client-vs-competitor SERP standings, aggregate keyword-gap per competitor, and crawl-based content-gap (depth/schema/structure) on the worst-ranking queries.",
+    limits: "Competitors are operator-supplied (no auto-discovery, to avoid irrelevant matches). SERP positions are a point-in-time, location-dependent snapshot; query set and content-gap crawling are capped for cost. Backlink-gap is NOT produced — no backlink-profile data source is connected; it requires an Ahrefs/Semrush/Majestic export or API.",
+    mode: "needs_input",
+  },
   workspace_deep_analysis: {
     id: "workspace_deep_analysis",
     label: "Workspace deep-step analysis (sequenced)",

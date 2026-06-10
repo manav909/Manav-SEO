@@ -52,6 +52,7 @@ export default function Wizard() {
   const [pickerStage, setPickerStage] = useState<string>("");  // stage id the picker is for
   const [gscBusy, setGscBusy]         = useState<string>("");   // status during select+pull
   const [keywords, setKeywords]       = useState("");
+  const [competitors, setCompetitors] = useState("");
 
   const classify = async () => {
     if (!chatText.trim()) return;
@@ -68,6 +69,7 @@ export default function Wizard() {
     setRunning(s.id); setError("");
     const inputs: any = {};
     if (keywords.trim()) inputs.targetKeywords = keywords.split(",").map(k => k.trim()).filter(Boolean);
+    if (competitors.trim()) inputs.competitors = competitors.split(",").map(c => c.trim()).filter(Boolean);
     const r: any = await post("wizard_run_stage", { projectId, capabilityIds: caps, stageLabel: s.label, inputs });
     setResults(prev => ({ ...prev, [s.id]: r?.result || { status: "error", note: r?.error || "Stage failed." } }));
     setRunning("");
@@ -188,6 +190,11 @@ export default function Wizard() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
                 placeholder="comma, separated, keywords"
                 value={keywords} onChange={e => setKeywords(e.target.value)} />
+              <div className="text-xs font-semibold text-muted-foreground mt-3 mb-2 uppercase tracking-wider">Competitor domains (for competitor benchmarking — you curate these)</div>
+              <input
+                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+                placeholder="competitor1.com, competitor2.com"
+                value={competitors} onChange={e => setCompetitors(e.target.value)} />
             </div>
 
             <div className="space-y-3">
