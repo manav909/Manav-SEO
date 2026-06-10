@@ -304,6 +304,23 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.29 — assemble a client-ready report from completed stage outputs.
+     Stateless: the UI passes the stage outputs it already holds. */
+  if (action === "wizard_report") {
+    const stages = Array.isArray(body?.stages) ? body.stages : [];
+    if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
+    try {
+      const { assembleClientReport } = await import("./wizard-report.js");
+      const { markdown, sections } = assembleClientReport(stages, {
+        author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain,
+        include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle,
+      });
+      return { success: sections > 0, markdown, sections };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "report assembly failed" };
+    }
+  }
+
   /* Build 12.28 — ingest a Google Ads search-terms export for paid-vs-organic analysis. */
   if (action === "wizard_ingest_ads_csv") {
     const projectId = String(body?.projectId || "").trim();

@@ -55,10 +55,14 @@ export default function Wizard() {
   const [gscBusy, setGscBusy]         = useState<string>("");   // status during select+pull
   const [keywords, setKeywords]       = useState("");
   const [competitors, setCompetitors] = useState("");
+  const [projectConfirmed, setProjectConfirmed] = useState(false);
+  const [reportAuthor, setReportAuthor] = useState("Manav S");
+  const [includeBranding, setIncludeBranding] = useState(false);
+  const [generatingReport, setGeneratingReport] = useState(false);
 
   const classify = async () => {
     if (!chatText.trim()) return;
-    setClassifying(true); setError(""); setPlan(null); setResults({});
+    setClassifying(true); setError(""); setPlan(null); setResults({}); setProjectConfirmed(false);
     const r: any = await post("wizard_compose", { chatText: chatText.trim() });
     if (r?.success && r?.plan) setPlan(r.plan);
     else setError(r?.error || "Classification failed.");
@@ -110,6 +114,7 @@ export default function Wizard() {
     const pull: any = await post("gsc_pull", { projectId });
     setGscBusy(""); setPickerStage(""); setGscSites([]);
     if (!pull?.success) { setError(pull?.error || "Property selected, but the data pull failed. Try the stage again in a moment."); return; }
+    setProjectConfirmed(true);
     runStage(s);
   };
 
@@ -124,6 +129,7 @@ export default function Wizard() {
       const r: any = await post("wizard_ingest_gsc_csv", { projectId, csvs: [{ filename: file.name, text }] });
       setUploading("");
       if (!r?.success) { setError(r?.error || r?.report?.summary || "CSV ingestion failed."); return; }
+      setProjectConfirmed(true);
       runStage(s);
     } catch (e: any) {
       setUploading(""); setError(e?.message || "Could not read the file.");
@@ -141,6 +147,23 @@ export default function Wizard() {
       if (!r?.success) { setError(r?.error || "Ads CSV ingestion failed."); return; }
       runStage(s);
     } catch (e: any) { setUploadingAds(""); setError(e?.message || "Could not read the file."); }
+  };
+
+  const generateReport = async () => {
+    const stagesIn = (plan?.stages || [])
+      .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
+      .filter(Boolean);
+    if (stagesIn.length === 0) { setError("Run at least one stage before generating the client report."); return; }
+    setGeneratingReport(true); setError("");
+    const r: any = await post("wizard_report", { stages: stagesIn, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
+    setGeneratingReport(false);
+    if (!r?.markdown) { setError(r?.error || "Report generation failed."); return; }
+    const blob = new Blob([r.markdown], { type: "text/markdown" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
 
   const downloadReport = (s: any, result: any) => {
@@ -202,6 +225,16 @@ export default function Wizard() {
                 {plan.client_domain ? <> This brief is about <span className="font-semibold">{plan.client_domain}</span>.</> : null}
                 {" "}Confirm the active project is this client. If it is a different site (or you have not connected the client's data yet), the results will be about that other site — not the client. For a new prospect with no data yet, connect or upload the client's GSC on the relevant stage first.
               </p>
+              <div className="mt-2">
+                {projectConfirmed ? (
+                  <span className="text-xs px-2 py-1 rounded-md border" style={chip("#10b981")}>✓ Confirmed — analysing {projectName || plan.client_domain || "the active project"}</span>
+                ) : (
+                  <button onClick={() => setProjectConfirmed(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg font-semibold border" style={chip("#f59e0b")}>
+                    Confirm the active project is {plan.client_domain || "this client"} — unlock stages
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
@@ -257,9 +290,9 @@ export default function Wizard() {
                           <p className="text-[11px] text-muted-foreground/70 mt-1">Engine: {s.capabilities.map((c: any) => c.engine).join(", ")}</p>
                         )}
                       </div>
-                      <button onClick={() => runStage(s)} disabled={running === s.id || s.readiness === "blocked" || s.is_gap}
+                      <button onClick={() => runStage(s)} disabled={running === s.id || s.readiness === "blocked" || s.is_gap || !projectConfirmed}
                         className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50 whitespace-nowrap">
-                        {running === s.id ? "Running…" : s.is_gap ? "No engine" : s.readiness === "blocked" ? "Blocked" : res ? "Re-run" : "Run stage"}
+                        {running === s.id ? "Running…" : s.is_gap ? "No engine" : s.readiness === "blocked" ? "Blocked" : !projectConfirmed ? "Confirm project ↑" : res ? "Re-run" : "Run stage"}
                       </button>
                     </div>
 
@@ -359,6 +392,28 @@ export default function Wizard() {
                 {plan.gaps.map((g: any, i: number) => (
                   <p key={i} className="text-xs text-muted-foreground mb-1"><span className="font-semibold">{g.stage}:</span> {g.note}</p>
                 ))}
+              </div>
+            )}
+
+            {/* Client-ready report — assembled from completed stages, sourced and bylined */}
+            {Object.values(results).some((r: any) => r?.status === "completed") && (
+              <div className="rounded-2xl border border-border bg-card p-5 mt-6">
+                <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Client-ready report</div>
+                <p className="text-xs text-muted-foreground mb-3">Assembles the completed stages into one written audit — every section carries its true source, authored by the name below, no tool branding unless you opt in. Built only from real data that ran; nothing is invented.</p>
+                <div className="flex flex-wrap items-center gap-3 mb-3">
+                  <label className="text-xs text-muted-foreground">Author
+                    <input value={reportAuthor} onChange={e => setReportAuthor(e.target.value)}
+                      className="ml-2 px-3 py-1.5 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary" />
+                  </label>
+                  <label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <input type="checkbox" checked={includeBranding} onChange={e => setIncludeBranding(e.target.checked)} />
+                    Include tool branding
+                  </label>
+                </div>
+                <button onClick={generateReport} disabled={generatingReport}
+                  className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+                  {generatingReport ? "Assembling…" : "Generate client report"}
+                </button>
               </div>
             )}
           </>
