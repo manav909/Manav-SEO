@@ -33,6 +33,7 @@ const STATUS: any = {
 };
 
 const chip = (color: string) => ({ color, borderColor: color + "55", background: color + "11" });
+const cleanDomain = (d: string) => String(d || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
 const isConnectStage = (s: any) => (s?.capabilities || []).some((c: any) => c.id === "gsc_metrics_per_url" || c.id === "gsc_query_page_pairs");
 
 export default function Wizard() {
@@ -142,6 +143,16 @@ export default function Wizard() {
     } catch (e: any) { setUploadingAds(""); setError(e?.message || "Could not read the file."); }
   };
 
+  const downloadReport = (s: any, result: any) => {
+    if (!result?.output) return;
+    const blob = new Blob([JSON.stringify(result.output, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${s.id || "stage"}-report.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
   const downloadExport = (result: any) => {
     const f = result?.output;
     if (!f?.xlsx_base64) return;
@@ -182,6 +193,17 @@ export default function Wizard() {
         {/* Step 2 — the plan */}
         {plan && (
           <>
+            {/* Active-project banner — data stages run against THIS project, not the chat. */}
+            <div className="rounded-2xl border p-4 mb-4" style={chip("#f59e0b")}>
+              <div className="text-xs font-semibold mb-1" style={{ color: "#f59e0b" }}>⚠ Which site will be analysed</div>
+              <p className="text-xs text-muted-foreground">
+                Data stages run against the <span className="font-semibold">active project</span> selected in the menu bar
+                {projectName ? <> — currently <span className="font-semibold">{projectName}</span></> : projectId ? <> — currently project <span className="font-semibold">{String(projectId).slice(0, 8)}…</span></> : <> — <span className="font-semibold">none selected</span></>}.
+                {plan.client_domain ? <> This brief is about <span className="font-semibold">{plan.client_domain}</span>.</> : null}
+                {" "}Confirm the active project is this client. If it is a different site (or you have not connected the client's data yet), the results will be about that other site — not the client. For a new prospect with no data yet, connect or upload the client's GSC on the relevant stage first.
+              </p>
+            </div>
+
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
               <div className="flex items-center justify-between mb-2 gap-3">
                 <h2 className="text-lg font-bold">{plan.archetype_label}</h2>
@@ -293,6 +315,11 @@ export default function Wizard() {
 
                     {res && (
                       <div className="mt-3 pt-3 border-t border-border">
+                        {plan.client_domain && res.output?.project_domain && cleanDomain(res.output.project_domain) !== cleanDomain(plan.client_domain) && (
+                          <div className="mb-2 p-2 rounded-md border" style={chip("#ef4444")}>
+                            <span className="text-[11px] font-semibold" style={{ color: "#ef4444" }}>⚠ Wrong site: this ran against {cleanDomain(res.output.project_domain)}, but the brief is about {cleanDomain(plan.client_domain)}. The active project does not match the client — select/connect the client's project, then re-run. Do not use this output.</span>
+                          </div>
+                        )}
                         {res.validation && (
                           <span className="inline-block text-[11px] px-2 py-0.5 rounded-md mb-2 border"
                             style={chip(res.validation === "unvalidated" ? "#f59e0b" : "#10b981")}>
@@ -305,6 +332,12 @@ export default function Wizard() {
                           <div className="text-xs text-muted-foreground mb-2">
                             {Object.entries(res.output.by_classification).map(([k, v]: any) => `${v} ${k}`).join(" · ")} across {res.output.total_urls} URLs
                           </div>
+                        )}
+                        {res.output && res.status === "completed" && (
+                          <button onClick={() => downloadReport(s, res)}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 mr-2">
+                            ⬇ Download report (JSON)
+                          </button>
                         )}
                         {res.output?.xlsx_base64 && (
                           <button onClick={() => downloadExport(res)}

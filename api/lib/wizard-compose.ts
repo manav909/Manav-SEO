@@ -48,6 +48,7 @@ export interface DynamicPlan {
   ymyl:               boolean;
   business_type:      string;
   platform:           string;
+  client_domain:      string;     // extracted from the brief — for active-project mismatch warning
   exclusions:         string[];
   deliverables_count: number;
   stages:             DynamicStage[];
@@ -75,10 +76,10 @@ const COMPOSE_SYSTEM = [
   `- For each deliverable, set capability_ids to the registry id(s) that genuinely produce it. Use ONLY ids from the list above, verbatim.`,
   `- If NO listed capability genuinely produces a deliverable, set gap=true, leave capability_ids empty, and in needed_engine describe briefly what engine would have to exist. Do NOT force an unrelated capability to avoid a gap, and do NOT invent an id.`,
   `- You are mapping only. You must NOT write or summarise the deliverable content itself.`,
-  `- Capture business_type (e.g. ecommerce, lead-gen, SaaS, local), platform (e.g. Shopify, WordPress, custom), ymyl (true for finance/health/legal), and explicit exclusions.`,
+  `- Capture business_type (e.g. ecommerce, lead-gen, SaaS, local), platform (e.g. Shopify, WordPress, custom), ymyl (true for finance/health/legal), client_domain (the client's website domain if mentioned anywhere — bare domain, no protocol or path, e.g. example.com), and explicit exclusions.`,
   ``,
   `Return ONLY valid JSON, no prose, no markdown fences:`,
-  `{"business_type":"...","platform":"...","ymyl":false,"exclusions":["..."],"deliverables":[{"title":"...","intent":"...","capability_ids":["..."],"gap":false,"needed_engine":""}]}`,
+  `{"business_type":"...","platform":"...","ymyl":false,"client_domain":"...","exclusions":["..."],"deliverables":[{"title":"...","intent":"...","capability_ids":["..."],"gap":false,"needed_engine":""}]}`,
 ].join("\n");
 
 function readinessOf(capIds: string[], ymyl: boolean): { readiness: StageReadiness; caps: DynamicStage["capabilities"] } {
@@ -181,6 +182,7 @@ export async function composeDynamicPlan(brief: string): Promise<DynamicPlan> {
     ymyl,
     business_type: String(parsed?.business_type || "").trim(),
     platform: String(parsed?.platform || "").trim(),
+    client_domain: String(parsed?.client_domain || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""),
     exclusions: Array.isArray(parsed?.exclusions) ? parsed.exclusions.filter((x: any) => typeof x === "string") : [],
     deliverables_count: total,
     stages,
