@@ -165,11 +165,28 @@ export default function Wizard() {
   const ingestMaterials = async (files: Array<{ filename: string; text: string }>) => {
     if (!projectId) { setError("No active project found."); return; }
     if (!files.length) return;
+    const CHUNK = 600000; // keep each request body well under the serverless limit
+    /* Split large files into parts, then batch parts so each POST stays small. */
+    const parts: Array<{ filename: string; text: string }> = [];
+    for (const f of files) {
+      if (f.text.length <= CHUNK) parts.push(f);
+      else { let i = 0, n = 1; while (i < f.text.length) { parts.push({ filename: `${f.filename} (part ${n})`, text: f.text.slice(i, i + CHUNK) }); i += CHUNK; n++; } }
+    }
+    const batches: Array<Array<{ filename: string; text: string }>> = [];
+    let cur: Array<{ filename: string; text: string }> = []; let curLen = 0;
+    for (const p of parts) { if (curLen + p.text.length > CHUNK && cur.length) { batches.push(cur); cur = []; curLen = 0; } cur.push(p); curLen += p.text.length; }
+    if (cur.length) batches.push(cur);
+
     setIngestingMaterials(true); setError("");
-    const r: any = await post("wizard_ingest_materials", { projectId, files });
+    let stored = 0, total = 0; let skipped: string[] = [];
+    for (let b = 0; b < batches.length; b++) {
+      const r: any = await post("wizard_ingest_materials", { projectId, files: batches[b] });
+      if (!r?.stored && !r?.success) { setIngestingMaterials(false); setError(r?.error || "Materials ingestion failed."); if (r?.skipped?.length) setMaterialsInfo(`Skipped: ${r.skipped.join(", ")}`); return; }
+      stored = r.stored ?? stored; total = r.total_chars ?? total; if (Array.isArray(r.skipped)) skipped = r.skipped;
+      setMaterialsInfo(`Uploading… ${b + 1}/${batches.length}`);
+    }
     setIngestingMaterials(false);
-    if (!r?.success) { setError(r?.error || "Materials ingestion failed."); if (r?.skipped?.length) setMaterialsInfo(`Skipped: ${r.skipped.join(", ")}`); return; }
-    setMaterialsInfo(`${r.stored} file(s) stored (${Math.round((r.total_chars || 0) / 1000)}k chars).${r.skipped?.length ? ` Skipped: ${r.skipped.join(", ")}` : ""}`);
+    setMaterialsInfo(`${stored} item(s) stored (${Math.round(total / 1000)}k chars).${skipped.length ? ` Skipped: ${skipped.join(", ")}` : ""}`);
   };
   const onMaterialFiles = async (fileList: FileList | null) => {
     const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|html?|log|xml|yaml|yml)$/i;

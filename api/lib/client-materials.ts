@@ -23,8 +23,8 @@ import { db } from "./db.js";
 
 export interface Material { filename: string; text: string; chars: number; ingested_at: string; }
 
-const MAX_TOTAL_CHARS = 200000;   // storage cap across all materials for a project
-const MAX_FILE_CHARS  = 120000;   // per-file cap
+const MAX_TOTAL_CHARS = 800000;   // storage cap across all materials for a project
+const MAX_FILE_CHARS  = 600000;   // per-file (or per-chunk) cap
 
 export async function ingestMaterials(opts: {
   projectId: string;
