@@ -50,7 +50,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -151,6 +151,13 @@ export async function runWizardStage(opts: {
       const report = await adviseCms({ projectId, siteUrl: inputs.siteUrl });
       if (report.detected_platform === "unknown" && report.findings.length === 0) return result("needs_input", "cms-advisor.ts", report, report.summary);
       return result("completed", "cms-advisor.ts", report, report.summary);
+    }
+
+    if (caps.includes("paid_organic_substitution")) {
+      const { analyzePaidVsOrganic } = await import("./paid-organic.js");
+      const report = await analyzePaidVsOrganic({ projectId });
+      if (!report.has_data) return result("needs_input", "paid-organic.ts", report, report.summary);
+      return result("completed", "paid-organic.ts", report, report.summary);
     }
 
     if (caps.includes("gsc_csv_ingestion")) {

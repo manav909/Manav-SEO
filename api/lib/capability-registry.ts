@@ -111,6 +111,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Based on a capped sample of crawled pages, not the full site. A crawl cannot see Core Web Vitals field data, theme/app internals, or JS-only-rendered content — those are advisory. Platform detection is signature-based; rule coverage is extensible per platform.",
     mode: "auto",
   },
+  paid_organic_substitution: {
+    id: "paid_organic_substitution",
+    label: "Paid-vs-organic substitution (reduce paid dependency)",
+    engine: "paid-organic.ts → analyzePaidVsOrganic (ingest via ads CSV)",
+    inputs_required: ["A real Google Ads search-terms export (CSV)", "GSC organic data"],
+    output: "Each paid search term cross-referenced with organic standing and bucketed: strong-substitution (already ranking top-5 — test cutting paid), ranking-opportunity, organic-gap, and brand-defence (held separate). Reports the potentially shiftable spend.",
+    limits: "REQUIRES a real Ads export — never estimates paid spend. Paid and organic clicks are not 1:1 substitutable, so recommendations are spend-reduction tests, not guarantees. Brand-term paid is separated, not counted as savings. A future Google Ads OAuth connector can feed the same engine.",
+    mode: "needs_input",
+  },
   workspace_deep_analysis: {
     id: "workspace_deep_analysis",
     label: "Workspace deep-step analysis (sequenced)",

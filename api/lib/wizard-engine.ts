@@ -304,5 +304,20 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.28 — ingest a Google Ads search-terms export for paid-vs-organic analysis. */
+  if (action === "wizard_ingest_ads_csv") {
+    const projectId = String(body?.projectId || "").trim();
+    const csvText = String(body?.csvText || (Array.isArray(body?.csvs) ? body.csvs[0]?.text : "") || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    if (!csvText) return { success: false, error: "Ads CSV content (csvText or csvs[0].text) is required." };
+    try {
+      const { ingestAdsCsv } = await import("./paid-organic.js");
+      const r = await ingestAdsCsv({ projectId, csvText, filename: body?.filename || (Array.isArray(body?.csvs) ? body.csvs[0]?.filename : undefined) });
+      return r.success ? { success: true, terms: r.terms, note: r.note } : { success: false, error: r.error || r.note };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "ads csv ingestion failed" };
+    }
+  }
+
   return null; // not a wizard action — let the caller fall through
 }

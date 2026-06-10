@@ -48,6 +48,7 @@ export default function Wizard() {
   const [running, setRunning]         = useState<string>("");
   const [connecting, setConnecting]   = useState<string>("");
   const [uploading, setUploading]     = useState<string>("");
+  const [uploadingAds, setUploadingAds] = useState<string>("");
   const [gscSites, setGscSites]       = useState<any[]>([]);   // properties to pick from
   const [pickerStage, setPickerStage] = useState<string>("");  // stage id the picker is for
   const [gscBusy, setGscBusy]         = useState<string>("");   // status during select+pull
@@ -126,6 +127,19 @@ export default function Wizard() {
     } catch (e: any) {
       setUploading(""); setError(e?.message || "Could not read the file.");
     }
+  };
+
+  const uploadAdsCsv = async (s: any, file: File | undefined) => {
+    if (!file) return;
+    if (!projectId) { setError("No active project found."); return; }
+    setUploadingAds(s.id); setError("");
+    try {
+      const text = await file.text();
+      const r: any = await post("wizard_ingest_ads_csv", { projectId, csvText: text, filename: file.name });
+      setUploadingAds("");
+      if (!r?.success) { setError(r?.error || "Ads CSV ingestion failed."); return; }
+      runStage(s);
+    } catch (e: any) { setUploadingAds(""); setError(e?.message || "Could not read the file."); }
   };
 
   const downloadExport = (result: any) => {
@@ -262,6 +276,18 @@ export default function Wizard() {
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Ads upload for the paid-vs-organic stage */}
+                    {(s.capabilities || []).some((c: any) => c.id === "paid_organic_substitution") && (!res || res.status === "needs_input") && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs text-muted-foreground mb-2">This stage needs the client's Google Ads search-terms export to compare paid spend against organic. Paid data is never estimated — upload the real export.</p>
+                        <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
+                          {uploadingAds === s.id ? "Ingesting…" : "Upload Google Ads CSV"}
+                          <input type="file" accept=".csv,text/csv" className="hidden"
+                            onChange={e => uploadAdsCsv(s, e.target.files?.[0])} disabled={uploadingAds === s.id} />
+                        </label>
                       </div>
                     )}
 
