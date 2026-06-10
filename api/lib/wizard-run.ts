@@ -142,7 +142,7 @@ export async function runWizardStage(opts: {
       const comps = Array.isArray(inputs.competitors) ? inputs.competitors.map(String).filter(Boolean) : [];
       if (comps.length === 0) return result("needs_input", "competitor-benchmark.ts", null, `Supply competitor domains (inputs.competitors) — this engine does not auto-pick competitors, by design.`);
       const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
-      const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords });
+      const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords, siteUrl: inputs.siteUrl });
       return result(report.queries_analyzed > 0 ? "completed" : "needs_connection", "competitor-benchmark.ts", report, report.summary);
     }
 

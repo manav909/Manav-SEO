@@ -34,6 +34,8 @@ const STATUS: any = {
 
 const chip = (color: string) => ({ color, borderColor: color + "55", background: color + "11" });
 const cleanDomain = (d: string) => String(d || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "");
+const GSC_DEP = new Set(["gsc_metrics_per_url", "gsc_query_page_pairs", "site_wide_url_classification", "url_inventory_export", "keyword_cannibalization", "topical_authority_map", "paid_organic_substitution"]);
+const isGscDependent = (s: any) => (s?.capabilities || []).some((c: any) => GSC_DEP.has(c.id));
 const isConnectStage = (s: any) => (s?.capabilities || []).some((c: any) => c.id === "gsc_metrics_per_url" || c.id === "gsc_query_page_pairs");
 
 export default function Wizard() {
@@ -56,6 +58,8 @@ export default function Wizard() {
   const [keywords, setKeywords]       = useState("");
   const [competitors, setCompetitors] = useState("");
   const [projectConfirmed, setProjectConfirmed] = useState(false);
+  const [noGsc, setNoGsc]             = useState(false);
+  const [clientSiteUrl, setClientSiteUrl] = useState("");
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -76,6 +80,7 @@ export default function Wizard() {
     const inputs: any = {};
     if (keywords.trim()) inputs.targetKeywords = keywords.split(",").map(k => k.trim()).filter(Boolean);
     if (competitors.trim()) inputs.competitors = competitors.split(",").map(c => c.trim()).filter(Boolean);
+    if (clientSiteUrl.trim()) inputs.siteUrl = clientSiteUrl.trim();
     const r: any = await post("wizard_run_stage", { projectId, capabilityIds: caps, stageLabel: s.label, inputs });
     setResults(prev => ({ ...prev, [s.id]: r?.result || { status: "error", note: r?.error || "Stage failed." } }));
     setRunning("");
@@ -264,6 +269,20 @@ export default function Wizard() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
                 placeholder="competitor1.com, competitor2.com"
                 value={competitors} onChange={e => setCompetitors(e.target.value)} />
+              <label className="flex items-center gap-2 text-xs text-muted-foreground mt-4">
+                <input type="checkbox" checked={noGsc} onChange={e => setNoGsc(e.target.checked)} />
+                I do not have the client's Search Console yet (prospect mode)
+              </label>
+              {noGsc && (
+                <div className="mt-2">
+                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Client site URL (for crawl / SERP / PSI stages — no GSC needed)</div>
+                  <input
+                    className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+                    placeholder="https://clientsite.com"
+                    value={clientSiteUrl} onChange={e => setClientSiteUrl(e.target.value)} />
+                  <p className="text-[11px] text-muted-foreground/70 mt-1">GSC-dependent stages will be deferred. Stages that run on live crawl, search results, and PageSpeed will run against this URL with real data.</p>
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -274,6 +293,8 @@ export default function Wizard() {
                 const connectStage = isConnectStage(s);
                 /* Offer connect tools on a connect stage until it has completed. */
                 const showConnect = connectStage && (!res || res.status === "needs_connection");
+                const deferred = noGsc && isGscDependent(s);
+                const gateOk = projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3);
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -290,9 +311,9 @@ export default function Wizard() {
                           <p className="text-[11px] text-muted-foreground/70 mt-1">Engine: {s.capabilities.map((c: any) => c.engine).join(", ")}</p>
                         )}
                       </div>
-                      <button onClick={() => runStage(s)} disabled={running === s.id || s.readiness === "blocked" || s.is_gap || !projectConfirmed}
+                      <button onClick={() => runStage(s)} disabled={running === s.id || s.readiness === "blocked" || s.is_gap || deferred || !gateOk}
                         className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50 whitespace-nowrap">
-                        {running === s.id ? "Running…" : s.is_gap ? "No engine" : s.readiness === "blocked" ? "Blocked" : !projectConfirmed ? "Confirm project ↑" : res ? "Re-run" : "Run stage"}
+                        {running === s.id ? "Running…" : s.is_gap ? "No engine" : s.readiness === "blocked" ? "Blocked" : deferred ? "Deferred (needs GSC)" : !gateOk ? "Confirm project ↑" : res ? "Re-run" : "Run stage"}
                       </button>
                     </div>
 

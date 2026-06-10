@@ -89,6 +89,7 @@ export async function benchmarkCompetitors(opts: {
   projectId: string;
   competitors: string[];
   keywords?: string[];
+  siteUrl?: string;
   maxQueries?: number;
   maxContentGaps?: number;
 }): Promise<CompetitorBenchmarkReport> {
@@ -99,7 +100,7 @@ export async function benchmarkCompetitors(opts: {
 
   const gsc = await loadGsc(opts.projectId);
   const gscPairs: any[] = Array.isArray(gsc.queryPagePairs) ? gsc.queryPagePairs : [];
-  const projectDomain = domainOf(gscPairs[0]?.page || gsc.topPages?.[0]?.page || "");
+  const projectDomain = domainOf(gscPairs[0]?.page || gsc.topPages?.[0]?.page || "") || cleanDomain(opts.siteUrl || "");
 
   const empty = (note: string): CompetitorBenchmarkReport => ({
     project_domain: projectDomain, generated_at: now, competitors, queries_analyzed: 0,
