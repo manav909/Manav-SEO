@@ -154,16 +154,23 @@ export default function Wizard() {
     } catch (e: any) { setUploadingAds(""); setError(e?.message || "Could not read the file."); }
   };
 
+  const renderToTab = (html: string, tab: Window | null, fallbackName: string) => {
+    if (tab && !tab.closed) { tab.document.open(); tab.document.write(html); tab.document.close(); }
+    else { downloadHtml(html, fallbackName); }  // popup blocked → fall back to download
+  };
+
   const generateReport = async () => {
     const stagesIn = (plan?.stages || [])
       .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
       .filter(Boolean);
     if (stagesIn.length === 0) { setError("Run at least one stage before generating the client report."); return; }
+    const tab = window.open("", "_blank");
+    if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     setGeneratingReport(true); setError("");
     const r: any = await post("wizard_report", { stages: stagesIn, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
     setGeneratingReport(false);
-    if (!r?.html) { setError(r?.error || "Report generation failed."); return; }
-    downloadHtml(r.html, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
+    if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
+    renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
   };
 
   const downloadHtml = (html: string, filename: string) => {
@@ -175,12 +182,14 @@ export default function Wizard() {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
 
-  /* Formatted per-stage report (client-ready HTML, not raw JSON). */
-  const downloadStageReport = async (s: any, result: any) => {
+  /* Formatted per-stage report — opens in a new tab. */
+  const openStageReport = async (s: any, result: any) => {
     if (!result?.output) return;
+    const tab = window.open("", "_blank");
+    if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     const r: any = await post("wizard_report", { stages: [{ label: s.label, ran_engine: result.ran_engine, status: result.status, output: result.output }], author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
-    if (!r?.html) { setError(r?.error || "Report generation failed."); return; }
-    downloadHtml(r.html, `${s.id || "stage"}-report.html`);
+    if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
+    renderToTab(r.html, tab, `${s.id || "stage"}-report.html`);
   };
 
   const downloadReport = (s: any, result: any) => {
@@ -401,9 +410,9 @@ export default function Wizard() {
                         )}
                         {res.output && res.status === "completed" && (
                           <div className="flex items-center gap-3">
-                            <button onClick={() => downloadStageReport(s, res)}
+                            <button onClick={() => openStageReport(s, res)}
                               className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">
-                              ⬇ Download report
+                              ↗ Open report
                             </button>
                             <button onClick={() => downloadReport(s, res)}
                               className="text-[11px] text-muted-foreground/70 underline hover:text-muted-foreground">
@@ -438,8 +447,8 @@ export default function Wizard() {
             {Object.values(results).some((r: any) => r?.status === "completed") && (
               <div className="rounded-2xl border border-border bg-card p-5 mt-6">
                 <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Client-ready report</div>
-                <p className="text-xs text-muted-foreground mb-3">Assembles the completed stages into one written, print-ready audit document (open it and use Print → Save as PDF). Every section carries its true source, authored by the name below, no tool branding unless you opt in. Built only from real data that ran; nothing is invented.</p>
-                <p className="text-[11px] text-muted-foreground/70 mb-3">Each stage above also has its own "Download report" for a formatted single-section document.</p>
+                <p className="text-xs text-muted-foreground mb-3">Opens the completed stages as one written, print-ready audit in a new tab (use Print → Save as PDF from there). Every section carries a senior-DMS read plus its true source, authored by the name below, no tool branding unless you opt in. Built only from real data that ran; the interpretation is the analyst's read and the data sits beneath it.</p>
+                <p className="text-[11px] text-muted-foreground/70 mb-3">Each stage above also has its own "Open report" for a single section.</p>
                 <div className="flex flex-wrap items-center gap-3 mb-3">
                   <label className="text-xs text-muted-foreground">Author
                     <input value={reportAuthor} onChange={e => setReportAuthor(e.target.value)}
@@ -452,7 +461,7 @@ export default function Wizard() {
                 </div>
                 <button onClick={generateReport} disabled={generatingReport}
                   className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
-                  {generatingReport ? "Assembling…" : "Generate client report"}
+                  {generatingReport ? "Assembling…" : "Open client report"}
                 </button>
               </div>
             )}
