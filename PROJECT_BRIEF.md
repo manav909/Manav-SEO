@@ -1395,6 +1395,16 @@ Building one solid engine per turn rather than three half-finished. The three ga
 
 **LAYOUT FREEZE OTHERWISE STILL STANDS.** The unfreeze was scoped to placing this wizard (an additive page + nav item). The frozen Phase 21 items (Casual-mode empty left space, persistent left-rail redesign) remain frozen — do not touch without a fresh explicit unfreeze.
 
+### Build 12.24 — Dynamic wizard composition [BUILT 2026-06-09, deploy pending]
+Replaces force-fitting a brief into one of five fixed archetypes with bespoke, per-brief stage generation — directly answers "different clients should not get the same stages." Decomposes ANY brief into the client's actual requested deliverables and maps each to a real engine OR an explicit gap.
+- NEW `api/lib/wizard-compose.ts` → `composeDynamicPlan(brief)`. ONE LLM call: decompose the brief into discrete deliverables + map each to capability registry id(s), constrained to the registry vocabulary (validated server-side — invented ids are dropped → gap). Builds one bespoke stage per deliverable with readiness (worst-case capability mode), is_gap flag, needed_engine note, and a coverage summary (runnable / needs-input-or-connection / manual / gaps). Returns a plan shape compatible with the existing wizard UI.
+- THE HARD RULE (anti-fabrication, the bucketsquad lesson): a generated stage is valid ONLY if it maps to a real registry capability; the LLM maps and flags gaps but NEVER produces deliverable content, and a deliverable with no engine becomes an honest gap, never a fabricated stage. Flexible planning bounded by real capability = the opposite of presenting work that was never done.
+- EDIT `api/lib/wizard-run.ts` — `runWizardStage` now accepts dynamic `capabilityIds` + `stageLabel` (bypassing archetype lookup), so composed stages execute through the same engine dispatch.
+- EDIT `api/lib/wizard-engine.ts` — added `wizard_compose` action; `wizard_run_stage` now accepts `capabilityIds` for dynamic stages (archetype path retained).
+- EDIT `src/pages/Wizard.tsx` — primary action is now `wizard_compose` ("Decompose & Plan"); stages run via capabilityIds; gap stages render "No engine" (disabled) with the needed-engine note.
+- Verified: nodenext --strict clean on all backend touched files; Wizard.tsx clean; total frontend error count unchanged (delta 0); no template-literal contractions. LLM decomposition accuracy is the field-test owed (run 100s of briefs, confirm correct deliverable extraction + mapping).
+- Coverage is HONEST, not FULL: on day one many briefs will have gaps (e.g. ecommerce/Shopify PDP+collection strategy, cross-engine AEO beyond Google AI Overview, guaranteed-relevant competitor selection). The gaps shrink as engines are built — see the bucketsquad gap list in the prior session notes for the highest-priority engines to add.
+
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
 
@@ -1412,6 +1422,7 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 - **Build 12.23b-3** (this turn): gsc-csv-ingest.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration.
 - **Build 12.23b-4** (this turn): wizard-run.ts (NEW), wizard-engine.ts (latest), brief. Single commit. No migration. No registry change. Depends on the gap-engines + workspace pipeline being on main.
 - **Build 12.23c** (this turn): src/pages/Wizard.tsx (NEW), src/App.tsx, src/components/SmartSidebar.tsx, src/pages/Intake.tsx, brief. FRONTEND. Single commit. Run `npm run build` locally to confirm the TS baseline before pushing.
+- **Build 12.24** (this turn): wizard-compose.ts (NEW), wizard-run.ts, wizard-engine.ts, src/pages/Wizard.tsx, brief. Backend + frontend. Single commit. No migration. No new api/*.ts. Run `npm run build` locally first.
 
 ### What NOT to do
 - Do not build the wizard UI without an explicit layout unfreeze.

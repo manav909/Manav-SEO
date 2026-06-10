@@ -22,6 +22,7 @@ const READINESS: any = {
   needs_input:      { label: "Needs input",      color: "#f59e0b" },
   manual_review:    { label: "Manual review",    color: "#a78bfa" },
   blocked:          { label: "Blocked",          color: "#ef4444" },
+  gap:              { label: "No engine",        color: "#ef4444" },
 };
 const STATUS: any = {
   completed:        { label: "Completed",   color: "#10b981" },
@@ -52,28 +53,29 @@ export default function Wizard() {
   const classify = async () => {
     if (!chatText.trim()) return;
     setClassifying(true); setError(""); setPlan(null); setResults({});
-    const r: any = await post("wizard_classify", { chatText: chatText.trim() });
+    const r: any = await post("wizard_compose", { chatText: chatText.trim() });
     if (r?.success && r?.plan) setPlan(r.plan);
     else setError(r?.error || "Classification failed.");
     setClassifying(false);
   };
 
-  const runStage = async (stageId: string) => {
+  const runStage = async (s: any) => {
     if (!projectId) { setError("No active project found. Select a project, then run project-scoped stages."); return; }
-    setRunning(stageId); setError("");
+    const caps = s.capability_ids || (s.capabilities || []).map((c: any) => c.id);
+    setRunning(s.id); setError("");
     const inputs: any = {};
-    if (keywords.trim()) inputs.targetKeywords = keywords.split(",").map(s => s.trim()).filter(Boolean);
-    const r: any = await post("wizard_run_stage", { projectId, archetypeId: plan.archetype_id, stageId, inputs });
-    setResults(prev => ({ ...prev, [stageId]: r?.result || { status: "error", note: r?.error || "Stage failed." } }));
+    if (keywords.trim()) inputs.targetKeywords = keywords.split(",").map(k => k.trim()).filter(Boolean);
+    const r: any = await post("wizard_run_stage", { projectId, capabilityIds: caps, stageLabel: s.label, inputs });
+    setResults(prev => ({ ...prev, [s.id]: r?.result || { status: "error", note: r?.error || "Stage failed." } }));
     setRunning("");
   };
 
   /* Start Google OAuth. Note: after consent the account is linked, but the
      property must still be selected and pulled (in Integrations). We re-run
      the stage on return so it reflects whatever data is now available. */
-  const connectGsc = async (stageId: string) => {
+  const connectGsc = async (s: any) => {
     if (!projectId) { setError("No active project found."); return; }
-    setConnecting(stageId); setError("");
+    setConnecting(s.id); setError("");
     const r: any = await post("gsc_oauth_start", { projectId });
     setConnecting("");
     if (!r?.url) { setError(r?.error || "Could not start the Google connection."); return; }
@@ -81,7 +83,7 @@ export default function Wizard() {
     const onMsg = (e: MessageEvent) => {
       if ((e.data || {}).type === "gsc_connected") {
         window.removeEventListener("message", onMsg);
-        runStage(stageId);
+        runStage(s);
       }
     };
     window.addEventListener("message", onMsg);
@@ -89,16 +91,16 @@ export default function Wizard() {
 
   /* In-wizard CSV ingestion — fully completes the connect step for a project
      without OAuth. Reads the file and ingests, then re-runs the stage. */
-  const uploadCsv = async (stageId: string, file: File | undefined) => {
+  const uploadCsv = async (s: any, file: File | undefined) => {
     if (!file) return;
     if (!projectId) { setError("No active project found."); return; }
-    setUploading(stageId); setError("");
+    setUploading(s.id); setError("");
     try {
       const text = await file.text();
       const r: any = await post("wizard_ingest_gsc_csv", { projectId, csvs: [{ filename: file.name, text }] });
       setUploading("");
       if (!r?.success) { setError(r?.error || r?.report?.summary || "CSV ingestion failed."); return; }
-      runStage(stageId);
+      runStage(s);
     } catch (e: any) {
       setUploading(""); setError(e?.message || "Could not read the file.");
     }
@@ -135,7 +137,7 @@ export default function Wizard() {
             </span>
             <button onClick={classify} disabled={classifying || !chatText.trim()}
               className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
-              {classifying ? "Classifying…" : "Classify & Plan"}
+              {classifying ? "Composing…" : "Decompose & Plan"}
             </button>
           </div>
           {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
@@ -192,9 +194,9 @@ export default function Wizard() {
                           <p className="text-[11px] text-muted-foreground/70 mt-1">Engine: {s.capabilities.map((c: any) => c.engine).join(", ")}</p>
                         )}
                       </div>
-                      <button onClick={() => runStage(s.id)} disabled={running === s.id || s.readiness === "blocked"}
+                      <button onClick={() => runStage(s)} disabled={running === s.id || s.readiness === "blocked" || s.is_gap}
                         className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50 whitespace-nowrap">
-                        {running === s.id ? "Running…" : s.readiness === "blocked" ? "Blocked" : res ? "Re-run" : "Run stage"}
+                        {running === s.id ? "Running…" : s.is_gap ? "No engine" : s.readiness === "blocked" ? "Blocked" : res ? "Re-run" : "Run stage"}
                       </button>
                     </div>
 
@@ -203,14 +205,14 @@ export default function Wizard() {
                       <div className="mt-3 pt-3 border-t border-border">
                         <p className="text-xs text-muted-foreground mb-2">This stage needs Search Console data for the active project. Connect Google (then select your property and pull in Integrations), or upload a GSC export here to use it right away.</p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <button onClick={() => connectGsc(s.id)} disabled={connecting === s.id}
+                          <button onClick={() => connectGsc(s)} disabled={connecting === s.id}
                             className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
                             {connecting === s.id ? "Opening…" : "Connect with Google"}
                           </button>
                           <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
                             {uploading === s.id ? "Ingesting…" : "Upload GSC CSV"}
                             <input type="file" accept=".csv,text/csv" className="hidden"
-                              onChange={e => uploadCsv(s.id, e.target.files?.[0])} disabled={uploading === s.id} />
+                              onChange={e => uploadCsv(s, e.target.files?.[0])} disabled={uploading === s.id} />
                           </label>
                         </div>
                       </div>

@@ -229,6 +229,20 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.24 — dynamic composition: bespoke per-brief stages mapped to
+     real engines or flagged as honest gaps. The flexible primary path. */
+  if (action === "wizard_compose") {
+    const chatText = String(body?.chatText || body?.chat || body?.objective || "").trim();
+    if (!chatText) return { success: false, error: "chatText (the client brief) is required." };
+    try {
+      const { composeDynamicPlan } = await import("./wizard-compose.js");
+      const plan = await composeDynamicPlan(chatText);
+      return { success: true, plan };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "wizard composition failed" };
+    }
+  }
+
   /* Build 12.23b — first executable stage engine: site-wide URL classification.
      Runs the `classify_urls` stage of the audit wizard against a project's
      stored GSC data. No new crawl cost. */
@@ -277,10 +291,13 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const projectId = String(body?.projectId || "").trim();
     const archetypeId = String(body?.archetypeId || "").trim();
     const stageId = String(body?.stageId || "").trim();
-    if (!projectId || !archetypeId || !stageId) return { success: false, error: "projectId, archetypeId and stageId are required." };
+    const capabilityIds = Array.isArray(body?.capabilityIds) ? body.capabilityIds.map(String) : undefined;
+    if (!projectId || (!capabilityIds?.length && (!archetypeId || !stageId))) {
+      return { success: false, error: "projectId plus either capabilityIds (dynamic) or archetypeId+stageId (preset) are required." };
+    }
     try {
       const { runWizardStage } = await import("./wizard-run.js");
-      const result = await runWizardStage({ projectId, archetypeId, stageId, inputs: body?.inputs });
+      const result = await runWizardStage({ projectId, archetypeId, stageId, capabilityIds, stageLabel: body?.stageLabel, inputs: body?.inputs });
       return { success: result.status !== "error", result };
     } catch (e: any) {
       return { success: false, error: e?.message || "wizard stage execution failed" };

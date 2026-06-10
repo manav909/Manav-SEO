@@ -68,25 +68,41 @@ function validationFor(capIds: string[]): Validation {
 }
 
 export async function runWizardStage(opts: {
-  projectId:   string;
-  archetypeId: string;
-  stageId:     string;
-  inputs?:     { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string };
+  projectId:    string;
+  archetypeId?: string;
+  stageId?:     string;
+  capabilityIds?: string[];   // dynamic path: run these capabilities directly
+  stageLabel?:  string;       // dynamic path: the client's deliverable label
+  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string };
 }): Promise<WizardStageResult> {
-  const { projectId, archetypeId, stageId } = opts;
+  const { projectId } = opts;
   const inputs = opts.inputs || {};
 
-  const archetype = getArchetype(archetypeId);
-  if (!archetype) return base(archetypeId, stageId, "(unknown)", "error", "established", null, null, "Unknown archetype.");
-  const stage = archetype.stages.find(s => s.id === stageId);
-  if (!stage) return base(archetypeId, stageId, "(unknown)", "error", "established", null, null, "Unknown stage for this archetype.");
-  if (!projectId) return base(archetypeId, stageId, stage.label, "error", "established", null, null, "projectId is required.");
+  /* Resolve the stage from either the dynamic capability list or a fixed
+     archetype lookup — both feed the same dispatch below. */
+  let caps: string[];
+  let stageLabel: string;
+  let stageId = opts.stageId || "dynamic_stage";
+  const archetypeId = opts.archetypeId || "dynamic";
 
-  const caps = stage.capability_ids;
+  if (Array.isArray(opts.capabilityIds) && opts.capabilityIds.length) {
+    caps = opts.capabilityIds.map(String);
+    stageLabel = opts.stageLabel || "stage";
+  } else {
+    const archetype = getArchetype(opts.archetypeId || "");
+    if (!archetype) return base(archetypeId, stageId, "(unknown)", "error", "established", null, null, "Unknown archetype, and no capabilityIds supplied.");
+    const stage = archetype.stages.find(s => s.id === opts.stageId);
+    if (!stage) return base(archetypeId, stageId, "(unknown)", "error", "established", null, null, "Unknown stage for this archetype.");
+    caps = stage.capability_ids;
+    stageLabel = stage.label;
+    stageId = stage.id;
+  }
+  if (!projectId) return base(archetypeId, stageId, stageLabel, "error", "established", null, null, "projectId is required.");
+
   const validation = validationFor(caps);
   const capModes = caps.map(c => getCapability(c)?.mode).filter(Boolean) as string[];
   const result = (status: StageStatus, ran: string | null, output: any, note: string, error?: string): WizardStageResult =>
-    base(archetypeId, stageId, stage.label, status, validation, ran, output, note, error);
+    base(archetypeId, stageId, stageLabel, status, validation, ran, output, note, error);
 
   try {
     /* All-manual stage → human judgement, no execution. */
