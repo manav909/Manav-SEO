@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import PortalNav from "@/components/PortalNav";
 import { useProject } from "@/contexts/ProjectContext";
 
@@ -40,8 +40,9 @@ const isConnectStage = (s: any) => (s?.capabilities || []).some((c: any) => c.id
 
 export default function Wizard() {
   const proj = useProject() as any;
-  const projectId = proj?.projectId || proj?.project?.id || (typeof localStorage !== "undefined" ? localStorage.getItem("seo_season_proj") : "") || "";
-  const projectName = proj?.project?.name || "";
+  const projectId = proj?.selectedProjectId || (typeof localStorage !== "undefined" ? localStorage.getItem("seo_season_proj") : "") || "";
+  const projectName = proj?.selectedProject?.name || "";
+  const projectUrl = proj?.selectedProject?.url || "";
 
   const [chatText, setChatText]       = useState("");
   const [plan, setPlan]               = useState<any>(null);
@@ -63,6 +64,7 @@ export default function Wizard() {
   const [semrushKey, setSemrushKey] = useState("");
   const [savingSemrush, setSavingSemrush] = useState(false);
   const [semrushInfo, setSemrushInfo] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -70,6 +72,38 @@ export default function Wizard() {
   const [analyzingDocs, setAnalyzingDocs] = useState(false);
   const [materialsInfo, setMaterialsInfo] = useState("");
   const [pasteNotes, setPasteNotes] = useState("");
+
+  /* Restore in-progress inputs after a project-switch reload. */
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("wizard_restore");
+      if (raw) { const s = JSON.parse(raw); if (s.chatText) setChatText(s.chatText); if (s.noGsc) setNoGsc(true); if (s.clientSiteUrl) setClientSiteUrl(s.clientSiteUrl); if (s.keywords) setKeywords(s.keywords); if (s.competitors) setCompetitors(s.competitors); sessionStorage.removeItem("wizard_restore"); }
+    } catch { /* ignore */ }
+  }, []);
+
+  /* Auto-fill empty fields from what the brief already told us. */
+  useEffect(() => {
+    if (!plan) return;
+    if (plan.client_domain && !clientSiteUrl.trim()) setClientSiteUrl(`https://${plan.client_domain}/`);
+    if (Array.isArray(plan.suggested_keywords) && plan.suggested_keywords.length && !keywords.trim()) setKeywords(plan.suggested_keywords.join(", "));
+    if (Array.isArray(plan.competitor_domains) && plan.competitor_domains.length && !competitors.trim()) setCompetitors(plan.competitor_domains.join(", "));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan]);
+
+  const createProjectForClient = async () => {
+    if (!plan?.client_domain) { setError("No client domain detected in the brief to create a project from."); return; }
+    setCreatingProject(true); setError("");
+    let userId = "";
+    try { const { supabase } = await import("@/lib/supabase"); const { data } = await supabase.auth.getUser(); userId = (data as any)?.user?.id || ""; } catch { /* ignore */ }
+    const r: any = await post("wizard_create_project", { name: plan.client_domain, domain: plan.client_domain, userId });
+    setCreatingProject(false);
+    if (!r?.projectId) { setError(r?.error || "Could not create the project."); return; }
+    try {
+      sessionStorage.setItem("wizard_restore", JSON.stringify({ chatText, noGsc: true, clientSiteUrl: clientSiteUrl || `https://${plan.client_domain}/`, keywords, competitors }));
+      localStorage.setItem("seo_season_proj", r.projectId);
+    } catch { /* ignore */ }
+    window.location.reload();
+  };
 
   const classify = async () => {
     if (!chatText.trim()) return;
@@ -320,13 +354,30 @@ export default function Wizard() {
                 {" "}Confirm the active project is this client. If it is a different site (or you have not connected the client's data yet), the results will be about that other site — not the client. For a new prospect with no data yet, connect or upload the client's GSC on the relevant stage first.
               </p>
               <div className="mt-2">
-                {projectConfirmed ? (
-                  <span className="text-xs px-2 py-1 rounded-md border" style={chip("#10b981")}>✓ Confirmed — analysing {projectName || plan.client_domain || "the active project"}</span>
-                ) : (
-                  <button onClick={() => setProjectConfirmed(true)}
-                    className="text-xs px-3 py-1.5 rounded-lg font-semibold border" style={chip("#f59e0b")}>
-                    Confirm the active project is {plan.client_domain || "this client"} — unlock stages
-                  </button>
+                {(() => {
+                  const cd = plan.client_domain ? cleanDomain(plan.client_domain) : "";
+                  const pd = projectUrl ? cleanDomain(projectUrl) : "";
+                  const matches = cd && pd && cd === pd;
+                  if (projectConfirmed || matches) {
+                    return <span className="text-xs px-2 py-1 rounded-md border" style={chip("#10b981")}>✓ Analysing {projectName || cd || "the active project"}</span>;
+                  }
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {cd && (
+                        <button onClick={createProjectForClient} disabled={creatingProject}
+                          className="text-xs px-3 py-1.5 rounded-lg font-semibold border" style={chip("#10b981")}>
+                          {creatingProject ? "Creating…" : `Create a project for ${cd} and switch`}
+                        </button>
+                      )}
+                      <button onClick={() => setProjectConfirmed(true)}
+                        className="text-xs px-3 py-1.5 rounded-lg font-semibold border" style={chip("#f59e0b")}>
+                        The active project already is {cd || "this client"} — continue
+                      </button>
+                    </div>
+                  );
+                })()}
+                {plan.client_domain && projectUrl && cleanDomain(projectUrl) !== cleanDomain(plan.client_domain) && !projectConfirmed && (
+                  <p className="text-[11px] mt-1" style={{ color: "#ef4444" }}>The active project is {cleanDomain(projectUrl)}, but the brief is about {cleanDomain(plan.client_domain)}. Create the correct project to avoid analysing the wrong site.</p>
                 )}
               </div>
             </div>
@@ -442,7 +493,7 @@ export default function Wizard() {
                 /* Offer connect tools on a connect stage until it has completed. */
                 const showConnect = connectStage && (!res || res.status === "needs_connection");
                 const deferred = noGsc && isGscDependent(s);
-                const gateOk = projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3);
+                const gateOk = projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between gap-3">

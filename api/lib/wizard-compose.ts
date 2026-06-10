@@ -49,6 +49,8 @@ export interface DynamicPlan {
   business_type:      string;
   platform:           string;
   client_domain:      string;     // extracted from the brief — for active-project mismatch warning
+  suggested_keywords: string[];   // keywords the brief mentioned — for field auto-fill
+  competitor_domains: string[];   // competitors the brief named — for field auto-fill
   exclusions:         string[];
   deliverables_count: number;
   stages:             DynamicStage[];
@@ -76,10 +78,10 @@ const COMPOSE_SYSTEM = [
   `- For each deliverable, set capability_ids to the registry id(s) that genuinely produce it. Use ONLY ids from the list above, verbatim.`,
   `- If NO listed capability genuinely produces a deliverable, set gap=true, leave capability_ids empty, and in needed_engine describe briefly what engine would have to exist. Do NOT force an unrelated capability to avoid a gap, and do NOT invent an id.`,
   `- You are mapping only. You must NOT write or summarise the deliverable content itself.`,
-  `- Capture business_type (e.g. ecommerce, lead-gen, SaaS, local), platform (e.g. Shopify, WordPress, custom), ymyl (true for finance/health/legal), client_domain (the client's website domain if mentioned anywhere — bare domain, no protocol or path, e.g. example.com), and explicit exclusions.`,
+  `- Capture business_type (e.g. ecommerce, lead-gen, SaaS, local), platform (e.g. Shopify, WordPress, custom), ymyl (true for finance/health/legal), client_domain (the client's website domain if mentioned anywhere — bare domain, no protocol or path, e.g. example.com), suggested_keywords (any target keywords or search terms the client explicitly mentioned — bare terms, may be empty), competitor_domains (any competitor websites the client explicitly named — bare domains, may be empty), and explicit exclusions.`,
   ``,
   `Return ONLY valid JSON, no prose, no markdown fences:`,
-  `{"business_type":"...","platform":"...","ymyl":false,"client_domain":"...","exclusions":["..."],"deliverables":[{"title":"...","intent":"...","capability_ids":["..."],"gap":false,"needed_engine":""}]}`,
+  `{"business_type":"...","platform":"...","ymyl":false,"client_domain":"...","suggested_keywords":["..."],"competitor_domains":["..."],"exclusions":["..."],"deliverables":[{"title":"...","intent":"...","capability_ids":["..."],"gap":false,"needed_engine":""}]}`,
 ].join("\n");
 
 function readinessOf(capIds: string[], ymyl: boolean): { readiness: StageReadiness; caps: DynamicStage["capabilities"] } {
@@ -183,6 +185,8 @@ export async function composeDynamicPlan(brief: string): Promise<DynamicPlan> {
     business_type: String(parsed?.business_type || "").trim(),
     platform: String(parsed?.platform || "").trim(),
     client_domain: String(parsed?.client_domain || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""),
+    suggested_keywords: Array.isArray(parsed?.suggested_keywords) ? parsed.suggested_keywords.filter((x: any) => typeof x === "string").slice(0, 30) : [],
+    competitor_domains: Array.isArray(parsed?.competitor_domains) ? parsed.competitor_domains.filter((x: any) => typeof x === "string").slice(0, 20) : [],
     exclusions: Array.isArray(parsed?.exclusions) ? parsed.exclusions.filter((x: any) => typeof x === "string") : [],
     deliverables_count: total,
     stages,

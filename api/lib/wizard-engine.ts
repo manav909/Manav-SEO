@@ -320,6 +320,37 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.35 — create a project (+ client) from the chat details, so the
+     wizard can switch to the correct client instead of running on the wrong one. */
+  if (action === "wizard_create_project") {
+    const name = String(body?.name || body?.domain || "").trim();
+    const domain = String(body?.domain || "").trim();
+    const userId = String(body?.userId || "").trim();
+    if (!name) return { success: false, error: "A project name or domain is required." };
+    try {
+      const { db } = await import("./db.js");
+      const { data: client, error: cErr } = await db().from("clients").insert({ name, company: name, email: "", website: domain || null }).select("id").single();
+      if (cErr) return { success: false, error: cErr.message };
+      const clientId = (client as any).id;
+      const { data: project, error: pErr } = await db().from("projects").insert({ client_id: clientId, name, url: domain || null, status: "active", keywords: [] }).select("id").single();
+      if (pErr) return { success: false, error: pErr.message };
+      const projectId = (project as any).id;
+      if (userId) {
+        try {
+          const { data: prof } = await db().from("profiles").select("id,client_id,client_ids").eq("id", userId).single();
+          if (prof) {
+            const existing: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : ((prof as any).client_id ? [(prof as any).client_id] : []);
+            if (!existing.includes(clientId)) await db().from("profiles").update({ client_ids: [...existing, clientId], client_id: existing[0] || clientId }).eq("id", userId);
+          }
+        } catch { /* non-blocking */ }
+      }
+      try { const { seedV2DataRoom } = await import("./pm-dataroom-seed.js"); await seedV2DataRoom({ projectId }); } catch { /* non-blocking */ }
+      return { success: true, projectId, clientId };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "Could not create the project." };
+    }
+  }
+
   /* Build 12.33 — store the Semrush API key for authority/backlink/keyword pulls. */
   if (action === "semrush_save_key") {
     const projectId = String(body?.projectId || "").trim();
