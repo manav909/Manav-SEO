@@ -111,6 +111,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Based on a capped sample of crawled pages, not the full site. A crawl cannot see Core Web Vitals field data, theme/app internals, or JS-only-rendered content — those are advisory. Platform detection is signature-based; rule coverage is extensible per platform.",
     mode: "auto",
   },
+  document_analysis: {
+    id: "document_analysis",
+    label: "Document-based analysis (from your uploaded materials)",
+    engine: "document-intelligence.ts → analyzeFromDocuments",
+    inputs_required: ["Uploaded materials (operator analysis + client files)", "The brief's requirements"],
+    output: "Per-requirement findings extracted from the uploaded documents (findings, data points, source file), plus the requirements the documents do not cover.",
+    limits: "Extracts from the uploaded documents only — as accurate as the documents themselves; never invents. Reads up to a large single-pass budget (~550k chars); larger corpora need another pass. This is the substance path when there is no GSC, if the documents contain the data.",
+    mode: "needs_input",
+  },
   paid_organic_substitution: {
     id: "paid_organic_substitution",
     label: "Paid-vs-organic substitution (reduce paid dependency)",

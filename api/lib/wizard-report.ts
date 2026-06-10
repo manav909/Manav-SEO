@@ -247,6 +247,19 @@ function renderBodyHtml(o: any): string {
   if (Array.isArray(o.reports) && o.reports.length) {
     return o.reports.map((r: any) => mdToHtml(r.report_md)).join(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0">`);
   }
+  /* Document-based analysis — findings per requirement, from uploaded materials. */
+  if (Array.isArray(o.requirement_findings)) {
+    const P: string[] = [];
+    if (o.summary) P.push(`<p>${esc(o.summary)}</p>`);
+    for (const rf of o.requirement_findings) {
+      P.push(`<h4>${esc(rf.requirement)}</h4>`);
+      if (rf.findings?.length) P.push(`<ul>${rf.findings.map((x: string) => `<li>${esc(x)}</li>`).join("")}</ul>`);
+      if (rf.data_points?.length) P.push(`<p class="muted"><strong>Data:</strong> ${rf.data_points.map((x: string) => esc(x)).join("; ")}</p>`);
+      if (rf.source_files?.length) P.push(`<p class="muted">From: ${esc(rf.source_files.join(", "))}</p>`);
+    }
+    if (o.uncovered?.length) P.push(`<h4>Not covered by the documents</h4><p class="muted">These need other data (live analysis or GSC): ${esc(o.uncovered.join("; "))}.</p>`);
+    return P.join("");
+  }
   const P: string[] = [];
 
   if (o.by_classification && Array.isArray(o.urls)) {
@@ -366,6 +379,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   else if (o.detected_platform && Array.isArray(o.findings)) base.cms = { platform: o.detected_platform, confidence: o.platform_confidence, top_findings: o.findings.filter((x: any) => ["critical", "high", "medium"].includes(x.severity)).slice(0, 8).map((x: any) => ({ title: x.title, severity: x.severity, observed: x.observed })) };
   else if (o.buckets && typeof o.shiftable_spend === "number") base.paid = { shiftable_spend: o.shiftable_spend, brand_spend: o.brand_spend, buckets: o.buckets, top: (o.top_opportunities || []).slice(0, 6) };
   else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
+  else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered: o.requirement_findings, uncovered: o.uncovered, files: o.files };
   return base;
 }
 

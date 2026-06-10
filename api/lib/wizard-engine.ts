@@ -320,6 +320,20 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.31 — analyse uploaded documents against the brief's requirements. */
+  if (action === "wizard_analyze_documents") {
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    const requirements = Array.isArray(body?.requirements) ? body.requirements.map(String).filter(Boolean) : [];
+    try {
+      const { analyzeFromDocuments } = await import("./document-intelligence.js");
+      const report = await analyzeFromDocuments({ projectId, requirements, clientName: body?.clientName });
+      return { success: report.has_materials, report };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "document analysis failed" };
+    }
+  }
+
   /* Build 12.30 — ingest operator/client materials (text-bearing files + pasted notes)
      so reports can be deepened with real provided data. */
   if (action === "wizard_ingest_materials") {

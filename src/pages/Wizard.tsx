@@ -64,6 +64,7 @@ export default function Wizard() {
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
+  const [analyzingDocs, setAnalyzingDocs] = useState(false);
   const [materialsInfo, setMaterialsInfo] = useState("");
   const [pasteNotes, setPasteNotes] = useState("");
 
@@ -201,11 +202,23 @@ export default function Wizard() {
     if (skipped.length && !files.length) setMaterialsInfo(`Skipped: ${skipped.join(", ")}`);
   };
 
+  const analyzeDocs = async () => {
+    if (!projectId) { setError("No active project found."); return; }
+    const reqs = (plan?.stages || []).map((s: any) => s.label);
+    setAnalyzingDocs(true); setError("");
+    const r: any = await post("wizard_analyze_documents", { projectId, requirements: reqs, clientName: plan?.client_domain });
+    setAnalyzingDocs(false);
+    if (!r?.report) { setError(r?.error || "Document analysis failed."); return; }
+    setResults(prev => ({ ...prev, document_analysis: { status: r.report.has_materials && r.report.requirement_findings?.length ? "completed" : "needs_input", ran_engine: "document-intelligence.ts", validation: "unvalidated", output: r.report, note: r.report.summary } }));
+  };
+
   const generateReport = async () => {
     const stagesIn = (plan?.stages || [])
       .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
       .filter(Boolean);
-    if (stagesIn.length === 0) { setError("Run at least one stage before generating the client report."); return; }
+    const docRes: any = results["document_analysis"];
+    if (docRes && docRes.status === "completed") stagesIn.unshift({ label: "Analysis from your uploaded documents", ran_engine: docRes.ran_engine, status: "completed", output: docRes.output });
+    if (stagesIn.length === 0) { setError("Run at least one stage (or analyse your documents) before generating the client report."); return; }
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     setGeneratingReport(true); setError("");
@@ -368,6 +381,30 @@ export default function Wizard() {
                 className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
                 Add pasted notes
               </button>
+
+              <div className="mt-4 pt-3 border-t border-border">
+                <p className="text-xs text-muted-foreground mb-2">Read your uploaded documents and extract findings for every requirement in the brief — grounded in your real material, with the source file cited. This is how your work feeds the report (and the substance path when there is no GSC).</p>
+                <button onClick={analyzeDocs} disabled={analyzingDocs}
+                  className="text-xs px-4 py-2 rounded-xl bg-primary text-primary-foreground font-semibold hover:opacity-90 disabled:opacity-50">
+                  {analyzingDocs ? "Reading documents…" : "Analyse my documents against the brief"}
+                </button>
+                {results["document_analysis"] && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <span className="inline-block text-[11px] px-2 py-0.5 rounded-md mb-2 border" style={chip("#f59e0b")}>Unvalidated — from your documents; review</span>
+                    <p className="text-xs text-muted-foreground mb-2">{results["document_analysis"].note}</p>
+                    {(results["document_analysis"].output?.requirement_findings || []).map((rf: any, i: number) => (
+                      <div key={i} className="mb-2">
+                        <p className="text-xs font-semibold">{rf.requirement}</p>
+                        {rf.findings?.length > 0 && <ul className="list-disc ml-5 text-xs text-muted-foreground">{rf.findings.map((f: string, j: number) => <li key={j}>{f}</li>)}</ul>}
+                        {rf.source_files?.length > 0 && <p className="text-[11px] text-muted-foreground/70">From: {rf.source_files.join(", ")}</p>}
+                      </div>
+                    ))}
+                    {results["document_analysis"].output?.uncovered?.length > 0 && (
+                      <p className="text-[11px] text-muted-foreground/70 mt-1">Not in your documents (need live analysis or GSC): {results["document_analysis"].output.uncovered.join("; ")}</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="space-y-3">
