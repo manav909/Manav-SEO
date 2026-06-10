@@ -50,7 +50,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -73,7 +73,7 @@ export async function runWizardStage(opts: {
   stageId?:     string;
   capabilityIds?: string[];   // dynamic path: run these capabilities directly
   stageLabel?:  string;       // dynamic path: the client's deliverable label
-  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[] };
+  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[]; siteUrl?: string };
 }): Promise<WizardStageResult> {
   const { projectId } = opts;
   const inputs = opts.inputs || {};
@@ -144,6 +144,13 @@ export async function runWizardStage(opts: {
       const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
       const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords });
       return result(report.queries_analyzed > 0 ? "completed" : "needs_connection", "competitor-benchmark.ts", report, report.summary);
+    }
+
+    if (caps.includes("cms_platform_advisory")) {
+      const { adviseCms } = await import("./cms-advisor.js");
+      const report = await adviseCms({ projectId, siteUrl: inputs.siteUrl });
+      if (report.detected_platform === "unknown" && report.findings.length === 0) return result("needs_input", "cms-advisor.ts", report, report.summary);
+      return result("completed", "cms-advisor.ts", report, report.summary);
     }
 
     if (caps.includes("gsc_csv_ingestion")) {

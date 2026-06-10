@@ -102,6 +102,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Competitors are operator-supplied (no auto-discovery, to avoid irrelevant matches). SERP positions are a point-in-time, location-dependent snapshot; query set and content-gap crawling are capped for cost. Backlink-gap is NOT produced — no backlink-profile data source is connected; it requires an Ahrefs/Semrush/Majestic export or API.",
     mode: "needs_input",
   },
+  cms_platform_advisory: {
+    id: "cms_platform_advisory",
+    label: "CMS-platform advisory (Shopify / WordPress / Wix / Squarespace / Webflow / more)",
+    engine: "cms-advisor.ts → adviseCms",
+    inputs_required: ["A crawlable site URL (resolved from project data, or supplied)"],
+    output: "Detected platform with confidence + signals, then universal SEO findings plus platform-specific findings (e.g. Shopify collection canonicalisation), each grounded in crawled conditions, with advisory items where a crawl cannot verify.",
+    limits: "Based on a capped sample of crawled pages, not the full site. A crawl cannot see Core Web Vitals field data, theme/app internals, or JS-only-rendered content — those are advisory. Platform detection is signature-based; rule coverage is extensible per platform.",
+    mode: "auto",
+  },
   workspace_deep_analysis: {
     id: "workspace_deep_analysis",
     label: "Workspace deep-step analysis (sequenced)",
