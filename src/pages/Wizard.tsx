@@ -63,6 +63,9 @@ export default function Wizard() {
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [ingestingMaterials, setIngestingMaterials] = useState(false);
+  const [materialsInfo, setMaterialsInfo] = useState("");
+  const [pasteNotes, setPasteNotes] = useState("");
 
   const classify = async () => {
     if (!chatText.trim()) return;
@@ -159,6 +162,28 @@ export default function Wizard() {
     else { downloadHtml(html, fallbackName); }  // popup blocked → fall back to download
   };
 
+  const ingestMaterials = async (files: Array<{ filename: string; text: string }>) => {
+    if (!projectId) { setError("No active project found."); return; }
+    if (!files.length) return;
+    setIngestingMaterials(true); setError("");
+    const r: any = await post("wizard_ingest_materials", { projectId, files });
+    setIngestingMaterials(false);
+    if (!r?.success) { setError(r?.error || "Materials ingestion failed."); if (r?.skipped?.length) setMaterialsInfo(`Skipped: ${r.skipped.join(", ")}`); return; }
+    setMaterialsInfo(`${r.stored} file(s) stored (${Math.round((r.total_chars || 0) / 1000)}k chars).${r.skipped?.length ? ` Skipped: ${r.skipped.join(", ")}` : ""}`);
+  };
+  const onMaterialFiles = async (fileList: FileList | null) => {
+    const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|html?|log|xml|yaml|yml)$/i;
+    const arr = Array.from(fileList || []);
+    const files: Array<{ filename: string; text: string }> = [];
+    const skipped: string[] = [];
+    for (const f of arr) {
+      if (!TEXT_EXT.test(f.name)) { skipped.push(`${f.name} (not text — convert/paste its text)`); continue; }
+      try { files.push({ filename: f.name, text: await f.text() }); } catch { skipped.push(`${f.name} (unreadable)`); }
+    }
+    if (files.length) await ingestMaterials(files);
+    if (skipped.length && !files.length) setMaterialsInfo(`Skipped: ${skipped.join(", ")}`);
+  };
+
   const generateReport = async () => {
     const stagesIn = (plan?.stages || [])
       .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
@@ -167,7 +192,7 @@ export default function Wizard() {
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     setGeneratingReport(true); setError("");
-    const r: any = await post("wizard_report", { stages: stagesIn, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
+    const r: any = await post("wizard_report", { stages: stagesIn, projectId, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
     setGeneratingReport(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
@@ -187,7 +212,7 @@ export default function Wizard() {
     if (!result?.output) return;
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
-    const r: any = await post("wizard_report", { stages: [{ label: s.label, ran_engine: result.ran_engine, status: result.status, output: result.output }], author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
+    const r: any = await post("wizard_report", { stages: [{ label: s.label, ran_engine: result.ran_engine, status: result.status, output: result.output }], projectId, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `${s.id || "stage"}-report.html`);
   };
@@ -304,6 +329,28 @@ export default function Wizard() {
                   <p className="text-[11px] text-muted-foreground/70 mt-1">GSC-dependent stages will be deferred. Stages that run on live crawl, search results, and PageSpeed will run against this URL with real data.</p>
                 </div>
               )}
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-5 mb-6">
+              <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Your materials &amp; client files (deepen the report with real data)</div>
+              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports (text, markdown, CSV, JSON, HTML). The report engine reads them and uses them — alongside the live crawl/SERP/PageSpeed data — to answer each brief point in depth, even without GSC. Non-text files (PDF/DOCX/images) need their text pasted for now.</p>
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
+                  {ingestingMaterials ? "Ingesting…" : "Upload files"}
+                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml" className="hidden"
+                    onChange={e => onMaterialFiles(e.target.files)} disabled={ingestingMaterials} />
+                </label>
+                {materialsInfo && <span className="text-[11px] text-muted-foreground">{materialsInfo}</span>}
+              </div>
+              <textarea
+                className="w-full h-24 px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary resize-y"
+                placeholder="Or paste your notes / analysis / findings here…"
+                value={pasteNotes} onChange={e => setPasteNotes(e.target.value)} />
+              <button onClick={() => { if (pasteNotes.trim()) { ingestMaterials([{ filename: "pasted-notes.txt", text: pasteNotes.trim() }]); setPasteNotes(""); } }}
+                disabled={ingestingMaterials || !pasteNotes.trim()}
+                className="mt-2 text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
+                Add pasted notes
+              </button>
             </div>
 
             <div className="space-y-3">

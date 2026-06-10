@@ -25,6 +25,9 @@
    client-side). Multi-tenant: no stored values.
 ════════════════════════════════════════════════════════════════ */
 
+import { llm, parseJsonResponse } from "./workspace/llm.js";
+import { loadMaterials, materialsForPrompt } from "./client-materials.js";
+
 export interface ReportStageInput {
   label:      string;
   ran_engine?:string | null;
@@ -37,6 +40,19 @@ export interface ReportOptions {
   client_domain?:   string;
   include_branding?:boolean;   // default false — no tool branding
   report_title?:    string;
+  project_id?:      string;    // to load operator-provided materials for depth
+}
+
+/* Completed sections, with duplicate sections (same engine + same summary)
+   collapsed — the composer can map two brief points to one engine. */
+function completedStages(stages: ReportStageInput[]): ReportStageInput[] {
+  const done = stages.filter(s => s.output && (s.status === "completed" || s.status === undefined));
+  const seen = new Set<string>(); const out: ReportStageInput[] = [];
+  for (const s of done) {
+    const key = `${s.ran_engine || ""}|${String(s.output?.summary || JSON.stringify(s.output || {}).slice(0, 200))}`;
+    if (seen.has(key)) continue; seen.add(key); out.push(s);
+  }
+  return out;
 }
 
 const fmtDate = (iso: string | undefined): string => { try { return iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : ""; } catch { return ""; } };
@@ -294,7 +310,7 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
   const client = opts.client_name || opts.client_domain || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
   const today = fmtDate(new Date().toISOString());
-  const completed = stages.filter(s => s.output && (s.status === "completed" || s.status === undefined));
+  const completed = completedStages(stages);
 
   const H: string[] = [];
   H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
@@ -305,9 +321,7 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
     return { html: H.join(""), sections: 0 };
   }
 
-  H.push(`<h2>Executive summary</h2><ul class="exec">`);
-  for (const s of completed) { const sum = s.output?.summary; if (sum) H.push(`<li><strong>${esc(s.label)}:</strong> ${esc(sum)}</li>`); }
-  H.push(`</ul>`);
+  H.push(`<h2>Executive summary</h2><p>This audit of ${esc(client)} covers ${completed.length} area(s). Each section below sets out the findings, the supporting data, and the source. Read each section for detail.</p>`);
 
   for (const s of completed) {
     H.push(`<h2>${esc(s.label)}</h2>`);
@@ -325,4 +339,123 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
   H.push(`</div></body></html>`);
   return { html: H.join(""), sections: completed.length };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Senior-DMS + client interpretation layer (AI-assisted, grounded).
+
+   Reads the REAL section data and writes the interpretation a senior
+   practitioner adds for a client: what it means, why it matters to the
+   business, and what to do first. Hard-constrained to the data passed in
+   — it may not invent numbers, pages, or competitors, and must call thin
+   data thin. The verifiable data tables and sources remain beneath every
+   section; this layer is reviewable interpretation, not new fact.
+════════════════════════════════════════════════════════════════ */
+
+interface SectionInterpretation { id: string; interpretation: string; why_it_matters: string; recommendations: string[]; priority: string; }
+interface SeniorDmsResult { executive_summary: string; sections: Record<string, SectionInterpretation>; }
+
+/* Compact, bounded data brief per section for the model to interpret. */
+function dataBrief(s: ReportStageInput, idx: number): any {
+  const o = s.output || {};
+  const id = `sec_${idx}`;
+  const base: any = { id, label: s.label, summary: o.summary || "", limits: (o.limits || []).slice(0, 4) };
+  if (o.by_classification && Array.isArray(o.urls)) base.url_classification = { total: o.total_urls, breakdown: o.by_classification, top_improve: o.urls.filter((u: any) => u.classification === "improve").slice(0, 6).map((u: any) => ({ url: u.url, issue: u.reason, priority: u.priority })) };
+  else if (Array.isArray(o.clusters)) base.topical = { cluster_count: o.cluster_count, intents: o.intent_distribution, top_clusters: o.clusters.filter((c: any) => c.coverage === "partial" || c.coverage === "underserved").slice(0, 6).map((c: any) => ({ topic: c.label, intent: c.intent, coverage: c.coverage, impressions: c.total_impressions })) };
+  else if (o.keyword_gap && Array.isArray(o.standings)) base.competitor = { biggest_gaps: (o.keyword_gap.biggest_gaps || []).slice(0, 6), content_gaps: (o.content_gaps || []).slice(0, 4).map((c: any) => ({ query: c.query, observations: c.observations })), backlink_gap_available: o.backlink_gap?.available };
+  else if (o.detected_platform && Array.isArray(o.findings)) base.cms = { platform: o.detected_platform, confidence: o.platform_confidence, top_findings: o.findings.filter((x: any) => ["critical", "high", "medium"].includes(x.severity)).slice(0, 8).map((x: any) => ({ title: x.title, severity: x.severity, observed: x.observed })) };
+  else if (o.buckets && typeof o.shiftable_spend === "number") base.paid = { shiftable_spend: o.shiftable_spend, brand_spend: o.brand_spend, buckets: o.buckets, top: (o.top_opportunities || []).slice(0, 6) };
+  else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
+  return base;
+}
+
+const DMS_SYSTEM = [
+  `You are a senior digital marketing strategist writing an SEO and AEO audit FOR A CLIENT — a business owner, not a technician.`,
+  `You are given the REAL findings from the analysis: actual numbers and items. Interpret them through a senior practitioner's lens and write for the client.`,
+  ``,
+  `For the whole report, write an executive_summary: what the analysis found overall and what it means for their business.`,
+  `For each section, write: interpretation (what this finding means in plain business terms), why_it_matters (the impact on visibility, traffic, enquiries, revenue, or wasted spend), recommendations (specific actions in priority order), and a priority (high/medium/low).`,
+  ``,
+  `HARD RULES — non-negotiable:`,
+  `- Use ONLY the numbers and facts in the provided data and the operator-provided materials (if any). Do NOT invent metrics, pages, competitors, dates, or claims that are not present in either.`,
+  `- The operator-provided materials are real source: the operator's own analysis and the client's files. Use them to DEEPEN each section and to answer brief points the live-engine data does not fully cover. Attribute to "provided materials" where a point comes from them.`,
+  `- Answer EVERY section/requirement substantively. If neither the engine data nor the materials cover a requirement, say plainly what is needed to answer it (for example, "this needs Search Console access" or "provide the client's analytics") rather than padding or inventing.`,
+  `- If a section's data is thin, say so plainly. Do NOT pad it to look substantial.`,
+  `- Write in clear business English. No tool names, no jargon dumps, not salesy.`,
+  ``,
+  `Return ONLY valid JSON, no prose, no fences:`,
+  `{"executive_summary":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high"}]}`,
+].join("\n");
+
+async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): Promise<(SeniorDmsResult & { material_files: string[] }) | null> {
+  const completed = completedStages(stages);
+  if (completed.length === 0) return null;
+  const briefs = completed.map((s, i) => dataBrief(s, i));
+
+  let materialsBlock = ""; let material_files: string[] = [];
+  if (opts.project_id) {
+    try {
+      const mats = await loadMaterials(opts.project_id);
+      if (mats.length) { const mp = materialsForPrompt(mats, 110000); materialsBlock = mp.text; material_files = mp.filenames; }
+    } catch { /* non-fatal */ }
+  }
+
+  const ctx = [
+    `Client: ${opts.client_name || opts.client_domain || "the website"}.`,
+    `Section findings to interpret (live-engine data):`,
+    JSON.stringify({ sections: briefs }),
+    materialsBlock ? `\n\nOPERATOR-PROVIDED MATERIALS AND CLIENT FILES (real source — use to deepen sections and answer requirements the engine data does not cover; attribute where used):${materialsBlock}` : ``,
+  ].join("\n");
+  try {
+    const raw = await llm({ system: DMS_SYSTEM, user: ctx.slice(0, 150000), maxTokens: 4000, timeoutMs: 90000, label: "wizard-report-dms" });
+    const parsed = parseJsonResponse<any>(raw);
+    if (!parsed || !Array.isArray(parsed.sections)) return null;
+    const map: Record<string, SectionInterpretation> = {};
+    for (const sec of parsed.sections) if (sec?.id) map[sec.id] = { id: sec.id, interpretation: String(sec.interpretation || ""), why_it_matters: String(sec.why_it_matters || ""), recommendations: Array.isArray(sec.recommendations) ? sec.recommendations.filter((x: any) => typeof x === "string") : [], priority: String(sec.priority || "") };
+    return { executive_summary: String(parsed.executive_summary || ""), sections: map, material_files };
+  } catch { return null; }
+}
+
+/* Enriched report: senior-DMS interpretation woven around the grounded
+   data tables. Falls back to the data-only report if the lens is
+   unavailable, with an honest note. */
+export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[], opts: ReportOptions = {}): Promise<{ html: string; sections: number; enriched: boolean }> {
+  const author = (opts.author || "Manav S").trim();
+  const client = opts.client_name || opts.client_domain || "the website";
+  const title = opts.report_title || `SEO and AEO Audit — ${client}`;
+  const today = fmtDate(new Date().toISOString());
+  const completed = completedStages(stages);
+  if (completed.length === 0) { const base = assembleClientReportHtml(stages, opts); return { ...base, enriched: false }; }
+
+  const dms = await seniorDmsPass(stages, opts);
+  if (!dms) { const base = assembleClientReportHtml(stages, opts); return { html: base.html.replace("</div></body>", `<p class="muted">Note: the written interpretation layer was unavailable for this run; the findings and data below are complete and accurate.</p></div></body>`), sections: base.sections, enriched: false }; }
+
+  const H: string[] = [];
+  H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
+  H.push(`<div class="lh"><h1>${esc(title)}</h1><div class="by">Prepared by ${esc(author)}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
+  H.push(`<h2>Executive summary</h2>${mdToHtml(dms.executive_summary)}`);
+
+  completed.forEach((s, i) => {
+    const interp = dms.sections[`sec_${i}`];
+    H.push(`<h2>${esc(s.label)}</h2>`);
+    if (interp) {
+      if (interp.priority) H.push(`<p class="muted">Priority: ${esc(interp.priority)}</p>`);
+      if (interp.interpretation) H.push(mdToHtml(interp.interpretation));
+      if (interp.why_it_matters) H.push(`<p><strong>Why this matters:</strong> ${esc(interp.why_it_matters)}</p>`);
+      if (interp.recommendations.length) H.push(`<h4>Recommendations</h4><ol>${interp.recommendations.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
+    }
+    H.push(`<h4>Supporting data</h4>`);
+    H.push(renderBodyHtml(s.output));
+    H.push(`<p class="src"><strong>Source:</strong> ${esc(sourceLine(s.ran_engine, s.output))}</p>`);
+  });
+
+  H.push(`<h2>Sources and how to verify</h2><p>Every figure above traces to one of these sources, each independently verifiable:</p><ul>`);
+  for (const src of collectSources(completed)) H.push(`<li>${esc(src)}</li>`);
+  if (dms.material_files.length) H.push(`<li>Operator-provided materials and client files: ${esc(dms.material_files.join(", "))}.</li>`);
+  H.push(`</ul>`);
+  const limits = collectLimits(completed);
+  if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
+  H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. The written interpretation is the analyst's reading of the data shown; the supporting data and sources under each section are the record. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
+  H.push(`</div></body></html>`);
+  return { html: H.join(""), sections: completed.length, enriched: true };
 }

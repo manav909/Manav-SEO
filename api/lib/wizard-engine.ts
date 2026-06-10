@@ -310,13 +310,29 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const stages = Array.isArray(body?.stages) ? body.stages : [];
     if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
     try {
-      const { assembleClientReport, assembleClientReportHtml } = await import("./wizard-report.js");
-      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle };
+      const { assembleClientReport, assembleClientReportHtmlEnriched } = await import("./wizard-report.js");
+      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle, project_id: String(body?.projectId || "").trim() || undefined };
       const md = assembleClientReport(stages, o);
-      const html = assembleClientReportHtml(stages, o);
-      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections };
+      const html = await assembleClientReportHtmlEnriched(stages, o);
+      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched };
     } catch (e: any) {
       return { success: false, error: e?.message || "report assembly failed" };
+    }
+  }
+
+  /* Build 12.30 — ingest operator/client materials (text-bearing files + pasted notes)
+     so reports can be deepened with real provided data. */
+  if (action === "wizard_ingest_materials") {
+    const projectId = String(body?.projectId || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    const files = Array.isArray(body?.files) ? body.files : [];
+    if (files.length === 0) return { success: false, error: "No files supplied." };
+    try {
+      const { ingestMaterials } = await import("./client-materials.js");
+      const r = await ingestMaterials({ projectId, files, replace: Boolean(body?.replace) });
+      return r.success ? { success: true, stored: r.stored, total_chars: r.total_chars, skipped: r.skipped } : { success: false, error: r.error || "No usable text found in the upload.", skipped: r.skipped };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "materials ingestion failed" };
     }
   }
 
