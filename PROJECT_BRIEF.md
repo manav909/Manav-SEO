@@ -1382,7 +1382,16 @@ Building one solid engine per turn rather than three half-finished. The three ga
 
 **HEADLESS WIZARD COMPLETE.** classify chat → plan → run each stage via real engines with honest validation flags. The only remaining piece is the UI.
 
-**12.23c — Wizard UI [GATED on explicit "yes proceed with layout"].** The click-next screen with live per-stage status, calling wizard_classify then wizard_run_stage per stage. This is layout — frozen until Manav unfreezes. Persistence (a wizard_runs table) would come with it if run history needs to survive for display.
+**12.23c — Wizard UI [BUILT 2026-06-09, deploy pending]. Layout unfreeze was scoped to this feature only.**
+- NEW `src/pages/Wizard.tsx` — Engagement Wizard page. Mirrors the Lead Intake stepper + design language (PortalNav chrome, local `post()` helper, shadcn semantic classes). Paste chat → `wizard_classify` → archetype + plan with readiness badges → run each stage via `wizard_run_stage` with honest status + validation badges (unvalidated engines flagged) → export `.xlsx` download. Reads active project via useProject() with localStorage `seo_season_proj` fallback.
+- EDIT `src/App.tsx` — `/wizard` route (import + Route next to `/intake`, wrapped in the BrainErrorBoundary `<B name="wizard">`; unguarded, matching its sibling `/intake`).
+- EDIT `src/components/SmartSidebar.tsx` — "Engagement Wizard" nav item in the Clients & Leads group, directly under Lead Intake.
+- EDIT `src/pages/Intake.tsx` — "Run Engagement Wizard" cross-link in the header (added `Link` import).
+- Verified: ran the real frontend typecheck (`tsc -p tsconfig.app.json`). Error count identical with vs without my changes (delta 0) and ZERO errors in my touched files. NOTE: absolute count in the sandbox was 47 not the documented 26 — because the check ran against an unpinned `npm install` rather than `npm ci` on the lockfile, so @types patch versions differ. The reliable signal is the delta (0). Confirm locally with `npm run build` (vite) before/after — the authoritative check in your environment.
+
+**WIZARD FEATURE COMPLETE END-TO-END.** Headless engine (12.23a/b) + UI (12.23c): paste a client chat → archetype + plan → run stages via real engines with honest validation flags → export. Reachable from the sidebar (Clients & Leads → Engagement Wizard) and from Lead Intake.
+
+**LAYOUT FREEZE OTHERWISE STILL STANDS.** The unfreeze was scoped to placing this wizard (an additive page + nav item). The frozen Phase 21 items (Casual-mode empty left space, persistent left-rail redesign) remain frozen — do not touch without a fresh explicit unfreeze.
 
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
@@ -1400,6 +1409,7 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 - **Build 12.23b-2** (this turn): url-inventory-export.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration. Depends on 12.23b-1's url-classifier.ts.
 - **Build 12.23b-3** (this turn): gsc-csv-ingest.ts (NEW), capability-registry.ts (latest), wizard-engine.ts (latest), brief. Single commit. No migration.
 - **Build 12.23b-4** (this turn): wizard-run.ts (NEW), wizard-engine.ts (latest), brief. Single commit. No migration. No registry change. Depends on the gap-engines + workspace pipeline being on main.
+- **Build 12.23c** (this turn): src/pages/Wizard.tsx (NEW), src/App.tsx, src/components/SmartSidebar.tsx, src/pages/Intake.tsx, brief. FRONTEND. Single commit. Run `npm run build` locally to confirm the TS baseline before pushing.
 
 ### What NOT to do
 - Do not build the wizard UI without an explicit layout unfreeze.

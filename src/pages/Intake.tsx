@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Link } from "react-router-dom";
 import PortalNav from "@/components/PortalNav";
 
 const post = (a: string, b: any = {}) =>
@@ -555,9 +556,12 @@ export default function Intake() {
       {progressBarJSX}
       <PortalNav />
       <div className="max-w-4xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold mb-1">Lead Intake</h1>
-          <p className="text-sm text-muted-foreground">Audit a prospect, generate a sales pack, and capture the lead — all customised to your sales strategy.</p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold mb-1">Lead Intake</h1>
+            <p className="text-sm text-muted-foreground">Audit a prospect, generate a sales pack, and capture the lead — all customised to your sales strategy.</p>
+          </div>
+          <Link to="/wizard" className="shrink-0 text-xs px-3 py-2 rounded-xl bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 whitespace-nowrap">🧙 Run Engagement Wizard</Link>
         </div>
 
         {/* Previous session notice */}
