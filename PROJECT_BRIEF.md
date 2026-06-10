@@ -1405,6 +1405,8 @@ Replaces force-fitting a brief into one of five fixed archetypes with bespoke, p
 - Verified: nodenext --strict clean on all backend touched files; Wizard.tsx clean; total frontend error count unchanged (delta 0); no template-literal contractions. LLM decomposition accuracy is the field-test owed (run 100s of briefs, confirm correct deliverable extraction + mapping).
 - Coverage is HONEST, not FULL: on day one many briefs will have gaps (e.g. ecommerce/Shopify PDP+collection strategy, cross-engine AEO beyond Google AI Overview, guaranteed-relevant competitor selection). The gaps shrink as engines are built — see the bucketsquad gap list in the prior session notes for the highest-priority engines to add.
 
+**12.24.1 — GSC connect: in-wizard property picker [BUILT 2026-06-09].** Fixed a connect-flow loop found in testing: after OAuth the wizard re-ran the stage immediately, but the property was never selected and data never pulled, so the stage stayed "needs connection" and kept re-prompting to connect. Now `connectGsc` runs the full sequence — OAuth → `gsc_list_properties` → in-wizard property picker → `gsc_select_property` → `gsc_pull` → re-run the stage. The picker lists each property (url + permission) for the operator to choose; status text shows during select/pull. Only Wizard.tsx changed. Verified type-clean, total frontend errors unchanged (delta 0).
+
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
 

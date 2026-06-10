@@ -48,6 +48,9 @@ export default function Wizard() {
   const [running, setRunning]         = useState<string>("");
   const [connecting, setConnecting]   = useState<string>("");
   const [uploading, setUploading]     = useState<string>("");
+  const [gscSites, setGscSites]       = useState<any[]>([]);   // properties to pick from
+  const [pickerStage, setPickerStage] = useState<string>("");  // stage id the picker is for
+  const [gscBusy, setGscBusy]         = useState<string>("");   // status during select+pull
   const [keywords, setKeywords]       = useState("");
 
   const classify = async () => {
@@ -77,16 +80,33 @@ export default function Wizard() {
     if (!projectId) { setError("No active project found."); return; }
     setConnecting(s.id); setError("");
     const r: any = await post("gsc_oauth_start", { projectId });
-    setConnecting("");
-    if (!r?.url) { setError(r?.error || "Could not start the Google connection."); return; }
+    if (!r?.url) { setConnecting(""); setError(r?.error || "Could not start the Google connection."); return; }
     window.open(r.url, "gsc_oauth", "width=520,height=640");
-    const onMsg = (e: MessageEvent) => {
-      if ((e.data || {}).type === "gsc_connected") {
-        window.removeEventListener("message", onMsg);
-        runStage(s);
-      }
+    const onMsg = async (e: MessageEvent) => {
+      if ((e.data || {}).type !== "gsc_connected") return;
+      window.removeEventListener("message", onMsg);
+      /* Account linked — now list the properties so the user can pick one. */
+      const lp: any = await post("gsc_list_properties", { projectId });
+      setConnecting("");
+      const sites = Array.isArray(lp?.sites) ? lp.sites : [];
+      if (sites.length === 0) { setError("Connected, but no Search Console properties were found for this Google account."); return; }
+      setGscSites(sites);
+      setPickerStage(s.id);
     };
     window.addEventListener("message", onMsg);
+  };
+
+  /* Pick a property -> select it for this project -> pull its data -> re-run. */
+  const pickProperty = async (s: any, siteUrl: string) => {
+    if (!projectId) return;
+    setGscBusy("Selecting property…");
+    const sel: any = await post("gsc_select_property", { projectId, siteUrl, label: siteUrl });
+    if (!sel?.success) { setGscBusy(""); setError(sel?.error || "Could not select that property."); return; }
+    setGscBusy("Pulling Search Console data…");
+    const pull: any = await post("gsc_pull", { projectId });
+    setGscBusy(""); setPickerStage(""); setGscSites([]);
+    if (!pull?.success) { setError(pull?.error || "Property selected, but the data pull failed. Try the stage again in a moment."); return; }
+    runStage(s);
   };
 
   /* In-wizard CSV ingestion — fully completes the connect step for a project
@@ -203,9 +223,9 @@ export default function Wizard() {
                     {/* Connect affordances for GSC-backed stages */}
                     {showConnect && (
                       <div className="mt-3 pt-3 border-t border-border">
-                        <p className="text-xs text-muted-foreground mb-2">This stage needs Search Console data for the active project. Connect Google (then select your property and pull in Integrations), or upload a GSC export here to use it right away.</p>
+                        <p className="text-xs text-muted-foreground mb-2">This stage needs Search Console data for the active project. Connect Google and pick the property here, or upload a GSC export to use it right away.</p>
                         <div className="flex flex-wrap items-center gap-2">
-                          <button onClick={() => connectGsc(s)} disabled={connecting === s.id}
+                          <button onClick={() => connectGsc(s)} disabled={connecting === s.id || !!gscBusy}
                             className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
                             {connecting === s.id ? "Opening…" : "Connect with Google"}
                           </button>
@@ -215,6 +235,26 @@ export default function Wizard() {
                               onChange={e => uploadCsv(s, e.target.files?.[0])} disabled={uploading === s.id} />
                           </label>
                         </div>
+
+                        {/* Property picker — shown after OAuth lists the account's properties */}
+                        {pickerStage === s.id && (
+                          <div className="mt-3">
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Pick the Search Console property for this project:</p>
+                            {gscBusy ? (
+                              <p className="text-xs text-primary">{gscBusy}</p>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {gscSites.map((site: any) => (
+                                  <button key={site.url} onClick={() => pickProperty(s, site.url)}
+                                    className="text-left text-xs px-3 py-2 rounded-lg border border-border bg-background hover:border-primary">
+                                    <span className="font-medium">{site.url}</span>
+                                    {site.perm && <span className="text-muted-foreground ml-2">({site.perm})</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
