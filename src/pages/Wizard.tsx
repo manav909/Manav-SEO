@@ -162,13 +162,25 @@ export default function Wizard() {
     setGeneratingReport(true); setError("");
     const r: any = await post("wizard_report", { stages: stagesIn, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
     setGeneratingReport(false);
-    if (!r?.markdown) { setError(r?.error || "Report generation failed."); return; }
-    const blob = new Blob([r.markdown], { type: "text/markdown" });
+    if (!r?.html) { setError(r?.error || "Report generation failed."); return; }
+    downloadHtml(r.html, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
+  };
+
+  const downloadHtml = (html: string, filename: string) => {
+    const blob = new Blob([html], { type: "text/html" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.md`;
+    a.download = filename;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+
+  /* Formatted per-stage report (client-ready HTML, not raw JSON). */
+  const downloadStageReport = async (s: any, result: any) => {
+    if (!result?.output) return;
+    const r: any = await post("wizard_report", { stages: [{ label: s.label, ran_engine: result.ran_engine, status: result.status, output: result.output }], author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
+    if (!r?.html) { setError(r?.error || "Report generation failed."); return; }
+    downloadHtml(r.html, `${s.id || "stage"}-report.html`);
   };
 
   const downloadReport = (s: any, result: any) => {
@@ -388,10 +400,16 @@ export default function Wizard() {
                           </div>
                         )}
                         {res.output && res.status === "completed" && (
-                          <button onClick={() => downloadReport(s, res)}
-                            className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 mr-2">
-                            ⬇ Download report (JSON)
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button onClick={() => downloadStageReport(s, res)}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">
+                              ⬇ Download report
+                            </button>
+                            <button onClick={() => downloadReport(s, res)}
+                              className="text-[11px] text-muted-foreground/70 underline hover:text-muted-foreground">
+                              raw data (JSON)
+                            </button>
+                          </div>
                         )}
                         {res.output?.xlsx_base64 && (
                           <button onClick={() => downloadExport(res)}
@@ -420,7 +438,8 @@ export default function Wizard() {
             {Object.values(results).some((r: any) => r?.status === "completed") && (
               <div className="rounded-2xl border border-border bg-card p-5 mt-6">
                 <div className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wider">Client-ready report</div>
-                <p className="text-xs text-muted-foreground mb-3">Assembles the completed stages into one written audit — every section carries its true source, authored by the name below, no tool branding unless you opt in. Built only from real data that ran; nothing is invented.</p>
+                <p className="text-xs text-muted-foreground mb-3">Assembles the completed stages into one written, print-ready audit document (open it and use Print → Save as PDF). Every section carries its true source, authored by the name below, no tool branding unless you opt in. Built only from real data that ran; nothing is invented.</p>
+                <p className="text-[11px] text-muted-foreground/70 mb-3">Each stage above also has its own "Download report" for a formatted single-section document.</p>
                 <div className="flex flex-wrap items-center gap-3 mb-3">
                   <label className="text-xs text-muted-foreground">Author
                     <input value={reportAuthor} onChange={e => setReportAuthor(e.target.value)}

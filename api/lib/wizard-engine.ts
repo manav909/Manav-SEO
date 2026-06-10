@@ -310,12 +310,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const stages = Array.isArray(body?.stages) ? body.stages : [];
     if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
     try {
-      const { assembleClientReport } = await import("./wizard-report.js");
-      const { markdown, sections } = assembleClientReport(stages, {
-        author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain,
-        include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle,
-      });
-      return { success: sections > 0, markdown, sections };
+      const { assembleClientReport, assembleClientReportHtml } = await import("./wizard-report.js");
+      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle };
+      const md = assembleClientReport(stages, o);
+      const html = assembleClientReportHtml(stages, o);
+      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections };
     } catch (e: any) {
       return { success: false, error: e?.message || "report assembly failed" };
     }
