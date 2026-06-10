@@ -176,8 +176,20 @@ export async function resolveTargetUrls(campaignId: string | undefined, projectI
   } catch { /* fall through */ }
   // 3. GSC top pages
   const { topPages } = await loadGsc(projectId);
-  const urls = topPages.slice(0, 30).map((p: any) => p.page || p.url).filter(Boolean);
-  return { urls, source: "GSC top pages (no campaign targets found)" };
+  const gscUrls = topPages.slice(0, 30).map((p: any) => p.page || p.url).filter(Boolean);
+  if (gscUrls.length) return { urls: gscUrls, source: "GSC top pages" };
+  // 4. the project's own site URL (homepage) — lets a prospect project with no
+  //    campaign and no GSC still be analysed against the real site the operator
+  //    provided, instead of failing with "no target pages".
+  try {
+    const r = await withTimeout(db().from("projects").select("url").eq("id", projectId).maybeSingle(), "project_url");
+    const u = ((r as any)?.data as any)?.url;
+    if (u && typeof u === "string" && u.trim()) {
+      const full = /^https?:\/\//i.test(u.trim()) ? u.trim() : `https://${u.trim().replace(/^\/+/, "")}`;
+      return { urls: [full], source: "project homepage URL" };
+    }
+  } catch { /* fall through */ }
+  return { urls: [], source: "no target pages found (no campaign, GSC, or project URL)" };
 }
 
 /* ─── CrUX field data (small, project-agnostic wrapper) ──────── */
