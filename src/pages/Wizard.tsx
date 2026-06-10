@@ -60,6 +60,9 @@ export default function Wizard() {
   const [projectConfirmed, setProjectConfirmed] = useState(false);
   const [noGsc, setNoGsc]             = useState(false);
   const [clientSiteUrl, setClientSiteUrl] = useState("");
+  const [semrushKey, setSemrushKey] = useState("");
+  const [savingSemrush, setSavingSemrush] = useState(false);
+  const [semrushInfo, setSemrushInfo] = useState("");
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
@@ -161,6 +164,16 @@ export default function Wizard() {
   const renderToTab = (html: string, tab: Window | null, fallbackName: string) => {
     if (tab && !tab.closed) { tab.document.open(); tab.document.write(html); tab.document.close(); }
     else { downloadHtml(html, fallbackName); }  // popup blocked → fall back to download
+  };
+
+  const saveSemrush = async () => {
+    if (!projectId) { setError("No active project found."); return; }
+    if (!semrushKey.trim()) return;
+    setSavingSemrush(true); setError("");
+    const r: any = await post("semrush_save_key", { projectId, apiKey: semrushKey.trim() });
+    setSavingSemrush(false);
+    setSemrushInfo(r?.success ? "Semrush key saved — authority/backlink/keyword stages can now run." : (r?.error || "Could not save key."));
+    if (r?.success) setSemrushKey("");
   };
 
   const ingestMaterials = async (files: Array<{ filename: string; text: string }>) => {
@@ -345,6 +358,18 @@ export default function Wizard() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
                 placeholder="competitor1.com, competitor2.com"
                 value={competitors} onChange={e => setCompetitors(e.target.value)} />
+              <div className="text-xs font-semibold text-muted-foreground mt-3 mb-2 uppercase tracking-wider">Semrush API key (for authority, backlinks &amp; keyword data)</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input type="password"
+                  className="flex-1 min-w-[200px] px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
+                  placeholder="Semrush API key (uses your Semrush API units)"
+                  value={semrushKey} onChange={e => setSemrushKey(e.target.value)} />
+                <button onClick={saveSemrush} disabled={savingSemrush || !semrushKey.trim()}
+                  className="text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
+                  {savingSemrush ? "Saving…" : "Save key"}
+                </button>
+              </div>
+              {semrushInfo && <p className="text-[11px] text-muted-foreground mt-1">{semrushInfo}</p>}
               <label className="flex items-center gap-2 text-xs text-muted-foreground mt-4">
                 <input type="checkbox" checked={noGsc} onChange={e => setNoGsc(e.target.checked)} />
                 I do not have the client's Search Console yet (prospect mode)

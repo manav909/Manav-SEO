@@ -111,6 +111,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Based on a capped sample of crawled pages, not the full site. A crawl cannot see Core Web Vitals field data, theme/app internals, or JS-only-rendered content — those are advisory. Platform detection is signature-based; rule coverage is extensible per platform.",
     mode: "auto",
   },
+  semrush_intelligence: {
+    id: "semrush_intelligence",
+    label: "Authority, backlinks & keyword data (Semrush)",
+    engine: "semrush-intel.ts → semrushIntelligence",
+    inputs_required: ["A Semrush API key (with API units)", "Client domain + competitor domains"],
+    output: "Authority Score, organic keywords, organic traffic, total backlinks and referring domains for the client and each competitor, with the authority/backlink/keyword gaps — the bought data a crawl cannot produce.",
+    limits: "Live Semrush API data; consumes Semrush API units per run. Never fabricated — if no key or out of units, it says so. Keyword-gap (missing-keywords list) is a follow-up endpoint; this delivers the domain + backlink overview comparison.",
+    mode: "needs_connection",
+  },
   site_wide_audit: {
     id: "site_wide_audit",
     label: "Full-site technical & on-page audit (site-wide crawl)",

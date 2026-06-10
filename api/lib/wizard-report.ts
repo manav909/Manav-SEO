@@ -262,6 +262,20 @@ function renderBodyHtml(o: any): string {
   }
   const P: string[] = [];
 
+  /* Semrush authority / backlinks / keywords comparison */
+  if (o.client && Array.isArray(o.competitors) && typeof o.has_key === "boolean") {
+    if (!o.has_key || !o.client) { return `<p class="muted">${esc(o.summary)}</p>`; }
+    const m = (x: any) => x == null ? "—" : Number(x).toLocaleString();
+    const all = [o.client, ...o.competitors].filter((d: any) => d && !d.error);
+    P.push(`<h4>Authority and link profile (Semrush)</h4>`);
+    P.push(tableHtml(["Domain", "Authority", "Organic keywords", "Est. traffic", "Backlinks", "Referring domains"],
+      all.map((d: any) => [d.domain + (d.domain === o.client.domain ? " (you)" : ""), m(d.authority_score), m(d.organic_keywords), m(d.organic_traffic), m(d.total_backlinks), m(d.referring_domains)])));
+    if (o.gaps?.length) P.push(`<h4>Gaps</h4><ul>${o.gaps.map((g: string) => `<li>${esc(g)}</li>`).join("")}</ul>`);
+    const errs = o.competitors.filter((c: any) => c.error);
+    if (errs.length) P.push(`<p class="muted">Could not pull: ${errs.map((c: any) => `${esc(c.domain)} (${esc(c.error)})`).join(", ")}.</p>`);
+    return P.join("");
+  }
+
   /* Full-site crawl audit */
   if (o.issues && typeof o.pages_reachable === "number") {
     P.push(`<p>Crawled ${o.pages_reachable} page(s) of ${esc(o.project_domain)}${o.crawl_capped ? " (capped; more pages remain)" : ""}.</p>`);
@@ -393,6 +407,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
   else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered: o.requirement_findings, uncovered: o.uncovered, files: o.files };
   else if (o.issues && typeof o.pages_reachable === "number") base.site_audit = { pages: o.pages_reachable, capped: o.crawl_capped, performance: o.performance, issues: Object.fromEntries(Object.entries(o.issues).map(([k, v]: any) => [k, v.count])), schema: o.schema_coverage, broken_links: (o.broken_links || []).slice(0, 10) };
+  else if (o.client && Array.isArray(o.competitors) && typeof o.has_key === "boolean") base.semrush = { client: o.client, competitors: o.competitors, gaps: o.gaps };
   return base;
 }
 

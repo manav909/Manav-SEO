@@ -320,6 +320,20 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.33 — store the Semrush API key for authority/backlink/keyword pulls. */
+  if (action === "semrush_save_key") {
+    const projectId = String(body?.projectId || "").trim();
+    const apiKey = String(body?.apiKey || "").trim();
+    if (!projectId || !apiKey) return { success: false, error: "projectId and apiKey are required." };
+    try {
+      const { saveSemrushKey } = await import("./semrush-intel.js");
+      const r = await saveSemrushKey(projectId, apiKey);
+      return r.success ? { success: true } : { success: false, error: r.error };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "save failed" };
+    }
+  }
+
   /* Build 12.31 — analyse uploaded documents against the brief's requirements. */
   if (action === "wizard_analyze_documents") {
     const projectId = String(body?.projectId || "").trim();
