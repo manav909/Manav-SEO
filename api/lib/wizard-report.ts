@@ -62,6 +62,10 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 function renderBody(o: any): string[] {
   const L: string[] = [];
   if (!o) return ["_No data was produced for this section._"];
+  if (Array.isArray(o.reports) && o.reports.length) {
+    for (const r of o.reports) { L.push(r.report_md, ``, `---`, ``); }
+    return L;
+  }
 
   // URL classification / inventory
   if (o.by_classification && Array.isArray(o.urls)) {
@@ -123,7 +127,7 @@ function renderBody(o: any): string[] {
   }
   // Generic / narrative
   if (o.summary) return [o.summary];
-  return ["_This section produced structured data; see the attached detail._"];
+  return ["_No formatted findings were produced for this section. If this stage needed input that was not supplied, add it and re-run._"];
 }
 
 function collectLimits(stages: ReportStageInput[]): string[] {
@@ -196,8 +200,37 @@ const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&l
 const tableHtml = (headers: string[], rows: (string | number)[][]) =>
   `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 
+function mdToHtml(md: string): string {
+  const lines = String(md || "").split("\n");
+  const out: string[] = []; let inUl = false, inTable = false; let tRows: string[][] = [];
+  const flushUl = () => { if (inUl) { out.push("</ul>"); inUl = false; } };
+  const flushTable = () => { if (inTable && tRows.length) { const [h, ...b] = tRows; out.push(tableHtml(h, b)); } inTable = false; tRows = []; };
+  const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/`(.+?)`/g, "<code>$1</code>");
+  for (const raw of lines) {
+    const line = raw.replace(/\r$/, "");
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      if (/^[\s|:\-]+$/.test(line)) { inTable = true; continue; }   // separator row
+      flushUl(); inTable = true; tRows.push(line.replace(/^\s*\||\|\s*$/g, "").split("|").map(c => c.trim())); continue;
+    }
+    flushTable();
+    if (/^#{3,} /.test(line)) { flushUl(); out.push(`<h4>${inline(line.replace(/^#+ /, ""))}</h4>`); }
+    else if (/^## /.test(line)) { flushUl(); out.push(`<h3>${inline(line.slice(3))}</h3>`); }
+    else if (/^# /.test(line)) { flushUl(); out.push(`<h3>${inline(line.slice(2))}</h3>`); }
+    else if (/^\s*[-*] /.test(line)) { if (!inUl) { out.push("<ul>"); inUl = true; } out.push(`<li>${inline(line.replace(/^\s*[-*] /, ""))}</li>`); }
+    else if (/^---+\s*$/.test(line)) { flushUl(); }
+    else if (line.trim() === "") { flushUl(); }
+    else { flushUl(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  flushUl(); flushTable();
+  return out.join("");
+}
+
 function renderBodyHtml(o: any): string {
   if (!o) return `<p class="muted">No data was produced for this section.</p>`;
+  /* Workspace/GEO stages return the real deep-step reports — render them. */
+  if (Array.isArray(o.reports) && o.reports.length) {
+    return o.reports.map((r: any) => mdToHtml(r.report_md)).join(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0">`);
+  }
   const P: string[] = [];
 
   if (o.by_classification && Array.isArray(o.urls)) {
@@ -235,7 +268,7 @@ function renderBodyHtml(o: any): string {
     if (opp.length) { P.push(`<h4>Paid terms where organic can reduce spend</h4>`); P.push(tableHtml(["Search term", "Paid cost", "Organic position", "Recommendation"], opp.map((r: any) => [r.term, r.paid_cost, r.organic_position ?? "not ranking", r.rationale]))); }
     return P.join("");
   }
-  return `<p>${esc(o.summary || "This section produced structured data.")}</p>`;
+  return `<p>${esc(o.summary || o.note || "No formatted findings were produced for this section. If this stage needed input (target keywords, competitor domains, or a connected data source) that was not supplied, add it and re-run.")}</p>`;
 }
 
 const REPORT_CSS = `

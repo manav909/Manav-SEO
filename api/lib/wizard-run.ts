@@ -26,6 +26,7 @@
 
 import { getArchetype } from "./wizard-archetypes.js";
 import { getCapability } from "./capability-registry.js";
+import { db } from "./db.js";
 import { classifyUrls } from "./url-classifier.js";
 import { exportUrlInventory } from "./url-inventory-export.js";
 import { loadGsc } from "./workspace/shared.js";
@@ -188,8 +189,33 @@ export async function runWizardStage(opts: {
       const created = await wsCreateRun({ projectId, goalIds: [goalId], targetKeywords: inputs.targetKeywords || [] });
       if (!created?.success || !created.run_id) return result("error", "workspace pipeline", created, created?.error || `Could not create the workspace run.`, created?.error);
       const ran = await wsRunDeepSteps({ runId: created.run_id, projectId });
-      const geoNote = caps.some(c => GEO_CAPS.has(c)) ? ` This stage fires the GEO analysis steps, which are NOT yet field-validated — scrutinise their output and confirm against real SERPs before acting.` : ``;
-      return result(ran?.success ? "completed" : "error", "workspace pipeline (wsCreateRun + wsRunDeepSteps)", { run_id: created.run_id, results: ran?.results }, ran?.success ? `Workspace analysis (goal: ${goalId}) ran its deep-steps. run_id ${created.run_id} — use it as inputs.runId for the roadmap stage.${geoNote}` : (ran?.error || `Deep steps failed.`), ran?.success ? undefined : ran?.error);
+
+      /* Pull the REAL findings (each deep-step's report_md), not just a run handle. */
+      const CAP_TO_STEPKEYS: Record<string, string[]> = {
+        geo_citation_gap: ["ai_overview_citation_gap"], geo_content_template: ["geo_content_template"], geo_displacement: ["geo_displacement"],
+        onpage_audit: ["onpage_audit"], internal_link_graph: ["internal_link_graph"],
+      };
+      const wantAll = caps.includes("workspace_deep_analysis");
+      const wantKeys = new Set<string>();
+      for (const c of caps) for (const k of (CAP_TO_STEPKEYS[c] || [])) wantKeys.add(k);
+      let reports: Array<{ step_key: string; report_md: string }> = [];
+      try {
+        const { data } = await db().from("step_reports")
+          .select("step_key, report_md, version, created_at")
+          .eq("run_id", created.run_id)
+          .order("version", { ascending: false }).order("created_at", { ascending: false });
+        const latest = new Map<string, any>();
+        for (const r of (data as any[] || [])) if (!latest.has(r.step_key)) latest.set(r.step_key, r);
+        reports = [...latest.values()]
+          .filter(r => (wantAll || wantKeys.has(r.step_key)) && r.report_md && String(r.report_md).trim())
+          .map(r => ({ step_key: r.step_key, report_md: r.report_md }));
+      } catch { /* non-fatal */ }
+
+      const geoNote = caps.some(c => GEO_CAPS.has(c)) ? ` These are AI-Overview / GEO findings, which are not yet field-validated — confirm against real SERPs before acting.` : ``;
+      const out = { run_id: created.run_id, project_domain: (created as any)?.project_domain || "", generated_at: new Date().toISOString(), results: ran?.results, reports };
+      if (!ran?.success) return result("error", "workspace pipeline (wsCreateRun + wsRunDeepSteps)", out, ran?.error || `Deep steps failed.`, ran?.error);
+      if (reports.length === 0) return result("needs_input", "workspace pipeline", out, `The analysis ran but produced no findings for this section. For AI-Overview / GEO analysis this usually means no target keywords were supplied, or none trigger an AI Overview — add target keywords and re-run.${geoNote}`);
+      return result("completed", "workspace pipeline", out, `${reports.length} analysis section(s) produced from live search-results analysis.${geoNote}`);
     }
 
     /* ── GSC data presence check (connect_data / url_inventory) ── */
