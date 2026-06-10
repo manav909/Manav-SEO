@@ -1407,6 +1407,21 @@ Replaces force-fitting a brief into one of five fixed archetypes with bespoke, p
 
 **12.24.1 — GSC connect: in-wizard property picker [BUILT 2026-06-09].** Fixed a connect-flow loop found in testing: after OAuth the wizard re-ran the stage immediately, but the property was never selected and data never pulled, so the stage stayed "needs connection" and kept re-prompting to connect. Now `connectGsc` runs the full sequence — OAuth → `gsc_list_properties` → in-wizard property picker → `gsc_select_property` → `gsc_pull` → re-run the stage. The picker lists each property (url + permission) for the operator to choose; status text shows during select/pull. Only Wizard.tsx changed. Verified type-clean, total frontend errors unchanged (delta 0).
 
+### Gap-closing engines program [Build 12.25+] — real engines, honest data, never synthetic
+Directive: build real engines (not synthetic gap-fillers) for the deliverables the dynamic composer flags as gaps, grounded in true data, extensible to 100s of clients / any CMS / any number of competitors, with a senior-DMS lens. Where the required data does not exist in the platform, the engine REQUIRES that data as input (ingestion) rather than fabricating it. Building one real engine per turn — cramming four shallow ones would be the synthetic shortcut the directive forbids.
+
+**12.25 — Topical authority & search-intent engine [BUILT 2026-06-09, deploy pending].**
+- NEW `api/lib/topical-authority.ts` → `mapTopicalAuthority({projectId})`. Clusters the site's OWN GSC queries (deterministic, shared-significant-token clustering), classifies intent (rule-based heuristic: informational/commercial/transactional/navigational/navigational-by-brand), scores coverage depth per cluster (strong/partial/thin/under-served) from real position+clicks+impressions, and surfaces under-served clusters with the biggest impression bases. Zero new crawl cost (consumes loadGsc).
+- HONEST framing baked in: maps existing authority + thin spots (queries you already get impressions for), NOT net-new keyword opportunities (needs separate keyword research); intent is heuristic; clustering is lexical not semantic; limited to stored GSC. All in the report `limits`.
+- EDIT `capability-registry.ts` — added `topical_authority_map` (auto). The composer now maps "topical authority / search intent" deliverables to this real engine instead of a gap.
+- EDIT `wizard-run.ts` — dispatch `topical_authority_map` → mapTopicalAuthority.
+- Verified: nodenext --strict clean; node --check; no template-literal contractions.
+
+**Remaining gap engines (sequenced, with honest data constraints):**
+- **12.26 — Competitor organic benchmarking engine** (gap 10). Takes a CURATED competitor-domain list as input (also fixes the bucketsquad irrelevant-competitor failure). Keyword-gap + content-gap grounded in SerpAPI + crawl; backlink-gap GATED on a real backlink data source (export/API) — honest sub-gap until provided. "Any number of competitors" = accept N domains.
+- **12.27 — CMS-platform advisory engine** (gap 11). Detects the CMS from real crawl signals, applies platform-specific rule sets (Shopify canonical/collection/liquid; extensible to WordPress/Wix/Squarespace/Webflow) to ACTUAL crawled conditions. Honest when a condition cannot be verified (e.g. theme internals) — advisory note, not a false finding.
+- **12.28 — Paid-vs-organic substitution engine** (gap 5). REQUIRES real paid data — the platform ingests none. Engine = Ads/paid search-term CSV ingestion + cross-reference with GSC organic to find queries where organic can displace paid spend. Cannot estimate paid dependency from organic alone (that would be synthetic) — honest "needs Ads export" when absent. Decision needed: CSV ingestion now vs a full Google Ads connector later.
+
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]
 The click-next screen with live stage status. This is layout. Frozen until Manav explicitly unfreezes. The 12.23a brain is fully exercisable via the API without it.
 

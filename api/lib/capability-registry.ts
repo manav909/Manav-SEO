@@ -67,11 +67,11 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
   gsc_csv_ingestion: {
     id: "gsc_csv_ingestion",
     label: "Ingest a GSC CSV export (no OAuth)",
-    engine: "(none — not built)",
-    inputs_required: ["GSC performance export file"],
-    output: "Same per-URL and query-page data as the live pull, sourced from an uploaded export.",
-    limits: "No engine exists. Today, GSC data requires the OAuth connection; there is no upload-and-parse path for exports.",
-    mode: "not_supported",
+    engine: "gsc-csv-ingest.ts → ingestGscCsv",
+    inputs_required: ["GSC performance export file(s) — Pages, Queries, or a combined query-page export"],
+    output: "Parses the export and writes it into the same project_knowledge fields the live pull uses, so downstream engines read it transparently.",
+    limits: "The standard GSC UI export has Pages and Queries but NOT query-page pairs (API-only), so cannibalisation and CTR-opportunity flagging stay limited until a combined export is supplied. A Pages export can carry up to ~1000 rows (broader than the live pull's 50). Ingestion overwrites the matching field.",
+    mode: "auto",
   },
 
   /* ── Analysis engines ────────────────────────────────────────── */
@@ -82,6 +82,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     inputs_required: ["gsc_query_page_pairs"],
     output: "Queries where two or more of the site's own pages compete for the same term, with the competing URLs.",
     limits: "Detection is from GSC impression data — it finds observed competition, not latent overlap on pages with no impressions yet.",
+    mode: "auto",
+  },
+  topical_authority_map: {
+    id: "topical_authority_map",
+    label: "Topical authority & search-intent mapping",
+    engine: "topical-authority.ts → mapTopicalAuthority",
+    inputs_required: ["GSC query-page data"],
+    output: "Topic clusters built from the site's own GSC queries, each with search-intent label, coverage depth (strong/partial/thin/under-served), the pages serving it, and a recommendation; plus the under-served intent segments with the biggest impression bases.",
+    limits: "Maps existing authority and thin spots from queries the site already earns impressions on — not net-new keyword opportunities (that needs keyword research from a separate source). Intent labels are rule-based heuristics; clustering is lexical, not semantic. Limited to the stored GSC dataset.",
     mode: "auto",
   },
   workspace_deep_analysis: {

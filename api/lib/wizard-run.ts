@@ -131,6 +131,13 @@ export async function runWizardStage(opts: {
       return result("completed", "detectCannibalization", { groups }, `Found ${groups.length} cannibalisation group(s) from observed GSC data.`);
     }
 
+    if (caps.includes("topical_authority_map")) {
+      const { mapTopicalAuthority } = await import("./topical-authority.js");
+      const report = await mapTopicalAuthority({ projectId });
+      if (report.cluster_count === 0) return result("needs_connection", "topical-authority.ts", report, report.summary);
+      return result("completed", "topical-authority.ts", report, report.summary);
+    }
+
     if (caps.includes("gsc_csv_ingestion")) {
       return result("needs_input", "gsc-csv-ingest.ts", null, `This stage ingests an uploaded GSC export. Supply the CSV via the wizard_ingest_gsc_csv action, then advance.`);
     }
