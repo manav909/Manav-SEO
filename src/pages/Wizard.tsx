@@ -235,7 +235,7 @@ export default function Wizard() {
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     setGeneratingReport(true); setError("");
-    const r: any = await post("wizard_report", { stages: stagesIn, projectId, author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
+    const r: any = await post("wizard_report", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding });
     setGeneratingReport(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
@@ -370,6 +370,7 @@ export default function Wizard() {
                 </button>
               </div>
               {semrushInfo && <p className="text-[11px] text-muted-foreground mt-1">{semrushInfo}</p>}
+              <p className="text-[11px] text-muted-foreground/70 mt-1">Optional. No tool is required — you can instead upload an export from any tool (Ahrefs, Moz, Semrush, Screaming Frog, GA) in the materials step below, and the report will use it for the same data. Where a need has no source, the report states it honestly and names the best source to fill it.</p>
               <label className="flex items-center gap-2 text-xs text-muted-foreground mt-4">
                 <input type="checkbox" checked={noGsc} onChange={e => setNoGsc(e.target.checked)} />
                 I do not have the client's Search Console yet (prospect mode)

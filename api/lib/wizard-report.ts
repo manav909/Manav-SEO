@@ -27,6 +27,7 @@
 
 import { llm, parseJsonResponse } from "./workspace/llm.js";
 import { loadMaterials, materialsForPrompt } from "./client-materials.js";
+import { assessCoverage } from "./audit-coverage.js";
 
 export interface ReportStageInput {
   label:      string;
@@ -41,6 +42,7 @@ export interface ReportOptions {
   include_branding?:boolean;   // default false — no tool branding
   report_title?:    string;
   project_id?:      string;    // to load operator-provided materials for depth
+  requirements?:    string[];  // full brief requirement list, for the coverage layer
 }
 
 /* Completed sections, with duplicate sections (same engine + same summary)
@@ -344,6 +346,30 @@ ul{margin:8px 0;padding-left:20px}li{margin:4px 0}
 @media print{body{background:#fff}.doc{padding:0;max-width:none}@page{size:A4;margin:1.6cm}h2{page-break-after:avoid}table{page-break-inside:avoid}}
 `;
 
+function renderCoverageHtml(opts: ReportOptions, stages: ReportStageInput[]): string {
+  const completed = completedStages(stages);
+  const docStage = completed.find(s => Array.isArray(s.output?.requirement_findings));
+  const docAnswered: string[] = docStage ? (docStage.output.requirement_findings || []).map((r: any) => String(r.requirement || "")) : [];
+  const engineCovered = completed.filter(s => !Array.isArray(s.output?.requirement_findings)).map(s => s.label);
+  const requirements = (opts.requirements && opts.requirements.length) ? opts.requirements : completed.map(s => s.label);
+  if (!requirements.length) return "";
+  const cov = assessCoverage({ requirements, engineCovered, docAnswered });
+
+  const H: string[] = [];
+  H.push(`<h2>Data coverage and how to strengthen this audit</h2>`);
+  H.push(`<p>${cov.engine_count} requirement(s) were answered by live analysis, ${cov.your_data_count} from your uploaded reports, and ${cov.uncovered_count} are not yet covered by data.</p>`);
+  const unc = cov.items.filter(i => i.status === "uncovered");
+  if (unc.length) {
+    H.push(`<h4>Not yet covered — and the most trusted way to fill each</h4>`);
+    H.push(tableHtml(["Requirement", "Data it needs", "Best source(s) to provide it"],
+      unc.map(i => [i.requirement, i.recommendation?.data_need || "supporting data", (i.recommendation?.best_sources || []).join("; ")])));
+    H.push(`<p class="muted">No specific tool is required. An export from any tool you use fills these — upload it in the materials step and re-run, and the audit will incorporate it. Where you have nothing, the points above are stated honestly rather than guessed.</p>`);
+  } else {
+    H.push(`<p class="muted">Every requirement is backed by live analysis or your provided data.</p>`);
+  }
+  return H.join("");
+}
+
 export function assembleClientReportHtml(stages: ReportStageInput[], opts: ReportOptions = {}): { html: string; sections: number } {
   const author = (opts.author || "Manav S").trim();
   const client = opts.client_name || opts.client_domain || "the website";
@@ -371,6 +397,8 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
   H.push(`<h2>Sources and how to verify</h2><p>Every figure above traces to one of these sources, each independently verifiable:</p><ul>`);
   for (const src of collectSources(completed)) H.push(`<li>${esc(src)}</li>`);
   H.push(`</ul>`);
+
+  H.push(renderCoverageHtml(opts, stages));
 
   const limits = collectLimits(completed);
   if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
@@ -495,6 +523,7 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   for (const src of collectSources(completed)) H.push(`<li>${esc(src)}</li>`);
   if (dms.material_files.length) H.push(`<li>Operator-provided materials and client files: ${esc(dms.material_files.join(", "))}.</li>`);
   H.push(`</ul>`);
+  H.push(renderCoverageHtml(opts, stages));
   const limits = collectLimits(completed);
   if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. The written interpretation is the analyst's reading of the data shown; the supporting data and sources under each section are the record. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
