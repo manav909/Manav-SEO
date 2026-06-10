@@ -262,6 +262,18 @@ function renderBodyHtml(o: any): string {
   }
   const P: string[] = [];
 
+  /* Full-site crawl audit */
+  if (o.issues && typeof o.pages_reachable === "number") {
+    P.push(`<p>Crawled ${o.pages_reachable} page(s) of ${esc(o.project_domain)}${o.crawl_capped ? " (capped; more pages remain)" : ""}.</p>`);
+    if (o.performance) P.push(`<p><strong>Performance (homepage, mobile):</strong> score ${o.performance.performance_score}/100${o.performance.lcp ? `, LCP ${esc(o.performance.lcp)}` : ""}${o.performance.tbt ? `, TBT ${esc(o.performance.tbt)}` : ""}${o.performance.cls ? `, CLS ${esc(o.performance.cls)}` : ""}.</p>`);
+    const rows = Object.entries(o.issues).sort((a: any, b: any) => b[1].count - a[1].count).map(([k, v]: any) => [String(k).replace(/_/g, " "), v.count, (v.pages || []).slice(0, 3).join(", ")]);
+    if (rows.length) { P.push(`<h4>On-page and technical issues (site-wide)</h4>`); P.push(tableHtml(["Issue", "Pages affected", "Examples"], rows)); }
+    const sc = Object.entries(o.schema_coverage || {});
+    if (sc.length) P.push(`<p class="muted"><strong>Schema found:</strong> ${sc.map(([t, n]: any) => `${esc(t)} (${n})`).join(", ")}.</p>`);
+    if (o.broken_links?.length) P.push(`<p class="muted"><strong>Broken/unreachable URLs found:</strong> ${o.broken_links.slice(0, 10).map((u: string) => esc(u)).join("; ")}.</p>`);
+    return P.join("");
+  }
+
   if (o.by_classification && Array.isArray(o.urls)) {
     P.push(`<p>Across ${o.total_urls} reviewed URLs: ${Object.entries(o.by_classification).map(([k, v]) => `${v} to ${esc(String(k).replace(/_/g, " "))}`).join(", ")}.</p>`);
     const improve = o.urls.filter((u: any) => u.classification === "improve").slice(0, 10);
@@ -380,6 +392,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   else if (o.buckets && typeof o.shiftable_spend === "number") base.paid = { shiftable_spend: o.shiftable_spend, brand_spend: o.brand_spend, buckets: o.buckets, top: (o.top_opportunities || []).slice(0, 6) };
   else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
   else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered: o.requirement_findings, uncovered: o.uncovered, files: o.files };
+  else if (o.issues && typeof o.pages_reachable === "number") base.site_audit = { pages: o.pages_reachable, capped: o.crawl_capped, performance: o.performance, issues: Object.fromEntries(Object.entries(o.issues).map(([k, v]: any) => [k, v.count])), schema: o.schema_coverage, broken_links: (o.broken_links || []).slice(0, 10) };
   return base;
 }
 

@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -145,6 +145,13 @@ export async function runWizardStage(opts: {
       const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
       const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords, siteUrl: inputs.siteUrl });
       return result(report.queries_analyzed > 0 ? "completed" : "needs_connection", "competitor-benchmark.ts", report, report.summary);
+    }
+
+    if (caps.includes("site_wide_audit")) {
+      const { crawlSite } = await import("./site-crawler.js");
+      const report = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+      if (report.pages_reachable === 0) return result("needs_input", "site-crawler.ts", report, report.summary);
+      return result("completed", "site-crawler.ts", report, report.summary);
     }
 
     if (caps.includes("cms_platform_advisory")) {

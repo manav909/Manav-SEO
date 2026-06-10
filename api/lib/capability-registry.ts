@@ -111,6 +111,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Based on a capped sample of crawled pages, not the full site. A crawl cannot see Core Web Vitals field data, theme/app internals, or JS-only-rendered content — those are advisory. Platform detection is signature-based; rule coverage is extensible per platform.",
     mode: "auto",
   },
+  site_wide_audit: {
+    id: "site_wide_audit",
+    label: "Full-site technical & on-page audit (site-wide crawl)",
+    engine: "site-crawler.ts → crawlSite",
+    inputs_required: ["A crawlable site URL (resolved from project data, or supplied)"],
+    output: "A breadth-first crawl of the site with site-wide on-page/technical counts — missing/duplicate/long/short titles and meta descriptions, missing/multiple/duplicate H1s, missing image alt, thin pages, missing canonicals, schema coverage by type, broken links found — plus a best-effort homepage PageSpeed (LCP/TBT/CLS/score). The deep equivalent of an on-page audit module, from real fetched HTML.",
+    limits: "Crawl is capped per pass (default 50 pages) to fit the serverless time budget; counts are over crawled pages — full-site-at-scale needs background crawling. Does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush) and are never estimated.",
+    mode: "auto",
+  },
   document_analysis: {
     id: "document_analysis",
     label: "Document-based analysis (from your uploaded materials)",
