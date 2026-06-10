@@ -1391,6 +1391,8 @@ Building one solid engine per turn rather than three half-finished. The three ga
 
 **WIZARD FEATURE COMPLETE END-TO-END.** Headless engine (12.23a/b) + UI (12.23c): paste a client chat → archetype + plan → run stages via real engines with honest validation flags → export. Reachable from the sidebar (Clients & Leads → Engagement Wizard) and from Lead Intake.
 
+**12.23c.1 — connect-stage fix [BUILT 2026-06-09].** Fixed two UX issues in Wizard.tsx surfaced in testing: (1) the static readiness badge and the run-status badge showed together and read as contradictory — now the badge shows "Requires: X" before a run and the real status after; (2) the "Connect Search Console" stage reported completed (when data existed) but offered NO way to actually connect when data was absent. Connect-data stages now show a "Connect with Google" button (gsc_oauth_start popup; property select + pull still finish in Integrations) AND an in-wizard "Upload GSC CSV" file input (wizard_ingest_gsc_csv → re-runs the stage), which fully completes the connect step for a project without OAuth. Run button reads "Re-run" once a stage has output. Verified: Wizard.tsx type-clean, total frontend error count unchanged (delta 0).
+
 **LAYOUT FREEZE OTHERWISE STILL STANDS.** The unfreeze was scoped to placing this wizard (an additive page + nav item). The frozen Phase 21 items (Casual-mode empty left space, persistent left-rail redesign) remain frozen — do not touch without a fresh explicit unfreeze.
 
 ### Build 12.23c — Wizard UI [GATED on explicit "yes proceed with layout"]

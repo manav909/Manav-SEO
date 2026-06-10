@@ -2,11 +2,13 @@ import { useState } from "react";
 import PortalNav from "@/components/PortalNav";
 import { useProject } from "@/contexts/ProjectContext";
 
-/* Build 12.23c — Engagement Wizard UI.
+/* Build 12.23c (rev) — Engagement Wizard UI.
    Paste a client conversation -> classify into a wizard archetype ->
    run each stage via the wizard_* actions, with an honest readiness and
-   validation badge on every stage. Mirrors the Lead Intake stepper and
-   design language. All platform calls go through /api/task-engine. */
+   validation badge on every stage. Connect-data stages offer a real
+   connection path (Google OAuth start, or an in-wizard CSV upload that
+   ingests immediately). Mirrors the Lead Intake stepper and design
+   language. All platform calls go through /api/task-engine. */
 
 const post = (a: string, b: any = {}) =>
   fetch("/api/task-engine", {
@@ -25,11 +27,12 @@ const STATUS: any = {
   completed:        { label: "Completed",   color: "#10b981" },
   manual:           { label: "Manual",      color: "#a78bfa" },
   needs_input:      { label: "Needs input", color: "#f59e0b" },
-  needs_connection: { label: "Needs data",  color: "#f59e0b" },
+  needs_connection: { label: "Not connected", color: "#f59e0b" },
   error:            { label: "Error",       color: "#ef4444" },
 };
 
 const chip = (color: string) => ({ color, borderColor: color + "55", background: color + "11" });
+const isConnectStage = (s: any) => (s?.capabilities || []).some((c: any) => c.id === "gsc_metrics_per_url" || c.id === "gsc_query_page_pairs");
 
 export default function Wizard() {
   const proj = useProject() as any;
@@ -42,6 +45,8 @@ export default function Wizard() {
   const [error, setError]             = useState("");
   const [results, setResults]         = useState<Record<string, any>>({});
   const [running, setRunning]         = useState<string>("");
+  const [connecting, setConnecting]   = useState<string>("");
+  const [uploading, setUploading]     = useState<string>("");
   const [keywords, setKeywords]       = useState("");
 
   const classify = async () => {
@@ -61,6 +66,42 @@ export default function Wizard() {
     const r: any = await post("wizard_run_stage", { projectId, archetypeId: plan.archetype_id, stageId, inputs });
     setResults(prev => ({ ...prev, [stageId]: r?.result || { status: "error", note: r?.error || "Stage failed." } }));
     setRunning("");
+  };
+
+  /* Start Google OAuth. Note: after consent the account is linked, but the
+     property must still be selected and pulled (in Integrations). We re-run
+     the stage on return so it reflects whatever data is now available. */
+  const connectGsc = async (stageId: string) => {
+    if (!projectId) { setError("No active project found."); return; }
+    setConnecting(stageId); setError("");
+    const r: any = await post("gsc_oauth_start", { projectId });
+    setConnecting("");
+    if (!r?.url) { setError(r?.error || "Could not start the Google connection."); return; }
+    window.open(r.url, "gsc_oauth", "width=520,height=640");
+    const onMsg = (e: MessageEvent) => {
+      if ((e.data || {}).type === "gsc_connected") {
+        window.removeEventListener("message", onMsg);
+        runStage(stageId);
+      }
+    };
+    window.addEventListener("message", onMsg);
+  };
+
+  /* In-wizard CSV ingestion — fully completes the connect step for a project
+     without OAuth. Reads the file and ingests, then re-runs the stage. */
+  const uploadCsv = async (stageId: string, file: File | undefined) => {
+    if (!file) return;
+    if (!projectId) { setError("No active project found."); return; }
+    setUploading(stageId); setError("");
+    try {
+      const text = await file.text();
+      const r: any = await post("wizard_ingest_gsc_csv", { projectId, csvs: [{ filename: file.name, text }] });
+      setUploading("");
+      if (!r?.success) { setError(r?.error || r?.report?.summary || "CSV ingestion failed."); return; }
+      runStage(stageId);
+    } catch (e: any) {
+      setUploading(""); setError(e?.message || "Could not read the file.");
+    }
   };
 
   const downloadExport = (result: any) => {
@@ -132,6 +173,9 @@ export default function Wizard() {
                 const rd = READINESS[s.readiness] || { label: s.readiness, color: "#94a3b8" };
                 const res = results[s.id];
                 const st = res ? (STATUS[res.status] || { label: res.status, color: "#94a3b8" }) : null;
+                const connectStage = isConnectStage(s);
+                /* Offer connect tools on a connect stage until it has completed. */
+                const showConnect = connectStage && (!res || res.status === "needs_connection");
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -139,7 +183,8 @@ export default function Wizard() {
                         <div className="flex items-center flex-wrap gap-2 mb-1">
                           <span className="text-xs text-muted-foreground">{i + 1}</span>
                           <span className="font-semibold text-sm">{s.label}</span>
-                          <span className="text-xs px-2 py-0.5 rounded-md border" style={chip(rd.color)}>{rd.label}</span>
+                          {/* Before a run: the static requirement. After a run: the real status. */}
+                          {!st && <span className="text-xs px-2 py-0.5 rounded-md border" style={chip(rd.color)}>Requires: {rd.label}</span>}
                           {st && <span className="text-xs px-2 py-0.5 rounded-md border" style={chip(st.color)}>{st.label}</span>}
                         </div>
                         <p className="text-xs text-muted-foreground">{s.note}</p>
@@ -149,9 +194,27 @@ export default function Wizard() {
                       </div>
                       <button onClick={() => runStage(s.id)} disabled={running === s.id || s.readiness === "blocked"}
                         className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 disabled:opacity-50 whitespace-nowrap">
-                        {running === s.id ? "Running…" : s.readiness === "blocked" ? "Blocked" : "Run stage"}
+                        {running === s.id ? "Running…" : s.readiness === "blocked" ? "Blocked" : res ? "Re-run" : "Run stage"}
                       </button>
                     </div>
+
+                    {/* Connect affordances for GSC-backed stages */}
+                    {showConnect && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs text-muted-foreground mb-2">This stage needs Search Console data for the active project. Connect Google (then select your property and pull in Integrations), or upload a GSC export here to use it right away.</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button onClick={() => connectGsc(s.id)} disabled={connecting === s.id}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
+                            {connecting === s.id ? "Opening…" : "Connect with Google"}
+                          </button>
+                          <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
+                            {uploading === s.id ? "Ingesting…" : "Upload GSC CSV"}
+                            <input type="file" accept=".csv,text/csv" className="hidden"
+                              onChange={e => uploadCsv(s.id, e.target.files?.[0])} disabled={uploading === s.id} />
+                          </label>
+                        </div>
+                      </div>
+                    )}
 
                     {res && (
                       <div className="mt-3 pt-3 border-t border-border">
