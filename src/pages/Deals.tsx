@@ -1,8 +1,8 @@
-/* Build 12.40 — Deal Workspace as a Fiverr-style chat simulator.
-   Paste the conversation; the client, stage, and everything else are
-   detected automatically, and the suggested reply + strategy appear
-   inline in the thread. No forms, no manual fields. Switch/search deals
-   on the left. */
+/* Build 12.41 — Deal Workspace (Fiverr chat simulator) with smart merge.
+   Paste new messages (or the whole chat) — it dedupes against what is
+   already there, adds only what is new, re-analyses, and shows the next
+   move + ready reply inline. Failures are now visible, not silent.
+   Project-independent. */
 import { useState, useEffect } from "react";
 import PortalNav from "@/components/PortalNav";
 
@@ -17,61 +17,92 @@ const Chip = ({ text, color }: { text: string; color: string }) => (
   <span className="text-[11px] px-2 py-0.5 rounded-md border" style={{ color, borderColor: color + "55", background: color + "11" }}>{text}</span>
 );
 
+/* Merge pasted text into the existing thread, dropping duplicates and
+   keeping only genuinely new lines. Handles re-pasting the whole chat. */
+function mergeConversation(existing: string, pasted: string): string {
+  const ex = (existing || "").trim(); const pa = (pasted || "").trim();
+  if (!pa) return ex;
+  if (!ex) return pa;
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  const nEx = norm(ex); const nPa = norm(pa);
+  if (nEx.includes(nPa)) return ex;     // already fully present
+  if (nPa.includes(nEx)) return pa;     // pasted is a fuller version → use it
+  const exLines = new Set(ex.split(/\n+/).map(norm).filter(Boolean));
+  const newLines = pasted.split(/\n+/).filter(l => l.trim() && !exLines.has(norm(l)));
+  if (!newLines.length) return ex;      // nothing new
+  return ex + "\n" + newLines.join("\n");
+}
+
 export default function Deals() {
   const [deals, setDeals] = useState<any[]>([]);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<any>(null);
   const [conversation, setConversation] = useState("");
+  const [pasteInput, setPasteInput] = useState("");
   const [strategy, setStrategy] = useState<any>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [autoStrategize, setAutoStrategize] = useState(true);
-  const [userEdited, setUserEdited] = useState(false);
-  const [lastStrategized, setLastStrategized] = useState("");
+  const [notice, setNotice] = useState("");
+  const [autoAnalyse, setAutoAnalyse] = useState(true);
+  const [lastAnalysed, setLastAnalysed] = useState("");
+  const [showRaw, setShowRaw] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
 
-  const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); };
+  const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
 
   const openDeal = async (id: string) => {
-    setError(""); setBusy("open");
+    setError(""); setNotice(""); setBusy("open");
     const r: any = await post("bd_deal_get", { id });
     setBusy("");
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
-    setSelected(d); setConversation(d.conversation || ""); setStrategy(d.strategy || null);
-    setUserEdited(false); setLastStrategized(d.conversation || "");
+    setSelected(d); setConversation(d.conversation || ""); setStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
   };
 
-  const newDeal = () => { setSelected(null); setConversation(""); setStrategy(null); setError(""); setUserEdited(false); setLastStrategized(""); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); setStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); };
 
-  const strategize = async (auto = false) => {
-    if (!conversation.trim()) { if (!auto) setError("Paste the client conversation first."); return; }
+  const runStrategize = async (convo: string, auto = false) => {
+    if (!convo.trim()) return;
     if (busy === "strategize") return;
-    setBusy("strategize"); setError("");
-    let id = selected?.id;
-    if (!id) { const s: any = await post("bd_deal_save", { client_name: "Untitled lead", conversation }); if (s?.success) { setSelected(s.deal); id = s.deal.id; } }
-    else { await post("bd_deal_save", { id, conversation }); }
-    const r: any = await post("bd_strategize", { id, conversation });
-    setBusy(""); setLastStrategized(conversation);
-    if (!r?.strategy) { if (!auto) setError(r?.error || "Could not strategise."); return; }
-    setStrategy(r.strategy);
-    loadList();
+    setBusy("strategize"); setError(""); setNotice(auto ? "Analysing…" : "");
+    try {
+      let id = selected?.id;
+      const save: any = await post("bd_deal_save", { id, client_name: selected?.client_name || "Untitled lead", conversation: convo });
+      if (save?.success && save.deal) { setSelected(save.deal); id = save.deal.id; }
+      else if (!save?.success && save?.error) { /* keep going — strategise can run without persistence */ }
+      const r: any = await post("bd_strategize", { id, conversation: convo });
+      setLastAnalysed(convo);
+      if (!r?.success || !r?.strategy) { setError(r?.error || "Could not analyse this time — tap Analyse to retry."); return; }
+      setStrategy(r.strategy); setNotice(""); loadList();
+    } catch (e: any) {
+      setError(e?.message || "Analysis failed — tap Analyse to retry.");
+    } finally {
+      setBusy("");
+    }
   };
 
-  /* Auto-strategise once you stop pasting (debounced), never on load or unchanged text. */
+  const addAndAnalyse = async (auto = false) => {
+    const merged = mergeConversation(conversation, pasteInput);
+    if (!merged.trim()) { if (!auto) setError("Paste the conversation first."); return; }
+    if (merged === conversation) { setNotice("Already in the chat — nothing new to add."); setPasteInput(""); return; }
+    setConversation(merged); setPasteInput("");
+    await runStrategize(merged, auto);
+  };
+
+  /* Auto-analyse a pasted chunk ~2s after you stop. */
   useEffect(() => {
-    if (!autoStrategize || !userEdited) return;
-    if (!conversation.trim() || conversation === lastStrategized || busy === "strategize") return;
-    const t = setTimeout(() => { strategize(true); }, 2000);
+    if (!autoAnalyse || !pasteInput.trim() || busy === "strategize") return;
+    const t = setTimeout(() => { addAndAnalyse(true); }, 2000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversation, autoStrategize, userEdited]);
+  }, [pasteInput, autoAnalyse]);
 
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
+  const clientSite = strategy?.client_site || "";
   const messages: any[] = strategy?.messages || [];
 
   return (
@@ -79,7 +110,7 @@ export default function Deals() {
       <PortalNav />
       <div className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 md:grid-cols-[300px_1fr] gap-6">
 
-        {/* Left — deals (switch / search) */}
+        {/* Left — deals */}
         <div className="rounded-2xl border border-border bg-card p-4 h-fit">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold">Deals</h2>
@@ -108,27 +139,25 @@ export default function Deals() {
 
         {/* Right — chat simulator */}
         <div className="rounded-2xl border border-border bg-card flex flex-col min-h-[80vh]">
-          {/* header */}
           <div className="flex items-center gap-2 px-5 py-3 border-b border-border">
             <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">{(clientName || "?").slice(0, 1).toUpperCase()}</div>
             <div className="font-semibold text-sm">{clientName}</div>
             {strategy?.deal_state?.stage && <Chip text={strategy.deal_state.stage} color={stageColor(strategy.deal_state.stage)} />}
             {strategy?.deal_state?.temperature && <Chip text={strategy.deal_state.temperature} color={tempColor(strategy.deal_state.temperature)} />}
-            {busy === "strategize" && <span className="text-[11px] text-primary ml-auto">analysing…</span>}
+            {clientSite && <a href={`/wizard?client=${encodeURIComponent(clientSite)}`} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo for {clientSite} →</a>}
           </div>
 
           {error && <div className="mx-5 mt-3 rounded-xl border p-3 text-xs" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>{error}</div>}
+          {notice && !error && <div className="mx-5 mt-3 text-[11px] text-primary">{notice}</div>}
 
-          {/* thread */}
           <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-            {messages.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">Paste the client conversation below — the client, the stage, the next move and a ready reply will appear here automatically.</p>}
+            {messages.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">Paste the client conversation below — the client, stage, next move and a ready reply appear here automatically.</p>}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.sender === "seller" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[78%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${m.sender === "seller" ? "bg-primary/10 rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>{m.text}</div>
               </div>
             ))}
 
-            {/* inline suggested reply */}
             {strategy?.draft_reply && (
               <div className="flex justify-end">
                 <div className="max-w-[80%] rounded-2xl rounded-br-sm border border-primary/40 bg-primary/5 p-3">
@@ -141,7 +170,6 @@ export default function Deals() {
               </div>
             )}
 
-            {/* inline strategy */}
             {strategy && (strategy.next_move || strategy.risk_flags?.length || strategy.call_script?.needed) && (
               <div className="rounded-xl border border-border bg-background/60 p-3 text-xs space-y-2">
                 <button onClick={() => setShowDetail(v => !v)} className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{showDetail ? "▾" : "▸"} Strategy</button>
@@ -172,25 +200,34 @@ export default function Deals() {
                         <ul className="list-disc ml-4 text-muted-foreground">{strategy.risk_flags.map((r: string, i: number) => <li key={i}>{r}</li>)}</ul>
                       </div>
                     )}
-                    <a href="/wizard" className="inline-block text-[11px] text-primary underline">Open Wizard for a demo audit / deliverable</a>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* paste box */}
+          {/* paste / append box */}
           <div className="border-t border-border p-3">
-            <textarea value={conversation} onChange={e => { setConversation(e.target.value); setUserEdited(true); }}
-              placeholder="Paste the full Fiverr conversation here (or the latest message). It updates automatically."
+            <textarea value={pasteInput} onChange={e => { setPasteInput(e.target.value); setNotice(""); }}
+              placeholder="Paste new messages here (or the whole chat). Duplicates are ignored — only new lines are added."
               className="w-full h-24 px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary resize-y" />
             <div className="flex items-center gap-3 mt-2">
-              {!autoStrategize && <button onClick={() => strategize(false)} disabled={busy === "strategize"} className="text-xs px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{busy === "strategize" ? "Analysing…" : "Analyse"}</button>}
+              <button onClick={() => addAndAnalyse(false)} disabled={busy === "strategize" || !pasteInput.trim()} className="text-xs px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">
+                {busy === "strategize" ? "Analysing…" : "Add & analyse"}
+              </button>
+              <button onClick={() => setShowRaw(v => !v)} className="text-[11px] text-muted-foreground underline">{showRaw ? "Hide" : "View/edit"} full thread</button>
               <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground ml-auto">
-                <input type="checkbox" checked={autoStrategize} onChange={e => setAutoStrategize(e.target.checked)} />
+                <input type="checkbox" checked={autoAnalyse} onChange={e => setAutoAnalyse(e.target.checked)} />
                 Auto-analyse on paste
               </label>
             </div>
+            {showRaw && (
+              <div className="mt-2">
+                <textarea value={conversation} onChange={e => setConversation(e.target.value)}
+                  className="w-full h-32 px-3 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+                <button onClick={() => runStrategize(conversation, false)} disabled={busy === "strategize"} className="mt-1 text-[11px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Re-analyse full thread</button>
+              </div>
+            )}
           </div>
         </div>
       </div>

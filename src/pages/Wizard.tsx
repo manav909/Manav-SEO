@@ -80,6 +80,11 @@ export default function Wizard() {
       const raw = sessionStorage.getItem("wizard_restore");
       if (raw) { const s = JSON.parse(raw); if (s.chatText) setChatText(s.chatText); if (s.noGsc) setNoGsc(true); if (s.clientSiteUrl) setClientSiteUrl(s.clientSiteUrl); if (s.keywords) setKeywords(s.keywords); if (s.competitors) setCompetitors(s.competitors); sessionStorage.removeItem("wizard_restore"); }
     } catch { /* ignore */ }
+    /* Prefill from a deal's "Build demo" link: /wizard?client=domain */
+    try {
+      const cd = new URLSearchParams(window.location.search).get("client");
+      if (cd) { const dom = cd.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""); if (dom) { setClientSiteUrl(`https://${dom}/`); setNoGsc(true); } }
+    } catch { /* ignore */ }
   }, []);
 
   /* Auto-fill empty fields from what the brief already told us. */
