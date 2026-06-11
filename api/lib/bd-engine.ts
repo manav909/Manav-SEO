@@ -93,7 +93,10 @@ export async function handleBd(action: string, body: any): Promise<any> {
       if (!r.ok) return { success: false, error: r.error, strategy: r.strategy };
       if (id && deal) {
         try {
-          await db().from("bd_deals").update({ strategy: r.strategy, status: STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status, updated_at: new Date().toISOString() }).eq("id", id);
+          const detected = String(r.strategy.detected_client || "").trim();
+          const curName = String(deal.client_name || "").trim();
+          const nameUpdate = (detected && (!curName || curName === "Untitled lead")) ? { client_name: detected } : {};
+          await db().from("bd_deals").update({ strategy: r.strategy, status: STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status, ...nameUpdate, updated_at: new Date().toISOString() }).eq("id", id);
         } catch { /* non-fatal */ }
       }
       return { success: true, strategy: r.strategy };
