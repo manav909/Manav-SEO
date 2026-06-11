@@ -91,6 +91,27 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "get failed" }; }
   }
 
+  if (action === "bd_run_audit") {
+    const siteUrl = String(body?.siteUrl || "").trim();
+    if (!siteUrl) return { success: false, error: "No client site URL to audit — add it or detect it from the chat." };
+    try {
+      const { crawlSite } = await import("./site-crawler.js");
+      const report = await crawlSite({ projectId: String(body?.projectId || ""), siteUrl, maxPages: Math.min(Number(body?.maxPages) || 40, 60) });
+      /* Persist a concise summary on the deal so it informs future strategy. */
+      const id = String(body?.id || "").trim();
+      if (id && report.pages_reachable > 0) {
+        try {
+          const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${v.count} ${String(k).replace(/_/g, " ")}`).join(", ");
+          const text = `Quick site audit of ${report.project_domain} — crawled ${report.pages_reachable} pages. Issues: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema found: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
+          const { data: deal } = await db().from("bd_deals").select("attachments").eq("id", id).single();
+          const existing = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.filter((a: any) => a.kind !== "audit") : [];
+          await db().from("bd_deals").update({ attachments: [...existing, { name: "Quick site audit", kind: "audit", text, added_at: new Date().toISOString() }], updated_at: new Date().toISOString() }).eq("id", id);
+        } catch { /* non-fatal */ }
+      }
+      return { success: report.pages_reachable > 0, report };
+    } catch (e: any) { return { success: false, error: e?.message || "audit failed" }; }
+  }
+
   if (action === "bd_deal_attach") {
     const id = String(body?.id || "").trim();
     if (!id) return { success: false, error: "id required." };

@@ -71,6 +71,10 @@ export default function Deals() {
   const [transcript, setTranscript] = useState("");
   const [showAttach, setShowAttach] = useState(false);
   const [replyDraft, setReplyDraft] = useState("");
+  const [audit, setAudit] = useState<any>(null);
+  const [auditing, setAuditing] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({ next: true, client: true, actions: true });
+  const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
@@ -84,9 +88,19 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false);
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null);
   };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); };
+
+  const runAudit = async () => {
+    if (!clientSite) { setError("No client site detected. Add the client's URL in the chat first."); return; }
+    setAuditing(true); setError(""); setOpen(o => ({ ...o, audit: true }));
+    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id });
+    setAuditing(false);
+    if (!r?.report) { setError(r?.error || "Could not run the audit."); return; }
+    setAudit(r.report);
+    if (r?.report && selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
+  };
 
   const runStrategize = async (convo: string, auto = false) => {
     if (!convo.trim() || busy === "strategize") return;
@@ -154,6 +168,16 @@ export default function Deals() {
     } catch { /* ignore */ }
     window.location.href = "/wizard";
   };
+
+  const Acc = ({ k, title, children, defaultBadge }: { k: string; title: string; children: any; defaultBadge?: any }) => (
+    <div className="border-b border-border">
+      <button onClick={() => toggle(k)} className="w-full flex items-center justify-between py-2.5 text-left">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}{defaultBadge != null && <span className="ml-1.5 text-primary normal-case">{defaultBadge}</span>}</span>
+        <span className="text-muted-foreground text-xs">{open[k] ? "▾" : "▸"}</span>
+      </button>
+      {open[k] && <div className="pb-3">{children}</div>}
+    </div>
+  );
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
   const clientSite = strategy?.client_site || "";
@@ -230,53 +254,80 @@ export default function Deals() {
         </div>
 
         {/* RIGHT — advanced intelligence */}
-        <div className="rounded-2xl border border-border bg-card p-4 overflow-y-auto min-h-0">
-          {!strategy ? (
-            <p className="text-xs text-muted-foreground">The intelligence panel fills in once you paste a conversation — deal stage, what the client wants, the next move, a call script, reminders and risks, all derived from the chat.</p>
+        <div className="rounded-2xl border border-border bg-card overflow-y-auto min-h-0">
+          {!strategy && !selected?.id ? (
+            <p className="text-xs text-muted-foreground p-4">The intelligence panel fills in once you paste a conversation — deal stage, what the client wants, the next move, an inline site audit you can run, a call script, reminders and risks, all derived from the chat. You never leave this page.</p>
           ) : (
-            <>
-              <Section title="Deal status">
-                <div className="flex flex-wrap items-center gap-1.5 mb-1">
-                  <Chip text={strategy.deal_state?.stage} color={stageColor(strategy.deal_state?.stage)} />
-                  {strategy.deal_state?.temperature && <Chip text={strategy.deal_state.temperature} color={tempColor(strategy.deal_state.temperature)} />}
+            <div className="px-4 py-2">
+              {/* always-visible summary */}
+              {strategy && (
+                <div className="pb-3 border-b border-border">
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                    <Chip text={strategy.deal_state?.stage} color={stageColor(strategy.deal_state?.stage)} />
+                    {strategy.deal_state?.temperature && <Chip text={strategy.deal_state.temperature} color={tempColor(strategy.deal_state.temperature)} />}
+                  </div>
+                  {strategy.deal_state?.summary && <p className="text-xs text-muted-foreground">{strategy.deal_state.summary}</p>}
                 </div>
-                {strategy.deal_state?.summary && <p className="text-xs text-muted-foreground">{strategy.deal_state.summary}</p>}
-              </Section>
-              {strategy.next_move && <Section title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Section>}
-              {intel.wants?.length > 0 && <Section title="What they want"><List items={intel.wants} /></Section>}
-              {intel.pain_points?.length > 0 && <Section title="Pain points"><List items={intel.pain_points} /></Section>}
-              {intel.buying_signals?.length > 0 && <Section title="Buying signals"><List items={intel.buying_signals} /></Section>}
-              {intel.objections?.length > 0 && <Section title="Objections"><List items={intel.objections} /></Section>}
-              {intel.budget_signals?.length > 0 && <Section title="Budget signals"><List items={intel.budget_signals} /></Section>}
-              {strategy.action_items?.length > 0 && <Section title="Do now"><ul className="space-y-1">{strategy.action_items.map((a: any, i: number) => <li key={i} className="text-xs text-muted-foreground"><span className="text-foreground">{a.action}</span>{a.platform_can_help && <span className="ml-1"><Chip text="in-platform" color="#10b981" /></span>}</li>)}</ul></Section>}
-              {strategy.reminders?.length > 0 && <Section title="Reminders"><ul className="space-y-1">{strategy.reminders.map((r: any, i: number) => <li key={i} className="text-xs text-muted-foreground">⏰ {r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul></Section>}
-              {strategy.call_script?.needed && (
-                <Section title="Call script">
+              )}
+
+              {strategy?.next_move && <Acc k="next" title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Acc>}
+
+              <Acc k="audit" title="Quick site audit" defaultBadge="demo · inline">
+                <button onClick={runAudit} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
+                {audit && (
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p className="text-foreground">Crawled {audit.pages_reachable} page(s) of {audit.project_domain}.</p>
+                    {audit.performance && <p>Performance {audit.performance.performance_score}/100 · LCP {audit.performance.lcp}{audit.performance.cls ? ` · CLS ${audit.performance.cls}` : ""}</p>}
+                    {Object.entries(audit.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 8).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}
+                    {Object.keys(audit.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(audit.schema_coverage).join(", ")}</p>}
+                    <p className="text-[11px] text-muted-foreground/70">Saved to this deal and folded into the strategy. Run the full audit in the Wizard for the deep report.</p>
+                  </div>
+                )}
+              </Acc>
+
+              {intel && (intel.wants?.length || intel.pain_points?.length || intel.buying_signals?.length || intel.objections?.length || intel.budget_signals?.length) ? (
+                <Acc k="client" title="Client intelligence">
+                  {intel.wants?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1">Wants</div><List items={intel.wants} /></>}
+                  {intel.pain_points?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Pain points</div><List items={intel.pain_points} /></>}
+                  {intel.buying_signals?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Buying signals</div><List items={intel.buying_signals} /></>}
+                  {intel.objections?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Objections</div><List items={intel.objections} /></>}
+                  {intel.budget_signals?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Budget signals</div><List items={intel.budget_signals} /></>}
+                </Acc>
+              ) : null}
+
+              {strategy?.action_items?.length > 0 && <Acc k="actions" title="Do now" defaultBadge={strategy.action_items.length}><ul className="space-y-1">{strategy.action_items.map((a: any, i: number) => <li key={i} className="text-xs text-muted-foreground"><span className="text-foreground">{a.action}</span>{a.platform_can_help && <span className="ml-1"><Chip text="in-platform" color="#10b981" /></span>}</li>)}</ul></Acc>}
+
+              {strategy?.reminders?.length > 0 && <Acc k="reminders" title="Reminders" defaultBadge={strategy.reminders.length}><ul className="space-y-1">{strategy.reminders.map((r: any, i: number) => <li key={i} className="text-xs text-muted-foreground">⏰ {r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul></Acc>}
+
+              {strategy?.call_script?.needed && (
+                <Acc k="call" title="Call script">
                   <div className="text-xs text-muted-foreground space-y-1">
                     {strategy.call_script.opening && <p><b className="text-foreground">Open:</b> {strategy.call_script.opening}</p>}
                     {strategy.call_script.discovery_questions?.length > 0 && <div><b className="text-foreground">Ask:</b><List items={strategy.call_script.discovery_questions} /></div>}
                     {strategy.call_script.objection_handling?.length > 0 && <div><b className="text-foreground">Objections:</b><List items={strategy.call_script.objection_handling} /></div>}
                     {strategy.call_script.close && <p><b className="text-foreground">Close:</b> {strategy.call_script.close}</p>}
                   </div>
-                </Section>
+                </Acc>
               )}
-              {strategy.risk_flags?.length > 0 && <Section title="Watch out"><div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}><List items={strategy.risk_flags} /></div></Section>}
-              {strategy.needs_attachments?.length > 0 && <Section title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Section>}
-            </>
-          )}
 
-          {selected?.id && (
-            <Section title="Attachments & lead">
-              {(selected.attachments || []).length > 0 && <div className="flex flex-wrap gap-1 mb-2">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>}
-              <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                {tags.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-muted border border-border flex items-center gap-1">{t}<button onClick={() => removeTag(t)} className="text-muted-foreground hover:text-foreground">×</button></span>)}
-                <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addTag()} placeholder="+ tag" className="w-20 px-2 py-0.5 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={archiveDeal} className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
-                {confirmDel ? (<span className="text-[11px] flex items-center gap-2"><button onClick={deleteDeal} className="px-2.5 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm</button><button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button></span>) : (<button onClick={() => setConfirmDel(true)} className="text-[11px] px-2.5 py-1 rounded-md border text-muted-foreground" style={{ borderColor: "#ef444455" }}>Delete</button>)}
-              </div>
-            </Section>
+              {strategy?.risk_flags?.length > 0 && <Acc k="risks" title="Watch out" defaultBadge={strategy.risk_flags.length}><div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}><List items={strategy.risk_flags} /></div></Acc>}
+
+              {strategy?.needs_attachments?.length > 0 && <Acc k="needs" title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Acc>}
+
+              {selected?.id && (
+                <Acc k="lead" title="Attachments & lead">
+                  {(selected.attachments || []).length > 0 && <div className="flex flex-wrap gap-1 mb-2">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>}
+                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                    {tags.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-muted border border-border flex items-center gap-1">{t}<button onClick={() => removeTag(t)} className="text-muted-foreground hover:text-foreground">×</button></span>)}
+                    <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addTag()} placeholder="+ tag" className="w-20 px-2 py-0.5 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={archiveDeal} className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
+                    {confirmDel ? (<span className="text-[11px] flex items-center gap-2"><button onClick={deleteDeal} className="px-2.5 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm</button><button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button></span>) : (<button onClick={() => setConfirmDel(true)} className="text-[11px] px-2.5 py-1 rounded-md border text-muted-foreground" style={{ borderColor: "#ef444455" }}>Delete</button>)}
+                  </div>
+                </Acc>
+              )}
+            </div>
           )}
         </div>
       </div>
