@@ -49,12 +49,21 @@ export interface ReportOptions {
    collapsed — the composer can map two brief points to one engine. */
 function completedStages(stages: ReportStageInput[]): ReportStageInput[] {
   const done = stages.filter(s => s.output && (s.status === "completed" || s.status === undefined));
-  const seen = new Set<string>(); const out: ReportStageInput[] = [];
+  /* Collapse stages that ran the SAME engine into one section (the composer
+     often maps several brief points to one engine; running it repeatedly
+     produced duplicate, sometimes contradictory, sections). Merge the
+     requirement labels so the one section credits all of them. */
+  const byEngine = new Map<string, ReportStageInput>(); const order: string[] = [];
   for (const s of done) {
-    const key = `${s.ran_engine || ""}|${String(s.output?.summary || JSON.stringify(s.output || {}).slice(0, 200))}`;
-    if (seen.has(key)) continue; seen.add(key); out.push(s);
+    const eng = s.ran_engine || `__${s.label}`;
+    if (byEngine.has(eng)) {
+      const kept = byEngine.get(eng)!;
+      if (!kept.label.split("; ").includes(s.label)) kept.label = `${kept.label}; ${s.label}`;
+      continue;
+    }
+    byEngine.set(eng, { ...s }); order.push(eng);
   }
-  return out;
+  return order.map(e => byEngine.get(e)!);
 }
 
 const fmtDate = (iso: string | undefined): string => { try { return iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : ""; } catch { return ""; } };
@@ -433,7 +442,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   else if (o.detected_platform && Array.isArray(o.findings)) base.cms = { platform: o.detected_platform, confidence: o.platform_confidence, top_findings: o.findings.filter((x: any) => ["critical", "high", "medium"].includes(x.severity)).slice(0, 8).map((x: any) => ({ title: x.title, severity: x.severity, observed: x.observed })) };
   else if (o.buckets && typeof o.shiftable_spend === "number") base.paid = { shiftable_spend: o.shiftable_spend, brand_spend: o.brand_spend, buckets: o.buckets, top: (o.top_opportunities || []).slice(0, 6) };
   else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
-  else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered: o.requirement_findings, uncovered: o.uncovered, files: o.files };
+  else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered_count: o.requirement_findings.length, requirements_answered: o.requirement_findings.map((r: any) => r.requirement).slice(0, 30), uncovered: (o.uncovered || []).slice(0, 20), files: o.files };
   else if (o.issues && typeof o.pages_reachable === "number") base.site_audit = { pages: o.pages_reachable, capped: o.crawl_capped, performance: o.performance, issues: Object.fromEntries(Object.entries(o.issues).map(([k, v]: any) => [k, v.count])), schema: o.schema_coverage, broken_links: (o.broken_links || []).slice(0, 10) };
   else if (o.client && Array.isArray(o.competitors) && typeof o.has_key === "boolean") base.semrush = { client: o.client, competitors: o.competitors, gaps: o.gaps };
   return base;
@@ -462,27 +471,26 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
   if (completed.length === 0) return null;
   const briefs = completed.map((s, i) => dataBrief(s, i));
 
-  let materialsBlock = ""; let material_files: string[] = [];
-  if (opts.project_id) {
-    try {
-      const mats = await loadMaterials(opts.project_id);
-      if (mats.length) { const mp = materialsForPrompt(mats, 110000); materialsBlock = mp.text; material_files = mp.filenames; }
-    } catch { /* non-fatal */ }
-  }
+  let material_files: string[] = [];
+  if (opts.project_id) { try { material_files = (await loadMaterials(opts.project_id)).map(m => m.filename); } catch { /* non-fatal */ } }
 
   const ctx = [
     `Client: ${opts.client_name || opts.client_domain || "the website"}.`,
-    `Section findings to interpret (live-engine data):`,
-    JSON.stringify({ sections: briefs }),
-    materialsBlock ? `\n\nOPERATOR-PROVIDED MATERIALS AND CLIENT FILES (real source — use to deepen sections and answer requirements the engine data does not cover; attribute where used):${materialsBlock}` : ``,
+    `Interpret these section findings (real data already gathered). Write for the client.`,
+    JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
-  try {
-    const raw = await llm({ system: DMS_SYSTEM, user: ctx.slice(0, 150000), maxTokens: 4000, timeoutMs: 90000, label: "wizard-report-dms" });
+  const run = async (): Promise<(SeniorDmsResult & { material_files: string[] }) | null> => {
+    const raw = await llm({ system: DMS_SYSTEM, user: ctx, maxTokens: 4000, timeoutMs: 90000, label: "wizard-report-dms" });
     const parsed = parseJsonResponse<any>(raw);
     if (!parsed || !Array.isArray(parsed.sections)) return null;
     const map: Record<string, SectionInterpretation> = {};
     for (const sec of parsed.sections) if (sec?.id) map[sec.id] = { id: sec.id, interpretation: String(sec.interpretation || ""), why_it_matters: String(sec.why_it_matters || ""), recommendations: Array.isArray(sec.recommendations) ? sec.recommendations.filter((x: any) => typeof x === "string") : [], priority: String(sec.priority || "") };
     return { executive_summary: String(parsed.executive_summary || ""), sections: map, material_files };
+  };
+  try {
+    let r = await run();
+    if (!r) r = await run();   // one retry — transient parse/timeout
+    return r;
   } catch { return null; }
 }
 
