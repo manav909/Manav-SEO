@@ -5,7 +5,6 @@
    on the left. */
 import { useState, useEffect } from "react";
 import PortalNav from "@/components/PortalNav";
-import { useProject } from "@/contexts/ProjectContext";
 
 async function post(action: string, body: any = {}) {
   const r = await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...body }) });
@@ -19,9 +18,6 @@ const Chip = ({ text, color }: { text: string; color: string }) => (
 );
 
 export default function Deals() {
-  const proj = useProject() as any;
-  const projectId = proj?.selectedProjectId || (typeof localStorage !== "undefined" ? localStorage.getItem("seo_season_proj") : "") || "";
-
   const [deals, setDeals] = useState<any[]>([]);
   const [filter, setFilter] = useState("active");
   const [search, setSearch] = useState("");
@@ -55,8 +51,8 @@ export default function Deals() {
     if (busy === "strategize") return;
     setBusy("strategize"); setError("");
     let id = selected?.id;
-    if (!id) { const s: any = await post("bd_deal_save", { client_name: "Untitled lead", conversation, projectId }); if (s?.success) { setSelected(s.deal); id = s.deal.id; } }
-    else { await post("bd_deal_save", { id, conversation, projectId }); }
+    if (!id) { const s: any = await post("bd_deal_save", { client_name: "Untitled lead", conversation }); if (s?.success) { setSelected(s.deal); id = s.deal.id; } }
+    else { await post("bd_deal_save", { id, conversation }); }
     const r: any = await post("bd_strategize", { id, conversation });
     setBusy(""); setLastStrategized(conversation);
     if (!r?.strategy) { if (!auto) setError(r?.error || "Could not strategise."); return; }

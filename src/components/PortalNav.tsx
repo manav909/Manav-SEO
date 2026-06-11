@@ -52,6 +52,7 @@ const EMPIRE_SECTIONS = [
   {
     label: 'Clients & Leads',
     items: [
+      { href: '/deals',           label: 'Deal Workspace',  icon: MessageSquare,desc: 'Fiverr conversion copilot', perm: 'bde_panel' },
       { href: '/client-comms',    label: 'Client Comms',    icon: MessageSquare,desc: 'Conversation',       perm: 'bde_panel' },
       { href: '/intake',          label: 'Lead Intake',     icon: Target,       desc: 'Capture leads',      perm: 'lead_intel' },
       { href: '/client-dashboard',label: 'Client Dashboard',icon: BarChart3,    desc: 'Client view',        perm: 'dashboard' },
