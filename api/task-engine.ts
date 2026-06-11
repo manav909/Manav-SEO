@@ -790,7 +790,8 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   // Build 12.23a — chat-driven wizard (classify + plan). Mirrors ws_ dispatch.
   if (typeof action === "string" && action.startsWith("bd_")) {
     const { handleBd } = await import("./lib/bd-engine.js");
-    return await handleBd(action, body);
+    const bdResult = await handleBd(action, body);
+    if (bdResult !== null) return ok(res, bdResult);
   }
   if (typeof action === "string" && action.startsWith("wizard_")) {
     const { handleWizard } = await import("./lib/wizard-engine.js");
