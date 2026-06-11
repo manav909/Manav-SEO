@@ -18,7 +18,7 @@
 
 import { db } from "./db.js";
 
-const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost"];
+const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
 export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_deal_save") {
@@ -49,13 +49,28 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "save failed" }; }
   }
 
+  if (action === "bd_deal_update") {
+    const id = String(body?.id || "").trim();
+    if (!id) return { success: false, error: "id required." };
+    const upd: any = { updated_at: new Date().toISOString() };
+    if (typeof body?.status === "string" && STATUSES.includes(body.status)) upd.status = body.status;
+    if (Array.isArray(body?.tags)) upd.tags = body.tags.map((t: any) => String(t).slice(0, 40)).filter(Boolean).slice(0, 20);
+    if (typeof body?.client_name === "string" && body.client_name.trim()) upd.client_name = body.client_name.slice(0, 200);
+    try {
+      const { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
+      if (error) return { success: false, error: error.message };
+      return { success: true, deal: data };
+    } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
+  }
+
   if (action === "bd_deal_list") {
     try {
       let q = db().from("bd_deals").select("id, client_name, client_handle, platform, brief, status, tags, last_message_at, updated_at, strategy").order("updated_at", { ascending: false }).limit(200);
       const status = String(body?.status || "").trim();
       if (status && status !== "all") {
-        if (status === "active") q = q.not("status", "in", "(hired,repeat,lost)");
+        if (status === "active") q = q.not("status", "in", "(hired,repeat,lost,archived)");
         else if (status === "won") q = q.in("status", ["hired", "repeat", "in_delivery"]);
+        else if (status === "archived") q = q.eq("status", "archived");
         else q = q.eq("status", status);
       }
       const search = String(body?.search || "").trim();

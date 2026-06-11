@@ -98,6 +98,9 @@ export default function Deals() {
   const [showDetail, setShowDetail] = useState(true);
   const [transcript, setTranscript] = useState("");
   const [showAttach, setShowAttach] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [confirmDel, setConfirmDel] = useState(false);
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
@@ -109,9 +112,29 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); setStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false);
   };
 
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); setStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); setStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); };
+
+  const saveTags = async (next: string[]) => {
+    setTags(next);
+    if (selected?.id) { const r: any = await post("bd_deal_update", { id: selected.id, tags: next }); if (r?.deal) setSelected(r.deal); loadList(); }
+  };
+  const addTag = () => { const t = tagInput.trim().toLowerCase(); if (t && !tags.includes(t)) saveTags([...tags, t]); setTagInput(""); };
+  const removeTag = (t: string) => saveTags(tags.filter(x => x !== t));
+
+  const archiveDeal = async () => {
+    if (!selected?.id) return;
+    await post("bd_deal_update", { id: selected.id, status: "archived" });
+    setNotice("Lead archived."); newDeal(); loadList();
+  };
+  const deleteDeal = async () => {
+    if (!selected?.id) { newDeal(); return; }
+    const r: any = await post("bd_deal_delete", { id: selected.id });
+    if (!r?.success) { setError(r?.error || "Could not delete."); return; }
+    setNotice("Lead deleted."); newDeal(); loadList();
+  };
 
   const runStrategize = async (convo: string, auto = false) => {
     if (!convo.trim()) return;
@@ -183,7 +206,7 @@ export default function Deals() {
           <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && loadList()}
             placeholder="Search…" className="w-full px-3 py-2 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary mb-2" />
           <div className="flex gap-1 mb-3">
-            {["active", "won", "all"].map(f => (
+            {["active", "won", "archived", "all"].map(f => (
               <button key={f} onClick={() => setFilter(f)} className={`text-[11px] px-2.5 py-1 rounded-md border ${filter === f ? "bg-primary/15 text-primary border-primary/40" : "border-border text-muted-foreground"}`}>{f === "won" ? "Hired" : f[0].toUpperCase() + f.slice(1)}</button>
             ))}
           </div>
@@ -196,6 +219,7 @@ export default function Deals() {
                   <span className="text-xs font-semibold truncate">{d.client_name || "Untitled"}</span>
                   <Chip text={d.status} color={stageColor(d.status)} />
                 </div>
+                {Array.isArray(d.tags) && d.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{d.tags.slice(0, 4).map((t: string) => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>)}</div>}
               </button>
             ))}
           </div>
@@ -210,6 +234,25 @@ export default function Deals() {
             {strategy?.deal_state?.temperature && <Chip text={strategy.deal_state.temperature} color={tempColor(strategy.deal_state.temperature)} />}
             {clientSite && <a href={`/wizard?client=${encodeURIComponent(clientSite)}`} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo for {clientSite} →</a>}
           </div>
+
+          {selected?.id && (
+            <div className="flex flex-wrap items-center gap-2 px-5 py-2 border-b border-border">
+              {tags.map(t => (
+                <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-muted border border-border flex items-center gap-1">{t}<button onClick={() => removeTag(t)} className="text-muted-foreground hover:text-foreground">×</button></span>
+              ))}
+              <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addTag()} placeholder="+ tag"
+                className="w-24 px-2 py-0.5 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+              <button onClick={archiveDeal} className="ml-auto text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
+              {confirmDel ? (
+                <span className="text-[11px] flex items-center gap-2">
+                  <button onClick={deleteDeal} className="px-2.5 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm delete</button>
+                  <button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button>
+                </span>
+              ) : (
+                <button onClick={() => setConfirmDel(true)} className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:opacity-80" style={{ borderColor: "#ef444455" }}>Delete</button>
+              )}
+            </div>
+          )}
 
           {error && <div className="mx-5 mt-3 rounded-xl border p-3 text-xs" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>{error}</div>}
           {notice && !error && <div className="mx-5 mt-3 text-[11px] text-primary">{notice}</div>}
