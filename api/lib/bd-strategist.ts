@@ -1,0 +1,98 @@
+/* ════════════════════════════════════════════════════════════════
+   api/lib/bd-strategist.ts
+
+   BUILD 12.39 — Business-development conversation strategist.
+
+   The brain of the deal workspace. Given the running client conversation
+   (the seller's and the client's messages) plus the brief and any context,
+   it reads the whole thread and returns a conversion strategy: where the
+   deal stands, what the client actually wants, the single best next move,
+   a ready-to-send reply in the seller's voice, concrete action items
+   (including what the platform can do — run a demo audit, ingest their
+   files, connect GSC), a call script for any upcoming call, and risk flags.
+
+   Honest by design: it strategises to WIN the order, but the draft reply
+   never promises results or capabilities that are not real, and it flags
+   where a claim would be dishonest. It is a sales-and-senior-DMS adviser,
+   not a fabricator.
+════════════════════════════════════════════════════════════════ */
+
+import { llm, parseJsonResponse } from "./workspace/llm.js";
+
+export interface DealStrategy {
+  deal_state:   { stage: string; temperature: string; summary: string };
+  client_intel: { wants: string[]; pain_points: string[]; buying_signals: string[]; objections: string[]; budget_signals: string[] };
+  next_move:    string;
+  draft_reply:  string;
+  action_items: Array<{ action: string; why: string; platform_can_help: boolean }>;
+  call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
+  risk_flags:   string[];
+  generated_at: string;
+}
+
+const SYSTEM = [
+  `You are an elite Fiverr business-development strategist AND a senior digital-marketing / SEO-AEO technical expert. You are helping a freelancer (the SELLER) convert a client conversation into a hired order, deliver well, and earn repeat orders.`,
+  `You are given the running conversation (label whose message is whose), the brief, and any context. Read the WHOLE thread and strategise the seller's next move.`,
+  ``,
+  `Produce:`,
+  `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
+  `- client_intel: what the client wants, their pain points, buying signals, objections (stated or likely), and any budget signals — all read from the conversation.`,
+  `- next_move: the single best thing the seller should do next, and why, in plain terms.`,
+  `- draft_reply: a ready-to-send message in a warm, confident, professional seller voice — specific to this client, moving the deal forward. Conversion-focused but NEVER pushy, and NEVER promising results, timelines, or capabilities that are not real. If the client asked something technical, answer it credibly at a senior-SEO level.`,
+  `- action_items: concrete things to do now. For each, set platform_can_help true if the seller's own SEO platform can do it (for example: run a live demo audit of the client's site, ingest a document/transcript the client shared, pull Search Console data if the client granted access, build a sample deliverable).`,
+  `- call_script: if a call is upcoming or likely, set needed true and give an opening, discovery questions, value points, objection handling, and a close. Otherwise needed false.`,
+  `- risk_flags: anything that could lose the deal or that the seller should be careful about (scope creep, unrealistic expectations, price sensitivity, ghosting risk, a request that would require over-promising).`,
+  ``,
+  `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
+  ``,
+  `Return ONLY valid JSON, no prose, no fences:`,
+  `{"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"risk_flags":["..."]}`,
+].join("\n");
+
+const EMPTY: DealStrategy = {
+  deal_state: { stage: "new_lead", temperature: "cold", summary: "" },
+  client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [] },
+  next_move: "", draft_reply: "", action_items: [],
+  call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
+  risk_flags: [], generated_at: "",
+};
+
+const arr = (x: any): string[] => Array.isArray(x) ? x.filter((s: any) => typeof s === "string") : [];
+
+export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
+  const now = new Date().toISOString();
+  const convo = String(opts.conversation || "").trim();
+  if (!convo) return { ok: false, strategy: { ...EMPTY, generated_at: now }, error: "Paste the client conversation first." };
+
+  const user = [
+    opts.clientName ? `Client: ${opts.clientName}.` : ``,
+    opts.brief ? `Brief / service:\n${String(opts.brief).slice(0, 6000)}` : ``,
+    opts.context ? `Context (the seller's platform, prior research, shared documents):\n${String(opts.context).slice(0, 8000)}` : ``,
+    `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 40000)}`,
+  ].filter(Boolean).join("\n\n");
+
+  const run = async (): Promise<DealStrategy | null> => {
+    const raw = await llm({ system: SYSTEM, user, maxTokens: 3500, timeoutMs: 80000, label: "bd-strategist" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p || !p.deal_state) return null;
+    return {
+      deal_state: { stage: String(p.deal_state?.stage || "new_lead"), temperature: String(p.deal_state?.temperature || ""), summary: String(p.deal_state?.summary || "") },
+      client_intel: { wants: arr(p.client_intel?.wants), pain_points: arr(p.client_intel?.pain_points), buying_signals: arr(p.client_intel?.buying_signals), objections: arr(p.client_intel?.objections), budget_signals: arr(p.client_intel?.budget_signals) },
+      next_move: String(p.next_move || ""),
+      draft_reply: String(p.draft_reply || ""),
+      action_items: Array.isArray(p.action_items) ? p.action_items.map((a: any) => ({ action: String(a?.action || ""), why: String(a?.why || ""), platform_can_help: Boolean(a?.platform_can_help) })).filter((a: any) => a.action) : [],
+      call_script: { needed: Boolean(p.call_script?.needed), opening: String(p.call_script?.opening || ""), discovery_questions: arr(p.call_script?.discovery_questions), value_points: arr(p.call_script?.value_points), objection_handling: arr(p.call_script?.objection_handling), close: String(p.call_script?.close || "") },
+      risk_flags: arr(p.risk_flags),
+      generated_at: now,
+    };
+  };
+
+  try {
+    let s = await run();
+    if (!s) s = await run();
+    if (!s) return { ok: false, strategy: { ...EMPTY, generated_at: now }, error: "Could not produce a strategy this time. Try again." };
+    return { ok: true, strategy: s };
+  } catch (e: any) {
+    return { ok: false, strategy: { ...EMPTY, generated_at: now }, error: e?.message || "strategist failed" };
+  }
+}

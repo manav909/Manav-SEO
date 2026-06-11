@@ -23,6 +23,7 @@ const ALL_SECTIONS = [
       {icon:"💬",label:"Client Comms",          href:"/client-comms"},
       {icon:"🎯",label:"Lead Intake",            href:"/intake"},
       {icon:"🧙",label:"Engagement Wizard",     href:"/wizard"},
+      {icon:"🤝",label:"Deal Workspace",        href:"/deals"},
       {icon:"🏢",label:"Client Dashboard",       href:"/client-dashboard"},
       {icon:"👥",label:"Client Portal",          href:"/client-portal"},
       {icon:"📊",label:"Reports",                href:"/reports"},
