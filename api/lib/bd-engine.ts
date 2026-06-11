@@ -76,6 +76,20 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "get failed" }; }
   }
 
+  if (action === "bd_deal_attach") {
+    const id = String(body?.id || "").trim();
+    if (!id) return { success: false, error: "id required." };
+    const att = { name: String(body?.name || "attachment").slice(0, 200), kind: String(body?.kind || "file"), text: String(body?.text || "").slice(0, 120000), added_at: new Date().toISOString() };
+    if (!att.text.trim()) return { success: false, error: "No readable text in the attachment (images need their text pasted)." };
+    try {
+      const { data: deal } = await db().from("bd_deals").select("attachments").eq("id", id).single();
+      const existing = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments : [];
+      const { data, error } = await db().from("bd_deals").update({ attachments: [...existing, att], updated_at: new Date().toISOString() }).eq("id", id).select().single();
+      if (error) return { success: false, error: error.message };
+      return { success: true, deal: data };
+    } catch (e: any) { return { success: false, error: e?.message || "attach failed" }; }
+  }
+
   if (action === "bd_strategize") {
     const id = String(body?.id || "").trim();
     let conversation = String(body?.conversation || "");
@@ -89,7 +103,12 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (!conversation.trim()) return { success: false, error: "No conversation to strategise. Paste the client chat first." };
     try {
       const { strategizeDeal } = await import("./bd-strategist.js");
-      const r = await strategizeDeal({ conversation, brief, clientName, context: body?.context });
+      let context = String(body?.context || "");
+      if (deal && Array.isArray(deal.attachments) && deal.attachments.length) {
+        const fromAtt = deal.attachments.map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 12000)}`).join("\n\n");
+        context = fromAtt + (context ? "\n\n" + context : "");
+      }
+      const r = await strategizeDeal({ conversation, brief, clientName, context });
       if (!r.ok) return { success: false, error: r.error, strategy: r.strategy };
       if (id && deal) {
         try {

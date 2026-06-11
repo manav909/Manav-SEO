@@ -29,6 +29,8 @@ export interface DealStrategy {
   draft_reply:  string;
   action_items: Array<{ action: string; why: string; platform_can_help: boolean }>;
   call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
+  needs_attachments: Array<{ kind: string; what: string; note: string }>;
+  reminders:    Array<{ text: string; when: string }>;
   risk_flags:   string[];
   generated_at: string;
 }
@@ -37,7 +39,15 @@ const SYSTEM = [
   `You are an elite Fiverr business-development strategist AND a senior digital-marketing / SEO-AEO technical expert. You are helping a freelancer (the SELLER) convert a client conversation into a hired order, deliver well, and earn repeat orders.`,
   `You are given the running conversation (label whose message is whose), the brief, and any context. Read the WHOLE thread and strategise the seller's next move.`,
   ``,
+  `Fiverr context and rules to respect:`,
+  `- Keep all communication and payment ON Fiverr; never suggest moving off-platform (it risks the seller's account).`,
+  `- Fiverr call recordings are available for about 30 days only. If a call happened or is scheduled, remind the seller to save or transcribe it before it expires, and to add the transcript to this deal.`,
+  `- A custom offer defines the scope; extra requests beyond it should become a new offer/order, not free work — flag scope creep.`,
+  `- Orders have delivery deadlines and revision limits; respect them and flag risks.`,
+  ``,
   `Produce:`,
+  `- needs_attachments: anything the conversation REFERENCES that the seller should add to this deal so it can be used — a brief/document the client shared, a file to review before a call, a call transcript, screenshots. Each {"kind":"document"|"transcript"|"file","what":"...","note":"..."}. Empty if none referenced.`,
+  `- reminders: time-sensitive things to remember, each {"text":"...","when":"..."}. Include the 30-day call-recording save when a call is involved, and follow-up timing if the client may go quiet.`,
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
   `- client_site: the client's website domain if mentioned anywhere (bare domain, no protocol; empty if none).`,
   `- messages: the conversation parsed into ordered turns, each {"sender":"client" or "seller","text":"..."}. 'seller' is the freelancer (often labelled 'Me'); 'client' is the buyer. Strip timestamps and labels from the text.`,
@@ -52,7 +62,7 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","messages":[{"sender":"client","text":"..."}],"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","messages":[{"sender":"client","text":"..."}],"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
@@ -61,6 +71,7 @@ const EMPTY: DealStrategy = {
   client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [] },
   next_move: "", draft_reply: "", action_items: [],
   call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
+  needs_attachments: [], reminders: [],
   risk_flags: [], generated_at: "",
 };
 
@@ -74,7 +85,7 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
   const user = [
     opts.clientName ? `Client: ${opts.clientName}.` : ``,
     opts.brief ? `Brief / service:\n${String(opts.brief).slice(0, 6000)}` : ``,
-    opts.context ? `Context (the seller's platform, prior research, shared documents):\n${String(opts.context).slice(0, 8000)}` : ``,
+    opts.context ? `Context (the seller's platform, prior research, shared documents and call transcripts):\n${String(opts.context).slice(0, 16000)}` : ``,
     `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 40000)}`,
   ].filter(Boolean).join("\n\n");
 
@@ -92,6 +103,8 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
       draft_reply: String(p.draft_reply || ""),
       action_items: Array.isArray(p.action_items) ? p.action_items.map((a: any) => ({ action: String(a?.action || ""), why: String(a?.why || ""), platform_can_help: Boolean(a?.platform_can_help) })).filter((a: any) => a.action) : [],
       call_script: { needed: Boolean(p.call_script?.needed), opening: String(p.call_script?.opening || ""), discovery_questions: arr(p.call_script?.discovery_questions), value_points: arr(p.call_script?.value_points), objection_handling: arr(p.call_script?.objection_handling), close: String(p.call_script?.close || "") },
+      needs_attachments: Array.isArray(p.needs_attachments) ? p.needs_attachments.map((a: any) => ({ kind: String(a?.kind || "file"), what: String(a?.what || ""), note: String(a?.note || "") })).filter((a: any) => a.what) : [],
+      reminders: Array.isArray(p.reminders) ? p.reminders.map((r: any) => ({ text: String(r?.text || ""), when: String(r?.when || "") })).filter((r: any) => r.text) : [],
       risk_flags: arr(p.risk_flags),
       generated_at: now,
     };

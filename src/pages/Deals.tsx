@@ -48,6 +48,8 @@ export default function Deals() {
   const [lastAnalysed, setLastAnalysed] = useState("");
   const [showRaw, setShowRaw] = useState(false);
   const [showDetail, setShowDetail] = useState(true);
+  const [transcript, setTranscript] = useState("");
+  const [showAttach, setShowAttach] = useState(false);
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
@@ -90,6 +92,20 @@ export default function Deals() {
     setConversation(merged); setPasteInput("");
     await runStrategize(merged, auto);
   };
+
+  const attach = async (name: string, kind: string, text: string) => {
+    if (!text.trim()) { setError("No readable text to attach — images need their text pasted."); return; }
+    setError(""); setBusy("attach");
+    let id = selected?.id;
+    if (!id) { const s: any = await post("bd_deal_save", { client_name: selected?.client_name || "Untitled lead", conversation }); if (s?.success) { setSelected(s.deal); id = s.deal.id; } }
+    if (!id) { setBusy(""); setError("Could not save the deal to attach to."); return; }
+    const r: any = await post("bd_deal_attach", { id, name, kind, text });
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not attach."); return; }
+    setSelected(r.deal); setNotice(`Added ${kind}: ${name}. Re-analysing with it…`);
+    runStrategize(conversation || text, false);
+  };
+  const attachFile = async (file: File | undefined) => { if (!file) return; try { attach(file.name, "file", await file.text()); } catch { setError("Could not read the file (text formats only for now)."); } };
 
   /* Auto-analyse a pasted chunk ~2s after you stop. */
   useEffect(() => {
@@ -194,6 +210,12 @@ export default function Deals() {
                         {strategy.call_script.close && <p><b>Close:</b> {strategy.call_script.close}</p>}
                       </div>
                     )}
+                    {strategy.reminders?.length > 0 && (
+                      <div className="rounded-lg border p-2" style={{ borderColor: "#6366f155", background: "#6366f111" }}>
+                        <span className="font-semibold" style={{ color: "#6366f1" }}>Reminders:</span>
+                        <ul className="list-disc ml-4 text-muted-foreground">{strategy.reminders.map((r: any, i: number) => <li key={i}>{r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul>
+                      </div>
+                    )}
                     {strategy.risk_flags?.length > 0 && (
                       <div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}>
                         <span className="font-semibold" style={{ color: "#f59e0b" }}>Watch out:</span>
@@ -205,6 +227,33 @@ export default function Deals() {
               </div>
             )}
           </div>
+
+          {/* attachments — prompted by the chat, kept on the deal, fed into the strategy */}
+          {(strategy || selected) && (
+            <div className="border-t border-border px-5 py-3 space-y-2">
+              {strategy?.needs_attachments?.length > 0 && (
+                <div className="rounded-xl border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>
+                  <span className="font-semibold" style={{ color: "#6366f1" }}>📎 The chat references these — add them so I can use them:</span>
+                  <ul className="list-disc ml-4 text-muted-foreground">{strategy.needs_attachments.map((a: any, i: number) => <li key={i}>{a.what}{a.note ? ` — ${a.note}` : ""}</li>)}</ul>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">
+                  {busy === "attach" ? "Adding…" : "+ Add file"}
+                  <input type="file" accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml" className="hidden" onChange={e => attachFile(e.target.files?.[0])} disabled={busy === "attach"} />
+                </label>
+                <button onClick={() => setShowAttach(v => !v)} className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">+ Add call transcript</button>
+                {(selected?.attachments || []).map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}
+              </div>
+              {showAttach && (
+                <div>
+                  <textarea value={transcript} onChange={e => setTranscript(e.target.value)} placeholder="Paste the call transcript or document text here (Fiverr call recordings expire after ~30 days — save it now)…"
+                    className="w-full h-24 px-3 py-2 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+                  <button onClick={() => { if (transcript.trim()) { attach("call transcript", "transcript", transcript); setTranscript(""); setShowAttach(false); } }} disabled={busy === "attach" || !transcript.trim()} className="mt-1 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">Add transcript</button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* paste / append box */}
           <div className="border-t border-border p-3">
