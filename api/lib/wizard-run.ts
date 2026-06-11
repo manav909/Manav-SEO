@@ -150,7 +150,7 @@ export async function runWizardStage(opts: {
     if (caps.includes("semrush_intelligence")) {
       const { semrushIntelligence } = await import("./semrush-intel.js");
       const report = await semrushIntelligence({ projectId, domain: inputs.siteUrl, competitors: inputs.competitors, database: (inputs as any).database });
-      if (!report.has_key) return result("needs_connection", "semrush-intel.ts", report, report.summary);
+      if (!report.has_data) return result("needs_connection", "semrush-intel.ts", report, report.summary);
       return result("completed", "semrush-intel.ts", report, report.summary);
     }
 

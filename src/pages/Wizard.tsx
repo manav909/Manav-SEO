@@ -64,6 +64,7 @@ export default function Wizard() {
   const [semrushKey, setSemrushKey] = useState("");
   const [savingSemrush, setSavingSemrush] = useState(false);
   const [semrushInfo, setSemrushInfo] = useState("");
+  const [ingestingSheet, setIngestingSheet] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
@@ -198,6 +199,18 @@ export default function Wizard() {
   const renderToTab = (html: string, tab: Window | null, fallbackName: string) => {
     if (tab && !tab.closed) { tab.document.open(); tab.document.write(html); tab.document.close(); }
     else { downloadHtml(html, fallbackName); }  // popup blocked → fall back to download
+  };
+
+  const uploadSemrushSheet = async (file: File | undefined) => {
+    if (!file) return;
+    if (!projectId) { setError("No active project found."); return; }
+    setIngestingSheet(true); setError("");
+    try {
+      const text = await file.text();
+      const r: any = await post("semrush_ingest_sheet", { projectId, csvText: text, clientDomain: plan?.client_domain, competitors: competitors.split(",").map(c => c.trim()).filter(Boolean) });
+      setIngestingSheet(false);
+      setSemrushInfo(r?.success ? `Semrush data ingested for ${r.client || "the client"}${r.competitors ? ` + ${r.competitors} competitor(s)` : ""}. The authority/backlink/keyword stage will use these numbers.` : (r?.error || "Could not read the sheet."));
+    } catch (e: any) { setIngestingSheet(false); setError(e?.message || "Could not read the file."); }
   };
 
   const saveSemrush = async () => {
@@ -419,6 +432,10 @@ export default function Wizard() {
                   className="text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
                   {savingSemrush ? "Saving…" : "Save key"}
                 </button>
+                <label className="text-xs px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
+                  {ingestingSheet ? "Reading sheet…" : "Upload Semrush data sheet"}
+                  <input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={e => uploadSemrushSheet(e.target.files?.[0])} disabled={ingestingSheet} />
+                </label>
               </div>
               {semrushInfo && <p className="text-[11px] text-muted-foreground mt-1">{semrushInfo}</p>}
               <p className="text-[11px] text-muted-foreground/70 mt-1">Optional. No tool is required — you can instead upload an export from any tool (Ahrefs, Moz, Semrush, Screaming Frog, GA) in the materials step below, and the report will use it for the same data. Where a need has no source, the report states it honestly and names the best source to fill it.</p>

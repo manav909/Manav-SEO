@@ -320,6 +320,21 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Build 12.38 — ingest a Semrush data sheet (numbers) as the data layer, replacing the API. */
+  if (action === "semrush_ingest_sheet") {
+    const projectId = String(body?.projectId || "").trim();
+    const csvText = String(body?.csvText || (Array.isArray(body?.csvs) ? body.csvs[0]?.text : "") || "").trim();
+    if (!projectId) return { success: false, error: "projectId is required." };
+    if (!csvText) return { success: false, error: "Sheet content (csvText) is required." };
+    try {
+      const { ingestSemrushSheet } = await import("./semrush-intel.js");
+      const r = await ingestSemrushSheet({ projectId, csvText, clientDomain: body?.clientDomain, competitors: Array.isArray(body?.competitors) ? body.competitors : [] });
+      return r.success ? { success: true, client: r.client, competitors: r.competitors } : { success: false, error: r.error };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "sheet ingestion failed" };
+    }
+  }
+
   /* Build 12.35 — create a project (+ client) from the chat details, so the
      wizard can switch to the correct client instead of running on the wrong one. */
   if (action === "wizard_create_project") {

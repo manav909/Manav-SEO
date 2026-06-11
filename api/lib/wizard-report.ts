@@ -273,17 +273,26 @@ function renderBodyHtml(o: any): string {
   }
   const P: string[] = [];
 
-  /* Semrush authority / backlinks / keywords comparison */
-  if (o.client && Array.isArray(o.competitors) && typeof o.has_key === "boolean") {
-    if (!o.has_key || !o.client) { return `<p class="muted">${esc(o.summary)}</p>`; }
+  /* Semrush authority / backlinks / keywords comparison (sheet or API) */
+  if (o.client && Array.isArray(o.competitors) && typeof o.has_data === "boolean") {
+    if (!o.has_data || !o.client) { return `<p class="muted">${esc(o.summary)}</p>`; }
     const m = (x: any) => x == null ? "—" : Number(x).toLocaleString();
     const all = [o.client, ...o.competitors].filter((d: any) => d && !d.error);
-    P.push(`<h4>Authority and link profile (Semrush)</h4>`);
+    if (o.audit && (o.audit.health_score != null || o.audit.errors != null || Object.keys(o.audit.issues || {}).length)) {
+      P.push(`<h4>Site health (from your Semrush data)</h4>`);
+      const a = o.audit; const parts: string[] = [];
+      if (a.health_score != null) parts.push(`Health score ${a.health_score}`);
+      if (a.errors != null) parts.push(`${m(a.errors)} errors`);
+      if (a.warnings != null) parts.push(`${m(a.warnings)} warnings`);
+      if (a.notices != null) parts.push(`${m(a.notices)} notices`);
+      if (parts.length) P.push(`<p>${esc(parts.join(" · "))}</p>`);
+      const iss = Object.entries(a.issues || {});
+      if (iss.length) P.push(tableHtml(["Issue", "Pages"], iss.map(([k, v]: any) => [String(k).replace(/_/g, " "), v])));
+    }
+    P.push(`<h4>Authority and link profile</h4>`);
     P.push(tableHtml(["Domain", "Authority", "Organic keywords", "Est. traffic", "Backlinks", "Referring domains"],
       all.map((d: any) => [d.domain + (d.domain === o.client.domain ? " (you)" : ""), m(d.authority_score), m(d.organic_keywords), m(d.organic_traffic), m(d.total_backlinks), m(d.referring_domains)])));
     if (o.gaps?.length) P.push(`<h4>Gaps</h4><ul>${o.gaps.map((g: string) => `<li>${esc(g)}</li>`).join("")}</ul>`);
-    const errs = o.competitors.filter((c: any) => c.error);
-    if (errs.length) P.push(`<p class="muted">Could not pull: ${errs.map((c: any) => `${esc(c.domain)} (${esc(c.error)})`).join(", ")}.</p>`);
     return P.join("");
   }
 
@@ -444,7 +453,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   else if (Array.isArray(o.reports) && o.reports.length) base.analysis = o.reports.map((r: any) => String(r.report_md || "").slice(0, 1800)).join("\n\n").slice(0, 4000);
   else if (Array.isArray(o.requirement_findings)) base.document_findings = { answered_count: o.requirement_findings.length, requirements_answered: o.requirement_findings.map((r: any) => r.requirement).slice(0, 30), uncovered: (o.uncovered || []).slice(0, 20), files: o.files };
   else if (o.issues && typeof o.pages_reachable === "number") base.site_audit = { pages: o.pages_reachable, capped: o.crawl_capped, performance: o.performance, issues: Object.fromEntries(Object.entries(o.issues).map(([k, v]: any) => [k, v.count])), schema: o.schema_coverage, broken_links: (o.broken_links || []).slice(0, 10) };
-  else if (o.client && Array.isArray(o.competitors) && typeof o.has_key === "boolean") base.semrush = { client: o.client, competitors: o.competitors, gaps: o.gaps };
+  else if (o.client && Array.isArray(o.competitors) && typeof o.has_data === "boolean") base.semrush = { client: o.client, competitors: o.competitors, gaps: o.gaps, audit: o.audit, source: o.source };
   return base;
 }
 
