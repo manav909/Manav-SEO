@@ -12,38 +12,46 @@ import PortalNav from "@/components/PortalNav";
 function parseThread(text: string): Array<{ sender: string; text: string }> {
   const raw = (text || "").trim();
   if (!raw) return [];
-  const sellerName = /^(me|seller|manav)\b/i;
-  const labelRe = /^([A-Za-z0-9_.\- ]{1,40}):\s+(.*)$/;
-  const lines = raw.split(/\n/);
+  const lines = raw.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const tsRe = /\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?/i;                              // 9:53 PM
+  const dateRe = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i; // May 06,...
+  const avatarRe = /^[A-Za-z]$/;                                              // single-letter avatar
+  const noiseRe = /^(profile image|promoted|replied|video call ended|read more|read less|order details|delivered)$/i;
+  const dropRe = /^duration:|call recording is ready|did something happen on the call|report the incident/i;
+  const isTime = (l: string) => tsRe.test(l) || dateRe.test(l);
+
   const turns: Array<{ sender: string; text: string }> = [];
-
-  /* Inline "Speaker: message" lines (handles Client:/Me: on consecutive lines). */
-  if (lines.some(l => labelRe.test(l.trim()))) {
-    let cur: { sender: string; text: string } | null = null;
-    for (const ln of lines) {
-      const line = ln.trim();
-      if (!line) continue;
-      const m = line.match(labelRe);
-      if (m) { cur = { sender: sellerName.test(m[1]) ? "seller" : "client", text: m[2].trim() }; turns.push(cur); }
-      else if (cur) { cur.text += "\n" + line; }
-      else { cur = { sender: "client", text: line }; turns.push(cur); }
+  let cur: { sender: string; text: string } | null = null;
+  let i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (avatarRe.test(l)) {                  // new turn header begins
+      let sender = "client";
+      i++;
+      while (i < lines.length && !isTime(lines[i])) { if (/^me$/i.test(lines[i])) sender = "seller"; i++; }
+      while (i < lines.length && isTime(lines[i])) i++;   // skip date/time
+      cur = { sender, text: "" }; turns.push(cur);
+      continue;
     }
-    return turns.length ? turns : [{ sender: "client", text: raw }];
+    if (noiseRe.test(l) || dropRe.test(l) || isTime(l)) { i++; continue; }
+    if (cur) cur.text += (cur.text ? "\n" : "") + l;
+    else { cur = { sender: "client", text: l }; turns.push(cur); }
+    i++;
   }
-
-  /* Fiverr block format: speaker / timestamp / message, blocks separated by blank lines. */
-  const isTs = (l: string) => /\d{1,2}:\d{2}|am|pm|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\d{4}/i.test(l);
-  for (const b of raw.split(/\n\s*\n/)) {
-    const bl = b.split(/\n/).map(l => l.trim()).filter(Boolean);
-    if (!bl.length) continue;
-    const speaker = bl[0];
-    let rest = bl.slice(1);
-    if (rest.length && isTs(rest[0])) rest = rest.slice(1);
-    const sender = sellerName.test(speaker) ? "seller" : "client";
-    const t = rest.join("\n").trim();
-    turns.push({ sender, text: t || speaker });
+  const out = turns.filter(t => t.text.trim()).map(t => ({ sender: t.sender, text: t.text.trim() }));
+  /* Fallbacks for non-Fiverr pastes: inline "Speaker: msg". */
+  if (out.length <= 1 && /\n/.test(raw) && /^([A-Za-z0-9_.\- ]{1,40}):\s+/m.test(raw)) {
+    const seller = /^(me|seller|manav)\b/i;
+    const inline: Array<{ sender: string; text: string }> = [];
+    let c: { sender: string; text: string } | null = null;
+    for (const ln of lines) {
+      const m = ln.match(/^([A-Za-z0-9_.\- ]{1,40}):\s+(.*)$/);
+      if (m) { c = { sender: seller.test(m[1]) ? "seller" : "client", text: m[2].trim() }; inline.push(c); }
+      else if (c) c.text += "\n" + ln;
+    }
+    if (inline.length > 1) return inline.filter(t => t.text.trim());
   }
-  return turns.length ? turns : [{ sender: "client", text: raw }];
+  return out.length ? out : [{ sender: "client", text: raw }];
 }
 
 async function post(action: string, body: any = {}) {
