@@ -144,6 +144,17 @@ export default function Deals() {
   const deleteDeal = async () => { if (!selected?.id) { newDeal(); return; } const r: any = await post("bd_deal_delete", { id: selected.id }); if (!r?.success) { setError(r?.error || "Could not delete."); return; } newDeal(); loadList(); };
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
+  const launchDemo = () => {
+    try {
+      sessionStorage.setItem("wizard_restore", JSON.stringify({
+        chatText: conversation || "",
+        clientSiteUrl: clientSite ? `https://${clientSite}/` : "",
+        noGsc: true,
+      }));
+    } catch { /* ignore */ }
+    window.location.href = "/wizard";
+  };
+
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
   const clientSite = strategy?.client_site || "";
   const messages = parseThread(conversation);
@@ -184,7 +195,8 @@ export default function Deals() {
             <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">{(clientName || "?").slice(0, 1).toUpperCase()}</div>
             <div className="font-semibold text-sm truncate">{clientName}</div>
             {strategy?.deal_state?.stage && <Chip text={strategy.deal_state.stage} color={stageColor(strategy.deal_state.stage)} />}
-            {clientSite && <a href={`/wizard?client=${encodeURIComponent(clientSite)}`} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo →</a>}
+            {selected?.id && <Chip text="✓ saved" color="#10b981" />}
+            {(clientSite || conversation.trim()) && <button onClick={launchDemo} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo →</button>}
           </div>
           {error && <div className="mx-4 mt-2 rounded-lg border p-2 text-xs" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>{error}</div>}
           {notice && !error && <div className="mx-4 mt-2 text-[11px] text-primary">{notice}</div>}
