@@ -6,6 +6,46 @@
 import { useState, useEffect } from "react";
 import PortalNav from "@/components/PortalNav";
 
+/* Parse the pasted conversation into chat turns (client vs seller) without
+   asking the model to echo it. Handles "Me: …" labels and the Fiverr
+   name / timestamp / message block format. */
+function parseThread(text: string): Array<{ sender: string; text: string }> {
+  const raw = (text || "").trim();
+  if (!raw) return [];
+  const sellerName = /^(me|seller|manav)\b/i;
+  const labelRe = /^([A-Za-z0-9_.\- ]{1,40}):\s+(.*)$/;
+  const lines = raw.split(/\n/);
+  const turns: Array<{ sender: string; text: string }> = [];
+
+  /* Inline "Speaker: message" lines (handles Client:/Me: on consecutive lines). */
+  if (lines.some(l => labelRe.test(l.trim()))) {
+    let cur: { sender: string; text: string } | null = null;
+    for (const ln of lines) {
+      const line = ln.trim();
+      if (!line) continue;
+      const m = line.match(labelRe);
+      if (m) { cur = { sender: sellerName.test(m[1]) ? "seller" : "client", text: m[2].trim() }; turns.push(cur); }
+      else if (cur) { cur.text += "\n" + line; }
+      else { cur = { sender: "client", text: line }; turns.push(cur); }
+    }
+    return turns.length ? turns : [{ sender: "client", text: raw }];
+  }
+
+  /* Fiverr block format: speaker / timestamp / message, blocks separated by blank lines. */
+  const isTs = (l: string) => /\d{1,2}:\d{2}|am|pm|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\b|\d{4}/i.test(l);
+  for (const b of raw.split(/\n\s*\n/)) {
+    const bl = b.split(/\n/).map(l => l.trim()).filter(Boolean);
+    if (!bl.length) continue;
+    const speaker = bl[0];
+    let rest = bl.slice(1);
+    if (rest.length && isTs(rest[0])) rest = rest.slice(1);
+    const sender = sellerName.test(speaker) ? "seller" : "client";
+    const t = rest.join("\n").trim();
+    turns.push({ sender, text: t || speaker });
+  }
+  return turns.length ? turns : [{ sender: "client", text: raw }];
+}
+
 async function post(action: string, body: any = {}) {
   const r = await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...body }) });
   return r.json().catch(() => ({}));
@@ -119,7 +159,7 @@ export default function Deals() {
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
   const clientSite = strategy?.client_site || "";
-  const messages: any[] = strategy?.messages || [];
+  const messages = parseThread(conversation);
 
   return (
     <div className="min-h-screen bg-background text-foreground">

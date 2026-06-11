@@ -22,7 +22,6 @@ import { llm, parseJsonResponse } from "./workspace/llm.js";
 export interface DealStrategy {
   detected_client: string;
   client_site:     string;
-  messages:     Array<{ sender: string; text: string }>;
   deal_state:   { stage: string; temperature: string; summary: string };
   client_intel: { wants: string[]; pain_points: string[]; buying_signals: string[]; objections: string[]; budget_signals: string[] };
   next_move:    string;
@@ -50,7 +49,6 @@ const SYSTEM = [
   `- reminders: time-sensitive things to remember, each {"text":"...","when":"..."}. Include the 30-day call-recording save when a call is involved, and follow-up timing if the client may go quiet.`,
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
   `- client_site: the client's website domain if mentioned anywhere (bare domain, no protocol; empty if none).`,
-  `- messages: the conversation parsed into ordered turns, each {"sender":"client" or "seller","text":"..."}. 'seller' is the freelancer (often labelled 'Me'); 'client' is the buyer. Strip timestamps and labels from the text.`,
   `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
   `- client_intel: what the client wants, their pain points, buying signals, objections (stated or likely), and any budget signals — all read from the conversation.`,
   `- next_move: the single best thing the seller should do next, and why, in plain terms.`,
@@ -62,11 +60,11 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","messages":[{"sender":"client","text":"..."}],"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
-  detected_client: "", client_site: "", messages: [],
+  detected_client: "", client_site: "",
   deal_state: { stage: "new_lead", temperature: "cold", summary: "" },
   client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [] },
   next_move: "", draft_reply: "", action_items: [],
@@ -96,7 +94,6 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
     return {
       detected_client: String(p.detected_client || "").slice(0, 120),
       client_site: String(p.client_site || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""),
-      messages: Array.isArray(p.messages) ? p.messages.map((m: any) => ({ sender: m?.sender === "seller" ? "seller" : "client", text: String(m?.text || "") })).filter((m: any) => m.text) : [],
       deal_state: { stage: String(p.deal_state?.stage || "new_lead"), temperature: String(p.deal_state?.temperature || ""), summary: String(p.deal_state?.summary || "") },
       client_intel: { wants: arr(p.client_intel?.wants), pain_points: arr(p.client_intel?.pain_points), buying_signals: arr(p.client_intel?.buying_signals), objections: arr(p.client_intel?.objections), budget_signals: arr(p.client_intel?.budget_signals) },
       next_move: String(p.next_move || ""),
