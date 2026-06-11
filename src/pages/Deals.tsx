@@ -33,6 +33,9 @@ export default function Deals() {
   const [status, setStatus] = useState("lead");
   const [notes, setNotes] = useState("");
   const [strategy, setStrategy] = useState<any>(null);
+  const [autoStrategize, setAutoStrategize] = useState(true);
+  const [userEdited, setUserEdited] = useState(false);
+  const [lastStrategized, setLastStrategized] = useState("");
 
   const loadList = async () => {
     const r: any = await post("bd_deal_list", { status: filter, search });
@@ -47,9 +50,10 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setClientName(d.client_name || ""); setBrief(d.brief || ""); setConversation(d.conversation || ""); setStatus(d.status || "lead"); setNotes(d.notes || ""); setStrategy(d.strategy || null);
+    setUserEdited(false); setLastStrategized(d.conversation || "");
   };
 
-  const newDeal = () => { setSelected(null); setClientName(""); setBrief(""); setConversation(""); setStatus("lead"); setNotes(""); setStrategy(null); setError(""); };
+  const newDeal = () => { setSelected(null); setClientName(""); setBrief(""); setConversation(""); setStatus("lead"); setNotes(""); setStrategy(null); setError(""); setUserEdited(false); setLastStrategized(""); };
 
   const save = async () => {
     setBusy("save"); setError("");
@@ -59,8 +63,9 @@ export default function Deals() {
     setSelected(r.deal); loadList();
   };
 
-  const strategize = async () => {
-    if (!conversation.trim()) { setError("Paste the client conversation first."); return; }
+  const strategize = async (auto = false) => {
+    if (!conversation.trim()) { if (!auto) setError("Paste the client conversation first."); return; }
+    if (busy === "strategize") return;
     setBusy("strategize"); setError("");
     // save first so the strategy persists to the deal
     let id = selected?.id;
@@ -68,11 +73,21 @@ export default function Deals() {
     else { await post("bd_deal_save", { id, client_name: clientName, brief, conversation, status, notes, projectId }); }
     const r: any = await post("bd_strategize", { id, conversation, brief, client_name: clientName });
     setBusy("");
-    if (!r?.strategy && !r?.success) { setError(r?.error || "Could not strategise."); return; }
+    setLastStrategized(conversation);
+    if (!r?.strategy && !r?.success) { if (!auto) setError(r?.error || "Could not strategise."); return; }
     setStrategy(r.strategy);
     if (r.strategy?.deal_state?.stage && STAGES.includes(r.strategy.deal_state.stage)) setStatus(r.strategy.deal_state.stage);
     loadList();
   };
+
+  /* Auto-strategise once you stop pasting (debounced), never on load, never re-run the same text. */
+  useEffect(() => {
+    if (!autoStrategize || !userEdited) return;
+    if (!conversation.trim() || conversation === lastStrategized || busy === "strategize") return;
+    const t = setTimeout(() => { strategize(true); }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation, autoStrategize, userEdited]);
 
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
@@ -129,14 +144,19 @@ export default function Deals() {
             <textarea value={brief} onChange={e => setBrief(e.target.value)} placeholder="The client's brief / what they asked for…"
               className="w-full h-20 px-3 py-2 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y mb-3" />
             <div className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wider">Conversation (paste their messages and yours as it goes)</div>
-            <textarea value={conversation} onChange={e => setConversation(e.target.value)} placeholder={"Client: Hi, I need SEO + AEO for my Shopify store…\nMe: …"}
+            <textarea value={conversation} onChange={e => { setConversation(e.target.value); setUserEdited(true); }} placeholder={"Client: Hi, I need SEO + AEO for my Shopify store…\nMe: …"}
               className="w-full h-48 px-3 py-2 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary resize-y" />
-            <div className="flex flex-wrap gap-2 mt-3">
-              <button onClick={strategize} disabled={busy === "strategize"} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <button onClick={() => strategize(false)} disabled={busy === "strategize"} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
                 {busy === "strategize" ? "Strategising…" : "Strategise next move"}
               </button>
               <a href="/wizard" className="px-4 py-2.5 rounded-xl text-sm border border-border text-muted-foreground hover:border-primary">Open Wizard (demo audit / deliverable)</a>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
+                <input type="checkbox" checked={autoStrategize} onChange={e => setAutoStrategize(e.target.checked)} />
+                Auto-strategise on paste
+              </label>
             </div>
+            {autoStrategize && busy === "strategize" && <p className="text-[11px] text-primary mt-1">Auto-updating the next move…</p>}
           </div>
 
           {/* Strategy */}
