@@ -82,7 +82,7 @@ function Acc({ k, title, children, defaultBadge, open, toggle }: { k: string; ti
 
 type Win = { id: string; type: string; title: string; status: "running" | "done" | "error"; result?: any; error?: string; dealId?: string; dealName?: string };
 const money2 = (n: any) => "$" + Number(n || 0).toLocaleString();
-const WIN_ICON: Record<string, string> = { audit: "🔍", aeo: "🤖", competitor: "📊", offer: "💰", roadmap: "🗺️", casestudy: "🏆", ask: "✨" };
+const WIN_ICON: Record<string, string> = { audit: "🔍", aeo: "🤖", competitor: "📊", offer: "💰", roadmap: "🗺️", casestudy: "🏆", ask: "✨", doc: "📄" };
 
 function winExportText(w: Win): string {
   const r = w.result || {};
@@ -171,6 +171,16 @@ function WinBody({ w, onUseReply }: { w: Win; onUseReply: (t: string) => void })
       <p className="whitespace-pre-wrap break-words text-foreground leading-relaxed">{r.answer}</p>
       {r.client_reply && snippet("Reply you can send", r.client_reply)}
       {r.suggested_tools?.length > 0 && <div className="flex flex-wrap gap-1">{r.suggested_tools.map((t: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-muted ring-1 ring-border/60 text-muted-foreground">{t}</span>)}</div>}
+    </div>
+  );
+  if (w.type === "doc") return (
+    <div className="space-y-2 text-[13px]">
+      <div className="text-foreground font-semibold tracking-tight">{r.title || "Document"}</div>
+      <div className="rounded-lg border border-border/60 overflow-hidden bg-white"><iframe title="document" srcDoc={r.html} className="w-full" style={{ height: 380, border: 0 }} /></div>
+      <div className="flex items-center gap-1.5">
+        <button onClick={() => { try { const blob = new Blob([`<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'></head><body>${r.html}</body></html>`], { type: "application/msword" }); const u = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = u; a.download = `${String(r.title || "document").replace(/\W+/g, "_")}.doc`; a.click(); URL.revokeObjectURL(u); } catch { /* ignore */ } }} className="text-[10px] font-medium px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity">⬇ Download .doc</button>
+        <button onClick={() => { const nw = window.open("", "_blank"); if (nw) { nw.document.write(r.html); nw.document.close(); } }} className="text-[10px] font-medium px-2.5 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⤢ Open full</button>
+      </div>
     </div>
   );
   return <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words">{JSON.stringify(r, null, 2)}</pre>;
@@ -270,6 +280,8 @@ export default function Deals() {
   const [compKw, setCompKw] = useState("");
   const [siteInput, setSiteInput] = useState("");
   const [doneActions, setDoneActions] = useState<string[]>([]);
+  const [docLang, setDocLang] = useState("US English");
+  const [docCurrency, setDocCurrency] = useState("USD");
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -403,7 +415,7 @@ export default function Deals() {
   const clearDoneWins = () => { setWindows(w => w.filter(x => x.status === "running")); setFocusedWin(f => { const still = windows.find(x => x.id === f); return still && still.status === "running" ? f : ""; }); };
   const restoreWin = (w: Win) => { if (w.dealId && w.dealId !== (selected?.id || "")) { openDeal(w.dealId).then(() => setFocusedWin(w.id)); } else setFocusedWin(w.id); };
   const useReply = (t: string) => { setReplyDraft(t); copy(t); };
-  const downloadWin = (w: Win) => { try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(w.dealName || clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
+  const downloadWin = (w: Win) => { if (w.type === "doc" && w.result?.html) { try { const wrapped = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word'><head><meta charset='utf-8'></head><body>${w.result.html}</body></html>`; const blob = new Blob([wrapped], { type: "application/msword" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${(w.result.title || w.dealName || "document").replace(/\W+/g, "_")}.doc`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } return; } try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(w.dealName || clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
 
   const runAudit = async (auto = false) => {
     if (!clientSite) { if (auto) return; const id = newWin("audit", "Site audit", true); patchWin(id, { status: "error", error: "No client website yet — enter the client's site in the 'Client site' box at the top of the right panel, then run the audit." }); return; }
@@ -456,6 +468,30 @@ export default function Deals() {
     if (/competitor|serp|gap analysis|benchmark|rank.*compar/.test(t)) return { label: "Competitor", run: () => runCompetitor() };
     if (/repl|respond|message|answer|follow.?up|reach out|send them|outreach|pitch/.test(t)) return { label: "Draft reply", run: () => genVariants() };
     return { label: "Draft this", run: () => askQuestion(`How should I handle this, and draft anything I can send to the client: ${text}`) };
+  };
+
+  /* Documents: reuse the existing generate_client_doc engine, fed by THIS deal's context
+     (strategy → conversation analysis, cached audit → audit findings). Auto-saved to the deal. */
+  const stripHtml = (h: string) => String(h || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const docAnalysis = () => {
+    const ci = strategy?.client_intel || {};
+    const temp = strategy?.deal_state?.temperature || "";
+    return { main_need: (ci.wants || [])[0] || strategy?.deal_facts?.service || strategy?.deal_state?.summary || "", urgency: temp, hidden_concern: (ci.objections || [])[0] || (ci.pain_points || [])[0] || "", best_next_message: strategy?.next_move || "", fiverr_specific: { conversion_blocker: (strategy?.risk_flags || [])[0] || (ci.objections || [])[0] || "", order_probability: temp === "hot" ? 70 : temp === "warm" ? 45 : 25 } };
+  };
+  const docAudit = () => {
+    const w = windows.find(x => x.type === "audit" && (x.dealId || "") === (selected?.id || "") && x.status === "done" && x.result);
+    if (!w?.result) return undefined;
+    const rep: any = w.result;
+    const issues = Object.entries(rep.issues || {}).map(([k, v]: any) => ({ issue: `${(v as any).count} ${String(k).replace(/_/g, " ")}`, fix: "" }));
+    return { url: clientSite || (rep.project_domain ? `https://${rep.project_domain}` : ""), score: rep.performance?.performance_score, issues, quickWins: [] };
+  };
+  const genDoc = async (docType: string, label: string) => {
+    const id = newWin("doc", label, true);
+    const suggestionContext = (selected?.attachments || []).filter((a: any) => ["aeo", "competitor", "audit"].includes(a.kind)).map((a: any) => a.text).join("\n").slice(0, 1800);
+    const r: any = await post("generate_client_doc", { docType, conversationAnalysis: docAnalysis(), auditResult: docAudit(), leadInfo: { url: clientSite, name: clientName, industry: strategy?.deal_facts?.industry || "" }, brandName: "Manav S", language: docLang, currency: docCurrency, suggestionContext });
+    if (!r?.success || !r?.html) { patchWin(id, { status: "error", error: r?.error || "Could not generate the document." }); return; }
+    patchWin(id, { status: "done", result: { kind: "doc", html: r.html, title: r.title || label, docType } });
+    if (selected?.id) { try { await post("bd_deal_attach", { id: selected.id, name: r.title || label, kind: "doc", text: stripHtml(r.html).slice(0, 40000) }); const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
   };
 
   const launchDemo = () => {
@@ -682,6 +718,21 @@ export default function Deals() {
                   <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary mb-1.5" />
                   <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
                   <button onClick={() => runCompetitor()} className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⚔ Run snapshot</button>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mt-2">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Documents — client-ready</div>
+                  <div className="flex gap-1.5 mb-2">
+                    <select value={docLang} onChange={e => setDocLang(e.target.value)} className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["US English", "UK English", "Australian English", "Hindi", "Punjabi", "Arabic", "French", "German", "Spanish", "Portuguese", "Urdu"].map(l => <option key={l} value={l}>{l}</option>)}</select>
+                    <select value={docCurrency} onChange={e => setDocCurrency(e.target.value)} className="w-[72px] shrink-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["USD", "GBP", "EUR", "INR", "AED", "AUD", "CAD", "SAR"].map(c => <option key={c} value={c}>{c}</option>)}</select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([["proposal", "📄", "Proposal"], ["audit_summary", "📊", "Audit summary"], ["pitch_email", "✉️", "Pitch email"], ["followup_email", "📨", "Follow-up"], ["whatsapp_msg", "💬", "Short message"], ["objection_response", "🛡", "Objection reply"]] as const).map(([dt, icon, label]) => (
+                      <button key={dt} onClick={() => genDoc(dt, label)} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
+                        <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
+                        <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 {showCsLib && (
                   <div className="text-xs space-y-2 mt-2 rounded-lg border border-border p-2">
