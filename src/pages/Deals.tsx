@@ -70,10 +70,10 @@ const Section = ({ title, children }: { title: string; children: any }) => (<div
 const List = ({ items }: { items: string[] }) => (<ul className="list-disc ml-4 text-xs text-muted-foreground space-y-0.5">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>);
 function Acc({ k, title, children, defaultBadge, open, toggle }: { k: string; title: string; children: any; defaultBadge?: any; open: Record<string, boolean>; toggle: (k: string) => void }) {
   return (
-    <div className="border-b border-border">
-      <button onClick={() => toggle(k)} className="w-full flex items-center justify-between py-2.5 text-left">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}{defaultBadge != null && <span className="ml-1.5 text-primary normal-case">{defaultBadge}</span>}</span>
-        <span className="text-muted-foreground text-xs">{open[k] ? "▾" : "▸"}</span>
+    <div className="border-b border-border/60">
+      <button onClick={() => toggle(k)} className="w-full flex items-center justify-between py-2.5 text-left group">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground group-hover:text-foreground transition-colors">{title}{defaultBadge != null && <span className="ml-1.5 text-primary/80 normal-case tracking-normal font-medium">{defaultBadge}</span>}</span>
+        <span className={`text-muted-foreground text-[10px] transition-transform ${open[k] ? "rotate-90" : ""}`}>▸</span>
       </button>
       {open[k] && <div className="pb-3">{children}</div>}
     </div>
@@ -98,29 +98,95 @@ function winExportText(w: Win): string {
 
 function WinBody({ w, onUseReply }: { w: Win; onUseReply: (t: string) => void }) {
   const r = w.result || {};
-  if (w.type === "audit") return (<div className="text-xs space-y-1 text-muted-foreground"><p className="text-foreground">Crawled {r.pages_reachable} page(s) of {r.project_domain}.</p>{r.performance && <p>Performance {r.performance.performance_score}/100 · LCP {r.performance.lcp}</p>}{Object.entries(r.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 14).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}{Object.keys(r.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(r.schema_coverage).join(", ")}</p>}</div>);
-  if (w.type === "aeo") return (<div className="text-xs space-y-1 text-muted-foreground">{(r.signals || []).map((s: any, i: number) => <div key={i} style={{ color: s.ok ? "#10b981" : "#ef4444" }}>{s.ok ? "✓" : "✗"} <span className="text-foreground">{s.label}</span></div>)}{r.schema_types?.length > 0 && <p>Schema: {r.schema_types.join(", ")}</p>}<p>{r.robots_ai}</p>{r.recommendations?.length > 0 && <div><span className="text-foreground font-semibold">Fixes:</span><List items={r.recommendations} /></div>}</div>);
-  if (w.type === "competitor") return (<div className="text-xs space-y-1.5 text-muted-foreground">{r.summary && <p>{r.summary}</p>}{r.keyword_gap?.biggest_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Where they beat you:</span><ul className="list-disc ml-4">{r.keyword_gap.biggest_gaps.slice(0, 8).map((g: any, i: number) => <li key={i}>"{g.query}" — {g.competitor} #{g.competitor_position}{g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}</li>)}</ul></div>}{r.content_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Content gaps:</span><ul className="list-disc ml-4">{r.content_gaps.slice(0, 8).map((c: any, i: number) => <li key={i}>{c.topic || c.query || ""}</li>)}</ul></div>}</div>);
-  if (w.type === "offer") return (<div className="text-xs space-y-1.5 text-muted-foreground"><div className="text-foreground font-semibold">{r.recommended_package} · {r.price_band} · {r.delivery_time}</div>{r.scope?.length > 0 && <div><span className="text-foreground">Includes:</span><List items={r.scope} /></div>}{r.deliverables?.length > 0 && <div><span className="text-foreground">Deliverables:</span><List items={r.deliverables} /></div>}{r.addons?.length > 0 && <div><span className="text-foreground">Add-ons:</span><ul className="list-disc ml-4">{r.addons.map((a: any, i: number) => <li key={i}>{a.name} — {a.price}</li>)}</ul></div>}{r.rationale && <p>{r.rationale}</p>}{r.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2 mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => onUseReply(r.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.offer_text}</p></div>}</div>);
-  if (w.type === "roadmap") return (<div className="text-xs space-y-1.5 text-muted-foreground">{r.summary && <p>{r.summary}</p>}{r.phase_30?.length > 0 && <div><span className="text-foreground font-semibold">First 30 days</span><List items={r.phase_30} /></div>}{r.phase_60?.length > 0 && <div><span className="text-foreground font-semibold">Days 31–60</span><List items={r.phase_60} /></div>}{r.phase_90?.length > 0 && <div><span className="text-foreground font-semibold">Days 61–90</span><List items={r.phase_90} /></div>}</div>);
-  if (w.type === "casestudy") return (<div className="text-xs space-y-1 text-muted-foreground">{r.matched?.title && <div className="text-foreground font-semibold">{r.matched.title}{r.matched.industry ? ` · ${r.matched.industry}` : ""}</div>}{r.why && <p>{r.why}</p>}{r.client_snippet && <div className="rounded border border-primary/30 bg-primary/5 p-2 mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Share with client</span><button onClick={() => onUseReply(r.client_snippet)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.client_snippet}</p></div>}</div>);
-  if (w.type === "ask") return (<div className="text-xs space-y-2 text-muted-foreground"><p className="whitespace-pre-wrap break-words text-foreground">{r.answer}</p>{r.client_reply && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Reply you can send</span><button onClick={() => onUseReply(r.client_reply)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.client_reply}</p></div>}{r.suggested_tools?.length > 0 && <div className="flex flex-wrap gap-1">{r.suggested_tools.map((t: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-muted border border-border">{t}</span>)}</div>}</div>);
+  const lbl = "text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground";
+  const snippet = (heading: string, text: string) => (
+    <div className="rounded-xl border border-primary/25 bg-primary/[0.06] p-2.5 mt-1">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[10px] font-semibold text-primary uppercase tracking-[0.13em]">{heading}</span>
+        <button onClick={() => onUseReply(text)} className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">Use &amp; copy</button>
+      </div>
+      <p className="whitespace-pre-wrap break-words text-foreground text-[12.5px] leading-relaxed">{text}</p>
+    </div>
+  );
+  if (w.type === "audit") return (
+    <div className="space-y-3.5 text-[13px]">
+      <div className="flex items-baseline gap-2 flex-wrap"><span className="font-mono text-foreground font-medium">{r.project_domain}</span><span className="text-muted-foreground text-xs tabular-nums">{r.pages_reachable} pages crawled</span></div>
+      {r.performance && <div className="flex items-center gap-3 text-xs text-muted-foreground"><span>Performance <span className="font-mono tabular-nums text-foreground font-semibold">{r.performance.performance_score}</span>/100</span><span>LCP <span className="font-mono tabular-nums text-foreground">{r.performance.lcp}</span></span></div>}
+      <div>
+        <div className={lbl + " mb-2"}>Issues found</div>
+        <div className="space-y-1.5">{Object.entries(r.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 14).map(([k, v]: any) => <div key={k} className="flex items-center gap-2.5 text-muted-foreground"><span className="font-mono tabular-nums text-foreground/80 w-7 text-right shrink-0">{v.count}</span><span>{k.replace(/_/g, " ")}</span></div>)}</div>
+      </div>
+      {Object.keys(r.schema_coverage || {}).length > 0 && <div><div className={lbl + " mb-2"}>Schema present</div><div className="flex flex-wrap gap-1">{Object.keys(r.schema_coverage).map((s: string) => <span key={s} className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">{s}</span>)}</div></div>}
+    </div>
+  );
+  if (w.type === "aeo") return (
+    <div className="space-y-3 text-[13px]">
+      <div className="space-y-1.5">{(r.signals || []).map((s: any, i: number) => <div key={i} className="flex items-center gap-2"><span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] shrink-0 ${s.ok ? "bg-emerald-500/15 text-emerald-600" : "bg-rose-500/15 text-rose-600"}`}>{s.ok ? "✓" : "✕"}</span><span className="text-foreground">{s.label}</span></div>)}</div>
+      {r.schema_types?.length > 0 && <div className="flex flex-wrap gap-1">{r.schema_types.map((s: string) => <span key={s} className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-muted text-muted-foreground">{s}</span>)}</div>}
+      {r.robots_ai && <p className="text-muted-foreground text-xs">{r.robots_ai}</p>}
+      {r.recommendations?.length > 0 && <div><div className={lbl + " mb-2"}>Fixes to pitch</div><List items={r.recommendations} /></div>}
+    </div>
+  );
+  if (w.type === "competitor") return (
+    <div className="space-y-3.5 text-[13px]">
+      {r.summary && <p className="text-muted-foreground leading-relaxed">{r.summary}</p>}
+      {r.keyword_gap?.biggest_gaps?.length > 0 && <div><div className={lbl + " mb-2"}>Where they beat you</div><div className="space-y-1.5">{r.keyword_gap.biggest_gaps.slice(0, 8).map((g: any, i: number) => <div key={i} className="text-muted-foreground"><span className="font-mono text-foreground/90">"{g.query}"</span> — {g.competitor} <span className="tabular-nums">#{g.competitor_position}</span>{g.client_position ? <span> vs you <span className="tabular-nums">#{g.client_position}</span></span> : <span className="text-rose-500"> (you absent)</span>}</div>)}</div></div>}
+      {r.content_gaps?.length > 0 && <div><div className={lbl + " mb-2"}>Content gaps</div><List items={r.content_gaps.slice(0, 8).map((c: any) => c.topic || c.query || "")} /></div>}
+    </div>
+  );
+  if (w.type === "offer") return (
+    <div className="space-y-3 text-[13px]">
+      <div className="flex items-center gap-2 flex-wrap"><span className="text-foreground font-semibold tracking-tight">{r.recommended_package}</span><span className="font-mono text-primary text-xs px-2 py-0.5 rounded-md bg-primary/10 ring-1 ring-primary/20">{r.price_band}</span><span className="text-muted-foreground text-xs">{r.delivery_time}</span></div>
+      {r.scope?.length > 0 && <div><div className={lbl + " mb-2"}>Includes</div><List items={r.scope} /></div>}
+      {r.deliverables?.length > 0 && <div><div className={lbl + " mb-2"}>Deliverables</div><List items={r.deliverables} /></div>}
+      {r.addons?.length > 0 && <div><div className={lbl + " mb-2"}>Add-ons</div><div className="space-y-1">{r.addons.map((a: any, i: number) => <div key={i} className="flex items-center justify-between text-muted-foreground"><span>{a.name}</span><span className="font-mono text-foreground/90">{a.price}</span></div>)}</div></div>}
+      {r.rationale && <p className="text-muted-foreground text-xs leading-relaxed">{r.rationale}</p>}
+      {r.offer_text && snippet("Offer message", r.offer_text)}
+    </div>
+  );
+  if (w.type === "roadmap") return (
+    <div className="space-y-3 text-[13px]">
+      {r.summary && <p className="text-muted-foreground leading-relaxed">{r.summary}</p>}
+      {[["First 30 days", r.phase_30], ["Days 31–60", r.phase_60], ["Days 61–90", r.phase_90]].map(([t, arr]: any, i: number) => (arr?.length > 0 ? <div key={i}><div className={lbl + " mb-2"}>{t}</div><List items={arr} /></div> : null))}
+    </div>
+  );
+  if (w.type === "casestudy") return (
+    <div className="space-y-2.5 text-[13px]">
+      {r.matched?.title && <div className="text-foreground font-semibold tracking-tight">{r.matched.title}{r.matched.industry ? <span className="text-muted-foreground font-normal"> · {r.matched.industry}</span> : ""}</div>}
+      {r.why && <p className="text-muted-foreground leading-relaxed">{r.why}</p>}
+      {r.client_snippet && snippet("Share with client", r.client_snippet)}
+    </div>
+  );
+  if (w.type === "ask") return (
+    <div className="space-y-3 text-[13px]">
+      <p className="whitespace-pre-wrap break-words text-foreground leading-relaxed">{r.answer}</p>
+      {r.client_reply && snippet("Reply you can send", r.client_reply)}
+      {r.suggested_tools?.length > 0 && <div className="flex flex-wrap gap-1">{r.suggested_tools.map((t: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 rounded-md bg-muted ring-1 ring-border/60 text-muted-foreground">{t}</span>)}</div>}
+    </div>
+  );
   return <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words">{JSON.stringify(r, null, 2)}</pre>;
 }
 
 function WinManager({ win, onMin, onClose, onDownload, onUseReply }: { win: Win; onMin: () => void; onClose: () => void; onDownload: () => void; onUseReply: (t: string) => void }) {
+  const running = win.status === "running";
   return (
-    <div className="fixed z-50 right-6 top-24 w-[460px] max-w-[92vw] max-h-[74vh] rounded-2xl border border-border bg-card shadow-2xl flex flex-col">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
-        <span>{WIN_ICON[win.type] || "•"}</span>
-        <span className="text-sm font-semibold truncate flex-1">{win.title}</span>
-        {win.status === "done" && <button onClick={onDownload} className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Export</button>}
-        <button onClick={onMin} title="Minimize" className="text-muted-foreground hover:text-foreground text-sm px-1.5">—</button>
-        <button onClick={onClose} title="Close" className="text-muted-foreground hover:text-foreground text-sm px-1.5">✕</button>
+    <div className="fixed z-50 right-5 top-20 w-[480px] max-w-[93vw] max-h-[76vh] rounded-2xl border border-border/70 bg-card/95 backdrop-blur-2xl shadow-[0_30px_70px_-20px_rgba(15,23,42,0.45)] ring-1 ring-black/[0.04] flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-border/60 bg-gradient-to-b from-muted/30 to-transparent">
+        <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center text-[15px] shrink-0">{WIN_ICON[win.type] || "•"}</span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold tracking-tight text-foreground truncate leading-tight">{win.title}</div>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-amber-500 animate-pulse" : win.status === "error" ? "bg-rose-500" : "bg-emerald-500"}`} />
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{running ? "Working" : win.status === "error" ? "Couldn't finish" : "Ready"}</span>
+          </div>
+        </div>
+        {win.status === "done" && <button onClick={onDownload} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors shrink-0">Export</button>}
+        <button onClick={onMin} title="Minimize" className="w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors flex items-center justify-center text-lg leading-none shrink-0">–</button>
+        <button onClick={onClose} title="Close" className="w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors flex items-center justify-center text-sm shrink-0">✕</button>
       </div>
-      <div className="overflow-y-auto p-4">
-        {win.status === "running" ? <div className="flex items-center gap-2 text-muted-foreground text-sm"><span className="animate-pulse text-primary">●</span> Running… crawls and SERP checks can take a moment.</div>
-          : win.status === "error" ? <div className="text-sm" style={{ color: "#ef4444" }}>{win.error}</div>
+      <div className="overflow-y-auto px-4 py-4">
+        {running ? <div className="flex items-center gap-2.5 text-muted-foreground text-[13px] py-2"><span className="w-4 h-4 rounded-full border-2 border-primary/25 border-t-primary animate-spin shrink-0" /> Working through it — live crawls and SERP take a few seconds.</div>
+          : win.status === "error" ? <div className="text-[13px] text-rose-500 py-1">{win.error}</div>
             : <WinBody w={win} onUseReply={onUseReply} />}
       </div>
     </div>
@@ -130,14 +196,17 @@ function WinManager({ win, onMin, onClose, onDownload, onUseReply }: { win: Win;
 function WinTaskbar({ windows, onRestore, onClose }: { windows: Win[]; onRestore: (id: string) => void; onClose: (id: string) => void }) {
   if (!windows.length) return null;
   return (
-    <div className="fixed z-40 bottom-3 left-1/2 -translate-x-1/2 flex gap-2 px-2 py-1.5 rounded-2xl border border-border bg-card shadow-xl max-w-[92vw] overflow-x-auto">
-      {windows.map(w => (
-        <div key={w.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs whitespace-nowrap">
-          <span style={{ color: w.status === "error" ? "#ef4444" : w.status === "done" ? "#10b981" : "#6366f1" }} className={w.status === "running" ? "animate-pulse" : ""}>{w.status === "running" ? "●" : w.status === "error" ? "✗" : "✓"}</span>
-          <button onClick={() => onRestore(w.id)} className="truncate max-w-[150px] text-foreground">{WIN_ICON[w.type] || ""} {w.title}</button>
-          <button onClick={() => onClose(w.id)} className="text-muted-foreground hover:text-foreground">×</button>
-        </div>
-      ))}
+    <div className="fixed z-40 bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1.5 rounded-2xl border border-border/60 bg-card/80 backdrop-blur-2xl shadow-[0_18px_50px_-15px_rgba(15,23,42,0.5)] ring-1 ring-black/[0.04] max-w-[94vw] overflow-x-auto">
+      {windows.map(w => {
+        const running = w.status === "running";
+        return (
+          <div key={w.id} className="group flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-xl border border-border/50 bg-background/40 hover:bg-muted/60 hover:border-border transition-all whitespace-nowrap">
+            <span className={`w-2 h-2 rounded-full ring-2 ring-background ${running ? "bg-amber-500 animate-pulse" : w.status === "error" ? "bg-rose-500" : "bg-emerald-500"}`} />
+            <button onClick={() => onRestore(w.id)} className="flex items-center gap-1.5 text-[11px] font-medium tracking-tight text-foreground/90 max-w-[160px]"><span className="text-xs shrink-0">{WIN_ICON[w.type] || ""}</span><span className="truncate">{w.title}</span></button>
+            <button onClick={() => onClose(w.id)} className="w-4 h-4 rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted flex items-center justify-center text-xs leading-none opacity-0 group-hover:opacity-100 transition-opacity shrink-0">×</button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -356,10 +425,10 @@ export default function Deals() {
       <div className="max-w-[1700px] mx-auto px-3 py-4 grid grid-cols-1 lg:grid-cols-[270px_1fr_350px] gap-4 h-[calc(100vh-90px)]">
 
         {/* LEFT — conversations */}
-        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col min-h-0 min-w-0">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-bold">All conversations</h2>
-            <button onClick={newDeal} className="text-xs px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90">+ New</button>
+        <div className="rounded-2xl border border-border/70 bg-card shadow-sm p-3 flex flex-col min-h-0 min-w-0">
+          <div className="flex items-center justify-between mb-2.5">
+            <h2 className="text-[13px] font-semibold tracking-tight">Conversations</h2>
+            <button onClick={newDeal} className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium shadow-sm hover:shadow transition-shadow">+ New</button>
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && loadList()} placeholder="Search…" className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary mb-2" />
           <div className="flex gap-1 mb-2 flex-wrap">
@@ -411,10 +480,10 @@ export default function Deals() {
         </div>
 
         {/* CENTER — chat + composer */}
-        <div className="rounded-2xl border border-border bg-card flex flex-col min-h-0 min-w-0">
+        <div className="rounded-2xl border border-border/70 bg-card shadow-sm flex flex-col min-h-0 min-w-0">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
-            <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">{(clientName || "?").slice(0, 1).toUpperCase()}</div>
-            <div className="font-semibold text-sm truncate">{clientName}</div>
+            <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold ring-1 ring-primary/15">{(clientName || "?").slice(0, 1).toUpperCase()}</div>
+            <div className="font-semibold text-sm tracking-tight truncate">{clientName}</div>
             {strategy?.deal_state?.stage && <Chip text={strategy.deal_state.stage} color={stageColor(strategy.deal_state.stage)} />}
             {selected?.id && <Chip text="✓ saved" color="#10b981" />}
             {(clientSite || conversation.trim()) && <button onClick={launchDemo} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo →</button>}
@@ -468,13 +537,13 @@ export default function Deals() {
         </div>
 
         {/* RIGHT — advanced intelligence */}
-        <div className="rounded-2xl border border-border bg-card overflow-y-auto min-h-0 min-w-0">
+        <div className="rounded-2xl border border-border/70 bg-card shadow-sm overflow-y-auto min-h-0 min-w-0">
           {(selected || conversation.trim()) && (
-            <div className="px-4 pt-3 pb-3 border-b border-border">
-              <div className="text-[11px] font-semibold text-primary uppercase tracking-wider mb-1.5">✨ Ask the expert</div>
+            <div className="px-4 pt-3.5 pb-3.5 border-b border-border/60">
+              <div className="text-[10px] font-semibold text-primary uppercase tracking-[0.13em] mb-2 flex items-center gap-1.5"><span>✨</span> Ask the expert</div>
               <textarea value={askInput} onChange={e => setAskInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(); }}
-                placeholder="Ask anything — a client's technical question, your own thinking, what to propose. Grounded in this deal." className="w-full h-14 px-2 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
-              <button onClick={ask} disabled={asking || !askInput.trim()} className="mt-1 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{asking ? "Thinking…" : "Ask"}</button>
+                placeholder="Ask anything — a client's technical question, your own thinking, what to propose. Grounded in this deal." className="w-full h-14 px-3 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-shadow resize-y" />
+              <button onClick={ask} disabled={asking || !askInput.trim()} className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold shadow-sm hover:shadow disabled:opacity-50 disabled:shadow-none transition-shadow">{asking ? <><span className="w-3 h-3 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" /> Thinking…</> : "Ask"}</button>
               {askResult && (
                 <div className="mt-2 rounded-lg border border-border p-2 text-xs space-y-2">
                   <p className="whitespace-pre-wrap break-words text-foreground">{askResult.answer}</p>
@@ -529,18 +598,19 @@ export default function Deals() {
 
               <Acc open={open} toggle={toggle} k="apps" title="Run a tool" defaultBadge="opens as a window">
                 <div className="grid grid-cols-2 gap-1.5 mb-2">
-                  <button onClick={() => runAudit()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🔍 Site audit</button>
-                  <button onClick={() => runAeo()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🤖 AEO readiness</button>
-                  <button onClick={() => genOffer()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">💰 Offer &amp; pricing</button>
-                  <button onClick={() => genRoadmap()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🗺 30/60/90 roadmap</button>
-                  <button onClick={() => matchCase()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">📂 Case study</button>
-                  <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:border-primary">⚙ Case library</button>
+                  {([["audit", "🔍", "Site audit", () => runAudit()], ["aeo", "🤖", "AEO readiness", () => runAeo()], ["offer", "💰", "Offer & pricing", () => genOffer()], ["roadmap", "🗺", "30/60/90 plan", () => genRoadmap()], ["case", "📂", "Case study", () => matchCase()]] as const).map(([k, icon, label, fn]) => (
+                    <button key={k} onClick={fn} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
+                      <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
+                      <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
+                    </button>
+                  ))}
+                  <button onClick={() => setShowCsLib(v => !v)} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-dashed border-border/70 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all text-left"><span className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-[13px] shrink-0">⚙</span><span className="text-[11px] font-medium tracking-tight truncate">Case library</span></button>
                 </div>
-                <div className="rounded-lg border border-border p-2">
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Competitor snapshot</div>
-                  <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-1" />
-                  <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
-                  <button onClick={() => runCompetitor()} className="text-[11px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">⚔ Run competitor snapshot</button>
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Competitor snapshot</div>
+                  <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary mb-1.5" />
+                  <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
+                  <button onClick={() => runCompetitor()} className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⚔ Run snapshot</button>
                 </div>
                 {showCsLib && (
                   <div className="text-xs space-y-2 mt-2 rounded-lg border border-border p-2">
