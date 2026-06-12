@@ -30,6 +30,7 @@ export interface DealStrategy {
   call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
   needs_attachments: Array<{ kind: string; what: string; note: string }>;
   reminders:    Array<{ text: string; when: string }>;
+  deal_facts:   { budget: string; timeline: string; location: string; platform: string; service: string; deliverables: string[]; urls: string[]; competitors: string[]; prices_discussed: string[]; files_shared: string[]; key_dates: string[]; other_facts: string[] };
   risk_flags:   string[];
   generated_at: string;
 }
@@ -47,6 +48,7 @@ const SYSTEM = [
   `Produce:`,
   `- needs_attachments: anything the conversation REFERENCES that the seller should add to this deal so it can be used — a brief/document the client shared, a file to review before a call, a call transcript, screenshots. Each {"kind":"document"|"transcript"|"file","what":"...","note":"..."}. Empty if none referenced.`,
   `- reminders: time-sensitive things to remember, each {"text":"...","when":"..."}. Include the 30-day call-recording save when a call is involved, and follow-up timing if the client may go quiet.`,
+  `- deal_facts: EVERY concrete fact actually STATED in the chat (do not infer): budget (stated budget or price the client gave), timeline (deadlines/turnaround they mentioned), location (their location/timezone), platform (their CMS/platform), service (the gig or service requested), deliverables (the explicit list of things they asked for — each as a separate item, verbatim where possible), urls (every website or domain mentioned), competitors (competitor names or sites mentioned), prices_discussed (any prices or offers mentioned in the conversation), files_shared (files, documents, or links the client referenced or shared), key_dates (specific dates or times mentioned), other_facts (any other concrete detail worth keeping). Use empty string/array where a fact is not present. Capture, do not summarise.`,
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
   `- client_site: the client's website domain if mentioned anywhere (bare domain, no protocol; empty if none).`,
   `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
@@ -60,7 +62,7 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","deliverables":[],"urls":[],"competitors":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
@@ -70,6 +72,7 @@ const EMPTY: DealStrategy = {
   next_move: "", draft_reply: "", action_items: [],
   call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
   needs_attachments: [], reminders: [],
+  deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", deliverables: [], urls: [], competitors: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
   risk_flags: [], generated_at: "",
 };
 
@@ -102,6 +105,12 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
       call_script: { needed: Boolean(p.call_script?.needed), opening: String(p.call_script?.opening || ""), discovery_questions: arr(p.call_script?.discovery_questions), value_points: arr(p.call_script?.value_points), objection_handling: arr(p.call_script?.objection_handling), close: String(p.call_script?.close || "") },
       needs_attachments: Array.isArray(p.needs_attachments) ? p.needs_attachments.map((a: any) => ({ kind: String(a?.kind || "file"), what: String(a?.what || ""), note: String(a?.note || "") })).filter((a: any) => a.what) : [],
       reminders: Array.isArray(p.reminders) ? p.reminders.map((r: any) => ({ text: String(r?.text || ""), when: String(r?.when || "") })).filter((r: any) => r.text) : [],
+      deal_facts: {
+        budget: String(p.deal_facts?.budget || ""), timeline: String(p.deal_facts?.timeline || ""), location: String(p.deal_facts?.location || ""),
+        platform: String(p.deal_facts?.platform || ""), service: String(p.deal_facts?.service || ""),
+        deliverables: arr(p.deal_facts?.deliverables), urls: arr(p.deal_facts?.urls), competitors: arr(p.deal_facts?.competitors),
+        prices_discussed: arr(p.deal_facts?.prices_discussed), files_shared: arr(p.deal_facts?.files_shared), key_dates: arr(p.deal_facts?.key_dates), other_facts: arr(p.deal_facts?.other_facts),
+      },
       risk_flags: arr(p.risk_flags),
       generated_at: now,
     };

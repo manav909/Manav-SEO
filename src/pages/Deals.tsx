@@ -90,7 +90,7 @@ export default function Deals() {
   const [replyDraft, setReplyDraft] = useState("");
   const [audit, setAudit] = useState<any>(null);
   const [auditing, setAuditing] = useState(false);
-  const [open, setOpen] = useState<Record<string, boolean>>({ next: true, client: true, actions: true });
+  const [open, setOpen] = useState<Record<string, boolean>>({ facts: true, next: true, client: true, actions: true });
   const [nameInput, setNameInput] = useState("");
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
@@ -208,6 +208,8 @@ export default function Deals() {
   const clientSite = strategy?.client_site || "";
   const messages = parseThread(conversation);
   const intel = strategy?.client_intel || {};
+  const df = strategy?.deal_facts || {};
+  const hasFacts = !!(df.budget || df.timeline || df.location || df.platform || df.service || df.deliverables?.length || df.urls?.length || df.competitors?.length || df.prices_discussed?.length || df.files_shared?.length || df.key_dates?.length || df.other_facts?.length);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -315,6 +317,25 @@ export default function Deals() {
               )}
 
               {strategy?.next_move && <Acc k="next" title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Acc>}
+
+              {hasFacts && (
+                <Acc k="facts" title="Deal facts" defaultBadge="captured from chat">
+                  <div className="text-xs space-y-1.5">
+                    {df.budget && <div><span className="text-muted-foreground">Budget:</span> <span className="text-foreground">{df.budget}</span></div>}
+                    {df.timeline && <div><span className="text-muted-foreground">Timeline:</span> <span className="text-foreground">{df.timeline}</span></div>}
+                    {df.platform && <div><span className="text-muted-foreground">Platform:</span> <span className="text-foreground">{df.platform}</span></div>}
+                    {df.location && <div><span className="text-muted-foreground">Location:</span> <span className="text-foreground">{df.location}</span></div>}
+                    {df.service && <div><span className="text-muted-foreground">Service:</span> <span className="text-foreground">{df.service}</span></div>}
+                    {df.deliverables?.length > 0 && <div><span className="text-muted-foreground">Deliverables:</span><List items={df.deliverables} /></div>}
+                    {df.urls?.length > 0 && <div><span className="text-muted-foreground">URLs:</span><List items={df.urls} /></div>}
+                    {df.competitors?.length > 0 && <div><span className="text-muted-foreground">Competitors:</span><List items={df.competitors} /></div>}
+                    {df.prices_discussed?.length > 0 && <div><span className="text-muted-foreground">Prices discussed:</span><List items={df.prices_discussed} /></div>}
+                    {df.files_shared?.length > 0 && <div><span className="text-muted-foreground">Files referenced:</span><List items={df.files_shared} /></div>}
+                    {df.key_dates?.length > 0 && <div><span className="text-muted-foreground">Key dates:</span><List items={df.key_dates} /></div>}
+                    {df.other_facts?.length > 0 && <div><span className="text-muted-foreground">Other:</span><List items={df.other_facts} /></div>}
+                  </div>
+                </Acc>
+              )}
 
               <Acc k="audit" title="Quick site audit" defaultBadge="demo · inline">
                 <button onClick={runAudit} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
