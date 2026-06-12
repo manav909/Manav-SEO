@@ -271,6 +271,26 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "doc generation failed" }; }
   }
 
+  if (action === "bd_ingest_order") {
+    const id = String(body?.id || "").trim();
+    const text = String(body?.orderText || body?.text || "").trim();
+    if (!id) return { success: false, error: "Save the deal first, then paste the order." };
+    if (!text) return { success: false, error: "Paste the Fiverr Order page content." };
+    try {
+      const { extractOrder } = await import("./bd-strategist.js");
+      const r = await extractOrder(text);
+      if (!r.ok || !r.order) return { success: false, error: r.error || "Could not read the order page." };
+      const summary = r.summary || "Fiverr order";
+      const { data } = await db().from("bd_deals").select("attachments, status").eq("id", id).single();
+      const existing = Array.isArray((data as any)?.attachments) ? (data as any).attachments.filter((a: any) => a.kind !== "order") : [];
+      const orderAtt = { name: "Fiverr order" + (r.order.order_number ? ` ${r.order.order_number}` : ""), kind: "order", text: summary, order: r.order, added_at: new Date().toISOString() };
+      const curStatus = String((data as any)?.status || "");
+      const nextStatus = ["repeat", "completed", "hired"].includes(curStatus) ? curStatus : "in_delivery";
+      const { data: updated } = await db().from("bd_deals").update({ attachments: [...existing, orderAtt], status: nextStatus, last_message_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", id).select().single();
+      return { success: true, order: r.order, summary, deal: updated };
+    } catch (e: any) { return { success: false, error: e?.message || "order ingest failed" }; }
+  }
+
   if (action === "bd_aeo_check") {
     const siteUrl = String(body?.siteUrl || "").trim();
     if (!siteUrl) return { success: false, error: "No client site URL — detect it from the chat or add it." };

@@ -287,6 +287,35 @@ export async function generateDoc(opts: {
   } catch (e: any) { return { ok: false, error: e?.message || "doc failed" }; }
 }
 
+/* ─── Fiverr ORDER PAGE reader. The order page (after a buyer places an order) holds the
+   real, structured engagement data — dates, status, deliveries, and the requirements the
+   client actually submitted — separate from the inbox chat. Factual extraction only. ─── */
+export interface OrderInfo { order_number: string; status: string; package: string; price: string; ordered_at: string; due_at: string; delivered_at: string; delivery_time: string; revisions: string; requirements: string[]; deliverables: string[]; extras: string[]; key_dates: Array<{ label: string; date: string }>; notes: string[] }
+export async function extractOrder(orderText: string): Promise<{ ok: boolean; order?: OrderInfo; summary?: string; error?: string }> {
+  const t = String(orderText || "").trim();
+  if (!t) return { ok: false, error: "Paste the Fiverr Order page content." };
+  const system = [
+    `You are reading a Fiverr ORDER page — the page that exists after a buyer places an order, separate from the inbox chat. Extract the REAL order details exactly as written. This is factual data: never invent, guess, or fill blanks. If a field is not present on the page, leave it empty.`,
+    `Extract: order_number; status (e.g. active / in progress / delivered / completed / late / cancelled / revision requested); package or tier name; price or total (include the currency exactly as shown); ordered_at; due_at; delivered_at; delivery_time; revisions (allowed or used); requirements (each item the buyer submitted in the requirements/brief — this is what the client actually provided, as a list); deliverables or scope (what was ordered, as a list); extras / add-ons (list); key_dates (a list of {label, date} for any dated activity shown in the order activity); notes (anything important shown — late delivery, revision asked, extension granted, delivery sent, etc.).`,
+    `Also write a concise plain-text summary of the order for context.`,
+    `Return ONLY valid JSON: {"order":{"order_number":"","status":"","package":"","price":"","ordered_at":"","due_at":"","delivered_at":"","delivery_time":"","revisions":"","requirements":[],"deliverables":[],"extras":[],"key_dates":[{"label":"","date":""}],"notes":[]},"summary":"..."}`,
+  ].join("\n");
+  try {
+    const raw = await llm({ system, user: `Fiverr order page content:\n${t.slice(0, 16000)}`, maxTokens: 1500, timeoutMs: 70000, label: "bd-extract-order" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not read the order page. Try again." };
+    const o = p.order || {};
+    const order: OrderInfo = {
+      order_number: String(o.order_number || ""), status: String(o.status || ""), package: String(o.package || ""), price: String(o.price || ""),
+      ordered_at: String(o.ordered_at || ""), due_at: String(o.due_at || ""), delivered_at: String(o.delivered_at || ""), delivery_time: String(o.delivery_time || ""), revisions: String(o.revisions || ""),
+      requirements: arr(o.requirements), deliverables: arr(o.deliverables), extras: arr(o.extras),
+      key_dates: Array.isArray(o.key_dates) ? o.key_dates.map((k: any) => ({ label: String(k?.label || ""), date: String(k?.date || "") })).filter((k: any) => k.label || k.date) : [],
+      notes: arr(o.notes),
+    };
+    return { ok: true, order, summary: String(p.summary || "") };
+  } catch (e: any) { return { ok: false, error: e?.message || "order read failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };

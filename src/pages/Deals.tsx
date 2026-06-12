@@ -282,6 +282,8 @@ export default function Deals() {
   const [doneActions, setDoneActions] = useState<string[]>([]);
   const [docLang, setDocLang] = useState("US English");
   const [docCurrency, setDocCurrency] = useState("USD");
+  const [orderInput, setOrderInput] = useState("");
+  const [showOrderPaste, setShowOrderPaste] = useState(false);
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -306,8 +308,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -481,6 +483,21 @@ export default function Deals() {
     if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
   };
 
+  /* Fiverr Order page → pulls the real order activity (dates, status, deliveries, and the
+     requirements the client actually submitted) into the deal context. */
+  const ingestOrder = async () => {
+    if (!orderInput.trim()) { setError("Paste the Fiverr Order page first."); return; }
+    let id = selected?.id;
+    if (!id) { const s: any = await post("bd_deal_save", { client_name: selected?.client_name || clientName || "Untitled lead", conversation }); if (s?.success) { setSelected(s.deal); selectedIdRef.current = s.deal.id; id = s.deal.id; } }
+    if (!id) { setError("Could not save the deal to attach the order to."); return; }
+    setBusy("order"); setError("");
+    const r: any = await post("bd_ingest_order", { id, orderText: orderInput });
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not read the order page."); return; }
+    if (r.deal) setSelected(r.deal);
+    setOrderInput(""); setShowOrderPaste(false); setNotice("Order details pulled in — dates, requirements and deliveries are now part of this lead's context.");
+  };
+
   const launchDemo = () => {
     try {
       sessionStorage.setItem("wizard_restore", JSON.stringify({
@@ -499,6 +516,9 @@ export default function Deals() {
   const df = strategy?.deal_facts || {};
   const hasFacts = !!(df.budget || df.timeline || df.location || df.platform || df.service || df.deliverables?.length || df.urls?.length || df.competitors?.length || df.prices_discussed?.length || df.files_shared?.length || df.key_dates?.length || df.other_facts?.length);
   const focusedWindow = windows.find(w => w.id === focusedWin);
+  const orderAtt = (selected?.attachments || []).find((a: any) => a.kind === "order");
+  const order = orderAtt?.order;
+  const orderActive = !!order || ["hired", "in_delivery", "repeat"].includes(strategy?.deal_state?.stage) || ["hired", "in_delivery", "repeat", "completed"].includes(selected?.status);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -645,6 +665,36 @@ export default function Deals() {
                   {askResult.suggested_tools?.length > 0 && (
                     <div className="flex flex-wrap gap-1">{askResult.suggested_tools.map((t: string, i: number) => { const isAudit = /audit/i.test(t); return <button key={i} onClick={() => { if (isAudit) runAudit(); }} className="text-[10px] px-2 py-0.5 rounded-md bg-muted border border-border text-muted-foreground hover:border-primary">{isAudit ? `▶ ${t}` : t}</button>; })}</div>
                   )}
+                </div>
+              )}
+            </div>
+          )}
+          {orderActive && (
+            <div className="px-4 py-3 border-b border-border/60">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-[0.13em] flex items-center gap-1.5">📋 Active order</span>
+                {order && <button onClick={() => setShowOrderPaste(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground">Update</button>}
+              </div>
+              {order ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.05] p-2.5 text-xs space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">{order.status && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 uppercase tracking-wider">{order.status}</span>}{order.order_number && <span className="font-mono text-foreground/80">{order.order_number}</span>}{order.price && <span className="font-mono text-foreground">{order.price}</span>}</div>
+                  {(order.due_at || order.delivered_at || order.delivery_time || order.package) && <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{order.due_at && <span>Due <span className="text-foreground font-medium">{order.due_at}</span></span>}{order.delivered_at && <span>Delivered <span className="text-foreground">{order.delivered_at}</span></span>}{order.delivery_time && <span>{order.delivery_time}</span>}{order.package && <span>{order.package}</span>}{order.revisions && <span>Revisions: {order.revisions}</span>}</div>}
+                  {order.requirements?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1">Requirements they submitted</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{order.requirements.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {order.deliverables?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1">Deliverables</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{order.deliverables.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {order.key_dates?.length > 0 && <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">{order.key_dates.map((k: any, i: number) => <span key={i}>{k.label}: <span className="text-foreground">{k.date}</span></span>)}</div>}
+                  {order.extras?.length > 0 && <div className="text-muted-foreground">Extras: {order.extras.join(", ")}</div>}
+                  {order.notes?.length > 0 && <div className="text-amber-600">⚠ {order.notes.join("; ")}</div>}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.05] p-2.5">
+                  <p className="text-xs text-foreground mb-2 leading-relaxed">This looks like an <b>active order</b>. Fiverr keeps the real dates, status, deliveries and the requirements the client actually submitted on the <b>Order page</b> — separate from the chat. Paste it so all of that joins this lead's context.</p>
+                  <button onClick={() => setShowOrderPaste(true)} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition-opacity">📋 Paste the order page</button>
+                </div>
+              )}
+              {showOrderPaste && (
+                <div className="mt-2">
+                  <textarea value={orderInput} onChange={e => setOrderInput(e.target.value)} placeholder="Paste the full Fiverr Order page here — status, dates, requirements the client submitted, deliverables, and the order activity…" className="w-full h-24 px-2.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+                  <div className="flex items-center gap-2 mt-1.5"><button onClick={ingestOrder} disabled={busy === "order" || !orderInput.trim()} className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{busy === "order" ? <><span className="w-3 h-3 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" /> Reading…</> : "Save order details"}</button><button onClick={() => { setShowOrderPaste(false); setOrderInput(""); }} className="text-[11px] text-muted-foreground">cancel</button></div>
                 </div>
               )}
             </div>
