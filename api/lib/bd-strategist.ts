@@ -178,6 +178,31 @@ export async function matchCaseStudy(opts: { caseStudies: Array<{ id: string; ti
   } catch (e: any) { return { ok: false, best_id: "", why: "", client_snippet: "", error: e?.message || "match failed" }; }
 }
 
+/* Generate a tailored case-study DRAFT when the library has no real match. Honest by
+   design: it never invents specific metrics or client names as fact — it produces a
+   relevant structure with bracketed placeholders the seller fills with their REAL results. */
+export interface CaseDraft { title: string; situation: string; approach: string[]; results_template: string[]; client_snippet: string; note: string }
+export async function generateCaseStudy(o: { conversation?: string; facts?: string }): Promise<{ ok: boolean; draft?: CaseDraft; error?: string }> {
+  const system = [
+    `You are a senior SEO/AEO consultant drafting a CASE STUDY TEMPLATE tailored to a specific prospect, for the seller (a freelancer) to adapt with their OWN REAL results before sharing.`,
+    `You do NOT have the seller's real client data. You must NOT invent specific metrics, client names, dates, or outcomes as if they were real. Instead, use clearly-bracketed placeholders such as "[client industry]", "[+X% organic traffic]", "[N months]", "[#1 for 'keyword']" that the seller will replace with true figures.`,
+    `Make the draft genuinely relevant to THIS prospect's industry, platform, and problem. Describe a credible approach based on standard, real SEO/AEO methodology (technical fixes, content, authority, AEO/schema) — specific to their situation, not generic.`,
+    `Return: title (short, with a placeholder result), situation (the kind of client and problem, matched to this prospect), approach (3-6 concrete real steps), results_template (3-5 outcome lines written as placeholders the seller fills), client_snippet (a 2-4 sentence message the seller can adapt and send — written so that once the placeholders are filled with real numbers it is fully honest), and note (one line reminding the seller to replace placeholders with real results and never claim outcomes they did not achieve).`,
+    `Return ONLY JSON: {"title":"...","situation":"...","approach":["..."],"results_template":["..."],"client_snippet":"...","note":"..."}`,
+  ].join("\n");
+  const user = [
+    o.facts ? `Prospect facts: ${String(o.facts).slice(0, 3000)}` : ``,
+    o.conversation ? `Conversation:\n${String(o.conversation).slice(0, 12000)}` : ``,
+    `Draft a tailored, honest case-study template for this prospect.`,
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 1800, timeoutMs: 75000, label: "bd-casestudy-generate" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not draft a case study. Try again." };
+    return { ok: true, draft: { title: String(p.title || "Tailored case study (draft)"), situation: String(p.situation || ""), approach: arr(p.approach), results_template: arr(p.results_template), client_snippet: String(p.client_snippet || ""), note: String(p.note || "Draft — replace the bracketed placeholders with your real results before sharing.") } };
+  } catch (e: any) { return { ok: false, error: e?.message || "generate failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };

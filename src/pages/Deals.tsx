@@ -91,7 +91,7 @@ function winExportText(w: Win): string {
   if (w.type === "competitor") { const gaps = (r.keyword_gap?.biggest_gaps || []).map((g: any) => `- "${g.query}": ${g.competitor} #${g.competitor_position}${g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}`).join("\n"); return `COMPETITOR SNAPSHOT\n${r.summary || ""}\n\nWhere they beat you:\n${gaps}`; }
   if (w.type === "offer") return `${r.recommended_package} — ${r.price_band} — ${r.delivery_time}\n\nIncludes:\n${(r.scope || []).map((x: string) => `- ${x}`).join("\n")}\n\nDeliverables:\n${(r.deliverables || []).map((x: string) => `- ${x}`).join("\n")}\n${(r.addons || []).length ? `\nAdd-ons:\n${r.addons.map((a: any) => `- ${a.name}: ${a.price}`).join("\n")}\n` : ""}\n${r.offer_text || ""}`;
   if (w.type === "roadmap") return `30/60/90 ROADMAP\n${r.summary || ""}\n\nFirst 30 days:\n${(r.phase_30 || []).map((x: string) => `- ${x}`).join("\n")}\n\nDays 31-60:\n${(r.phase_60 || []).map((x: string) => `- ${x}`).join("\n")}\n\nDays 61-90:\n${(r.phase_90 || []).map((x: string) => `- ${x}`).join("\n")}`;
-  if (w.type === "casestudy") return `${r.matched?.title || ""}${r.matched?.industry ? ` (${r.matched.industry})` : ""}\n${r.why || ""}\n\n${r.client_snippet || ""}`;
+  if (w.type === "casestudy") { if (r.generated) return `${r.title || "Case study (draft)"}\n\nSituation:\n${r.situation || ""}\n\nApproach:\n${(r.approach || []).map((x: string) => `- ${x}`).join("\n")}\n\nResults (fill in your real numbers):\n${(r.results_template || []).map((x: string) => `- ${x}`).join("\n")}\n\nClient message:\n${r.client_snippet || ""}\n\n${r.note || ""}`; return `${r.matched?.title || ""}${r.matched?.industry ? ` (${r.matched.industry})` : ""}\n${r.why || ""}\n\n${r.client_snippet || ""}`; }
   if (w.type === "ask") return `${r.answer || ""}${r.client_reply ? `\n\nReply:\n${r.client_reply}` : ""}`;
   return JSON.stringify(r, null, 2);
 }
@@ -152,9 +152,18 @@ function WinBody({ w, onUseReply }: { w: Win; onUseReply: (t: string) => void })
   );
   if (w.type === "casestudy") return (
     <div className="space-y-2.5 text-[13px]">
-      {r.matched?.title && <div className="text-foreground font-semibold tracking-tight">{r.matched.title}{r.matched.industry ? <span className="text-muted-foreground font-normal"> · {r.matched.industry}</span> : ""}</div>}
-      {r.why && <p className="text-muted-foreground leading-relaxed">{r.why}</p>}
-      {r.client_snippet && snippet("Share with client", r.client_snippet)}
+      {r.generated ? (<>
+        <div className="flex items-center gap-2"><span className="text-foreground font-semibold tracking-tight">{r.title}</span><span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 shrink-0">Draft</span></div>
+        {r.situation && <p className="text-muted-foreground leading-relaxed">{r.situation}</p>}
+        {r.approach?.length > 0 && <div><div className={lbl + " mb-2"}>Approach</div><List items={r.approach} /></div>}
+        {r.results_template?.length > 0 && <div><div className={lbl + " mb-2"}>Results — fill in your real numbers</div><List items={r.results_template} /></div>}
+        {r.client_snippet && snippet("Adapt & share", r.client_snippet)}
+        {r.note && <p className="text-[11px] text-amber-600/90 leading-relaxed">⚠ {r.note}</p>}
+      </>) : (<>
+        {r.matched?.title && <div className="text-foreground font-semibold tracking-tight">{r.matched.title}{r.matched.industry ? <span className="text-muted-foreground font-normal"> · {r.matched.industry}</span> : ""}</div>}
+        {r.why && <p className="text-muted-foreground leading-relaxed">{r.why}</p>}
+        {r.client_snippet && snippet("Share with client", r.client_snippet)}
+      </>)}
     </div>
   );
   if (w.type === "ask") return (
@@ -259,6 +268,7 @@ export default function Deals() {
   const [comp, setComp] = useState<any>(null);
   const [compCo, setCompCo] = useState("");
   const [compKw, setCompKw] = useState("");
+  const [siteInput, setSiteInput] = useState("");
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -283,8 +293,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -307,6 +317,7 @@ export default function Deals() {
     if (!compCo && (f.competitors || []).length) setCompCo((f.competitors || []).join(", "));
     if (!compKw && (f.target_keywords || []).length) setCompKw((f.target_keywords || []).join(", "));
     const site = strategy.client_site || (f.urls || [])[0] || "";
+    if (site && !siteInput) setSiteInput(site);
     if (!site) return;
     const dealKey = selected?.id || "new";
     const cached = new Set((selected?.attachments || []).map((a: any) => a.kind));
@@ -394,15 +405,15 @@ export default function Deals() {
   const downloadWin = (w: Win) => { try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(w.dealName || clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
 
   const runAudit = async (auto = false) => {
-    if (!clientSite) { if (!auto) setError("No client site detected. Analyse the chat first."); return; }
+    if (!clientSite) { if (auto) return; const id = newWin("audit", "Site audit", true); patchWin(id, { status: "error", error: "No client website yet — enter the client's site in the 'Client site' box at the top of the right panel, then run the audit." }); return; }
     const id = newWin("audit", `Site audit · ${clientSite}`, !auto);
-    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id });
+    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id, projectId: selected?.id });
     if (!r?.report) { patchWin(id, { status: "error", error: r?.error || "Could not run the audit." }); return; }
     patchWin(id, { status: "done", result: r.report });
     if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
   };
   const runAeo = async (auto = false) => {
-    if (!clientSite) { if (!auto) setError("No client site detected — add the client's URL in the chat."); return; }
+    if (!clientSite) { if (auto) return; const id = newWin("aeo", "AEO readiness", true); patchWin(id, { status: "error", error: "No client website yet — enter the client's site in the 'Client site' box at the top of the right panel, then run the check." }); return; }
     const id = newWin("aeo", `AEO readiness · ${clientSite}`, !auto);
     const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite });
     if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "AEO check failed." }); return; }
@@ -418,7 +429,14 @@ export default function Deals() {
   };
   const genOffer = async () => { const id = newWin("offer", "Offer & pricing", true); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not build the offer." }); return; } patchWin(id, { status: "done", result: r.offer }); };
   const genRoadmap = async () => { const id = newWin("roadmap", "30/60/90 roadmap", true); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not build the roadmap." }); return; } patchWin(id, { status: "done", result: r.roadmap }); };
-  const matchCase = async (auto = false) => { const id = newWin("casestudy", "Relevant case study", !auto); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "No matching case study." }); return; } patchWin(id, { status: "done", result: r }); };
+  const matchCase = async (auto = false) => {
+    const id = newWin("casestudy", "Case study", !auto);
+    const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation });
+    if (r?.success) { patchWin(id, { status: "done", result: r }); return; }
+    const g: any = await post("bd_casestudy_generate", { id: selected?.id, conversation });
+    if (!g?.success) { patchWin(id, { status: "error", error: g?.error || r?.error || "Could not produce a case study." }); return; }
+    patchWin(id, { status: "done", result: { generated: true, ...g.draft } });
+  };
   const ask = async () => { if (!askInput.trim()) return; const q = askInput; setAskInput(""); const id = newWin("ask", q.length > 40 ? q.slice(0, 40) + "…" : q, true); const r: any = await post("bd_ask", { id: selected?.id, conversation, question: q }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not answer." }); return; } patchWin(id, { status: "done", result: { answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools } }); };
 
   const launchDemo = () => {
@@ -433,7 +451,7 @@ export default function Deals() {
   };
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
-  const clientSite = strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "";
+  const clientSite = (siteInput.trim() || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim();
   const messages = parseThread(conversation);
   const intel = strategy?.client_intel || {};
   const df = strategy?.deal_facts || {};
@@ -626,6 +644,11 @@ export default function Deals() {
               )}
 
               <Acc open={open} toggle={toggle} k="apps" title="Run a tool" defaultBadge="opens as a window">
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mb-2">
+                  <div className="flex items-center justify-between mb-1.5"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em]">Client site</span>{clientSite && <span className="text-[9px] text-emerald-600">ready for audit</span>}</div>
+                  <input value={siteInput} onChange={e => setSiteInput(e.target.value)} placeholder="yourclient.com — needed for audit & AEO" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary" />
+                  {!clientSite && <p className="text-[10px] text-amber-600/90 mt-1">Audit and AEO need the client's website — paste it here (the chat did not include one).</p>}
+                </div>
                 <div className="grid grid-cols-2 gap-1.5 mb-2">
                   {([["audit", "🔍", "Site audit", () => runAudit()], ["aeo", "🤖", "AEO readiness", () => runAeo()], ["offer", "💰", "Offer & pricing", () => genOffer()], ["roadmap", "🗺", "30/60/90 plan", () => genRoadmap()], ["case", "📂", "Case study", () => matchCase()]] as const).map(([k, icon, label, fn]) => (
                     <button key={k} onClick={fn} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">

@@ -171,6 +171,16 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "match failed" }; }
   }
 
+  if (action === "bd_casestudy_generate") {
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
+    if (!c.conversation.trim() && !c.facts) return { success: false, error: "Analyse the chat first so I can tailor the case study." };
+    try {
+      const { generateCaseStudy } = await import("./bd-strategist.js");
+      const r = await generateCaseStudy({ conversation: c.conversation, facts: c.facts });
+      return r.ok ? { success: true, draft: r.draft } : { success: false, error: r.error };
+    } catch (e: any) { return { success: false, error: e?.message || "generate failed" }; }
+  }
+
   if (action === "bd_aeo_check") {
     const siteUrl = String(body?.siteUrl || "").trim();
     if (!siteUrl) return { success: false, error: "No client site URL — detect it from the chat or add it." };
