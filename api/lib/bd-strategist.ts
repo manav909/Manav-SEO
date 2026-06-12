@@ -78,6 +78,39 @@ const EMPTY: DealStrategy = {
 
 const arr = (x: any): string[] => Array.isArray(x) ? x.filter((s: any) => typeof s === "string") : [];
 
+export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
+  const q = String(opts.question || "").trim();
+  if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
+  const system = [
+    `You are a senior SEO and AEO technical expert AND a sharp Fiverr business developer, embedded inside a live client deal. The operator may be non-technical. They will ask you anything — a client's technical question, their own thinking, what to propose, or how to handle a tricky moment.`,
+    `Use the FULL deal context (the conversation, the captured facts, any audit, shared files) to answer for THIS specific client.`,
+    ``,
+    `Return:`,
+    `- answer: a clear, technically correct, senior-level answer or guidance — explained simply enough that a non-technical operator can both use it and relay it to the client. Be specific to this situation, not generic.`,
+    `- client_reply: a ready-to-send message to the client when it helps (truthful, professional, no guaranteed rankings and no fabricated results). Empty string if not applicable.`,
+    `- suggested_tools: any in-platform action that would strengthen the position right now, drawn from: "run the site audit", "pull a competitor snapshot", "check schema and AEO readiness", "review their GSC export", "build the offer". Empty if none.`,
+    ``,
+    `HARD RULES: be honest and accurate; never invent results, metrics, or capabilities; if you lack information, say what is needed; keep it practical and senior-grade.`,
+    `Return ONLY valid JSON: {"answer":"...","client_reply":"...","suggested_tools":["..."]}`,
+  ].join("\n");
+  const user = [
+    opts.strategySummary ? `Deal so far: ${opts.strategySummary}` : ``,
+    opts.facts ? `Captured facts: ${String(opts.facts).slice(0, 4000)}` : ``,
+    opts.attachments ? `Shared files / audit:\n${String(opts.attachments).slice(0, 10000)}` : ``,
+    opts.conversation ? `Conversation:\n${String(opts.conversation).slice(0, 24000)}` : ``,
+    ``,
+    `The operator asks: ${q}`,
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 2500, timeoutMs: 80000, label: "bd-ask-expert" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Could not produce an answer. Try rephrasing." };
+    return { ok: true, answer: String(p.answer || ""), client_reply: String(p.client_reply || ""), suggested_tools: arr(p.suggested_tools) };
+  } catch (e: any) {
+    return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: e?.message || "ask failed" };
+  }
+}
+
 export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
   const now = new Date().toISOString();
   const convo = String(opts.conversation || "").trim();

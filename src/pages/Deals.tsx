@@ -92,6 +92,9 @@ export default function Deals() {
   const [auditing, setAuditing] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({ facts: true, next: true, client: true, actions: true });
   const [nameInput, setNameInput] = useState("");
+  const [askInput, setAskInput] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askResult, setAskResult] = useState<any>(null);
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -114,6 +117,15 @@ export default function Deals() {
     const n = name.trim(); if (!selected?.id || !n) return;
     const r: any = await post("bd_deal_update", { id: selected.id, client_name: n });
     if (r?.deal) setSelected(r.deal); loadList();
+  };
+
+  const ask = async () => {
+    if (!askInput.trim()) return;
+    setAsking(true); setError("");
+    const r: any = await post("bd_ask", { id: selected?.id, conversation, question: askInput });
+    setAsking(false);
+    if (!r?.success) { setError(r?.error || "Could not get an answer — try rephrasing."); return; }
+    setAskResult({ answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools || [] });
   };
 
   const runAudit = async () => {
@@ -301,6 +313,28 @@ export default function Deals() {
 
         {/* RIGHT — advanced intelligence */}
         <div className="rounded-2xl border border-border bg-card overflow-y-auto min-h-0">
+          {(selected || conversation.trim()) && (
+            <div className="px-4 pt-3 pb-3 border-b border-border">
+              <div className="text-[11px] font-semibold text-primary uppercase tracking-wider mb-1.5">✨ Ask the expert</div>
+              <textarea value={askInput} onChange={e => setAskInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) ask(); }}
+                placeholder="Ask anything — a client's technical question, your own thinking, what to propose. Grounded in this deal." className="w-full h-14 px-2 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+              <button onClick={ask} disabled={asking || !askInput.trim()} className="mt-1 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{asking ? "Thinking…" : "Ask"}</button>
+              {askResult && (
+                <div className="mt-2 rounded-lg border border-border p-2 text-xs space-y-2">
+                  <p className="whitespace-pre-wrap text-foreground">{askResult.answer}</p>
+                  {askResult.client_reply && (
+                    <div className="rounded border border-primary/30 bg-primary/5 p-2">
+                      <div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Reply you can send</span><button onClick={() => { setReplyDraft(askResult.client_reply); copy(askResult.client_reply); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div>
+                      <p className="whitespace-pre-wrap text-foreground">{askResult.client_reply}</p>
+                    </div>
+                  )}
+                  {askResult.suggested_tools?.length > 0 && (
+                    <div className="flex flex-wrap gap-1">{askResult.suggested_tools.map((t: string, i: number) => { const isAudit = /audit/i.test(t); return <button key={i} onClick={() => { if (isAudit) runAudit(); }} className="text-[10px] px-2 py-0.5 rounded-md bg-muted border border-border text-muted-foreground hover:border-primary">{isAudit ? `▶ ${t}` : t}</button>; })}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {!strategy && !selected?.id ? (
             <p className="text-xs text-muted-foreground p-4">The intelligence panel fills in once you paste a conversation — deal stage, what the client wants, the next move, an inline site audit you can run, a call script, reminders and risks, all derived from the chat. You never leave this page.</p>
           ) : (
