@@ -68,6 +68,17 @@ const tempColor = (t: string) => t === "hot" ? "#ef4444" : t === "warm" ? "#f59e
 const Chip = ({ text, color }: { text: string; color: string }) => (<span className="text-[11px] px-2 py-0.5 rounded-md border" style={{ color, borderColor: color + "55", background: color + "11" }}>{text}</span>);
 const Section = ({ title, children }: { title: string; children: any }) => (<div className="mb-4"><div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">{title}</div>{children}</div>);
 const List = ({ items }: { items: string[] }) => (<ul className="list-disc ml-4 text-xs text-muted-foreground space-y-0.5">{items.map((x, i) => <li key={i}>{x}</li>)}</ul>);
+function Acc({ k, title, children, defaultBadge, open, toggle }: { k: string; title: string; children: any; defaultBadge?: any; open: Record<string, boolean>; toggle: (k: string) => void }) {
+  return (
+    <div className="border-b border-border">
+      <button onClick={() => toggle(k)} className="w-full flex items-center justify-between py-2.5 text-left">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}{defaultBadge != null && <span className="ml-1.5 text-primary normal-case">{defaultBadge}</span>}</span>
+        <span className="text-muted-foreground text-xs">{open[k] ? "▾" : "▸"}</span>
+      </button>
+      {open[k] && <div className="pb-3">{children}</div>}
+    </div>
+  );
+}
 
 export default function Deals() {
   const [deals, setDeals] = useState<any[]>([]);
@@ -265,16 +276,6 @@ export default function Deals() {
     window.location.href = "/wizard";
   };
 
-  const Acc = ({ k, title, children, defaultBadge }: { k: string; title: string; children: any; defaultBadge?: any }) => (
-    <div className="border-b border-border">
-      <button onClick={() => toggle(k)} className="w-full flex items-center justify-between py-2.5 text-left">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}{defaultBadge != null && <span className="ml-1.5 text-primary normal-case">{defaultBadge}</span>}</span>
-        <span className="text-muted-foreground text-xs">{open[k] ? "▾" : "▸"}</span>
-      </button>
-      {open[k] && <div className="pb-3">{children}</div>}
-    </div>
-  );
-
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
   const clientSite = strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "";
   const messages = parseThread(conversation);
@@ -423,8 +424,8 @@ export default function Deals() {
               )}
             </div>
           )}
-          {!strategy && !selected?.id ? (
-            <p className="text-xs text-muted-foreground p-4">The intelligence panel fills in once you paste a conversation — deal stage, what the client wants, the next move, an inline site audit you can run, a call script, reminders and risks, all derived from the chat. You never leave this page.</p>
+          {!strategy ? (
+            <p className="text-xs text-muted-foreground p-4">{selected?.id ? "Paste this client's conversation in the center composer to analyse the lead. Once analysed, the detected site, deal facts, diagnostics (audit / AEO / competitor), offer, roadmap and case study all appear here — most of them firing automatically." : "Pick a lead or start a new one, then paste the conversation in the center. The intelligence — deal stage, what the client wants, the next move, an auto-run site audit, a call script, reminders and risks — fills in here. You never leave this page."}</p>
           ) : (
             <div className="px-4 py-2">
               {/* always-visible summary */}
@@ -438,10 +439,10 @@ export default function Deals() {
                 </div>
               )}
 
-              {strategy?.next_move && <Acc k="next" title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Acc>}
+              {strategy?.next_move && <Acc open={open} toggle={toggle} k="next" title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Acc>}
 
               {hasFacts && (
-                <Acc k="facts" title="Deal facts" defaultBadge="captured from chat">
+                <Acc open={open} toggle={toggle} k="facts" title="Deal facts" defaultBadge="captured from chat">
                   <div className="text-xs space-y-1.5">
                     {df.budget && <div><span className="text-muted-foreground">Budget:</span> <span className="text-foreground">{df.budget}</span></div>}
                     {df.timeline && <div><span className="text-muted-foreground">Timeline:</span> <span className="text-foreground">{df.timeline}</span></div>}
@@ -459,7 +460,7 @@ export default function Deals() {
                 </Acc>
               )}
 
-              <Acc k="audit" title="Quick site audit" defaultBadge="demo · inline">
+              <Acc open={open} toggle={toggle} k="audit" title="Quick site audit" defaultBadge="demo · inline">
                 <button onClick={() => runAudit()} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
                 {audit && (
                   <div className="text-xs text-muted-foreground space-y-1">
@@ -472,7 +473,7 @@ export default function Deals() {
                 )}
               </Acc>
 
-              <Acc k="aeo" title="AEO / GEO readiness" defaultBadge="AI search">
+              <Acc open={open} toggle={toggle} k="aeo" title="AEO / GEO readiness" defaultBadge="AI search">
                 <button onClick={() => runAeo()} disabled={toolBusy === "aeo" || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "aeo" ? "Checking…" : clientSite ? "Check AI-search readiness" : "No client site detected"}</button>
                 {aeo && (
                   <div className="text-xs space-y-1">
@@ -484,7 +485,7 @@ export default function Deals() {
                 )}
               </Acc>
 
-              <Acc k="comp" title="Competitor snapshot" defaultBadge="SERP">
+              <Acc open={open} toggle={toggle} k="comp" title="Competitor snapshot" defaultBadge="SERP">
                 <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-1" />
                 <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords: e.g. luxury interior design scottsdale" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
                 <button onClick={runCompetitor} disabled={toolBusy === "comp"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "comp" ? "Analysing…" : "Run competitor snapshot"}</button>
@@ -497,7 +498,7 @@ export default function Deals() {
                 )}
               </Acc>
 
-              <Acc k="offer" title="Offer & pricing" defaultBadge="close the deal">
+              <Acc open={open} toggle={toggle} k="offer" title="Offer & pricing" defaultBadge="close the deal">
                 <button onClick={genOffer} disabled={toolBusy === "offer"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "offer" ? "Building…" : "Build offer"}</button>
                 {offer && (
                   <div className="text-xs space-y-1.5">
@@ -511,7 +512,7 @@ export default function Deals() {
                 )}
               </Acc>
 
-              <Acc k="roadmap" title="30 / 60 / 90 roadmap" defaultBadge="proof">
+              <Acc open={open} toggle={toggle} k="roadmap" title="30 / 60 / 90 roadmap" defaultBadge="proof">
                 <button onClick={genRoadmap} disabled={toolBusy === "roadmap"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "roadmap" ? "Building…" : "Generate roadmap"}</button>
                 {roadmap && (
                   <div className="text-xs space-y-1.5">
@@ -524,7 +525,7 @@ export default function Deals() {
                 )}
               </Acc>
 
-              <Acc k="casestudy" title="Case study" defaultBadge="proof">
+              <Acc open={open} toggle={toggle} k="casestudy" title="Case study" defaultBadge="proof">
                 <div className="flex items-center gap-2 mb-2">
                   <button onClick={() => matchCase()} disabled={toolBusy === "case"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{toolBusy === "case" ? "Matching…" : "Find relevant case study"}</button>
                   <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] text-muted-foreground underline">Manage library</button>
@@ -552,7 +553,7 @@ export default function Deals() {
               </Acc>
 
               {intel && (intel.wants?.length || intel.pain_points?.length || intel.buying_signals?.length || intel.objections?.length || intel.budget_signals?.length) ? (
-                <Acc k="client" title="Client intelligence">
+                <Acc open={open} toggle={toggle} k="client" title="Client intelligence">
                   {intel.wants?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1">Wants</div><List items={intel.wants} /></>}
                   {intel.pain_points?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Pain points</div><List items={intel.pain_points} /></>}
                   {intel.buying_signals?.length > 0 && <><div className="text-[11px] font-semibold text-muted-foreground mt-1.5">Buying signals</div><List items={intel.buying_signals} /></>}
@@ -561,12 +562,12 @@ export default function Deals() {
                 </Acc>
               ) : null}
 
-              {strategy?.action_items?.length > 0 && <Acc k="actions" title="Do now" defaultBadge={strategy.action_items.length}><ul className="space-y-1">{strategy.action_items.map((a: any, i: number) => <li key={i} className="text-xs text-muted-foreground"><span className="text-foreground">{a.action}</span>{a.platform_can_help && <span className="ml-1"><Chip text="in-platform" color="#10b981" /></span>}</li>)}</ul></Acc>}
+              {strategy?.action_items?.length > 0 && <Acc open={open} toggle={toggle} k="actions" title="Do now" defaultBadge={strategy.action_items.length}><ul className="space-y-1">{strategy.action_items.map((a: any, i: number) => <li key={i} className="text-xs text-muted-foreground"><span className="text-foreground">{a.action}</span>{a.platform_can_help && <span className="ml-1"><Chip text="in-platform" color="#10b981" /></span>}</li>)}</ul></Acc>}
 
-              {strategy?.reminders?.length > 0 && <Acc k="reminders" title="Reminders" defaultBadge={strategy.reminders.length}><ul className="space-y-1">{strategy.reminders.map((r: any, i: number) => <li key={i} className="text-xs text-muted-foreground">⏰ {r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul></Acc>}
+              {strategy?.reminders?.length > 0 && <Acc open={open} toggle={toggle} k="reminders" title="Reminders" defaultBadge={strategy.reminders.length}><ul className="space-y-1">{strategy.reminders.map((r: any, i: number) => <li key={i} className="text-xs text-muted-foreground">⏰ {r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul></Acc>}
 
               {strategy?.call_script?.needed && (
-                <Acc k="call" title="Call script">
+                <Acc open={open} toggle={toggle} k="call" title="Call script">
                   <div className="text-xs text-muted-foreground space-y-1">
                     {strategy.call_script.opening && <p><b className="text-foreground">Open:</b> {strategy.call_script.opening}</p>}
                     {strategy.call_script.discovery_questions?.length > 0 && <div><b className="text-foreground">Ask:</b><List items={strategy.call_script.discovery_questions} /></div>}
@@ -576,12 +577,12 @@ export default function Deals() {
                 </Acc>
               )}
 
-              {strategy?.risk_flags?.length > 0 && <Acc k="risks" title="Watch out" defaultBadge={strategy.risk_flags.length}><div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}><List items={strategy.risk_flags} /></div></Acc>}
+              {strategy?.risk_flags?.length > 0 && <Acc open={open} toggle={toggle} k="risks" title="Watch out" defaultBadge={strategy.risk_flags.length}><div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}><List items={strategy.risk_flags} /></div></Acc>}
 
-              {strategy?.needs_attachments?.length > 0 && <Acc k="needs" title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Acc>}
+              {strategy?.needs_attachments?.length > 0 && <Acc open={open} toggle={toggle} k="needs" title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Acc>}
 
               {selected?.id && (selected.attachments || []).length > 0 && (
-                <Acc k="lead" title="Attachments">
+                <Acc open={open} toggle={toggle} k="lead" title="Attachments">
                   <div className="flex flex-wrap gap-1">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>
                 </Acc>
               )}
