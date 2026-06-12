@@ -30,7 +30,7 @@ export interface DealStrategy {
   call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
   needs_attachments: Array<{ kind: string; what: string; note: string }>;
   reminders:    Array<{ text: string; when: string }>;
-  deal_facts:   { budget: string; timeline: string; location: string; platform: string; service: string; deliverables: string[]; urls: string[]; competitors: string[]; prices_discussed: string[]; files_shared: string[]; key_dates: string[]; other_facts: string[] };
+  deal_facts:   { budget: string; timeline: string; location: string; platform: string; service: string; deliverables: string[]; urls: string[]; competitors: string[]; target_keywords: string[]; prices_discussed: string[]; files_shared: string[]; key_dates: string[]; other_facts: string[] };
   risk_flags:   string[];
   generated_at: string;
 }
@@ -48,9 +48,9 @@ const SYSTEM = [
   `Produce:`,
   `- needs_attachments: anything the conversation REFERENCES that the seller should add to this deal so it can be used — a brief/document the client shared, a file to review before a call, a call transcript, screenshots. Each {"kind":"document"|"transcript"|"file","what":"...","note":"..."}. Empty if none referenced.`,
   `- reminders: time-sensitive things to remember, each {"text":"...","when":"..."}. Include the 30-day call-recording save when a call is involved, and follow-up timing if the client may go quiet.`,
-  `- deal_facts: EVERY concrete fact actually STATED in the chat (do not infer): budget (stated budget or price the client gave), timeline (deadlines/turnaround they mentioned), location (their location/timezone), platform (their CMS/platform), service (the gig or service requested), deliverables (the explicit list of things they asked for — each as a separate item, verbatim where possible), urls (every website or domain mentioned), competitors (competitor names or sites mentioned), prices_discussed (any prices or offers mentioned in the conversation), files_shared (files, documents, or links the client referenced or shared), key_dates (specific dates or times mentioned), other_facts (any other concrete detail worth keeping). Use empty string/array where a fact is not present. Capture, do not summarise.`,
+  `- deal_facts: EVERY concrete fact actually STATED in the chat (do not infer the facts): budget, timeline, location, platform, service, deliverables (each verbatim), urls (every website/domain mentioned), competitors (competitor names/sites mentioned), prices_discussed, files_shared, key_dates, other_facts. PLUS target_keywords: the search terms this client most likely wants to rank for, based on their service + market + location (this one you may derive — give 3-6 concrete keyword phrases). Use empty string/array where absent.`,
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
-  `- client_site: the client's website domain if mentioned anywhere (bare domain, no protocol; empty if none).`,
+  `- client_site: the client's OWN website domain (bare domain, no protocol). Extract it from any URL they shared or mentioned anywhere in the chat. Only empty if they truly never gave a site.`,
   `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
   `- client_intel: what the client wants, their pain points, buying signals, objections (stated or likely), and any budget signals — all read from the conversation.`,
   `- next_move: the single best thing the seller should do next, and why, in plain terms.`,
@@ -62,7 +62,7 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","deliverables":[],"urls":[],"competitors":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
@@ -72,7 +72,7 @@ const EMPTY: DealStrategy = {
   next_move: "", draft_reply: "", action_items: [],
   call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
   needs_attachments: [], reminders: [],
-  deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", deliverables: [], urls: [], competitors: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
+  deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", deliverables: [], urls: [], competitors: [], target_keywords: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
   risk_flags: [], generated_at: "",
 };
 
@@ -221,7 +221,7 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
       deal_facts: {
         budget: String(p.deal_facts?.budget || ""), timeline: String(p.deal_facts?.timeline || ""), location: String(p.deal_facts?.location || ""),
         platform: String(p.deal_facts?.platform || ""), service: String(p.deal_facts?.service || ""),
-        deliverables: arr(p.deal_facts?.deliverables), urls: arr(p.deal_facts?.urls), competitors: arr(p.deal_facts?.competitors),
+        deliverables: arr(p.deal_facts?.deliverables), urls: arr(p.deal_facts?.urls), competitors: arr(p.deal_facts?.competitors), target_keywords: arr(p.deal_facts?.target_keywords),
         prices_discussed: arr(p.deal_facts?.prices_discussed), files_shared: arr(p.deal_facts?.files_shared), key_dates: arr(p.deal_facts?.key_dates), other_facts: arr(p.deal_facts?.other_facts),
       },
       risk_flags: arr(p.risk_flags),

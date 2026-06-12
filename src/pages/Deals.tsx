@@ -127,13 +127,13 @@ export default function Deals() {
   const genOffer = async () => { setToolBusy("offer"); setError(""); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the offer."); return; } setOffer(r.offer); setOpen(o => ({ ...o, offer: true })); };
   const genRoadmap = async () => { setToolBusy("roadmap"); setError(""); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the roadmap."); return; } setRoadmap(r.roadmap); setOpen(o => ({ ...o, roadmap: true })); };
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
-  const matchCase = async () => { setToolBusy("case"); setError(""); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not match a case study."); return; } setCaseMatch(r); setOpen(o => ({ ...o, casestudy: true })); };
+  const matchCase = async (auto = false) => { setToolBusy("case"); if (!auto) setError(""); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { if (!auto) setError(r?.error || "Could not match a case study."); return; } setCaseMatch(r); setOpen(o => ({ ...o, casestudy: true })); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
   const saveCaseStudy = async () => { if (!csForm.title.trim() && !csForm.summary.trim()) { setError("Add a title or summary for the case study."); return; } const r: any = await post("bd_casestudy_save", { title: csForm.title, summary: csForm.summary, results: csForm.results, industry: csForm.industry, tags: csForm.tags.split(",").map(s => s.trim()).filter(Boolean) }); if (!r?.success) { setError(r?.error || "Could not save."); return; } setCsForm({ title: "", summary: "", results: "", industry: "", tags: "" }); loadCaseLib(); };
   const deleteCaseStudy = async (id: string) => { await post("bd_casestudy_delete", { id }); loadCaseLib(); };
   useEffect(() => { if (showCsLib) loadCaseLib(); /* eslint-disable-next-line */ }, [showCsLib]);
 
-  const runAeo = async () => { if (!clientSite) { setError("No client site detected — add the client's URL in the chat."); return; } setToolBusy("aeo"); setError(""); const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite }); setToolBusy(""); if (!r?.success) { setError(r?.error || "AEO check failed."); return; } setAeo(r.report); setOpen(o => ({ ...o, aeo: true })); };
+  const runAeo = async (auto = false) => { if (!clientSite) { if (!auto) setError("No client site detected — add the client's URL in the chat."); return; } setToolBusy("aeo"); if (!auto) setError(""); const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite }); setToolBusy(""); if (!r?.success) { if (!auto) setError(r?.error || "AEO check failed."); return; } setAeo(r.report); setOpen(o => ({ ...o, aeo: true })); };
   const runCompetitor = async () => {
     const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
     const keywords = compKw.split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -159,15 +159,32 @@ export default function Deals() {
     setAskResult({ answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools || [] });
   };
 
-  const runAudit = async () => {
-    if (!clientSite) { setError("No client site detected. Add the client's URL in the chat first."); return; }
-    setAuditing(true); setError(""); setOpen(o => ({ ...o, audit: true }));
+  const runAudit = async (auto = false) => {
+    if (!clientSite) { if (!auto) setError("No client site detected. Add the client's URL in the chat first."); return; }
+    setAuditing(true); if (!auto) setError(""); setOpen(o => ({ ...o, audit: true }));
     const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id });
     setAuditing(false);
-    if (!r?.report) { setError(r?.error || "Could not run the audit."); return; }
+    if (!r?.report) { if (!auto) setError(r?.error || "Could not run the audit."); return; }
     setAudit(r.report);
     if (r?.report && selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
   };
+
+  /* Autonomy: when a chat is analysed, auto-fill competitor inputs and auto-fire the
+     free diagnostics (audit + AEO) + case match — once per deal, skipping anything
+     already cached on the deal, so it stays scale-safe. */
+  useEffect(() => {
+    if (!strategy) return;
+    const f = strategy.deal_facts || {};
+    if (!compCo && (f.competitors || []).length) setCompCo((f.competitors || []).join(", "));
+    if (!compKw && (f.target_keywords || []).length) setCompKw((f.target_keywords || []).join(", "));
+    const site = strategy.client_site || (f.urls || [])[0] || "";
+    if (!site) return;
+    const cached = new Set((selected?.attachments || []).map((a: any) => a.kind));
+    if (!audit && !auditing && !cached.has("audit")) runAudit(true);
+    if (!aeo && !cached.has("aeo")) runAeo(true);
+    if (!caseMatch) matchCase(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategy]);
 
   const runStrategize = async (convo: string, auto = false) => {
     if (!convo.trim() || busy === "strategize") return;
@@ -248,7 +265,7 @@ export default function Deals() {
   );
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
-  const clientSite = strategy?.client_site || "";
+  const clientSite = strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "";
   const messages = parseThread(conversation);
   const intel = strategy?.client_intel || {};
   const df = strategy?.deal_facts || {};
@@ -420,7 +437,7 @@ export default function Deals() {
               )}
 
               <Acc k="audit" title="Quick site audit" defaultBadge="demo · inline">
-                <button onClick={runAudit} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
+                <button onClick={() => runAudit()} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
                 {audit && (
                   <div className="text-xs text-muted-foreground space-y-1">
                     <p className="text-foreground">Crawled {audit.pages_reachable} page(s) of {audit.project_domain}.</p>
@@ -433,7 +450,7 @@ export default function Deals() {
               </Acc>
 
               <Acc k="aeo" title="AEO / GEO readiness" defaultBadge="AI search">
-                <button onClick={runAeo} disabled={toolBusy === "aeo" || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "aeo" ? "Checking…" : clientSite ? "Check AI-search readiness" : "No client site detected"}</button>
+                <button onClick={() => runAeo()} disabled={toolBusy === "aeo" || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "aeo" ? "Checking…" : clientSite ? "Check AI-search readiness" : "No client site detected"}</button>
                 {aeo && (
                   <div className="text-xs space-y-1">
                     {aeo.signals?.map((s: any, i: number) => <div key={i} style={{ color: s.ok ? "#10b981" : "#ef4444" }}>{s.ok ? "✓" : "✗"} <span className="text-foreground">{s.label}</span></div>)}
@@ -486,7 +503,7 @@ export default function Deals() {
 
               <Acc k="casestudy" title="Case study" defaultBadge="proof">
                 <div className="flex items-center gap-2 mb-2">
-                  <button onClick={matchCase} disabled={toolBusy === "case"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{toolBusy === "case" ? "Matching…" : "Find relevant case study"}</button>
+                  <button onClick={() => matchCase()} disabled={toolBusy === "case"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{toolBusy === "case" ? "Matching…" : "Find relevant case study"}</button>
                   <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] text-muted-foreground underline">Manage library</button>
                 </div>
                 {caseMatch && (
