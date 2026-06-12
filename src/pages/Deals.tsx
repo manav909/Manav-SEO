@@ -470,28 +470,15 @@ export default function Deals() {
     return { label: "Do it", run: () => doAction(text) };
   };
 
-  /* Documents: reuse the existing generate_client_doc engine, fed by THIS deal's context
-     (strategy → conversation analysis, cached audit → audit findings). Auto-saved to the deal. */
-  const stripHtml = (h: string) => String(h || "").replace(/<style[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-  const docAnalysis = () => {
-    const ci = strategy?.client_intel || {};
-    const temp = strategy?.deal_state?.temperature || "";
-    return { main_need: (ci.wants || [])[0] || strategy?.deal_facts?.service || strategy?.deal_state?.summary || "", urgency: temp, hidden_concern: (ci.objections || [])[0] || (ci.pain_points || [])[0] || "", best_next_message: strategy?.next_move || "", fiverr_specific: { conversion_blocker: (strategy?.risk_flags || [])[0] || (ci.objections || [])[0] || "", order_probability: temp === "hot" ? 70 : temp === "warm" ? 45 : 25 } };
-  };
-  const docAudit = () => {
-    const w = windows.find(x => x.type === "audit" && (x.dealId || "") === (selected?.id || "") && x.status === "done" && x.result);
-    if (!w?.result) return undefined;
-    const rep: any = w.result;
-    const issues = Object.entries(rep.issues || {}).map(([k, v]: any) => ({ issue: `${(v as any).count} ${String(k).replace(/_/g, " ")}`, fix: "" }));
-    return { url: clientSite || (rep.project_domain ? `https://${rep.project_domain}` : ""), score: rep.performance?.performance_score, issues, quickWins: [] };
-  };
+  /* Documents: dedicated honest doc engine — it loads the full deal context itself
+     (conversation, strategy, real audit, proven results, algorithm knowledge), auto-runs
+     an audit when a doc needs site data, and never fabricates or leaves blanks. */
   const genDoc = async (docType: string, label: string) => {
     const id = newWin("doc", label, true);
-    const suggestionContext = (selected?.attachments || []).filter((a: any) => ["aeo", "competitor", "audit"].includes(a.kind)).map((a: any) => a.text).join("\n").slice(0, 1800);
-    const r: any = await post("generate_client_doc", { docType, conversationAnalysis: docAnalysis(), auditResult: docAudit(), leadInfo: { url: clientSite, name: clientName, industry: strategy?.deal_facts?.industry || "" }, brandName: "Manav S", language: docLang, currency: docCurrency, suggestionContext });
+    const r: any = await post("bd_generate_doc", { id: selected?.id, docType, conversation, siteUrl: clientSite, language: docLang, currency: docCurrency });
     if (!r?.success || !r?.html) { patchWin(id, { status: "error", error: r?.error || "Could not generate the document." }); return; }
     patchWin(id, { status: "done", result: { kind: "doc", html: r.html, title: r.title || label, docType } });
-    if (selected?.id) { try { await post("bd_deal_attach", { id: selected.id, name: r.title || label, kind: "doc", text: stripHtml(r.html).slice(0, 40000) }); const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
+    if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
   };
 
   const launchDemo = () => {
@@ -726,7 +713,7 @@ export default function Deals() {
                     <select value={docCurrency} onChange={e => setDocCurrency(e.target.value)} className="w-[72px] shrink-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["USD", "GBP", "EUR", "INR", "AED", "AUD", "CAD", "SAR"].map(c => <option key={c} value={c}>{c}</option>)}</select>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {([["proposal", "📄", "Proposal"], ["audit_summary", "📊", "Audit summary"], ["pitch_email", "✉️", "Pitch email"], ["followup_email", "📨", "Follow-up"], ["whatsapp_msg", "💬", "Short message"], ["objection_response", "🛡", "Objection reply"]] as const).map(([dt, icon, label]) => (
+                    {([["proposal", "📄", "Proposal"], ["audit_report", "📊", "Audit report"], ["strategy_brief", "🧭", "Strategy brief"], ["pitch_email", "✉️", "Pitch email"], ["followup_email", "📨", "Follow-up"], ["objection_response", "🛡", "Objection reply"], ["case_study", "🏆", "Case study"], ["message", "💬", "Short message"]] as const).map(([dt, icon, label]) => (
                       <button key={dt} onClick={() => genDoc(dt, label)} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
                         <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
                         <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>

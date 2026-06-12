@@ -68,6 +68,54 @@ async function persistDiag(id: string, kind: string, name: string, text: string)
   } catch { /* non-fatal */ }
 }
 
+/* Clean, professional, print-ready document renderer for generated client docs. */
+function renderDocHtml(doc: { title: string; subtitle: string; recipient: string; sections: Array<{ heading: string; body: string }>; footer: string }, brand: string, language: string): string {
+  const esc = (s: string) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+  const rtl = /Arabic|Urdu/i.test(language);
+  const body = (txt: string): string => {
+    const lines = String(txt || "").split("\n"); let out = ""; let inList = false;
+    for (const raw of lines) {
+      const t = raw.trim();
+      if (!t) { if (inList) { out += "</ul>"; inList = false; } continue; }
+      if (/^[-*•]\s+/.test(t)) { if (!inList) { out += "<ul>"; inList = true; } out += "<li>" + inline(t.replace(/^[-*•]\s+/, "")) + "</li>"; }
+      else { if (inList) { out += "</ul>"; inList = false; } out += "<p>" + inline(t) + "</p>"; }
+    }
+    if (inList) out += "</ul>";
+    return out;
+  };
+  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const sections = (doc.sections || []).map(s => `<section>${s.heading ? `<h2>${esc(s.heading)}</h2>` : ""}${body(s.body)}</section>`).join("");
+  return `<!doctype html><html dir="${rtl ? "rtl" : "ltr"}" lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--ink:#1a1a2e;--muted:#5b5b78;--accent:#6366f1;--line:#e7e7f0;--bg:#ffffff}
+*{box-sizing:border-box}
+body{margin:0;background:#f4f4f8;color:var(--ink);font-family:Georgia,'Times New Roman',serif;line-height:1.7;font-size:15px}
+.page{max-width:780px;margin:24px auto;background:var(--bg);padding:56px 64px;box-shadow:0 4px 24px rgba(20,20,50,.08);border-radius:4px}
+.eyebrow{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 10px}
+h1{font-size:30px;line-height:1.2;margin:0 0 8px;letter-spacing:-.01em}
+.sub{font-size:16px;color:var(--muted);margin:0 0 20px;font-style:italic}
+.meta{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:12px;color:var(--muted);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:12px 0;margin:0 0 28px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+h2{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);margin:30px 0 10px;font-weight:700}
+section:first-of-type h2{margin-top:0}
+p{margin:0 0 12px}
+ul{margin:0 0 14px;padding-${rtl ? "right" : "left"}:20px}
+li{margin:0 0 7px}
+strong{color:var(--ink);font-weight:700}
+.footer{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:13px;color:var(--muted);border-top:2px solid var(--accent);margin-top:34px;padding-top:16px;font-style:italic}
+.brand{font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-weight:700;color:var(--ink);font-style:normal}
+@media print{body{background:#fff}.page{box-shadow:none;margin:0;max-width:none;padding:0}}
+</style></head>
+<body><div class="page">
+<div class="eyebrow">${esc(brand)} · SEO &amp; AEO</div>
+<h1>${esc(doc.title)}</h1>
+${doc.subtitle ? `<div class="sub">${esc(doc.subtitle)}</div>` : ""}
+<div class="meta"><span>${doc.recipient ? "Prepared for " + esc(doc.recipient) : "Prepared by " + esc(brand)}</span><span>${today}</span></div>
+${sections}
+${doc.footer ? `<div class="footer">${inline(doc.footer)}<br><span class="brand">${esc(brand)}</span></div>` : `<div class="footer"><span class="brand">${esc(brand)}</span></div>`}
+</div></body></html>`;
+}
+
 export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_deal_save") {
     const d = body || {};
@@ -179,6 +227,48 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const r = await generateCaseStudy({ conversation: c.conversation, facts: c.facts });
       return r.ok ? { success: true, draft: r.draft } : { success: false, error: r.error };
     } catch (e: any) { return { success: false, error: e?.message || "generate failed" }; }
+  }
+
+  if (action === "bd_generate_doc") {
+    const id = String(body?.id || "").trim();
+    const docType = String(body?.docType || "proposal");
+    const c = await dealContext(id, String(body?.conversation || ""));
+    let deal: any = null; let strategy: any = null;
+    if (id) { try { const { data } = await db().from("bd_deals").select("*").eq("id", id).single(); deal = data; strategy = (deal as any)?.strategy; } catch { /* ignore */ } }
+    if (!c.conversation.trim() && !c.facts && !strategy) return { success: false, error: "Analyse the chat first so the document has real context to work from." };
+    // Auto-gather: if this doc benefits from site data and none is on the deal yet, run a fresh audit.
+    let auditText = c.attachments || "";
+    const siteUrl = String(body?.siteUrl || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim();
+    const needsSite = ["proposal", "audit_report", "strategy_brief", "pitch_email"].includes(docType);
+    const hasAuditCtx = /\b(audit|crawl|pages|schema|performance|aeo|readiness)\b/i.test(auditText);
+    if (needsSite && !hasAuditCtx && siteUrl) {
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const report = await crawlSite({ projectId: id, siteUrl, maxPages: 30 });
+        if (report && report.pages_reachable > 0) {
+          const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${(v as any).count} ${String(k).replace(/_/g, " ")}`).join(", ");
+          const fresh = `Site audit of ${report.project_domain} — crawled ${report.pages_reachable} pages. Issues found: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema present: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
+          auditText = fresh + (auditText ? "\n\n" + auditText : "");
+          await persistDiag(id, "audit", "Quick site audit", fresh);
+        }
+      } catch { /* non-fatal — generate from conversation/facts */ }
+    }
+    // Real, traceable grounding: current algorithm knowledge + proven results.
+    const [algoR, brainR] = await Promise.allSettled([
+      db().from("algorithm_knowledge").select("topic,summary,recommendations").order("freshness_score", { ascending: false }).limit(8),
+      db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(8),
+    ]);
+    const algorithmKnowledge = algoR.status === "fulfilled" ? ((algoR.value.data as any[]) || []).map((a: any) => `${a.topic}: ${a.summary}${a.recommendations ? ` (Do: ${a.recommendations})` : ""}`).join("\n") : "";
+    const provenResults = brainR.status === "fulfilled" ? ((brainR.value.data as any[]) || []).map((b: any) => `${b.card_title}: ${b.improvement}${Array.isArray(b.what_worked) && b.what_worked.length ? ` — what worked: ${b.what_worked.join(", ")}` : ""}`).join("\n") : "";
+    try {
+      const { generateDoc } = await import("./bd-strategist.js");
+      const r = await generateDoc({ docType, brandName: "Manav S", conversation: c.conversation, strategy, facts: c.facts, auditText, leadInfo: { url: siteUrl, name: (deal as any)?.client_name || "", industry: strategy?.deal_facts?.industry || "" }, language: String(body?.language || "US English"), currency: String(body?.currency || "USD"), algorithmKnowledge, provenResults });
+      if (!r.ok || !r.doc) return { success: false, error: r.error || "Could not generate the document." };
+      const html = renderDocHtml(r.doc, "Manav S", String(body?.language || "US English"));
+      const plain = r.doc.sections.map(s => (s.heading ? s.heading + "\n" : "") + s.body).join("\n\n");
+      if (id) { try { await persistDiag(id, "doc:" + docType, r.doc.title || docType, plain.slice(0, 8000)); } catch { /* ignore */ } }
+      return { success: true, html, title: r.doc.title, docType };
+    } catch (e: any) { return { success: false, error: e?.message || "doc generation failed" }; }
   }
 
   if (action === "bd_aeo_check") {

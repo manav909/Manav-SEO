@@ -203,6 +203,90 @@ export async function generateCaseStudy(o: { conversation?: string; facts?: stri
   } catch (e: any) { return { ok: false, error: e?.message || "generate failed" }; }
 }
 
+/* ─── High-quality, HONEST client document generator. Uses the FULL real context of
+   the deal (conversation, full strategy, real audit findings, real proven results,
+   current algorithm knowledge). Never fabricates metrics or leaves placeholders. ─── */
+function strategyDigest(s: any): string {
+  if (!s) return "";
+  const ci = s.client_intel || {}; const f = s.deal_facts || {};
+  const L = (label: string, a: any) => (Array.isArray(a) && a.length) ? `${label}: ${a.join("; ")}` : "";
+  return [
+    s.deal_state?.summary ? `Where the deal stands: ${s.deal_state.summary}` : "",
+    s.deal_state?.stage ? `Stage: ${s.deal_state.stage}${s.deal_state.temperature ? ` (${s.deal_state.temperature})` : ""}` : "",
+    s.next_move ? `Recommended next move: ${s.next_move}` : "",
+    L("What they want", ci.wants),
+    L("Their pain points", ci.pain_points),
+    L("Buying signals", ci.buying_signals),
+    L("Their objections / concerns", ci.objections),
+    L("Budget signals", ci.budget_signals),
+    f.budget ? `Budget: ${f.budget}` : "",
+    f.timeline ? `Timeline: ${f.timeline}` : "",
+    f.platform ? `Platform / CMS: ${f.platform}` : "",
+    f.service ? `Service they want: ${f.service}` : "",
+    f.location ? `Location: ${f.location}` : "",
+    f.client_type ? `Client type: ${f.client_type}` : "",
+    L("Deliverables discussed", f.deliverables),
+    L("Their competitors", f.competitors),
+    L("Target keywords", f.target_keywords),
+    L("Prices discussed", f.prices_discussed),
+    L("Key dates", f.key_dates),
+    L("Other facts captured", f.other_facts),
+  ].filter(Boolean).join("\n");
+}
+
+const DOC_TASKS: Record<string, string> = {
+  proposal: "Write a complete, persuasive SEO/AEO PROPOSAL for this exact client. Sections: (1) 'Where you are today' — open with what they actually told you and what the real audit found on their site; make them recognise their own situation. (2) 'What this is costing you' — explain, in plain business terms, what the real issues found mean for customers finding them; be concrete about impact without inventing numbers. (3) 'The plan' — a sequenced plan built from the ACTUAL issues found and their stated goals (foundation/technical first, then content/authority, then AEO/AI-search), and for the key moves explain WHY using current algorithm knowledge. (4) 'Why me' — your real differentiators; reference your real proven results only if provided. (5) 'Investment' — a realistic figure or range in the client's currency that fits this scope and what they signalled about budget; state clearly what is included; never guarantee results. (6) 'Next step' — one clear, low-friction action. 600-900 words. Specific to them throughout.",
+  audit_report: "Write a client-ready SEO/AEO AUDIT REPORT of THEIR website using ONLY the real audit findings provided. For each real issue: name it in plain English, explain what it means for their customers and rankings, state how it gets fixed and the rough effort. Add a short 'Quick wins' list (the fixes with the most upside soonest) and a grounded 'The bigger picture' close tied to current algorithm knowledge. If the audit data is limited, say honestly what was checked and what a deeper audit would add. Do not invent issues that were not found.",
+  pitch_email: "Write a short, specific PITCH MESSAGE/EMAIL. Open by referencing one real, concrete finding from their audit or one specific thing they said. Show you understand their business and how their customers search. Make one honest, relevant point of proof (use real proven results if provided; otherwise speak from the specific analysis of their site — no invented case numbers). Close with a low-pressure, specific ask. Under 220 words.",
+  followup_email: "Write a FOLLOW-UP MESSAGE after the conversation so far. Reference specific things they actually said and the real opportunities you identified for them. Propose a clear next step with a sensible timeframe. Honest pricing indication in their currency only if it fits naturally. Warm and specific. 180-260 words.",
+  message: "Write a SHORT, PERSONAL MESSAGE (chat/WhatsApp style, under 110 words). Reference something specific and real about their site or their message so it is obviously written for them. One clear, easy call to action. No fabrication, no templated feel.",
+  objection_response: "Write an honest OBJECTION RESPONSE addressing their REAL concern (from the conversation and risk flags). Genuinely acknowledge it, reframe it with real logic or a real finding, remove the risk (e.g. a sensible first step or review point), and close with one easy ask. Truthful — no fake evidence. 130-180 words.",
+  strategy_brief: "Write a focused TECHNICAL STRATEGY BRIEF for this client: their goal, the real issues standing in the way (from the audit), the prioritised technical and content moves to fix them, and the reasoning tied to current algorithm/AI-search knowledge. Specific and credible; senior-grade; no fluff. 400-600 words.",
+  case_study: "If real proven results are provided, write a truthful CASE STUDY from them — situation, what was done, the real results, and how it relates to this client. If NO real results are provided, do NOT invent a past client; instead write a 'How I'd approach a business like yours' piece that honestly walks through the methodology applied to THEIR specific situation and real findings, clearly framed as the approach (not a fabricated past outcome). 350-500 words.",
+};
+
+export interface GenDoc { title: string; subtitle: string; recipient: string; sections: Array<{ heading: string; body: string }>; footer: string }
+export async function generateDoc(opts: {
+  docType: string; brandName?: string; conversation?: string; strategy?: any; facts?: string; auditText?: string;
+  leadInfo?: { url?: string; name?: string; industry?: string }; language?: string; currency?: string; algorithmKnowledge?: string; provenResults?: string;
+}): Promise<{ ok: boolean; doc?: GenDoc; error?: string }> {
+  const brand = opts.brandName || "Manav S";
+  const language = opts.language || "US English";
+  const currency = opts.currency || "USD";
+  const system = [
+    `You are ${brand} — a senior SEO and AEO consultant and a trusted partner, writing a real client document for a specific client who has trusted you with their business and their own customers. This document is the centrepiece of your credibility: it must feel personal, expert, specific, and completely trustworthy. Never stiff, never templated, never generic.`,
+    `HONESTY IS ABSOLUTE and non-negotiable:`,
+    `- Use ONLY the real information provided below: what the client actually said, the real audit findings from their site, the captured facts, your real proven results, and current algorithm knowledge.`,
+    `- NEVER invent or estimate specific metrics, traffic figures, rankings, search volumes, client names, dates, or outcomes and present them as fact. NEVER promise or guarantee rankings or results.`,
+    `- NEVER leave a placeholder, a bracket like [X], or a blank. Write complete, finished prose. If you do not have a precise number, make the point qualitatively and truthfully instead of inventing one.`,
+    `- Make every important claim TRACEABLE to something real provided here — a specific issue found on their site, a specific thing they said, a specific fact they shared. They should recognise their own situation on the page.`,
+    `- If proven results are provided, you may reference them truthfully. If none are provided, show expertise through the specific analysis of THEIR situation and current algorithm knowledge — not through fabricated examples.`,
+    `Write the ENTIRE document in fluent, natural ${language} (not translated English). Use ${currency} for any money. Voice: confident, warm, precise, human. Active voice. No corporate filler ("leverage", "cutting-edge", "synergy", "robust"), no "we believe/we think/it is important to", and never mention AI, automation, or software tools.`,
+    `Return ONLY valid JSON (no markdown): {"title":"...","subtitle":"...","recipient":"client name if known","sections":[{"heading":"SECTION HEADING","body":"full text — use \\n for line breaks and lines starting with '- ' for bullets"}],"footer":"a short, warm, personal closing line"}`,
+  ].join("\n");
+  const user = [
+    opts.leadInfo?.name ? `CLIENT NAME: ${opts.leadInfo.name}` : ``,
+    opts.leadInfo?.industry ? `INDUSTRY: ${opts.leadInfo.industry}` : ``,
+    opts.leadInfo?.url ? `THEIR WEBSITE: ${opts.leadInfo.url}` : ``,
+    opts.strategy ? `WHAT WE KNOW ABOUT THIS DEAL (from analysis of the conversation):\n${strategyDigest(opts.strategy)}` : (opts.facts ? `CAPTURED FACTS: ${String(opts.facts).slice(0, 2500)}` : ``),
+    opts.auditText && opts.auditText.trim() ? `REAL AUDIT / DIAGNOSTIC FINDINGS ON THEIR SITE:\n${String(opts.auditText).slice(0, 9000)}` : `(No site audit data available — do not invent findings; work from the conversation and facts, and where relevant note that a full audit would add detail.)`,
+    opts.provenResults && opts.provenResults.trim() ? `YOUR REAL PROVEN RESULTS (truthful, may be referenced):\n${String(opts.provenResults).slice(0, 2500)}` : `(No proven-results data provided — do NOT fabricate past client outcomes.)`,
+    opts.algorithmKnowledge && opts.algorithmKnowledge.trim() ? `CURRENT ALGORITHM / AI-SEARCH KNOWLEDGE (for technical credibility):\n${String(opts.algorithmKnowledge).slice(0, 3500)}` : ``,
+    opts.conversation && opts.conversation.trim() ? `THE ACTUAL CONVERSATION SO FAR (what they really said — reference it specifically):\n${String(opts.conversation).slice(0, 16000)}` : ``,
+    ``,
+    `TASK: ${DOC_TASKS[opts.docType] || DOC_TASKS.proposal}`,
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 4000, timeoutMs: 110000, label: "bd-generate-doc" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not generate the document. Try again." };
+    const sections = Array.isArray(p.sections) ? p.sections.map((s: any) => ({ heading: String(s?.heading || ""), body: String(s?.body || "") })).filter((s: any) => s.body) : [];
+    if (!sections.length && typeof p === "object" && p.body) sections.push({ heading: "", body: String(p.body) });
+    if (!sections.length) return { ok: false, error: "The document came back empty. Try again." };
+    return { ok: true, doc: { title: String(p.title || "Document"), subtitle: String(p.subtitle || ""), recipient: String(p.recipient || opts.leadInfo?.name || ""), sections, footer: String(p.footer || "") } };
+  } catch (e: any) { return { ok: false, error: e?.message || "doc failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
