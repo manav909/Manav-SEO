@@ -458,16 +458,16 @@ export default function Deals() {
     patchWin(id, { status: "done", result: { answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools } });
   };
   const ask = () => { const q = askInput; setAskInput(""); askQuestion(q); };
+  const doAction = (text: string) => askQuestion(`Do this for THIS specific client using the full deal context (their conversation, facts, and any audit), and give me exactly what I need — draft any message ready to send in my voice, honest with no guarantees or fabricated results: ${text}`);
   const actionForText = (text: string): { label: string; run: () => void } => {
     const t = (text || "").toLowerCase();
-    if (/audit|crawl|site health|technical|broken link|core web|page speed|indexing/.test(t)) return { label: "Run audit", run: () => runAudit() };
-    if (/aeo|geo|schema|llms\.txt|answer engine|ai overview|ai search|structured data|featured snippet/.test(t)) return { label: "Check AEO", run: () => runAeo() };
-    if (/offer|pricing|price|package|quote|proposal/.test(t)) return { label: "Build offer", run: () => genOffer() };
-    if (/roadmap|30\/60\/90|plan|timeline|milestone|strategy doc/.test(t)) return { label: "Build roadmap", run: () => genRoadmap() };
-    if (/case stud|portfolio|proof|testimonial|past work|example of/.test(t)) return { label: "Case study", run: () => matchCase() };
-    if (/competitor|serp|gap analysis|benchmark|rank.*compar/.test(t)) return { label: "Competitor", run: () => runCompetitor() };
-    if (/repl|respond|message|answer|follow.?up|reach out|send them|outreach|pitch/.test(t)) return { label: "Draft reply", run: () => genVariants() };
-    return { label: "Draft this", run: () => askQuestion(`How should I handle this, and draft anything I can send to the client: ${text}`) };
+    if (/site audit|technical audit|run an? audit|audit (their|the|his|her|client)|crawl (their|the)|site health check/.test(t)) return { label: "Run audit", run: () => runAudit() };
+    if (/\baeo\b|geo readiness|ai.?search readiness|answer engine|schema (audit|check|review)|llms\.txt|structured data check/.test(t)) return { label: "Check AEO", run: () => runAeo() };
+    if (/competitor (analysis|snapshot|research|benchmark|comparison)|serp (analysis|gap)|analyse.*competitor|compare against.*competitor/.test(t)) return { label: "Competitor", run: () => runCompetitor() };
+    if (/\broadmap\b|30.?60.?90|90.?day plan|delivery plan|strategy plan/.test(t)) return { label: "Build roadmap", run: () => genRoadmap() };
+    if (/custom offer|full offer|formal offer|build (an?|the) offer|create (an?|the) offer|recommended package|formal proposal|put together (an?|the) (offer|package)/.test(t)) return { label: "Build offer", run: () => genOffer() };
+    if (/case stud|portfolio piece|relevant proof|similar client example/.test(t)) return { label: "Case study", run: () => matchCase() };
+    return { label: "Do it", run: () => doAction(text) };
   };
 
   /* Documents: reuse the existing generate_client_doc engine, fed by THIS deal's context
