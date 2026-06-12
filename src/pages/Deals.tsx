@@ -284,6 +284,11 @@ export default function Deals() {
   const [docCurrency, setDocCurrency] = useState("USD");
   const [orderInput, setOrderInput] = useState("");
   const [showOrderPaste, setShowOrderPaste] = useState(false);
+  const [deliveredInput, setDeliveredInput] = useState("");
+  const [showDeliveredPaste, setShowDeliveredPaste] = useState(false);
+  const [engFired, setEngFired] = useState("");
+  const [centerTab, setCenterTab] = useState<"chat" | "order">("chat");
+  const [rightTab, setRightTab] = useState<"brief" | "tools" | "engage">("brief");
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -308,8 +313,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -498,6 +503,30 @@ export default function Deals() {
     setOrderInput(""); setShowOrderPaste(false); setNotice("Order details pulled in — dates, requirements and deliveries are now part of this lead's context.");
   };
 
+  /* Engagement timeline — reads inbox + order + delivered docs in sequence; tracks what is
+     delivered/closed vs open, mood and needs shift, and the next move to win. */
+  const runEngagement = async (auto = false) => {
+    if (!selected?.id) { if (!auto) setError("Open or save the lead first."); return; }
+    if (busy === "engagement") return;
+    setBusy("engagement"); if (!auto) setError("");
+    const r: any = await post("bd_engagement", { id: selected.id, conversation });
+    setBusy("");
+    if (!r?.success) { if (!auto) setError(r?.error || "Could not build the engagement picture."); return; }
+    if (r.deal) setSelected(r.deal);
+  };
+  const attachDelivered = async () => {
+    if (!deliveredInput.trim()) { setError("Paste the delivered document/work first."); return; }
+    let id = selected?.id;
+    if (!id) { const s: any = await post("bd_deal_save", { client_name: selected?.client_name || clientName || "Untitled lead", conversation }); if (s?.success) { setSelected(s.deal); selectedIdRef.current = s.deal.id; id = s.deal.id; } }
+    if (!id) { setError("Could not save the deal."); return; }
+    setBusy("delivered"); setError("");
+    const r: any = await post("bd_deal_attach", { id, name: "Delivered work " + new Date().toLocaleDateString(), kind: "delivered", text: deliveredInput });
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not save the delivered work."); return; }
+    if (r.deal) setSelected(r.deal);
+    setDeliveredInput(""); setShowDeliveredPaste(false); setNotice("Delivered work saved to context. Refresh the engagement to fold it into the timeline.");
+  };
+
   const launchDemo = () => {
     try {
       sessionStorage.setItem("wizard_restore", JSON.stringify({
@@ -519,6 +548,13 @@ export default function Deals() {
   const orderAtt = (selected?.attachments || []).find((a: any) => a.kind === "order");
   const order = orderAtt?.order;
   const orderActive = !!order || ["hired", "in_delivery", "repeat"].includes(strategy?.deal_state?.stage) || ["hired", "in_delivery", "repeat", "completed"].includes(selected?.status);
+  const engagementAtt = (selected?.attachments || []).find((a: any) => a.kind === "engagement");
+  const engagement = engagementAtt?.engagement;
+  useEffect(() => {
+    if (!selected?.id || !order || engagement || engFired === selected.id || busy === "engagement") return;
+    setEngFired(selected.id); runEngagement(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order, selected?.id]);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -597,9 +633,14 @@ export default function Deals() {
             {selected?.id && <Chip text="✓ saved" color="#10b981" />}
             {(clientSite || conversation.trim()) && <button onClick={launchDemo} className="ml-auto text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">Build demo →</button>}
           </div>
+          <div className="flex items-center gap-1 px-3 pt-2 border-b border-border/60">
+            <button onClick={() => setCenterTab("chat")} className={`text-[11px] font-medium px-3 py-1.5 rounded-t-lg border-b-2 -mb-px transition-colors ${centerTab === "chat" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>💬 Chat</button>
+            <button onClick={() => setCenterTab("order")} className={`text-[11px] font-medium px-3 py-1.5 rounded-t-lg border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${centerTab === "order" ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>📋 Order page{order && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}</button>
+          </div>
           {error && <div className="mx-4 mt-2 rounded-lg border p-2 text-xs" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>{error}</div>}
           {notice && !error && <div className="mx-4 mt-2 text-[11px] text-primary">{notice}</div>}
 
+          {centerTab === "chat" ? (<>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-0">
             {messages.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">Paste the Fiverr conversation below. The thread renders here; the intelligence appears on the right.</p>}
             {messages.map((m, i) => (
@@ -643,10 +684,71 @@ export default function Deals() {
             </div>
             {showAttach && (<div><textarea value={transcript} onChange={e => setTranscript(e.target.value)} placeholder="Paste the call transcript (Fiverr recordings expire ~30 days — save it now)…" className="w-full h-20 px-2 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y" /><button onClick={() => { if (transcript.trim()) { attach("call transcript", "transcript", transcript); setTranscript(""); setShowAttach(false); } }} disabled={busy === "attach" || !transcript.trim()} className="mt-1 text-[11px] px-3 py-1 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">Add transcript</button></div>)}
           </div>
+          </>) : (
+          <div className="flex-1 overflow-y-auto p-4 min-h-0">
+            {order ? (
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {order.status && <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 uppercase tracking-wider">{order.status}</span>}
+                    {order.order_number && <span className="font-mono text-xs text-foreground/80">{order.order_number}</span>}
+                  </div>
+                  <button onClick={() => setShowOrderPaste(v => !v)} className="text-[11px] text-muted-foreground hover:text-foreground">Update order</button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {order.package && <div className="rounded-xl border border-border/60 p-2.5"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Package</div><div className="text-sm text-foreground">{order.package}</div></div>}
+                  {order.price && <div className="rounded-xl border border-border/60 p-2.5"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Total</div><div className="text-sm font-mono text-foreground">{order.price}</div></div>}
+                  {order.due_at && <div className="rounded-xl border border-border/60 p-2.5"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">Due</div><div className="text-sm text-foreground">{order.due_at}</div></div>}
+                  {(order.delivered_at || order.delivery_time) && <div className="rounded-xl border border-border/60 p-2.5"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{order.delivered_at ? "Delivered" : "Delivery time"}</div><div className="text-sm text-foreground">{order.delivered_at || order.delivery_time}</div></div>}
+                </div>
+                {order.requirements?.length > 0 && (
+                  <div className="rounded-xl border border-primary/25 bg-primary/[0.03] p-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-primary mb-2">Requirements the client submitted</div>
+                    <ul className="space-y-1.5 text-sm text-foreground/90">{order.requirements.map((x: string, i: number) => <li key={i} className="flex gap-2"><span className="text-primary">•</span><span>{x}</span></li>)}</ul>
+                  </div>
+                )}
+                {order.deliverables?.length > 0 && <div><div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1.5">Deliverables</div><ul className="list-disc ml-5 text-sm text-muted-foreground space-y-1">{order.deliverables.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                {order.extras?.length > 0 && <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground/80">Extras:</span> {order.extras.join(", ")}</div>}
+                {order.revisions && <div className="text-sm text-muted-foreground"><span className="font-semibold text-foreground/80">Revisions:</span> {order.revisions}</div>}
+                {order.key_dates?.length > 0 && <div><div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1.5">Order activity</div><div className="space-y-1.5">{order.key_dates.map((k: any, i: number) => <div key={i} className="flex gap-2 text-sm"><span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/40 mt-1.5 shrink-0" /><span className="text-muted-foreground">{k.label}</span><span className="text-foreground ml-auto">{k.date}</span></div>)}</div></div>}
+                {order.notes?.length > 0 && <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.05] p-2.5 text-sm text-amber-600">⚠ {order.notes.join("; ")}</div>}
+                <div className="pt-1"><button onClick={() => setShowDeliveredPaste(true)} className="text-[11px] text-muted-foreground hover:text-foreground">+ Add delivered work to context</button></div>
+              </div>
+            ) : (
+              <div className="max-w-md mx-auto py-10 text-center">
+                <div className="text-3xl mb-2">📋</div>
+                <p className="text-sm text-foreground mb-1 font-medium">No order page yet</p>
+                <p className="text-xs text-muted-foreground mb-3 leading-relaxed">Once the buyer places the order, Fiverr's Order page holds the real dates, status, deliveries and the requirements they submitted — separate from the chat. Paste it here and it joins this lead's context.</p>
+                <button onClick={() => setShowOrderPaste(true)} className="text-xs font-medium px-4 py-2 rounded-lg bg-primary text-primary-foreground">📋 Paste the order page</button>
+              </div>
+            )}
+            {(showOrderPaste || (showDeliveredPaste && order)) && (
+              <div className="mt-4 rounded-xl border border-border/60 p-3 space-y-3">
+                {showOrderPaste && (<div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1.5">Paste / update order page</div>
+                  <textarea value={orderInput} onChange={e => setOrderInput(e.target.value)} placeholder="Paste the full Fiverr Order page — status, dates, the requirements they submitted, deliverables, activity…" className="w-full h-28 px-2.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+                  <div className="flex items-center gap-2 mt-1.5"><button onClick={ingestOrder} disabled={busy === "order" || !orderInput.trim()} className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{busy === "order" ? <><span className="w-3 h-3 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" /> Reading…</> : "Save order details"}</button><button onClick={() => { setShowOrderPaste(false); setOrderInput(""); }} className="text-[11px] text-muted-foreground">cancel</button></div>
+                </div>)}
+                {showDeliveredPaste && order && (<div>
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1.5">Add a delivered document / work</div>
+                  <textarea value={deliveredInput} onChange={e => setDeliveredInput(e.target.value)} placeholder="Paste a document or work you delivered so it joins the picture…" className="w-full h-24 px-2.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+                  <div className="flex items-center gap-2 mt-1.5"><button onClick={attachDelivered} disabled={busy === "delivered" || !deliveredInput.trim()} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{busy === "delivered" ? "Saving…" : "Save delivered work"}</button><button onClick={() => { setShowDeliveredPaste(false); setDeliveredInput(""); }} className="text-[11px] text-muted-foreground">cancel</button></div>
+                </div>)}
+              </div>
+            )}
+          </div>
+          )}
         </div>
 
         {/* RIGHT — advanced intelligence */}
-        <div className="rounded-2xl border border-border/70 bg-card shadow-sm overflow-y-auto min-h-0 min-w-0">
+        <div className="rounded-2xl border border-border/70 bg-card shadow-sm flex flex-col min-h-0 min-w-0">
+          <div className="flex items-center gap-1 px-3 pt-2 border-b border-border/60 shrink-0">
+            {([["brief", "Brief"], ["tools", "Tools"], ["engage", "Engagement"]] as const).map(([t, label]) => (
+              <button key={t} onClick={() => setRightTab(t)} className={`text-[11px] font-medium px-3 py-1.5 rounded-t-lg border-b-2 -mb-px transition-colors flex items-center gap-1.5 ${rightTab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{label}{t === "engage" && (engagement || orderActive) && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}{t === "tools" && windows.some(w => w.status === "running") && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}</button>
+            ))}
+          </div>
+          <div className="overflow-y-auto flex-1 min-h-0">
+          {rightTab === "brief" && (<>
           {(selected || conversation.trim()) && (
             <div className="px-4 pt-3.5 pb-3.5 border-b border-border/60">
               <div className="text-[10px] font-semibold text-primary uppercase tracking-[0.13em] mb-2 flex items-center gap-1.5"><span>✨</span> Ask the expert</div>
@@ -665,36 +767,6 @@ export default function Deals() {
                   {askResult.suggested_tools?.length > 0 && (
                     <div className="flex flex-wrap gap-1">{askResult.suggested_tools.map((t: string, i: number) => { const isAudit = /audit/i.test(t); return <button key={i} onClick={() => { if (isAudit) runAudit(); }} className="text-[10px] px-2 py-0.5 rounded-md bg-muted border border-border text-muted-foreground hover:border-primary">{isAudit ? `▶ ${t}` : t}</button>; })}</div>
                   )}
-                </div>
-              )}
-            </div>
-          )}
-          {orderActive && (
-            <div className="px-4 py-3 border-b border-border/60">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold text-emerald-600 uppercase tracking-[0.13em] flex items-center gap-1.5">📋 Active order</span>
-                {order && <button onClick={() => setShowOrderPaste(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground">Update</button>}
-              </div>
-              {order ? (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.05] p-2.5 text-xs space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">{order.status && <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 uppercase tracking-wider">{order.status}</span>}{order.order_number && <span className="font-mono text-foreground/80">{order.order_number}</span>}{order.price && <span className="font-mono text-foreground">{order.price}</span>}</div>
-                  {(order.due_at || order.delivered_at || order.delivery_time || order.package) && <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">{order.due_at && <span>Due <span className="text-foreground font-medium">{order.due_at}</span></span>}{order.delivered_at && <span>Delivered <span className="text-foreground">{order.delivered_at}</span></span>}{order.delivery_time && <span>{order.delivery_time}</span>}{order.package && <span>{order.package}</span>}{order.revisions && <span>Revisions: {order.revisions}</span>}</div>}
-                  {order.requirements?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1">Requirements they submitted</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{order.requirements.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
-                  {order.deliverables?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1">Deliverables</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{order.deliverables.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
-                  {order.key_dates?.length > 0 && <div className="flex flex-wrap gap-x-3 gap-y-1 text-muted-foreground">{order.key_dates.map((k: any, i: number) => <span key={i}>{k.label}: <span className="text-foreground">{k.date}</span></span>)}</div>}
-                  {order.extras?.length > 0 && <div className="text-muted-foreground">Extras: {order.extras.join(", ")}</div>}
-                  {order.notes?.length > 0 && <div className="text-amber-600">⚠ {order.notes.join("; ")}</div>}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/[0.05] p-2.5">
-                  <p className="text-xs text-foreground mb-2 leading-relaxed">This looks like an <b>active order</b>. Fiverr keeps the real dates, status, deliveries and the requirements the client actually submitted on the <b>Order page</b> — separate from the chat. Paste it so all of that joins this lead's context.</p>
-                  <button onClick={() => setShowOrderPaste(true)} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:opacity-90 transition-opacity">📋 Paste the order page</button>
-                </div>
-              )}
-              {showOrderPaste && (
-                <div className="mt-2">
-                  <textarea value={orderInput} onChange={e => setOrderInput(e.target.value)} placeholder="Paste the full Fiverr Order page here — status, dates, requirements the client submitted, deliverables, and the order activity…" className="w-full h-24 px-2.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
-                  <div className="flex items-center gap-2 mt-1.5"><button onClick={ingestOrder} disabled={busy === "order" || !orderInput.trim()} className="inline-flex items-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{busy === "order" ? <><span className="w-3 h-3 rounded-full border-2 border-primary-foreground/40 border-t-primary-foreground animate-spin" /> Reading…</> : "Save order details"}</button><button onClick={() => { setShowOrderPaste(false); setOrderInput(""); }} className="text-[11px] text-muted-foreground">cancel</button></div>
                 </div>
               )}
             </div>
@@ -734,58 +806,6 @@ export default function Deals() {
                   </div>
                 </Acc>
               )}
-
-              <Acc open={open} toggle={toggle} k="apps" title="Run a tool" defaultBadge="opens as a window">
-                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mb-2">
-                  <div className="flex items-center justify-between mb-1.5"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em]">Client site</span>{clientSite && <span className="text-[9px] text-emerald-600">ready for audit</span>}</div>
-                  <input value={siteInput} onChange={e => setSiteInput(e.target.value)} placeholder="yourclient.com — needed for audit & AEO" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary" />
-                  {!clientSite && <p className="text-[10px] text-amber-600/90 mt-1">Audit and AEO need the client's website — paste it here (the chat did not include one).</p>}
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 mb-2">
-                  {([["audit", "🔍", "Site audit", () => runAudit()], ["aeo", "🤖", "AEO readiness", () => runAeo()], ["offer", "💰", "Offer & pricing", () => genOffer()], ["roadmap", "🗺", "30/60/90 plan", () => genRoadmap()], ["case", "📂", "Case study", () => matchCase()]] as const).map(([k, icon, label, fn]) => (
-                    <button key={k} onClick={fn} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
-                      <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
-                      <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
-                    </button>
-                  ))}
-                  <button onClick={() => setShowCsLib(v => !v)} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-dashed border-border/70 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all text-left"><span className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-[13px] shrink-0">⚙</span><span className="text-[11px] font-medium tracking-tight truncate">Case library</span></button>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5">
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Competitor snapshot</div>
-                  <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary mb-1.5" />
-                  <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
-                  <button onClick={() => runCompetitor()} className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⚔ Run snapshot</button>
-                </div>
-                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mt-2">
-                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Documents — client-ready</div>
-                  <div className="flex gap-1.5 mb-2">
-                    <select value={docLang} onChange={e => setDocLang(e.target.value)} className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["US English", "UK English", "Australian English", "Hindi", "Punjabi", "Arabic", "French", "German", "Spanish", "Portuguese", "Urdu"].map(l => <option key={l} value={l}>{l}</option>)}</select>
-                    <select value={docCurrency} onChange={e => setDocCurrency(e.target.value)} className="w-[72px] shrink-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["USD", "GBP", "EUR", "INR", "AED", "AUD", "CAD", "SAR"].map(c => <option key={c} value={c}>{c}</option>)}</select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {([["proposal", "📄", "Proposal"], ["audit_report", "📊", "Audit report"], ["strategy_brief", "🧭", "Strategy brief"], ["pitch_email", "✉️", "Pitch email"], ["followup_email", "📨", "Follow-up"], ["objection_response", "🛡", "Objection reply"], ["case_study", "🏆", "Case study"], ["message", "💬", "Short message"]] as const).map(([dt, icon, label]) => (
-                      <button key={dt} onClick={() => genDoc(dt, label)} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
-                        <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
-                        <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {showCsLib && (
-                  <div className="text-xs space-y-2 mt-2 rounded-lg border border-border p-2">
-                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Case study library</div>
-                    {caseLib.map(c => <div key={c.id} className="flex items-center justify-between gap-2 border-b border-border pb-1"><span className="truncate text-foreground">{c.title || "Untitled"}{c.industry ? ` · ${c.industry}` : ""}</span><button onClick={() => deleteCaseStudy(c.id)} className="text-muted-foreground hover:text-foreground">×</button></div>)}
-                    <div className="space-y-1 pt-1">
-                      <input value={csForm.title} onChange={e => setCsForm({ ...csForm, title: e.target.value })} placeholder="Title (e.g. Shopify store, +120% organic)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
-                      <textarea value={csForm.summary} onChange={e => setCsForm({ ...csForm, summary: e.target.value })} placeholder="What you did (real)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
-                      <textarea value={csForm.results} onChange={e => setCsForm({ ...csForm, results: e.target.value })} placeholder="Real results (numbers if you have them)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
-                      <input value={csForm.industry} onChange={e => setCsForm({ ...csForm, industry: e.target.value })} placeholder="Industry (e.g. interior design)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
-                      <input value={csForm.tags} onChange={e => setCsForm({ ...csForm, tags: e.target.value })} placeholder="tags: shopify, local seo, aeo" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
-                      <button onClick={saveCaseStudy} className="text-[11px] px-3 py-1 rounded-lg bg-primary text-primary-foreground font-semibold">Add to library</button>
-                    </div>
-                  </div>
-                )}
-              </Acc>
 
               {intel && (intel.wants?.length || intel.pain_points?.length || intel.buying_signals?.length || intel.objections?.length || intel.budget_signals?.length) ? (
                 <Acc open={open} toggle={toggle} k="client" title="Client intelligence">
@@ -861,6 +881,94 @@ export default function Deals() {
               )}
             </div>
           )}
+          </>)}
+          {rightTab === "tools" && (
+            <div className="px-4 py-3">
+              {!strategy && !selected?.id ? (
+                <p className="text-xs text-muted-foreground">Analyse a lead first — then the diagnostics and document tools appear here. Each one opens as a window you can minimise and export.</p>
+              ) : (
+                <>
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mb-2">
+                  <div className="flex items-center justify-between mb-1.5"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em]">Client site</span>{clientSite && <span className="text-[9px] text-emerald-600">ready for audit</span>}</div>
+                  <input value={siteInput} onChange={e => setSiteInput(e.target.value)} placeholder="yourclient.com — needed for audit & AEO" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary" />
+                  {!clientSite && <p className="text-[10px] text-amber-600/90 mt-1">Audit and AEO need the client's website — paste it here (the chat did not include one).</p>}
+                </div>
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Diagnostics &amp; deliverables</div>
+                <div className="grid grid-cols-2 gap-1.5 mb-2">
+                  {([["audit", "🔍", "Site audit", () => runAudit()], ["aeo", "🤖", "AEO readiness", () => runAeo()], ["offer", "💰", "Offer & pricing", () => genOffer()], ["roadmap", "🗺", "30/60/90 plan", () => genRoadmap()], ["case", "📂", "Case study", () => matchCase()]] as const).map(([k, icon, label, fn]) => (
+                    <button key={k} onClick={fn} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
+                      <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
+                      <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
+                    </button>
+                  ))}
+                  <button onClick={() => setShowCsLib(v => !v)} className="flex items-center gap-2 px-2.5 py-2 rounded-xl border border-dashed border-border/70 text-muted-foreground hover:border-primary/40 hover:text-foreground transition-all text-left"><span className="w-6 h-6 rounded-lg bg-muted flex items-center justify-center text-[13px] shrink-0">⚙</span><span className="text-[11px] font-medium tracking-tight truncate">Case library</span></button>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Competitor snapshot</div>
+                  <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] font-mono outline-none focus:border-primary mb-1.5" />
+                  <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2.5 py-1.5 rounded-lg border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
+                  <button onClick={() => runCompetitor()} className="w-full flex items-center justify-center gap-1.5 text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⚔ Run snapshot</button>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-background/30 p-2.5 mt-2">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-[0.13em] mb-1.5">Documents — client-ready</div>
+                  <div className="flex gap-1.5 mb-2">
+                    <select value={docLang} onChange={e => setDocLang(e.target.value)} className="flex-1 min-w-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["US English", "UK English", "Australian English", "Hindi", "Punjabi", "Arabic", "French", "German", "Spanish", "Portuguese", "Urdu"].map(l => <option key={l} value={l}>{l}</option>)}</select>
+                    <select value={docCurrency} onChange={e => setDocCurrency(e.target.value)} className="w-[72px] shrink-0 px-2 py-1 rounded-lg border border-border bg-background text-[10px] outline-none focus:border-primary">{["USD", "GBP", "EUR", "INR", "AED", "AUD", "CAD", "SAR"].map(c => <option key={c} value={c}>{c}</option>)}</select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {([["proposal", "📄", "Proposal"], ["audit_report", "📊", "Audit report"], ["strategy_brief", "🧭", "Strategy brief"], ["pitch_email", "✉️", "Pitch email"], ["followup_email", "📨", "Follow-up"], ["objection_response", "🛡", "Objection reply"], ["case_study", "🏆", "Case study"], ["message", "💬", "Short message"]] as const).map(([dt, icon, label]) => (
+                      <button key={dt} onClick={() => genDoc(dt, label)} className="group flex items-center gap-2 px-2.5 py-2 rounded-xl border border-border/60 bg-background/40 hover:border-primary/40 hover:bg-primary/[0.06] transition-all text-left">
+                        <span className="w-6 h-6 rounded-lg bg-primary/10 ring-1 ring-primary/15 flex items-center justify-center text-[13px] shrink-0 group-hover:scale-105 transition-transform">{icon}</span>
+                        <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {showCsLib && (
+                  <div className="text-xs space-y-2 mt-2 rounded-lg border border-border p-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Case study library</div>
+                    {caseLib.map(c => <div key={c.id} className="flex items-center justify-between gap-2 border-b border-border pb-1"><span className="truncate text-foreground">{c.title || "Untitled"}{c.industry ? ` · ${c.industry}` : ""}</span><button onClick={() => deleteCaseStudy(c.id)} className="text-muted-foreground hover:text-foreground">×</button></div>)}
+                    <div className="space-y-1 pt-1">
+                      <input value={csForm.title} onChange={e => setCsForm({ ...csForm, title: e.target.value })} placeholder="Title (e.g. Shopify store, +120% organic)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <textarea value={csForm.summary} onChange={e => setCsForm({ ...csForm, summary: e.target.value })} placeholder="What you did (real)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
+                      <textarea value={csForm.results} onChange={e => setCsForm({ ...csForm, results: e.target.value })} placeholder="Real results (numbers if you have them)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
+                      <input value={csForm.industry} onChange={e => setCsForm({ ...csForm, industry: e.target.value })} placeholder="Industry (e.g. interior design)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <input value={csForm.tags} onChange={e => setCsForm({ ...csForm, tags: e.target.value })} placeholder="tags: shopify, local seo, aeo" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <button onClick={saveCaseStudy} className="text-[11px] px-3 py-1 rounded-lg bg-primary text-primary-foreground font-semibold">Add to library</button>
+                    </div>
+                  </div>
+                )}
+                </>
+              )}
+            </div>
+          )}
+          {rightTab === "engage" && (
+            <div className="px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold text-primary uppercase tracking-[0.13em]">Engagement timeline</span>
+                <button onClick={() => runEngagement()} disabled={busy === "engagement"} className="text-[10px] text-primary disabled:opacity-50">{busy === "engagement" ? "Reading…" : "↻ Refresh"}</button>
+              </div>
+              {!orderActive && !engagement && <p className="text-xs text-muted-foreground mb-2 leading-relaxed">The engagement timeline tracks what was wanted, offered, agreed and delivered — in sequence — and what is still open. It builds automatically once an order is active, or build it now.</p>}
+              {!engagement ? (
+                busy === "engagement"
+                  ? <div className="flex items-center gap-2 text-xs text-muted-foreground"><span className="w-3.5 h-3.5 rounded-full border-2 border-primary/30 border-t-primary animate-spin" /> Building the timeline from the chat, order and deliveries…</div>
+                  : <button onClick={() => runEngagement()} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground">Build engagement timeline</button>
+              ) : (
+                <div className="space-y-2.5 text-xs">
+                  {engagement.client_mood && <div className="flex items-baseline gap-1.5"><span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Mood</span><span className="text-foreground">{engagement.client_mood}</span></div>}
+                  {engagement.timeline?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-muted-foreground mb-1.5">Sequence</div><div className="space-y-1.5">{engagement.timeline.map((t: any, i: number) => (<div key={i} className="flex gap-2"><span className={`mt-1.5 w-1.5 h-1.5 rounded-full shrink-0 ${["delivered", "closed"].includes(t.status) ? "bg-emerald-500" : t.status === "at-risk" ? "bg-rose-500" : "bg-primary"}`} /><div className="min-w-0"><span className="text-foreground">{t.what}</span>{t.when && <span className="text-muted-foreground"> · {t.when}</span>} <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground uppercase tracking-wider">{t.phase}</span></div></div>))}</div></div>}
+                  {engagement.delivered?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-emerald-600 mb-1">Delivered · closed</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{engagement.delivered.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {engagement.open_items?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-primary mb-1">Still open</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{engagement.open_items.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {engagement.missed_or_at_risk?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-rose-600 mb-1">Missed / at risk</div><ul className="list-disc ml-4 text-rose-600/90 space-y-0.5">{engagement.missed_or_at_risk.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {engagement.needs_shift && <div className="rounded-lg border border-border/60 p-2"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">How their needs shifted</div><p className="text-muted-foreground leading-relaxed">{engagement.needs_shift}</p></div>}
+                  {engagement.feedback?.length > 0 && <div><div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Their feedback</div><ul className="list-disc ml-4 text-muted-foreground space-y-0.5">{engagement.feedback.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul></div>}
+                  {engagement.next_offer?.what && <div className="rounded-xl border border-primary/30 bg-primary/[0.05] p-2.5"><div className="text-[10px] font-semibold uppercase tracking-[0.13em] text-primary mb-1">Next offer · how to win</div><p className="text-foreground"><b>{engagement.next_offer.what}</b></p>{engagement.next_offer.why_now && <p className="text-muted-foreground mt-1">{engagement.next_offer.why_now}</p>}{engagement.next_offer.how_to_win && <p className="text-muted-foreground mt-1"><b className="text-foreground/80">Win it:</b> {engagement.next_offer.how_to_win}</p>}{engagement.next_offer.upsells?.length > 0 && <ul className="list-disc ml-4 text-muted-foreground mt-1">{engagement.next_offer.upsells.map((x: string, i: number) => <li key={i}>{x}</li>)}</ul>}<div className="flex gap-1.5 mt-2"><button onClick={() => genOffer()} className="text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">▶ Build this offer</button><button onClick={() => doAction(`Pitch this next offer to the client and win it: ${engagement.next_offer.what}. Angle to use: ${engagement.next_offer.how_to_win}`)} className="text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">✍ Draft the pitch</button></div></div>}
+                </div>
+              )}
+              {(order || engagement) && <div className="mt-3 pt-2 border-t border-border/60"><button onClick={() => setShowDeliveredPaste(v => !v)} className="text-[10px] text-muted-foreground hover:text-foreground">+ Add delivered work</button>{showDeliveredPaste && (<div className="mt-1.5"><textarea value={deliveredInput} onChange={e => setDeliveredInput(e.target.value)} placeholder="Paste a document or work you delivered so it joins the picture…" className="w-full h-20 px-2.5 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" /><div className="flex items-center gap-2 mt-1.5"><button onClick={attachDelivered} disabled={busy === "delivered" || !deliveredInput.trim()} className="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{busy === "delivered" ? "Saving…" : "Save"}</button><button onClick={() => { setShowDeliveredPaste(false); setDeliveredInput(""); }} className="text-[11px] text-muted-foreground">cancel</button></div></div>)}</div>}
+            </div>
+          )}
+          </div>
         </div>
       </div>
       {focusedWindow && <WinManager win={focusedWindow} onMin={() => setFocusedWin("")} onClose={() => closeWin(focusedWindow.id)} onDownload={() => downloadWin(focusedWindow)} onUseReply={useReply} />}
