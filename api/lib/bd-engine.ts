@@ -20,6 +20,23 @@ import { db } from "./db.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
+async function dealContext(id: string, conversation: string): Promise<{ conversation: string; facts: string; attachments: string; strategySummary: string }> {
+  let facts = ""; let attachments = ""; let strategySummary = "";
+  if (id) {
+    try {
+      const { data } = await db().from("bd_deals").select("conversation, strategy, attachments").eq("id", id).single();
+      const d = data as any;
+      if (d) {
+        conversation = conversation || d.conversation || "";
+        facts = JSON.stringify(d.strategy?.deal_facts || {});
+        strategySummary = String(d.strategy?.deal_state?.summary || "");
+        if (Array.isArray(d.attachments)) attachments = d.attachments.map((a: any) => `[${a.kind}: ${a.name}]\n${String(a.text || "").slice(0, 5000)}`).join("\n\n");
+      }
+    } catch { /* ignore */ }
+  }
+  return { conversation, facts, attachments, strategySummary };
+}
+
 export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_deal_save") {
     const d = body || {};
@@ -91,27 +108,34 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "get failed" }; }
   }
 
+  if (action === "bd_build_offer") {
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
+    if (!c.conversation.trim() && !c.facts) return { success: false, error: "Analyse the chat first so I have the facts to price." };
+    try { const { buildOffer } = await import("./bd-strategist.js"); const r = await buildOffer(c); return r.ok ? { success: true, offer: r.offer } : { success: false, error: r.error }; }
+    catch (e: any) { return { success: false, error: e?.message || "offer failed" }; }
+  }
+
+  if (action === "bd_build_roadmap") {
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
+    if (!c.conversation.trim() && !c.facts) return { success: false, error: "Analyse the chat first." };
+    try { const { buildRoadmap } = await import("./bd-strategist.js"); const r = await buildRoadmap(c); return r.ok ? { success: true, roadmap: r.roadmap } : { success: false, error: r.error }; }
+    catch (e: any) { return { success: false, error: e?.message || "roadmap failed" }; }
+  }
+
+  if (action === "bd_reply_variants") {
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
+    if (!c.conversation.trim()) return { success: false, error: "Paste the conversation first." };
+    try { const { replyVariants } = await import("./bd-strategist.js"); const r = await replyVariants(c); return r.ok ? { success: true, variants: r.variants } : { success: false, error: r.error }; }
+    catch (e: any) { return { success: false, error: e?.message || "variants failed" }; }
+  }
+
   if (action === "bd_ask") {
     const question = String(body?.question || "").trim();
     if (!question) return { success: false, error: "Type your question or what you are thinking." };
-    let conversation = String(body?.conversation || "");
-    let facts = ""; let attachments = ""; let strategySummary = "";
-    const id = String(body?.id || "").trim();
-    if (id) {
-      try {
-        const { data: deal } = await db().from("bd_deals").select("conversation, strategy, attachments").eq("id", id).single();
-        const d = deal as any;
-        if (d) {
-          conversation = conversation || d.conversation || "";
-          facts = JSON.stringify(d.strategy?.deal_facts || {});
-          strategySummary = String(d.strategy?.deal_state?.summary || "");
-          if (Array.isArray(d.attachments)) attachments = d.attachments.map((a: any) => `[${a.kind}: ${a.name}]\n${String(a.text || "").slice(0, 5000)}`).join("\n\n");
-        }
-      } catch { /* ignore */ }
-    }
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
     try {
       const { askExpert } = await import("./bd-strategist.js");
-      const r = await askExpert({ question, conversation, facts, attachments, strategySummary });
+      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary });
       if (!r.ok) return { success: false, error: r.error };
       return { success: true, answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools };
     } catch (e: any) { return { success: false, error: e?.message || "ask failed" }; }

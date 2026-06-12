@@ -95,6 +95,10 @@ export default function Deals() {
   const [askInput, setAskInput] = useState("");
   const [asking, setAsking] = useState(false);
   const [askResult, setAskResult] = useState<any>(null);
+  const [offer, setOffer] = useState<any>(null);
+  const [roadmap, setRoadmap] = useState<any>(null);
+  const [variants, setVariants] = useState<any[]>([]);
+  const [toolBusy, setToolBusy] = useState("");
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -109,9 +113,13 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || "");
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null);
   };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); };
+
+  const genOffer = async () => { setToolBusy("offer"); setError(""); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the offer."); return; } setOffer(r.offer); setOpen(o => ({ ...o, offer: true })); };
+  const genRoadmap = async () => { setToolBusy("roadmap"); setError(""); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the roadmap."); return; } setRoadmap(r.roadmap); setOpen(o => ({ ...o, roadmap: true })); };
+  const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
 
   const renameDeal = async (name: string) => {
     const n = name.trim(); if (!selected?.id || !n) return;
@@ -300,6 +308,21 @@ export default function Deals() {
                 <textarea value={replyDraft} onChange={e => setReplyDraft(e.target.value)} className="w-full h-20 px-2 py-1.5 rounded-lg border border-border bg-background text-sm outline-none focus:border-primary resize-y" />
               </div>
             )}
+            {conversation.trim() && (
+              <div>
+                <button onClick={genVariants} disabled={toolBusy === "variants"} className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 disabled:opacity-50">{toolBusy === "variants" ? "Thinking…" : "↺ More reply options"}</button>
+                {variants.length > 0 && (
+                  <div className="mt-1.5 space-y-1.5">
+                    {variants.map((v, i) => (
+                      <div key={i} className="rounded-lg border border-border p-2">
+                        <div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{v.label}</span><button onClick={() => { setReplyDraft(v.text); copy(v.text); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div>
+                        <p className="text-xs whitespace-pre-wrap text-foreground">{v.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <textarea value={pasteInput} onChange={e => { setPasteInput(e.target.value); setNotice(""); }} placeholder="Paste new messages (or the whole chat). Duplicates are ignored." className="w-full h-16 px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary resize-y" />
             <div className="flex items-center gap-2 flex-wrap">
               <button onClick={() => addAndAnalyse(false)} disabled={busy === "strategize" || !pasteInput.trim()} className="text-xs px-4 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{busy === "strategize" ? "Analysing…" : "Add & analyse"}</button>
@@ -380,6 +403,33 @@ export default function Deals() {
                     {Object.entries(audit.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 8).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}
                     {Object.keys(audit.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(audit.schema_coverage).join(", ")}</p>}
                     <p className="text-[11px] text-muted-foreground/70">Saved to this deal and folded into the strategy. Run the full audit in the Wizard for the deep report.</p>
+                  </div>
+                )}
+              </Acc>
+
+              <Acc k="offer" title="Offer & pricing" defaultBadge="close the deal">
+                <button onClick={genOffer} disabled={toolBusy === "offer"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "offer" ? "Building…" : "Build offer"}</button>
+                {offer && (
+                  <div className="text-xs space-y-1.5">
+                    <div className="text-foreground font-semibold">{offer.recommended_package} · {offer.price_band} · {offer.delivery_time}</div>
+                    {offer.scope?.length > 0 && <div><span className="text-muted-foreground">Includes:</span><List items={offer.scope} /></div>}
+                    {offer.deliverables?.length > 0 && <div><span className="text-muted-foreground">Deliverables:</span><List items={offer.deliverables} /></div>}
+                    {offer.addons?.length > 0 && <div><span className="text-muted-foreground">Add-ons:</span><ul className="list-disc ml-4 text-muted-foreground">{offer.addons.map((a: any, i: number) => <li key={i}>{a.name} — {a.price}</li>)}</ul></div>}
+                    {offer.rationale && <p className="text-muted-foreground">{offer.rationale}</p>}
+                    {offer.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => copy(offer.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy</button></div><p className="whitespace-pre-wrap text-foreground">{offer.offer_text}</p></div>}
+                  </div>
+                )}
+              </Acc>
+
+              <Acc k="roadmap" title="30 / 60 / 90 roadmap" defaultBadge="proof">
+                <button onClick={genRoadmap} disabled={toolBusy === "roadmap"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "roadmap" ? "Building…" : "Generate roadmap"}</button>
+                {roadmap && (
+                  <div className="text-xs space-y-1.5">
+                    {roadmap.summary && <p className="text-muted-foreground">{roadmap.summary}</p>}
+                    {roadmap.phase_30?.length > 0 && <div><span className="text-foreground font-semibold">First 30 days</span><List items={roadmap.phase_30} /></div>}
+                    {roadmap.phase_60?.length > 0 && <div><span className="text-foreground font-semibold">Days 31–60</span><List items={roadmap.phase_60} /></div>}
+                    {roadmap.phase_90?.length > 0 && <div><span className="text-foreground font-semibold">Days 61–90</span><List items={roadmap.phase_90} /></div>}
+                    <button onClick={() => copy(`First 30 days:\n- ${(roadmap.phase_30 || []).join("\n- ")}\n\nDays 31-60:\n- ${(roadmap.phase_60 || []).join("\n- ")}\n\nDays 61-90:\n- ${(roadmap.phase_90 || []).join("\n- ")}`)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy roadmap</button>
                   </div>
                 )}
               </Acc>

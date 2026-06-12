@@ -78,6 +78,64 @@ const EMPTY: DealStrategy = {
 
 const arr = (x: any): string[] => Array.isArray(x) ? x.filter((s: any) => typeof s === "string") : [];
 
+/* ─── Conversion generators (offer, roadmap, reply variants) — grounded in
+   the deal facts + conversation + any audit. ─── */
+function ctxBlock(o: { conversation?: string; facts?: string; attachments?: string }): string {
+  return [
+    o.facts ? `Captured deal facts: ${String(o.facts).slice(0, 4000)}` : ``,
+    o.attachments ? `Audit / shared files:\n${String(o.attachments).slice(0, 8000)}` : ``,
+    o.conversation ? `Conversation:\n${String(o.conversation).slice(0, 20000)}` : ``,
+  ].filter(Boolean).join("\n\n");
+}
+
+export interface OfferResult { recommended_package: string; price_band: string; delivery_time: string; scope: string[]; deliverables: string[]; addons: Array<{ name: string; price: string }>; rationale: string; offer_text: string }
+export async function buildOffer(o: { conversation?: string; facts?: string; attachments?: string }): Promise<{ ok: boolean; offer?: OfferResult; error?: string }> {
+  const system = [
+    `You are a senior Fiverr SEO/AEO seller building a custom offer for a specific client. Use the deal facts (budget, requirements, timeline, platform), the conversation, and any audit findings.`,
+    `Recommend a realistic Fiverr custom offer. If the client stated a budget, respect it or justify a sensible range around it. Scope must match the price — do not over-promise. Pricing should reflect typical Fiverr SEO/AEO ranges, not agency retainers.`,
+    `Return: recommended_package (name), price_band (a USD range), delivery_time, scope (what is included, list), deliverables (concrete outputs, list), addons (optional extras with a price each), rationale (one short paragraph on why this scope/price fits), and offer_text (the exact message to send to the client alongside the Fiverr offer).`,
+    `HARD RULES: no guaranteed rankings or fabricated outcomes; be honest about what is and is not included; keep it senior and practical.`,
+    `Return ONLY JSON: {"recommended_package":"...","price_band":"...","delivery_time":"...","scope":["..."],"deliverables":["..."],"addons":[{"name":"...","price":"..."}],"rationale":"...","offer_text":"..."}`,
+  ].join("\n");
+  try {
+    const raw = await llm({ system, user: ctxBlock(o) + `\n\nBuild the recommended custom offer.`, maxTokens: 2500, timeoutMs: 80000, label: "bd-build-offer" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not build the offer. Try again." };
+    return { ok: true, offer: { recommended_package: String(p.recommended_package || ""), price_band: String(p.price_band || ""), delivery_time: String(p.delivery_time || ""), scope: arr(p.scope), deliverables: arr(p.deliverables), addons: Array.isArray(p.addons) ? p.addons.map((a: any) => ({ name: String(a?.name || ""), price: String(a?.price || "") })).filter((a: any) => a.name) : [], rationale: String(p.rationale || ""), offer_text: String(p.offer_text || "") } };
+  } catch (e: any) { return { ok: false, error: e?.message || "offer failed" }; }
+}
+
+export interface RoadmapResult { summary: string; phase_30: string[]; phase_60: string[]; phase_90: string[] }
+export async function buildRoadmap(o: { conversation?: string; facts?: string; attachments?: string }): Promise<{ ok: boolean; roadmap?: RoadmapResult; error?: string }> {
+  const system = [
+    `You are a senior SEO/AEO strategist writing a credible 30/60/90-day plan for a specific client, to share during the sales conversation. Use the deal facts, the conversation, and any audit findings.`,
+    `Be concrete and specific to this client (their platform, their issues, their goals) — not a generic template. Each phase is a short list of the actual work.`,
+    `HARD RULES: honest and realistic; no guaranteed rankings; sequence the work sensibly (technical/foundation first, then content/authority, then AEO/scale).`,
+    `Return ONLY JSON: {"summary":"...","phase_30":["..."],"phase_60":["..."],"phase_90":["..."]}`,
+  ].join("\n");
+  try {
+    const raw = await llm({ system, user: ctxBlock(o) + `\n\nWrite the 30/60/90-day roadmap for this client.`, maxTokens: 2200, timeoutMs: 80000, label: "bd-build-roadmap" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not build the roadmap. Try again." };
+    return { ok: true, roadmap: { summary: String(p.summary || ""), phase_30: arr(p.phase_30), phase_60: arr(p.phase_60), phase_90: arr(p.phase_90) } };
+  } catch (e: any) { return { ok: false, error: e?.message || "roadmap failed" }; }
+}
+
+export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
+  const system = [
+    `You are a senior Fiverr business developer. Given the conversation (and facts/audit), write THREE different strategic reply options to the client's latest message — each a distinct angle the seller could choose.`,
+    `Make them genuinely different in approach (for example: "Answer + ask for the URL", "Answer + offer a quick free audit", "Answer + soft close toward an offer"). Each in a warm, confident seller voice.`,
+    `HARD RULES: truthful — no guaranteed rankings or fabricated results; specific to this client.`,
+    `Return ONLY JSON: {"variants":[{"label":"...","text":"..."},{"label":"...","text":"..."},{"label":"...","text":"..."}]}`,
+  ].join("\n");
+  try {
+    const raw = await llm({ system, user: ctxBlock(o) + `\n\nWrite the three reply options.`, maxTokens: 2200, timeoutMs: 80000, label: "bd-reply-variants" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p || !Array.isArray(p.variants)) return { ok: false, error: "Could not produce reply options. Try again." };
+    return { ok: true, variants: p.variants.map((v: any) => ({ label: String(v?.label || ""), text: String(v?.text || "") })).filter((v: any) => v.text) };
+  } catch (e: any) { return { ok: false, error: e?.message || "variants failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
