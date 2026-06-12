@@ -291,6 +291,41 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "order ingest failed" }; }
   }
 
+  if (action === "bd_engagement") {
+    const id = String(body?.id || "").trim();
+    const c = await dealContext(id, String(body?.conversation || ""));
+    if (!c.conversation.trim() && !c.facts) return { success: false, error: "Analyse the chat first so there is a history to track." };
+    let deal: any = null; let strategy: any = null;
+    if (id) { try { const { data } = await db().from("bd_deals").select("*").eq("id", id).single(); deal = data; strategy = (deal as any)?.strategy; } catch { /* ignore */ } }
+    const atts = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments : [];
+    const orderInfo = (atts.find((a: any) => a.kind === "order") as any)?.order || null;
+    const deliveredDocs = atts.filter((a: any) => ["delivered", "doc", "file"].includes(a.kind) || String(a.kind || "").startsWith("doc:")).map((a: any) => `[${a.name || a.kind}]\n${String(a.text || "").slice(0, 4000)}`).join("\n\n");
+    try {
+      const { analyzeEngagement } = await import("./bd-strategist.js");
+      const r = await analyzeEngagement({ conversation: c.conversation, orderInfo, deliveredDocs, facts: c.facts, strategySummary: c.strategySummary });
+      if (!r.ok || !r.engagement) return { success: false, error: r.error || "Could not build the engagement picture." };
+      const e = r.engagement;
+      const summary = [
+        e.client_mood ? `Client mood: ${e.client_mood}` : "",
+        e.delivered?.length ? `Delivered (closed): ${e.delivered.join("; ")}` : "",
+        e.open_items?.length ? `Still open: ${e.open_items.join("; ")}` : "",
+        e.needs_shift ? `Needs shift: ${e.needs_shift}` : "",
+        e.missed_or_at_risk?.length ? `Missed / at risk: ${e.missed_or_at_risk.join("; ")}` : "",
+        e.next_offer?.what ? `Next offer: ${e.next_offer.what}. How to win: ${e.next_offer.how_to_win || ""}` : "",
+      ].filter(Boolean).join("\n");
+      if (id) {
+        try {
+          const { data: cur } = await db().from("bd_deals").select("attachments").eq("id", id).single();
+          const existing = Array.isArray((cur as any)?.attachments) ? (cur as any).attachments.filter((a: any) => a.kind !== "engagement") : [];
+          const att = { name: "Engagement timeline", kind: "engagement", text: summary, engagement: e, added_at: new Date().toISOString() };
+          const { data: updated } = await db().from("bd_deals").update({ attachments: [...existing, att], updated_at: new Date().toISOString() }).eq("id", id).select().single();
+          return { success: true, engagement: e, deal: updated };
+        } catch { /* ignore persist */ }
+      }
+      return { success: true, engagement: e };
+    } catch (e: any) { return { success: false, error: e?.message || "engagement failed" }; }
+  }
+
   if (action === "bd_aeo_check") {
     const siteUrl = String(body?.siteUrl || "").trim();
     if (!siteUrl) return { success: false, error: "No client site URL — detect it from the chat or add it." };

@@ -316,6 +316,51 @@ export async function extractOrder(orderText: string): Promise<{ ok: boolean; or
   } catch (e: any) { return { ok: false, error: e?.message || "order read failed" }; }
 }
 
+/* ─── Engagement tracker. Reads the inbox chat + order page + delivered documents as ONE
+   timeline, distinguishes agreed/delivered/closed from genuinely-open, tracks how the
+   client's mood and needs shift as work lands or slips, and (as a senior DMS) plans the
+   next offer and how to win it. Grounded only in the real context — never fabricates. ─── */
+export interface Engagement {
+  timeline: Array<{ when: string; phase: string; what: string; status: string }>;
+  agreed_scope: string[]; delivered: string[]; open_items: string[];
+  client_mood: string; feedback: string[]; needs_shift: string; missed_or_at_risk: string[];
+  next_offer: { what: string; why_now: string; how_to_win: string; upsells: string[] };
+}
+export async function analyzeEngagement(opts: { conversation?: string; orderInfo?: any; deliveredDocs?: string; facts?: string; strategySummary?: string }): Promise<{ ok: boolean; engagement?: Engagement; error?: string }> {
+  const system = [
+    `You are a senior digital-marketing / SEO delivery lead AND account strategist tracking a LIVE client engagement across BOTH the Fiverr inbox chat and the order page, plus any documents that were delivered. Build the full picture and reason like a senior DMS who also sees it through the client's own eyes.`,
+    `Read EVERYTHING as one timeline, in sequence. Reconstruct, in order, what actually happened: what the client first wanted, what was offered (and in which package and at what price), what was agreed, what was actually delivered, the client's feedback and mood at each point, any revisions, and any NEW needs that emerged later.`,
+    `CRITICAL — do not play dumb. Anything already discussed, agreed, or DELIVERED is CLOSED context, NOT a fresh requirement. Never list a delivered or resolved item as an open requirement. Keep three buckets clearly separate: agreed scope, what has been delivered (closed), and what is genuinely still open or newly requested.`,
+    `Understand how the client's needs and wants SHIFTED as work was delivered or missed, and re-weight importance accordingly: what mattered at the start may be done; what matters now may be different. Flag anything promised but missed, or now at risk.`,
+    `Capture the client's mood, satisfaction, feedback and comments honestly from what they actually said and how the order is going.`,
+    `Then, as a senior strategist focused on growing this account, decide the NEXT move: what to offer next, why now, how to WIN it (the specific angle given their mood and what they value), and concrete upsell / cross-sell opportunities grounded in what they genuinely need next — never a generic upsell.`,
+    `HARD RULES: ground everything in the real context provided. Never invent deliveries, feedback, dates, prices, or outcomes. If something is not in the context, leave it out rather than guessing.`,
+    `Return ONLY valid JSON: {"timeline":[{"when":"<date or relative marker e.g. 'order placed' / 'after first delivery'>","phase":"<requested|offered|agreed|delivered|feedback|revision|new-need>","what":"...","status":"<open|closed|delivered|at-risk>"}],"agreed_scope":["..."],"delivered":["..."],"open_items":["..."],"client_mood":"...","feedback":["..."],"needs_shift":"...","missed_or_at_risk":["..."],"next_offer":{"what":"...","why_now":"...","how_to_win":"...","upsells":["..."]}}`,
+  ].join("\n");
+  const user = [
+    opts.strategySummary ? `Deal summary so far: ${opts.strategySummary}` : ``,
+    opts.facts ? `Captured facts: ${String(opts.facts).slice(0, 2500)}` : ``,
+    opts.orderInfo ? `ORDER PAGE (the live order — dates, status, deliveries, and the requirements the client submitted):\n${JSON.stringify(opts.orderInfo).slice(0, 4000)}` : ``,
+    opts.deliveredDocs && opts.deliveredDocs.trim() ? `DOCUMENTS DELIVERED (read carefully — this is what was actually delivered to the client):\n${String(opts.deliveredDocs).slice(0, 10000)}` : ``,
+    opts.conversation ? `THE FULL CONVERSATION so far (inbox + order chat, in sequence — pay attention to who said what and when):\n${String(opts.conversation).slice(0, 22000)}` : ``,
+    ``,
+    `Build the engagement picture in sequence, keep delivered/closed separate from open, and decide the next move to win more.`,
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 3500, timeoutMs: 100000, label: "bd-engagement" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, error: "Could not build the engagement picture. Try again." };
+    const no = p.next_offer || {};
+    const engagement: Engagement = {
+      timeline: Array.isArray(p.timeline) ? p.timeline.map((t: any) => ({ when: String(t?.when || ""), phase: String(t?.phase || ""), what: String(t?.what || ""), status: String(t?.status || "") })).filter((t: any) => t.what) : [],
+      agreed_scope: arr(p.agreed_scope), delivered: arr(p.delivered), open_items: arr(p.open_items),
+      client_mood: String(p.client_mood || ""), feedback: arr(p.feedback), needs_shift: String(p.needs_shift || ""), missed_or_at_risk: arr(p.missed_or_at_risk),
+      next_offer: { what: String(no.what || ""), why_now: String(no.why_now || ""), how_to_win: String(no.how_to_win || ""), upsells: arr(no.upsells) },
+    };
+    return { ok: true, engagement };
+  } catch (e: any) { return { ok: false, error: e?.message || "engagement failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
