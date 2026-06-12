@@ -7,6 +7,23 @@
 import { useState, useEffect } from "react";
 import PortalNav from "@/components/PortalNav";
 
+/* Best-effort client name/handle from the pasted chat (so leads are never
+   left "Untitled"). The strategist refines it; this is the deterministic
+   fallback that names the lead immediately. */
+function detectClientName(text: string): string {
+  const lines = (text || "").split(/\n/).map(l => l.trim()).filter(Boolean);
+  const isTs = (l: string) => /\d{1,2}:\d{2}\s*[ap]\.?\s*m\.?|^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}/i.test(l);
+  const noise = /^(profile image|promoted|replied|me|read more|read less)$/i;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^[A-Za-z]$/.test(lines[i])) {
+      const n = lines[i + 1];
+      if (n && !noise.test(n) && !isTs(n) && !/^[A-Za-z]$/.test(n)) return n.slice(0, 60);
+    }
+  }
+  const m = (text || "").match(/^(?!me\b|seller\b)([A-Za-z0-9_.\- ]{2,40}):\s+/im);
+  return m ? m[1].trim().slice(0, 60) : "";
+}
+
 function parseThread(text: string): Array<{ sender: string; text: string }> {
   const raw = (text || "").trim();
   if (!raw) return [];
@@ -74,6 +91,7 @@ export default function Deals() {
   const [audit, setAudit] = useState<any>(null);
   const [auditing, setAuditing] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({ next: true, client: true, actions: true });
+  const [nameInput, setNameInput] = useState("");
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -88,9 +106,15 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null);
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || "");
   };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); };
+
+  const renameDeal = async (name: string) => {
+    const n = name.trim(); if (!selected?.id || !n) return;
+    const r: any = await post("bd_deal_update", { id: selected.id, client_name: n });
+    if (r?.deal) setSelected(r.deal); loadList();
+  };
 
   const runAudit = async () => {
     if (!clientSite) { setError("No client site detected. Add the client's URL in the chat first."); return; }
@@ -107,8 +131,9 @@ export default function Deals() {
     setBusy("strategize"); setError(""); setNotice(auto ? "Analysing…" : "");
     try {
       let id = selected?.id;
-      const save: any = await post("bd_deal_save", { id, client_name: selected?.client_name || "Untitled lead", conversation: convo });
-      if (save?.success && save.deal) { setSelected(save.deal); id = save.deal.id; }
+      const nm = selected?.client_name && selected.client_name !== "Untitled lead" ? selected.client_name : (detectClientName(convo) || "Untitled lead");
+      const save: any = await post("bd_deal_save", { id, client_name: nm, conversation: convo });
+      if (save?.success && save.deal) { setSelected(save.deal); id = save.deal.id; setNameInput(save.deal.client_name || nm); }
       const r: any = await post("bd_strategize", { id, conversation: convo });
       setLastAnalysed(convo);
       if (!r?.success || !r?.strategy) { setError(r?.error || "Could not analyse this time — tap Analyse to retry."); return; }
@@ -202,13 +227,32 @@ export default function Deals() {
           <div className="space-y-1 overflow-y-auto flex-1 min-h-0">
             {deals.length === 0 && <p className="text-xs text-muted-foreground py-4 text-center">No deals yet. + New, then paste a chat.</p>}
             {deals.map(d => (
-              <button key={d.id} onClick={() => openDeal(d.id)} className={`w-full text-left px-2.5 py-2 rounded-lg border flex gap-2 ${selected?.id === d.id ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
-                <div className="w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold shrink-0">{(d.client_name || "?").slice(0, 1).toUpperCase()}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-1"><span className="text-xs font-semibold truncate">{d.client_name || "Untitled"}</span><span className="text-[10px]" style={{ color: stageColor(d.status) }}>{d.status}</span></div>
-                  {Array.isArray(d.tags) && d.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-0.5">{d.tags.slice(0, 3).map((t: string) => <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>)}</div>}
-                </div>
-              </button>
+              <div key={d.id}>
+                <button onClick={() => openDeal(d.id)} className={`w-full text-left px-2.5 py-2 rounded-lg border flex gap-2 ${selected?.id === d.id ? "border-primary bg-primary/5 rounded-b-none" : "border-border hover:border-primary/40"}`}>
+                  <div className="w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold shrink-0">{(d.client_name || "?").slice(0, 1).toUpperCase()}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1"><span className="text-xs font-semibold truncate">{d.client_name || "Untitled"}</span><span className="text-[10px]" style={{ color: stageColor(d.status) }}>{d.status}</span></div>
+                    {Array.isArray(d.tags) && d.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-0.5">{d.tags.slice(0, 3).map((t: string) => <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>)}</div>}
+                  </div>
+                </button>
+                {selected?.id === d.id && (
+                  <div className="px-2.5 py-2 rounded-b-lg border border-t-0 border-primary bg-primary/5 space-y-2">
+                    <input value={nameInput} onChange={e => setNameInput(e.target.value)} onBlur={() => renameDeal(nameInput)} onKeyDown={e => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                      placeholder="Lead name" className="w-full px-2 py-1 rounded-md border border-border bg-background text-xs outline-none focus:border-primary" />
+                    <div className="flex flex-wrap items-center gap-1">
+                      {tags.map(t => <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-muted border border-border flex items-center gap-1">{t}<button onClick={() => removeTag(t)} className="text-muted-foreground hover:text-foreground">×</button></span>)}
+                      <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addTag()} placeholder="+ tag" className="w-16 px-1.5 py-0.5 rounded-md border border-border bg-background text-[10px] outline-none focus:border-primary" />
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <select value={d.status} onChange={e => post("bd_deal_update", { id: d.id, status: e.target.value }).then(() => loadList())} className="text-[10px] px-1.5 py-1 rounded-md border border-border bg-background outline-none">
+                        {["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost"].map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <button onClick={archiveDeal} className="text-[10px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
+                      {confirmDel ? (<span className="text-[10px] flex items-center gap-1"><button onClick={deleteDeal} className="px-2 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm</button><button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button></span>) : (<button onClick={() => setConfirmDel(true)} className="text-[10px] px-2 py-1 rounded-md border text-muted-foreground ml-auto" style={{ borderColor: "#ef444455" }}>Delete</button>)}
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -314,17 +358,9 @@ export default function Deals() {
 
               {strategy?.needs_attachments?.length > 0 && <Acc k="needs" title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Acc>}
 
-              {selected?.id && (
-                <Acc k="lead" title="Attachments & lead">
-                  {(selected.attachments || []).length > 0 && <div className="flex flex-wrap gap-1 mb-2">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>}
-                  <div className="flex flex-wrap items-center gap-1.5 mb-2">
-                    {tags.map(t => <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-muted border border-border flex items-center gap-1">{t}<button onClick={() => removeTag(t)} className="text-muted-foreground hover:text-foreground">×</button></span>)}
-                    <input value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={e => e.key === "Enter" && addTag()} placeholder="+ tag" className="w-20 px-2 py-0.5 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={archiveDeal} className="text-[11px] px-2.5 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
-                    {confirmDel ? (<span className="text-[11px] flex items-center gap-2"><button onClick={deleteDeal} className="px-2.5 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm</button><button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button></span>) : (<button onClick={() => setConfirmDel(true)} className="text-[11px] px-2.5 py-1 rounded-md border text-muted-foreground" style={{ borderColor: "#ef444455" }}>Delete</button>)}
-                  </div>
+              {selected?.id && (selected.attachments || []).length > 0 && (
+                <Acc k="lead" title="Attachments">
+                  <div className="flex flex-wrap gap-1">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>
                 </Acc>
               )}
             </div>
