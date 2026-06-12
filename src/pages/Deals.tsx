@@ -85,6 +85,9 @@ export default function Deals() {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
+  const [outcomeMode, setOutcomeMode] = useState("");
+  const [outcomeValue, setOutcomeValue] = useState("");
+  const [outcomeReason, setOutcomeReason] = useState("");
   const [transcript, setTranscript] = useState("");
   const [showAttach, setShowAttach] = useState(false);
   const [replyDraft, setReplyDraft] = useState("");
@@ -241,6 +244,14 @@ export default function Deals() {
   const removeTag = (t: string) => saveTags(tags.filter(x => x !== t));
   const archiveDeal = async () => { if (!selected?.id) return; await post("bd_deal_update", { id: selected.id, status: "archived" }); setNotice("Lead archived."); newDeal(); loadList(); };
   const deleteDeal = async () => { if (!selected?.id) { newDeal(); return; } const r: any = await post("bd_deal_delete", { id: selected.id }); if (!r?.success) { setError(r?.error || "Could not delete."); return; } newDeal(); loadList(); };
+  const submitOutcome = async () => {
+    if (!selected?.id || !outcomeMode) return;
+    setBusy("outcome");
+    const r: any = await post("bd_deal_outcome", { id: selected.id, outcome: outcomeMode, deal_value: parseFloat(outcomeValue) || 0, reason: outcomeReason });
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not record the outcome."); return; }
+    setNotice(`Marked ${outcomeMode}. Learning captured for the HoD console.`); setOutcomeMode(""); setOutcomeValue(""); setOutcomeReason(""); loadList();
+  };
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
   const launchDemo = () => {
@@ -312,6 +323,18 @@ export default function Deals() {
                       <button onClick={archiveDeal} className="text-[10px] px-2 py-1 rounded-md border border-border text-muted-foreground hover:border-primary">Archive</button>
                       {confirmDel ? (<span className="text-[10px] flex items-center gap-1"><button onClick={deleteDeal} className="px-2 py-1 rounded-md border" style={{ color: "#ef4444", borderColor: "#ef444455", background: "#ef444411" }}>Confirm</button><button onClick={() => setConfirmDel(false)} className="text-muted-foreground">cancel</button></span>) : (<button onClick={() => setConfirmDel(true)} className="text-[10px] px-2 py-1 rounded-md border text-muted-foreground ml-auto" style={{ borderColor: "#ef444455" }}>Delete</button>)}
                     </div>
+                    <div className="flex items-center gap-1.5">
+                      <button onClick={() => { setOutcomeMode("won"); setOutcomeValue(""); setOutcomeReason(""); }} className="text-[10px] px-2 py-1 rounded-md border" style={{ color: "#10b981", borderColor: "#10b98155", background: "#10b98111" }}>Mark won</button>
+                      <button onClick={() => { setOutcomeMode("lost"); setOutcomeValue(""); setOutcomeReason(""); }} className="text-[10px] px-2 py-1 rounded-md border text-muted-foreground" style={{ borderColor: "#ef444455" }}>Mark lost</button>
+                    </div>
+                    {outcomeMode && (
+                      <div className="space-y-1 rounded-md border border-border p-2">
+                        <div className="text-[10px] font-semibold" style={{ color: outcomeMode === "won" ? "#10b981" : "#ef4444" }}>{outcomeMode === "won" ? "Record a win" : "Record a loss"}</div>
+                        {outcomeMode === "won" && <input value={outcomeValue} onChange={e => setOutcomeValue(e.target.value)} placeholder="Deal value (USD)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />}
+                        <textarea value={outcomeReason} onChange={e => setOutcomeReason(e.target.value)} placeholder={outcomeMode === "won" ? "What won it? (optional)" : "Why lost? (optional)"} className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
+                        <div className="flex items-center gap-2"><button onClick={submitOutcome} disabled={busy === "outcome"} className="text-[10px] px-3 py-1 rounded-md bg-primary text-primary-foreground font-semibold disabled:opacity-50">{busy === "outcome" ? "Saving…" : "Confirm & learn"}</button><button onClick={() => setOutcomeMode("")} className="text-[10px] text-muted-foreground">cancel</button></div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

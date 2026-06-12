@@ -40,6 +40,7 @@ import PMModule       from "./pages/PMModule";
 import Workspace      from "./pages/Workspace";
 import Wizard         from "./pages/Wizard";
 import Deals          from "./pages/Deals";
+import Hod            from "./pages/Hod";
 import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
@@ -168,6 +169,7 @@ const AppRoutes = () => {
           <Route path="/intake" element={<Intake />} />
           <Route path="/wizard" element={<B name="wizard"><Wizard /></B>} />
           <Route path="/deals" element={<B name="deals"><Deals /></B>} />
+          <Route path="/hod" element={<B name="hod"><Hod /></B>} />
           <Route path="/presentation/:token" element={<PresentationView />} />
           <Route path="/client-comms" element={<ClientComms />} />
           <Route path="/profile/:id" element={<StaffProfile />} />

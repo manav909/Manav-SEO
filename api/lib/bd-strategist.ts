@@ -30,7 +30,7 @@ export interface DealStrategy {
   call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
   needs_attachments: Array<{ kind: string; what: string; note: string }>;
   reminders:    Array<{ text: string; when: string }>;
-  deal_facts:   { budget: string; timeline: string; location: string; platform: string; service: string; deliverables: string[]; urls: string[]; competitors: string[]; target_keywords: string[]; prices_discussed: string[]; files_shared: string[]; key_dates: string[]; other_facts: string[] };
+  deal_facts:   { budget: string; timeline: string; location: string; platform: string; service: string; industry: string; client_type: string; deliverables: string[]; urls: string[]; competitors: string[]; target_keywords: string[]; prices_discussed: string[]; files_shared: string[]; key_dates: string[]; other_facts: string[] };
   risk_flags:   string[];
   generated_at: string;
 }
@@ -48,7 +48,7 @@ const SYSTEM = [
   `Produce:`,
   `- needs_attachments: anything the conversation REFERENCES that the seller should add to this deal so it can be used — a brief/document the client shared, a file to review before a call, a call transcript, screenshots. Each {"kind":"document"|"transcript"|"file","what":"...","note":"..."}. Empty if none referenced.`,
   `- reminders: time-sensitive things to remember, each {"text":"...","when":"..."}. Include the 30-day call-recording save when a call is involved, and follow-up timing if the client may go quiet.`,
-  `- deal_facts: EVERY concrete fact actually STATED in the chat (do not infer the facts): budget, timeline, location, platform, service, deliverables (each verbatim), urls (every website/domain mentioned), competitors (competitor names/sites mentioned), prices_discussed, files_shared, key_dates, other_facts. PLUS target_keywords: the search terms this client most likely wants to rank for, based on their service + market + location (this one you may derive — give 3-6 concrete keyword phrases). Use empty string/array where absent.`,
+  `- deal_facts: EVERY concrete fact actually STATED in the chat (do not infer the facts): budget, timeline, location, platform, service, deliverables (each verbatim), urls (every website/domain mentioned), competitors (competitor names/sites mentioned), prices_discussed, files_shared, key_dates, other_facts. PLUS target_keywords (3-6 derived keyword phrases), industry (the client's business sector, e.g. 'interior design', derive it), and client_type (e.g. 'small business', 'agency', 'ecommerce', 'enterprise' — derive it). Use empty string/array where absent.`,
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
   `- client_site: the client's OWN website domain (bare domain, no protocol). Extract it from any URL they shared or mentioned anywhere in the chat. Only empty if they truly never gave a site.`,
   `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
@@ -62,7 +62,7 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","industry":"","client_type":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
@@ -72,7 +72,7 @@ const EMPTY: DealStrategy = {
   next_move: "", draft_reply: "", action_items: [],
   call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
   needs_attachments: [], reminders: [],
-  deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", deliverables: [], urls: [], competitors: [], target_keywords: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
+  deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", industry: "", client_type: "", deliverables: [], urls: [], competitors: [], target_keywords: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
   risk_flags: [], generated_at: "",
 };
 
@@ -134,6 +134,26 @@ export async function replyVariants(o: { conversation?: string; facts?: string; 
     if (!p || !Array.isArray(p.variants)) return { ok: false, error: "Could not produce reply options. Try again." };
     return { ok: true, variants: p.variants.map((v: any) => ({ label: String(v?.label || ""), text: String(v?.text || "") })).filter((v: any) => v.text) };
   } catch (e: any) { return { ok: false, error: e?.message || "variants failed" }; }
+}
+
+export async function analyzeOutcome(opts: { conversation?: string; outcome: string; dealValue?: number; reason?: string; facts?: string }): Promise<{ ok: boolean; what_worked: string; what_failed: string; why: string; project_type: string; error?: string }> {
+  const system = [
+    `You are a senior Fiverr business-development coach extracting a reusable LEARNING from a finished deal (won or lost).`,
+    `Be specific and honest. Identify what actually worked, what did not, and WHY — so the seller can repeat wins and avoid losses on similar future leads.`,
+    `Return ONLY JSON: {"what_worked":"...","what_failed":"...","why":"...","project_type":"<short label, e.g. 'Wix local SEO + AEO'>"}`,
+  ].join("\n");
+  const user = [
+    `Outcome: ${opts.outcome}${opts.dealValue ? ` (value ${opts.dealValue})` : ""}.`,
+    opts.reason ? `Seller's note on why: ${opts.reason}` : ``,
+    opts.facts ? `Deal facts: ${String(opts.facts).slice(0, 2000)}` : ``,
+    opts.conversation ? `Conversation:\n${String(opts.conversation).slice(0, 16000)}` : ``,
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 1200, timeoutMs: 70000, label: "bd-analyze-outcome" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, what_worked: "", what_failed: "", why: "", project_type: "", error: "Could not analyse the outcome." };
+    return { ok: true, what_worked: String(p.what_worked || ""), what_failed: String(p.what_failed || ""), why: String(p.why || ""), project_type: String(p.project_type || "") };
+  } catch (e: any) { return { ok: false, what_worked: "", what_failed: "", why: "", project_type: "", error: e?.message || "analyze failed" }; }
 }
 
 export async function matchCaseStudy(opts: { caseStudies: Array<{ id: string; title: string; summary: string; results: string; industry: string; tags: string[] }>; conversation?: string; facts?: string }): Promise<{ ok: boolean; best_id: string; why: string; client_snippet: string; error?: string }> {
@@ -220,7 +240,7 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
       reminders: Array.isArray(p.reminders) ? p.reminders.map((r: any) => ({ text: String(r?.text || ""), when: String(r?.when || "") })).filter((r: any) => r.text) : [],
       deal_facts: {
         budget: String(p.deal_facts?.budget || ""), timeline: String(p.deal_facts?.timeline || ""), location: String(p.deal_facts?.location || ""),
-        platform: String(p.deal_facts?.platform || ""), service: String(p.deal_facts?.service || ""),
+        platform: String(p.deal_facts?.platform || ""), service: String(p.deal_facts?.service || ""), industry: String(p.deal_facts?.industry || ""), client_type: String(p.deal_facts?.client_type || ""),
         deliverables: arr(p.deal_facts?.deliverables), urls: arr(p.deal_facts?.urls), competitors: arr(p.deal_facts?.competitors), target_keywords: arr(p.deal_facts?.target_keywords),
         prices_discussed: arr(p.deal_facts?.prices_discussed), files_shared: arr(p.deal_facts?.files_shared), key_dates: arr(p.deal_facts?.key_dates), other_facts: arr(p.deal_facts?.other_facts),
       },

@@ -34,7 +34,29 @@ async function dealContext(id: string, conversation: string): Promise<{ conversa
       }
     } catch { /* ignore */ }
   }
+  noteCall(id);
   return { conversation, facts, attachments, strategySummary };
+}
+function noteCall(id: string) { if (id) bumpApiCalls(id).catch(() => { }); }
+
+async function bumpApiCalls(id: string, n = 1): Promise<void> {
+  if (!id) return;
+  try { const { data } = await db().from("bd_deals").select("api_calls").eq("id", id).single(); const cur = Number((data as any)?.api_calls || 0); await db().from("bd_deals").update({ api_calls: cur + n }).eq("id", id); } catch { /* non-fatal */ }
+}
+async function appendStage(id: string, stage: string): Promise<void> {
+  if (!id || !stage) return;
+  try {
+    const { data } = await db().from("bd_deals").select("stage_history").eq("id", id).single();
+    const hist = Array.isArray((data as any)?.stage_history) ? (data as any).stage_history : [];
+    if (hist.length && hist[hist.length - 1]?.stage === stage) return;
+    hist.push({ stage, at: new Date().toISOString() });
+    await db().from("bd_deals").update({ stage_history: hist }).eq("id", id);
+  } catch { /* non-fatal */ }
+}
+function aggBy(list: any[], key: string): Array<{ key: string; count: number; value: number }> {
+  const m = new Map<string, { count: number; value: number }>();
+  for (const d of list) { const k = (d[key] || "Unknown").toString().trim() || "Unknown"; const e = m.get(k) || { count: 0, value: 0 }; e.count++; e.value += Number(d.deal_value || 0); m.set(k, e); }
+  return [...m.entries()].map(([k, v]) => ({ key: k, count: v.count, value: v.value })).sort((a, b) => b.count - a.count).slice(0, 12);
 }
 
 async function persistDiag(id: string, kind: string, name: string, text: string): Promise<void> {
@@ -85,6 +107,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     try {
       const { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
       if (error) return { success: false, error: error.message };
+      if (upd.status) appendStage(id, upd.status);
       return { success: true, deal: data };
     } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
   }
@@ -156,7 +179,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const r = await aeoReadinessCheck(siteUrl);
       if (!r.ok || !r.report) return { success: false, error: r.error || "AEO check failed." };
       const rep = r.report;
-      await persistDiag(String(body?.id || "").trim(), "aeo", "AEO/GEO readiness", `AEO/GEO readiness for ${rep.site}: ${rep.signals.filter(s => s.ok).length}/${rep.signals.length} signals OK. Schema: ${rep.schema_types.join(", ") || "none"}. llms.txt: ${rep.llms_txt ? "yes" : "no"}. ${rep.robots_ai}. Top fixes: ${rep.recommendations.slice(0, 3).join("; ")}.`);
+      noteCall(String(body?.id || "").trim()); await persistDiag(String(body?.id || "").trim(), "aeo", "AEO/GEO readiness", `AEO/GEO readiness for ${rep.site}: ${rep.signals.filter(s => s.ok).length}/${rep.signals.length} signals OK. Schema: ${rep.schema_types.join(", ") || "none"}. llms.txt: ${rep.llms_txt ? "yes" : "no"}. ${rep.robots_ai}. Top fixes: ${rep.recommendations.slice(0, 3).join("; ")}.`);
       return { success: true, report: rep };
     } catch (e: any) { return { success: false, error: e?.message || "AEO check failed" }; }
   }
@@ -170,7 +193,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     try {
       const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
       const report = await benchmarkCompetitors({ projectId: String(body?.projectId || ""), competitors, keywords, siteUrl, maxQueries: 8, maxContentGaps: 5 });
-      await persistDiag(String(body?.id || "").trim(), "competitor", "Competitor snapshot", report.summary || `Competitor snapshot vs ${competitors.join(", ")}.`);
+      noteCall(String(body?.id || "").trim()); await persistDiag(String(body?.id || "").trim(), "competitor", "Competitor snapshot", report.summary || `Competitor snapshot vs ${competitors.join(", ")}.`);
       return { success: true, report };
     } catch (e: any) { return { success: false, error: e?.message || "competitor snapshot failed" }; }
   }
@@ -218,7 +241,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const id = String(body?.id || "").trim();
       if (id && report.pages_reachable > 0) {
         try {
-          const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${v.count} ${String(k).replace(/_/g, " ")}`).join(", ");
+          noteCall(id); const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${v.count} ${String(k).replace(/_/g, " ")}`).join(", ");
           const text = `Quick site audit of ${report.project_domain} — crawled ${report.pages_reachable} pages. Issues: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema found: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
           const { data: deal } = await db().from("bd_deals").select("attachments").eq("id", id).single();
           const existing = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.filter((a: any) => a.kind !== "audit") : [];
@@ -268,8 +291,12 @@ export async function handleBd(action: string, body: any): Promise<any> {
           const detected = String(r.strategy.detected_client || "").trim();
           const curName = String(deal.client_name || "").trim();
           const nameUpdate = (detected && (!curName || curName === "Untitled lead")) ? { client_name: detected } : {};
-          await db().from("bd_deals").update({ strategy: r.strategy, status: STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status, ...nameUpdate, updated_at: new Date().toISOString() }).eq("id", id);
+          const f: any = r.strategy.deal_facts || {};
+          const newStatus = STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status;
+          await db().from("bd_deals").update({ strategy: r.strategy, status: newStatus, ...nameUpdate, industry: f.industry || deal.industry || null, country: f.location || deal.country || null, client_type: f.client_type || deal.client_type || null, updated_at: new Date().toISOString() }).eq("id", id);
+          appendStage(id, newStatus);
         } catch { /* non-fatal */ }
+        noteCall(id);
       }
       return { success: true, strategy: r.strategy };
     } catch (e: any) { return { success: false, error: e?.message || "strategize failed" }; }
@@ -280,6 +307,50 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (!id) return { success: false, error: "id required." };
     try { await db().from("bd_deals").delete().eq("id", id); return { success: true }; }
     catch (e: any) { return { success: false, error: e?.message || "delete failed" }; }
+  }
+
+  if (action === "bd_deal_outcome") {
+    const id = String(body?.id || "").trim();
+    if (!id) return { success: false, error: "id required." };
+    const outcome = body?.outcome === "won" ? "won" : "lost";
+    const dealValue = Number(body?.deal_value) || null;
+    const reason = String(body?.reason || "");
+    const status = outcome === "won" ? "hired" : "lost";
+    try {
+      const { data: deal } = await db().from("bd_deals").select("*").eq("id", id).single();
+      const d = deal as any;
+      await db().from("bd_deals").update({ outcome, deal_value: dealValue, status, ...(outcome === "won" ? { won_reason: reason } : { lost_reason: reason }), updated_at: new Date().toISOString() }).eq("id", id);
+      appendStage(id, status);
+      try {
+        const { analyzeOutcome } = await import("./bd-strategist.js");
+        const a = await analyzeOutcome({ conversation: d?.conversation, outcome, dealValue: dealValue || undefined, reason, facts: JSON.stringify(d?.strategy?.deal_facts || {}) });
+        if (a.ok) await db().from("bd_learnings").insert({ deal_id: id, client_name: d?.client_name || null, client_type: d?.client_type || d?.strategy?.deal_facts?.client_type || null, industry: d?.industry || d?.strategy?.deal_facts?.industry || null, project_type: a.project_type || null, outcome, deal_value: dealValue, what_worked: a.what_worked, what_failed: a.what_failed, why: a.why });
+      } catch { /* learning is best-effort */ }
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e?.message || "outcome failed" }; }
+  }
+
+  if (action === "bd_hod_report") {
+    try {
+      const { data: deals } = await db().from("bd_deals").select("id, client_name, status, outcome, deal_value, industry, country, client_type, api_calls, created_at, updated_at, stage_history").limit(2000);
+      const { data: learnings } = await db().from("bd_learnings").select("*").order("created_at", { ascending: false }).limit(60);
+      const list = (deals as any[]) || [];
+      const now = Date.now();
+      const won = list.filter(d => d.outcome === "won");
+      const lost = list.filter(d => d.outcome === "lost");
+      const active = list.filter(d => !["hired", "repeat", "lost", "archived"].includes(d.status));
+      const earnings = won.reduce((s, d) => s + Number(d.deal_value || 0), 0);
+      const lostValue = lost.reduce((s, d) => s + Number(d.deal_value || 0), 0);
+      const decided = won.length + lost.length;
+      const winRate = decided ? Math.round((won.length / decided) * 100) : 0;
+      const totalApi = list.reduce((s, d) => s + Number(d.api_calls || 0), 0);
+      const stages = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "repeat", "lost"];
+      const funnel = stages.map(st => ({ stage: st, count: list.filter(d => d.status === st).length }));
+      const convTimes = won.map(d => (new Date(d.updated_at).getTime() - new Date(d.created_at).getTime()) / 86400000).filter(x => x > 0);
+      const avgConvDays = convTimes.length ? Math.round((convTimes.reduce((a, b) => a + b, 0) / convTimes.length) * 10) / 10 : 0;
+      const hanging = active.filter(d => (now - new Date(d.updated_at).getTime()) > 4 * 86400000).map(d => ({ client_name: d.client_name, status: d.status, days: Math.floor((now - new Date(d.updated_at).getTime()) / 86400000) })).sort((a, b) => b.days - a.days).slice(0, 20);
+      return { success: true, report: { total: list.length, active: active.length, won: won.length, lost: lost.length, winRate, earnings, lostValue, totalApi, avgApi: list.length ? Math.round(totalApi / list.length) : 0, funnel, byIndustry: aggBy(list, "industry"), byCountry: aggBy(won, "country"), avgConvDays, hanging, learnings: learnings || [] } };
+    } catch (e: any) { return { success: false, error: e?.message || "report failed" }; }
   }
 
   return { success: false, error: `Unknown bd action: ${action}` };
