@@ -4,7 +4,7 @@
    client intel, next move, action items, call script, reminders, risks,
    attachments, demo, lead management). Paste only the chat — the rest is
    derived. Project-independent. */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PortalNav from "@/components/PortalNav";
 
 /* Best-effort client name/handle from the pasted chat (so leads are never
@@ -80,7 +80,7 @@ function Acc({ k, title, children, defaultBadge, open, toggle }: { k: string; ti
   );
 }
 
-type Win = { id: string; type: string; title: string; status: "running" | "done" | "error"; result?: any; error?: string };
+type Win = { id: string; type: string; title: string; status: "running" | "done" | "error"; result?: any; error?: string; dealId?: string; dealName?: string };
 const money2 = (n: any) => "$" + Number(n || 0).toLocaleString();
 const WIN_ICON: Record<string, string> = { audit: "🔍", aeo: "🤖", competitor: "📊", offer: "💰", roadmap: "🗺️", casestudy: "🏆", ask: "✨" };
 
@@ -174,6 +174,7 @@ function WinManager({ win, onMin, onClose, onDownload, onUseReply }: { win: Win;
       <div className="flex items-center gap-2.5 px-3.5 py-2.5 border-b border-border/60 bg-gradient-to-b from-muted/30 to-transparent">
         <span className="w-7 h-7 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15 flex items-center justify-center text-[15px] shrink-0">{WIN_ICON[win.type] || "•"}</span>
         <div className="min-w-0 flex-1">
+          {win.dealName && <div className="text-[9px] font-semibold uppercase tracking-[0.13em] text-primary/70 truncate leading-tight">{win.dealName}</div>}
           <div className="text-[13px] font-semibold tracking-tight text-foreground truncate leading-tight">{win.title}</div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span className={`w-1.5 h-1.5 rounded-full ${running ? "bg-amber-500 animate-pulse" : win.status === "error" ? "bg-rose-500" : "bg-emerald-500"}`} />
@@ -193,20 +194,30 @@ function WinManager({ win, onMin, onClose, onDownload, onUseReply }: { win: Win;
   );
 }
 
-function WinTaskbar({ windows, onRestore, onClose }: { windows: Win[]; onRestore: (id: string) => void; onClose: (id: string) => void }) {
+function WinTaskbar({ windows, onRestore, onClose, onClearDone }: { windows: Win[]; onRestore: (w: Win) => void; onClose: (id: string) => void; onClearDone: () => void }) {
   if (!windows.length) return null;
+  const sorted = [...windows].sort((a, b) => (a.dealName || "").localeCompare(b.dealName || ""));
+  const anyDone = windows.some(w => w.status !== "running");
   return (
     <div className="fixed z-40 bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-2 py-1.5 rounded-2xl border border-border/60 bg-card/80 backdrop-blur-2xl shadow-[0_18px_50px_-15px_rgba(15,23,42,0.5)] ring-1 ring-black/[0.04] max-w-[94vw] overflow-x-auto">
-      {windows.map(w => {
+      <span className="text-[9px] font-semibold uppercase tracking-[0.13em] text-muted-foreground px-1.5 shrink-0">Jobs</span>
+      {sorted.map(w => {
         const running = w.status === "running";
         return (
-          <div key={w.id} className="group flex items-center gap-2 pl-2.5 pr-1.5 py-1.5 rounded-xl border border-border/50 bg-background/40 hover:bg-muted/60 hover:border-border transition-all whitespace-nowrap">
-            <span className={`w-2 h-2 rounded-full ring-2 ring-background ${running ? "bg-amber-500 animate-pulse" : w.status === "error" ? "bg-rose-500" : "bg-emerald-500"}`} />
-            <button onClick={() => onRestore(w.id)} className="flex items-center gap-1.5 text-[11px] font-medium tracking-tight text-foreground/90 max-w-[160px]"><span className="text-xs shrink-0">{WIN_ICON[w.type] || ""}</span><span className="truncate">{w.title}</span></button>
+          <div key={w.id} className="group flex items-center gap-2 pl-2.5 pr-1.5 py-1 rounded-xl border border-border/50 bg-background/40 hover:bg-muted/60 hover:border-border transition-all whitespace-nowrap shrink-0">
+            <span className={`w-2 h-2 rounded-full ring-2 ring-background shrink-0 ${running ? "bg-amber-500 animate-pulse" : w.status === "error" ? "bg-rose-500" : "bg-emerald-500"}`} />
+            <button onClick={() => onRestore(w)} className="flex items-center gap-1.5 max-w-[180px]">
+              <span className="text-xs shrink-0">{WIN_ICON[w.type] || ""}</span>
+              <span className="flex flex-col items-start leading-tight min-w-0">
+                {w.dealName && <span className="text-[8.5px] font-semibold uppercase tracking-wider text-muted-foreground truncate max-w-[120px]">{w.dealName}</span>}
+                <span className="text-[11px] font-medium tracking-tight text-foreground/90 truncate max-w-[120px]">{w.title.replace(/ · .*/, "")}</span>
+              </span>
+            </button>
             <button onClick={() => onClose(w.id)} className="w-4 h-4 rounded text-muted-foreground/60 hover:text-foreground hover:bg-muted flex items-center justify-center text-xs leading-none opacity-0 group-hover:opacity-100 transition-opacity shrink-0">×</button>
           </div>
         );
       })}
+      {anyDone && <button onClick={onClearDone} className="text-[10px] font-medium text-muted-foreground hover:text-foreground px-2 shrink-0">Clear done</button>}
     </div>
   );
 }
@@ -255,6 +266,9 @@ export default function Deals() {
   const [windows, setWindows] = useState<Win[]>([]);
   const [focusedWin, setFocusedWin] = useState("");
   const [autoFired, setAutoFired] = useState<string[]>([]);
+  const [analyzingIds, setAnalyzingIds] = useState<string[]>([]);
+  const selectedIdRef = useRef<string>("");
+  useEffect(() => { selectedIdRef.current = selected?.id || ""; }, [selected]);
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -268,9 +282,9 @@ export default function Deals() {
     setBusy("");
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
-    setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setWindows([]); setFocusedWin(""); setAutoFired([]); };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setWindows([]); setFocusedWin(""); setAutoFired([]); };
+    setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -294,26 +308,31 @@ export default function Deals() {
     if (!compKw && (f.target_keywords || []).length) setCompKw((f.target_keywords || []).join(", "));
     const site = strategy.client_site || (f.urls || [])[0] || "";
     if (!site) return;
+    const dealKey = selected?.id || "new";
     const cached = new Set((selected?.attachments || []).map((a: any) => a.kind));
-    if (!autoFired.includes("audit") && !cached.has("audit")) { setAutoFired(a => [...a, "audit"]); runAudit(true); }
-    if (!autoFired.includes("aeo") && !cached.has("aeo")) { setAutoFired(a => [...a, "aeo"]); runAeo(true); }
+    if (!autoFired.includes(`${dealKey}:audit`) && !cached.has("audit")) { setAutoFired(a => [...a, `${dealKey}:audit`]); runAudit(true); }
+    if (!autoFired.includes(`${dealKey}:aeo`) && !cached.has("aeo")) { setAutoFired(a => [...a, `${dealKey}:aeo`]); runAeo(true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy]);
 
   const runStrategize = async (convo: string, auto = false) => {
-    if (!convo.trim() || busy === "strategize") return;
-    setBusy("strategize"); setError(""); setNotice(auto ? "Analysing…" : "");
+    if (!convo.trim()) return;
+    const startId = selected?.id || "";
+    if (startId && analyzingIds.includes(startId)) return;
+    setError(""); if (selectedIdRef.current === startId && !auto) setNotice("");
+    let id = selected?.id;
     try {
-      let id = selected?.id;
       const nm = selected?.client_name && selected.client_name !== "Untitled lead" ? selected.client_name : (detectClientName(convo) || "Untitled lead");
       const save: any = await post("bd_deal_save", { id, client_name: nm, conversation: convo });
-      if (save?.success && save.deal) { setSelected(save.deal); id = save.deal.id; setNameInput(save.deal.client_name || nm); }
+      if (save?.success && save.deal) { id = save.deal.id; if (selectedIdRef.current === startId) { setSelected(save.deal); selectedIdRef.current = save.deal.id; setNameInput(save.deal.client_name || nm); } }
+      if (id) setAnalyzingIds(a => a.includes(id as string) ? a : [...a, id as string]);
       const r: any = await post("bd_strategize", { id, conversation: convo });
-      setLastAnalysed(convo);
-      if (!r?.success || !r?.strategy) { setError(r?.error || "Could not analyse this time — tap Analyse to retry."); return; }
-      applyStrategy(r.strategy); setNotice(""); loadList();
-    } catch (e: any) { setError(e?.message || "Analysis failed — tap Analyse to retry."); }
-    finally { setBusy(""); }
+      if (selectedIdRef.current === id) setLastAnalysed(convo);
+      if (!r?.success || !r?.strategy) { if (selectedIdRef.current === id) setError(r?.error || "Could not analyse this time — tap Analyse to retry."); return; }
+      if (selectedIdRef.current === id) { applyStrategy(r.strategy); setNotice(""); }
+      loadList();
+    } catch (e: any) { if (selectedIdRef.current === id) setError(e?.message || "Analysis failed — tap Analyse to retry."); }
+    finally { if (id) setAnalyzingIds(a => a.filter(x => x !== id)); }
   };
 
   const mergeConversation = (existing: string, pasted: string): string => {
@@ -333,7 +352,7 @@ export default function Deals() {
     setConversation(merged); setPasteInput(""); await runStrategize(merged, auto);
   };
   useEffect(() => {
-    if (!autoAnalyse || !pasteInput.trim() || busy === "strategize") return;
+    if (!autoAnalyse || !pasteInput.trim() || (selected?.id && analyzingIds.includes(selected.id))) return;
     const t = setTimeout(() => { addAndAnalyse(true); }, 2000); return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pasteInput, autoAnalyse]);
@@ -366,11 +385,13 @@ export default function Deals() {
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
   /* ── Desktop windowing: tools run as app windows (or minimised loader pills). ── */
-  const newWin = (type: string, title: string, focus: boolean) => { const id = type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6); setWindows(w => [...w.filter(x => !(x.type === type && x.status === "running")), { id, type, title, status: "running" as const }]); if (focus) setFocusedWin(id); return id; };
+  const newWin = (type: string, title: string, focus: boolean) => { const id = type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6); const dId = selected?.id || ""; setWindows(w => [...w.filter(x => !(x.type === type && (x.dealId || "") === dId && x.status === "running")), { id, type, title, status: "running" as const, dealId: dId, dealName: clientName }]); if (focus) setFocusedWin(id); return id; };
   const patchWin = (id: string, patch: Partial<Win>) => setWindows(w => w.map(x => x.id === id ? { ...x, ...patch } : x));
   const closeWin = (id: string) => { setWindows(w => w.filter(x => x.id !== id)); setFocusedWin(f => f === id ? "" : f); };
+  const clearDoneWins = () => { setWindows(w => w.filter(x => x.status === "running")); setFocusedWin(f => { const still = windows.find(x => x.id === f); return still && still.status === "running" ? f : ""; }); };
+  const restoreWin = (w: Win) => { if (w.dealId && w.dealId !== (selected?.id || "")) { openDeal(w.dealId).then(() => setFocusedWin(w.id)); } else setFocusedWin(w.id); };
   const useReply = (t: string) => { setReplyDraft(t); copy(t); };
-  const downloadWin = (w: Win) => { try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
+  const downloadWin = (w: Win) => { try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(w.dealName || clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
 
   const runAudit = async (auto = false) => {
     if (!clientSite) { if (!auto) setError("No client site detected. Analyse the chat first."); return; }
@@ -438,11 +459,19 @@ export default function Deals() {
             {deals.length === 0 && <p className="text-xs text-muted-foreground py-4 text-center">No deals yet. + New, then paste a chat.</p>}
             {deals.map(d => (
               <div key={d.id}>
-                <button onClick={() => openDeal(d.id)} className={`w-full text-left px-2.5 py-2 rounded-lg border flex gap-2 ${selected?.id === d.id ? "border-primary bg-primary/5 rounded-b-none" : "border-border hover:border-primary/40"}`}>
-                  <div className="w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold shrink-0">{(d.client_name || "?").slice(0, 1).toUpperCase()}</div>
+                <button onClick={() => { setFocusedWin(""); openDeal(d.id); }} className={`w-full text-left px-2.5 py-2 rounded-lg border flex gap-2 ${selected?.id === d.id ? "border-primary bg-primary/5 rounded-b-none" : "border-border hover:border-primary/40"}`}>
+                  <div className="relative shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-xs font-bold">{(d.client_name || "?").slice(0, 1).toUpperCase()}</div>
+                    {(analyzingIds.includes(d.id) || windows.some(w => (w.dealId || "") === d.id && w.status === "running")) && <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-card animate-pulse" />}
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-1"><span className="text-xs font-semibold truncate">{d.client_name || "Untitled"}</span><span className="text-[10px]" style={{ color: stageColor(d.status) }}>{d.status}</span></div>
-                    {Array.isArray(d.tags) && d.tags.length > 0 && <div className="flex flex-wrap gap-1 mt-0.5">{d.tags.slice(0, 3).map((t: string) => <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>)}</div>}
+                    <div className="flex items-center justify-between gap-1"><span className="text-xs font-semibold truncate">{d.client_name || "Untitled"}</span><span className="text-[10px] shrink-0" style={{ color: stageColor(d.status) }}>{d.status}</span></div>
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      {analyzingIds.includes(d.id) && <span className="inline-flex items-center gap-1 text-[9px] text-amber-600"><span className="w-2 h-2 rounded-full border border-amber-500 border-t-transparent animate-spin" />analysing</span>}
+                      {windows.filter(w => (w.dealId || "") === d.id && w.status === "running").length > 0 && <span className="text-[9px] text-amber-600 tabular-nums">{windows.filter(w => (w.dealId || "") === d.id && w.status === "running").length} running</span>}
+                      {windows.filter(w => (w.dealId || "") === d.id && w.status !== "running").length > 0 && <span className="text-[9px] text-emerald-600 tabular-nums">{windows.filter(w => (w.dealId || "") === d.id && w.status !== "running").length} ready</span>}
+                      {Array.isArray(d.tags) && d.tags.slice(0, 2).map((t: string) => <span key={t} className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground">{t}</span>)}
+                    </div>
                   </div>
                 </button>
                 {selected?.id === d.id && (
@@ -525,7 +554,7 @@ export default function Deals() {
             )}
             <textarea value={pasteInput} onChange={e => { setPasteInput(e.target.value); setNotice(""); }} placeholder="Paste new messages (or the whole chat). Duplicates are ignored." className="w-full h-16 px-3 py-2 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary resize-y" />
             <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => addAndAnalyse(false)} disabled={busy === "strategize" || !pasteInput.trim()} className="text-xs px-4 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{busy === "strategize" ? "Analysing…" : "Add & analyse"}</button>
+              <button onClick={() => addAndAnalyse(false)} disabled={analyzingIds.includes(selected?.id || "") || !pasteInput.trim()} className="text-xs px-4 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{analyzingIds.includes(selected?.id || "") ? "Analysing…" : "Add & analyse"}</button>
               <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">{busy === "attach" ? "Adding…" : "📎 File"}<input type="file" accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml" className="hidden" onChange={e => attachFile(e.target.files?.[0])} disabled={busy === "attach"} /></label>
               <button onClick={() => setShowAttach(v => !v)} className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">🎙 Transcript</button>
               <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">📊 GSC<input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(t => attach(f.name || "GSC export", "gsc", t)).catch(() => setError("Could not read the file.")); }} disabled={busy === "attach"} /></label>
@@ -667,7 +696,7 @@ export default function Deals() {
         </div>
       </div>
       {focusedWindow && <WinManager win={focusedWindow} onMin={() => setFocusedWin("")} onClose={() => closeWin(focusedWindow.id)} onDownload={() => downloadWin(focusedWindow)} onUseReply={useReply} />}
-      <WinTaskbar windows={windows} onRestore={setFocusedWin} onClose={closeWin} />
+      <WinTaskbar windows={windows} onRestore={restoreWin} onClose={closeWin} onClearDone={clearDoneWins} />
     </div>
   );
 }
