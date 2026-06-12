@@ -103,6 +103,10 @@ export default function Deals() {
   const [comp, setComp] = useState<any>(null);
   const [compCo, setCompCo] = useState("");
   const [compKw, setCompKw] = useState("");
+  const [caseMatch, setCaseMatch] = useState<any>(null);
+  const [caseLib, setCaseLib] = useState<any[]>([]);
+  const [showCsLib, setShowCsLib] = useState(false);
+  const [csForm, setCsForm] = useState({ title: "", summary: "", results: "", industry: "", tags: "" });
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -123,6 +127,12 @@ export default function Deals() {
   const genOffer = async () => { setToolBusy("offer"); setError(""); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the offer."); return; } setOffer(r.offer); setOpen(o => ({ ...o, offer: true })); };
   const genRoadmap = async () => { setToolBusy("roadmap"); setError(""); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the roadmap."); return; } setRoadmap(r.roadmap); setOpen(o => ({ ...o, roadmap: true })); };
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
+  const matchCase = async () => { setToolBusy("case"); setError(""); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not match a case study."); return; } setCaseMatch(r); setOpen(o => ({ ...o, casestudy: true })); };
+  const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
+  const saveCaseStudy = async () => { if (!csForm.title.trim() && !csForm.summary.trim()) { setError("Add a title or summary for the case study."); return; } const r: any = await post("bd_casestudy_save", { title: csForm.title, summary: csForm.summary, results: csForm.results, industry: csForm.industry, tags: csForm.tags.split(",").map(s => s.trim()).filter(Boolean) }); if (!r?.success) { setError(r?.error || "Could not save."); return; } setCsForm({ title: "", summary: "", results: "", industry: "", tags: "" }); loadCaseLib(); };
+  const deleteCaseStudy = async (id: string) => { await post("bd_casestudy_delete", { id }); loadCaseLib(); };
+  useEffect(() => { if (showCsLib) loadCaseLib(); /* eslint-disable-next-line */ }, [showCsLib]);
+
   const runAeo = async () => { if (!clientSite) { setError("No client site detected — add the client's URL in the chat."); return; } setToolBusy("aeo"); setError(""); const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite }); setToolBusy(""); if (!r?.success) { setError(r?.error || "AEO check failed."); return; } setAeo(r.report); setOpen(o => ({ ...o, aeo: true })); };
   const runCompetitor = async () => {
     const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
@@ -250,7 +260,7 @@ export default function Deals() {
       <div className="max-w-[1700px] mx-auto px-3 py-4 grid grid-cols-1 lg:grid-cols-[270px_1fr_350px] gap-4 h-[calc(100vh-90px)]">
 
         {/* LEFT — conversations */}
-        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col min-h-0">
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col min-h-0 min-w-0">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-bold">All conversations</h2>
             <button onClick={newDeal} className="text-xs px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-semibold hover:opacity-90">+ New</button>
@@ -293,7 +303,7 @@ export default function Deals() {
         </div>
 
         {/* CENTER — chat + composer */}
-        <div className="rounded-2xl border border-border bg-card flex flex-col min-h-0">
+        <div className="rounded-2xl border border-border bg-card flex flex-col min-h-0 min-w-0">
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
             <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-sm font-bold">{(clientName || "?").slice(0, 1).toUpperCase()}</div>
             <div className="font-semibold text-sm truncate">{clientName}</div>
@@ -308,7 +318,7 @@ export default function Deals() {
             {messages.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">Paste the Fiverr conversation below. The thread renders here; the intelligence appears on the right.</p>}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.sender === "seller" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap ${m.sender === "seller" ? "bg-primary/10 rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>{m.text}</div>
+                <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${m.sender === "seller" ? "bg-primary/10 rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>{m.text}</div>
               </div>
             ))}
           </div>
@@ -329,7 +339,7 @@ export default function Deals() {
                     {variants.map((v, i) => (
                       <div key={i} className="rounded-lg border border-border p-2">
                         <div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{v.label}</span><button onClick={() => { setReplyDraft(v.text); copy(v.text); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div>
-                        <p className="text-xs whitespace-pre-wrap text-foreground">{v.text}</p>
+                        <p className="text-xs whitespace-pre-wrap break-words text-foreground">{v.text}</p>
                       </div>
                     ))}
                   </div>
@@ -350,7 +360,7 @@ export default function Deals() {
         </div>
 
         {/* RIGHT — advanced intelligence */}
-        <div className="rounded-2xl border border-border bg-card overflow-y-auto min-h-0">
+        <div className="rounded-2xl border border-border bg-card overflow-y-auto min-h-0 min-w-0">
           {(selected || conversation.trim()) && (
             <div className="px-4 pt-3 pb-3 border-b border-border">
               <div className="text-[11px] font-semibold text-primary uppercase tracking-wider mb-1.5">✨ Ask the expert</div>
@@ -359,11 +369,11 @@ export default function Deals() {
               <button onClick={ask} disabled={asking || !askInput.trim()} className="mt-1 text-[11px] px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{asking ? "Thinking…" : "Ask"}</button>
               {askResult && (
                 <div className="mt-2 rounded-lg border border-border p-2 text-xs space-y-2">
-                  <p className="whitespace-pre-wrap text-foreground">{askResult.answer}</p>
+                  <p className="whitespace-pre-wrap break-words text-foreground">{askResult.answer}</p>
                   {askResult.client_reply && (
                     <div className="rounded border border-primary/30 bg-primary/5 p-2">
                       <div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Reply you can send</span><button onClick={() => { setReplyDraft(askResult.client_reply); copy(askResult.client_reply); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div>
-                      <p className="whitespace-pre-wrap text-foreground">{askResult.client_reply}</p>
+                      <p className="whitespace-pre-wrap break-words text-foreground">{askResult.client_reply}</p>
                     </div>
                   )}
                   {askResult.suggested_tools?.length > 0 && (
@@ -456,7 +466,7 @@ export default function Deals() {
                     {offer.deliverables?.length > 0 && <div><span className="text-muted-foreground">Deliverables:</span><List items={offer.deliverables} /></div>}
                     {offer.addons?.length > 0 && <div><span className="text-muted-foreground">Add-ons:</span><ul className="list-disc ml-4 text-muted-foreground">{offer.addons.map((a: any, i: number) => <li key={i}>{a.name} — {a.price}</li>)}</ul></div>}
                     {offer.rationale && <p className="text-muted-foreground">{offer.rationale}</p>}
-                    {offer.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => copy(offer.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy</button></div><p className="whitespace-pre-wrap text-foreground">{offer.offer_text}</p></div>}
+                    {offer.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => copy(offer.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{offer.offer_text}</p></div>}
                   </div>
                 )}
               </Acc>
@@ -470,6 +480,33 @@ export default function Deals() {
                     {roadmap.phase_60?.length > 0 && <div><span className="text-foreground font-semibold">Days 31–60</span><List items={roadmap.phase_60} /></div>}
                     {roadmap.phase_90?.length > 0 && <div><span className="text-foreground font-semibold">Days 61–90</span><List items={roadmap.phase_90} /></div>}
                     <button onClick={() => copy(`First 30 days:\n- ${(roadmap.phase_30 || []).join("\n- ")}\n\nDays 31-60:\n- ${(roadmap.phase_60 || []).join("\n- ")}\n\nDays 61-90:\n- ${(roadmap.phase_90 || []).join("\n- ")}`)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy roadmap</button>
+                  </div>
+                )}
+              </Acc>
+
+              <Acc k="casestudy" title="Case study" defaultBadge="proof">
+                <div className="flex items-center gap-2 mb-2">
+                  <button onClick={matchCase} disabled={toolBusy === "case"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{toolBusy === "case" ? "Matching…" : "Find relevant case study"}</button>
+                  <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] text-muted-foreground underline">Manage library</button>
+                </div>
+                {caseMatch && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs mb-2">
+                    {caseMatch.matched?.title && <div className="text-foreground font-semibold">{caseMatch.matched.title}{caseMatch.matched.industry ? ` · ${caseMatch.matched.industry}` : ""}</div>}
+                    {caseMatch.why && <p className="text-muted-foreground">{caseMatch.why}</p>}
+                    {caseMatch.client_snippet && <div className="mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Share with client</span><button onClick={() => { setReplyDraft(caseMatch.client_snippet); copy(caseMatch.client_snippet); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{caseMatch.client_snippet}</p></div>}
+                  </div>
+                )}
+                {showCsLib && (
+                  <div className="text-xs space-y-2">
+                    {caseLib.map(c => <div key={c.id} className="flex items-center justify-between gap-2 border-b border-border pb-1"><span className="truncate text-foreground">{c.title || "Untitled"}{c.industry ? ` · ${c.industry}` : ""}</span><button onClick={() => deleteCaseStudy(c.id)} className="text-muted-foreground hover:text-foreground">×</button></div>)}
+                    <div className="space-y-1 pt-1">
+                      <input value={csForm.title} onChange={e => setCsForm({ ...csForm, title: e.target.value })} placeholder="Title (e.g. Shopify store, +120% organic)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <textarea value={csForm.summary} onChange={e => setCsForm({ ...csForm, summary: e.target.value })} placeholder="What you did (real)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
+                      <textarea value={csForm.results} onChange={e => setCsForm({ ...csForm, results: e.target.value })} placeholder="Real results (numbers if you have them)" className="w-full h-12 px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary resize-y" />
+                      <input value={csForm.industry} onChange={e => setCsForm({ ...csForm, industry: e.target.value })} placeholder="Industry (e.g. interior design)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <input value={csForm.tags} onChange={e => setCsForm({ ...csForm, tags: e.target.value })} placeholder="tags: shopify, local seo, aeo" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
+                      <button onClick={saveCaseStudy} className="text-[11px] px-3 py-1 rounded-lg bg-primary text-primary-foreground font-semibold">Add to library</button>
+                    </div>
                   </div>
                 )}
               </Acc>

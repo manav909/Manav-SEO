@@ -117,6 +117,37 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "get failed" }; }
   }
 
+  if (action === "bd_casestudy_save") {
+    const cs = body || {};
+    const row: any = { title: String(cs.title || "").slice(0, 200), summary: String(cs.summary || ""), results: String(cs.results || ""), industry: String(cs.industry || "").slice(0, 120), tags: Array.isArray(cs.tags) ? cs.tags.map((t: any) => String(t).slice(0, 40)).filter(Boolean) : [] };
+    if (!row.title && !row.summary) return { success: false, error: "Add at least a title or summary." };
+    try {
+      if (cs.id) { const { data, error } = await db().from("bd_case_studies").update(row).eq("id", cs.id).select().single(); if (error) return { success: false, error: error.message }; return { success: true, case_study: data }; }
+      const { data, error } = await db().from("bd_case_studies").insert(row).select().single(); if (error) return { success: false, error: error.message }; return { success: true, case_study: data };
+    } catch (e: any) { return { success: false, error: e?.message || "save failed" }; }
+  }
+  if (action === "bd_casestudy_list") {
+    try { const { data, error } = await db().from("bd_case_studies").select("*").order("created_at", { ascending: false }).limit(200); if (error) return { success: false, error: error.message }; return { success: true, case_studies: data || [] }; }
+    catch (e: any) { return { success: false, error: e?.message || "list failed" }; }
+  }
+  if (action === "bd_casestudy_delete") {
+    const id = String(body?.id || "").trim(); if (!id) return { success: false, error: "id required." };
+    try { await db().from("bd_case_studies").delete().eq("id", id); return { success: true }; } catch (e: any) { return { success: false, error: e?.message || "delete failed" }; }
+  }
+  if (action === "bd_casestudy_match") {
+    const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
+    try {
+      const { data } = await db().from("bd_case_studies").select("*").order("created_at", { ascending: false }).limit(100);
+      const list = (data as any[]) || [];
+      if (!list.length) return { success: false, error: "No case studies in your library yet — add one first." };
+      const { matchCaseStudy } = await import("./bd-strategist.js");
+      const r = await matchCaseStudy({ caseStudies: list.map(x => ({ id: x.id, title: x.title, summary: x.summary, results: x.results, industry: x.industry, tags: x.tags || [] })), conversation: c.conversation, facts: c.facts });
+      if (!r.ok) return { success: false, error: r.error };
+      const matched = list.find(x => x.id === r.best_id) || list[0];
+      return { success: true, matched: { title: matched.title, industry: matched.industry }, why: r.why, client_snippet: r.client_snippet };
+    } catch (e: any) { return { success: false, error: e?.message || "match failed" }; }
+  }
+
   if (action === "bd_aeo_check") {
     const siteUrl = String(body?.siteUrl || "").trim();
     if (!siteUrl) return { success: false, error: "No client site URL — detect it from the chat or add it." };

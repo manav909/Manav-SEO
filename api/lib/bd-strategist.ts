@@ -136,6 +136,28 @@ export async function replyVariants(o: { conversation?: string; facts?: string; 
   } catch (e: any) { return { ok: false, error: e?.message || "variants failed" }; }
 }
 
+export async function matchCaseStudy(opts: { caseStudies: Array<{ id: string; title: string; summary: string; results: string; industry: string; tags: string[] }>; conversation?: string; facts?: string }): Promise<{ ok: boolean; best_id: string; why: string; client_snippet: string; error?: string }> {
+  const cs = opts.caseStudies || [];
+  if (!cs.length) return { ok: false, best_id: "", why: "", client_snippet: "", error: "No case studies in your library yet — add one first." };
+  const system = [
+    `You are a Fiverr business developer choosing which of the seller's REAL case studies to reference with a specific client, and writing a short, honest mention to share.`,
+    `Pick the single most relevant case study to this client's situation. Write a 1-3 sentence client-facing snippet that references ONLY what the chosen case study actually says — never invent metrics or outcomes. If none is a good fit, pick the closest and keep the snippet modest.`,
+    `Return ONLY JSON: {"best_id":"<the id>","why":"<one line on why it fits>","client_snippet":"<the message to share>"}`,
+  ].join("\n");
+  const user = [
+    opts.facts ? `Client facts: ${String(opts.facts).slice(0, 2000)}` : ``,
+    opts.conversation ? `Conversation:\n${String(opts.conversation).slice(0, 8000)}` : ``,
+    `Case studies (choose by id):`,
+    JSON.stringify(cs.map(c => ({ id: c.id, title: c.title, summary: c.summary, results: c.results, industry: c.industry, tags: c.tags })) ).slice(0, 12000),
+  ].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 900, timeoutMs: 60000, label: "bd-casestudy-match" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p) return { ok: false, best_id: "", why: "", client_snippet: "", error: "Could not match a case study. Try again." };
+    return { ok: true, best_id: String(p.best_id || cs[0].id), why: String(p.why || ""), client_snippet: String(p.client_snippet || "") };
+  } catch (e: any) { return { ok: false, best_id: "", why: "", client_snippet: "", error: e?.message || "match failed" }; }
+}
+
 export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
