@@ -80,6 +80,68 @@ function Acc({ k, title, children, defaultBadge, open, toggle }: { k: string; ti
   );
 }
 
+type Win = { id: string; type: string; title: string; status: "running" | "done" | "error"; result?: any; error?: string };
+const money2 = (n: any) => "$" + Number(n || 0).toLocaleString();
+const WIN_ICON: Record<string, string> = { audit: "🔍", aeo: "🤖", competitor: "📊", offer: "💰", roadmap: "🗺️", casestudy: "🏆", ask: "✨" };
+
+function winExportText(w: Win): string {
+  const r = w.result || {};
+  if (w.type === "audit") { const issues = Object.entries(r.issues || {}).map(([k, v]: any) => `- ${v.count} ${k.replace(/_/g, " ")}`).join("\n"); return `SITE AUDIT — ${r.project_domain}\nPages crawled: ${r.pages_reachable}\n${r.performance ? `Performance: ${r.performance.performance_score}/100, LCP ${r.performance.lcp}\n` : ""}Schema: ${Object.keys(r.schema_coverage || {}).join(", ") || "none"}\n\nIssues:\n${issues}`; }
+  if (w.type === "aeo") return `AEO / GEO READINESS — ${r.site}\n${(r.signals || []).map((s: any) => `${s.ok ? "[OK]" : "[ ]"} ${s.label}`).join("\n")}\nSchema: ${(r.schema_types || []).join(", ") || "none"}\n${r.robots_ai}\n\nFixes:\n${(r.recommendations || []).map((x: string) => `- ${x}`).join("\n")}`;
+  if (w.type === "competitor") { const gaps = (r.keyword_gap?.biggest_gaps || []).map((g: any) => `- "${g.query}": ${g.competitor} #${g.competitor_position}${g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}`).join("\n"); return `COMPETITOR SNAPSHOT\n${r.summary || ""}\n\nWhere they beat you:\n${gaps}`; }
+  if (w.type === "offer") return `${r.recommended_package} — ${r.price_band} — ${r.delivery_time}\n\nIncludes:\n${(r.scope || []).map((x: string) => `- ${x}`).join("\n")}\n\nDeliverables:\n${(r.deliverables || []).map((x: string) => `- ${x}`).join("\n")}\n${(r.addons || []).length ? `\nAdd-ons:\n${r.addons.map((a: any) => `- ${a.name}: ${a.price}`).join("\n")}\n` : ""}\n${r.offer_text || ""}`;
+  if (w.type === "roadmap") return `30/60/90 ROADMAP\n${r.summary || ""}\n\nFirst 30 days:\n${(r.phase_30 || []).map((x: string) => `- ${x}`).join("\n")}\n\nDays 31-60:\n${(r.phase_60 || []).map((x: string) => `- ${x}`).join("\n")}\n\nDays 61-90:\n${(r.phase_90 || []).map((x: string) => `- ${x}`).join("\n")}`;
+  if (w.type === "casestudy") return `${r.matched?.title || ""}${r.matched?.industry ? ` (${r.matched.industry})` : ""}\n${r.why || ""}\n\n${r.client_snippet || ""}`;
+  if (w.type === "ask") return `${r.answer || ""}${r.client_reply ? `\n\nReply:\n${r.client_reply}` : ""}`;
+  return JSON.stringify(r, null, 2);
+}
+
+function WinBody({ w, onUseReply }: { w: Win; onUseReply: (t: string) => void }) {
+  const r = w.result || {};
+  if (w.type === "audit") return (<div className="text-xs space-y-1 text-muted-foreground"><p className="text-foreground">Crawled {r.pages_reachable} page(s) of {r.project_domain}.</p>{r.performance && <p>Performance {r.performance.performance_score}/100 · LCP {r.performance.lcp}</p>}{Object.entries(r.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 14).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}{Object.keys(r.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(r.schema_coverage).join(", ")}</p>}</div>);
+  if (w.type === "aeo") return (<div className="text-xs space-y-1 text-muted-foreground">{(r.signals || []).map((s: any, i: number) => <div key={i} style={{ color: s.ok ? "#10b981" : "#ef4444" }}>{s.ok ? "✓" : "✗"} <span className="text-foreground">{s.label}</span></div>)}{r.schema_types?.length > 0 && <p>Schema: {r.schema_types.join(", ")}</p>}<p>{r.robots_ai}</p>{r.recommendations?.length > 0 && <div><span className="text-foreground font-semibold">Fixes:</span><List items={r.recommendations} /></div>}</div>);
+  if (w.type === "competitor") return (<div className="text-xs space-y-1.5 text-muted-foreground">{r.summary && <p>{r.summary}</p>}{r.keyword_gap?.biggest_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Where they beat you:</span><ul className="list-disc ml-4">{r.keyword_gap.biggest_gaps.slice(0, 8).map((g: any, i: number) => <li key={i}>"{g.query}" — {g.competitor} #{g.competitor_position}{g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}</li>)}</ul></div>}{r.content_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Content gaps:</span><ul className="list-disc ml-4">{r.content_gaps.slice(0, 8).map((c: any, i: number) => <li key={i}>{c.topic || c.query || ""}</li>)}</ul></div>}</div>);
+  if (w.type === "offer") return (<div className="text-xs space-y-1.5 text-muted-foreground"><div className="text-foreground font-semibold">{r.recommended_package} · {r.price_band} · {r.delivery_time}</div>{r.scope?.length > 0 && <div><span className="text-foreground">Includes:</span><List items={r.scope} /></div>}{r.deliverables?.length > 0 && <div><span className="text-foreground">Deliverables:</span><List items={r.deliverables} /></div>}{r.addons?.length > 0 && <div><span className="text-foreground">Add-ons:</span><ul className="list-disc ml-4">{r.addons.map((a: any, i: number) => <li key={i}>{a.name} — {a.price}</li>)}</ul></div>}{r.rationale && <p>{r.rationale}</p>}{r.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2 mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => onUseReply(r.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.offer_text}</p></div>}</div>);
+  if (w.type === "roadmap") return (<div className="text-xs space-y-1.5 text-muted-foreground">{r.summary && <p>{r.summary}</p>}{r.phase_30?.length > 0 && <div><span className="text-foreground font-semibold">First 30 days</span><List items={r.phase_30} /></div>}{r.phase_60?.length > 0 && <div><span className="text-foreground font-semibold">Days 31–60</span><List items={r.phase_60} /></div>}{r.phase_90?.length > 0 && <div><span className="text-foreground font-semibold">Days 61–90</span><List items={r.phase_90} /></div>}</div>);
+  if (w.type === "casestudy") return (<div className="text-xs space-y-1 text-muted-foreground">{r.matched?.title && <div className="text-foreground font-semibold">{r.matched.title}{r.matched.industry ? ` · ${r.matched.industry}` : ""}</div>}{r.why && <p>{r.why}</p>}{r.client_snippet && <div className="rounded border border-primary/30 bg-primary/5 p-2 mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Share with client</span><button onClick={() => onUseReply(r.client_snippet)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.client_snippet}</p></div>}</div>);
+  if (w.type === "ask") return (<div className="text-xs space-y-2 text-muted-foreground"><p className="whitespace-pre-wrap break-words text-foreground">{r.answer}</p>{r.client_reply && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Reply you can send</span><button onClick={() => onUseReply(r.client_reply)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{r.client_reply}</p></div>}{r.suggested_tools?.length > 0 && <div className="flex flex-wrap gap-1">{r.suggested_tools.map((t: string, i: number) => <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-muted border border-border">{t}</span>)}</div>}</div>);
+  return <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words">{JSON.stringify(r, null, 2)}</pre>;
+}
+
+function WinManager({ win, onMin, onClose, onDownload, onUseReply }: { win: Win; onMin: () => void; onClose: () => void; onDownload: () => void; onUseReply: (t: string) => void }) {
+  return (
+    <div className="fixed z-50 right-6 top-24 w-[460px] max-w-[92vw] max-h-[74vh] rounded-2xl border border-border bg-card shadow-2xl flex flex-col">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border">
+        <span>{WIN_ICON[win.type] || "•"}</span>
+        <span className="text-sm font-semibold truncate flex-1">{win.title}</span>
+        {win.status === "done" && <button onClick={onDownload} className="text-[11px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Export</button>}
+        <button onClick={onMin} title="Minimize" className="text-muted-foreground hover:text-foreground text-sm px-1.5">—</button>
+        <button onClick={onClose} title="Close" className="text-muted-foreground hover:text-foreground text-sm px-1.5">✕</button>
+      </div>
+      <div className="overflow-y-auto p-4">
+        {win.status === "running" ? <div className="flex items-center gap-2 text-muted-foreground text-sm"><span className="animate-pulse text-primary">●</span> Running… crawls and SERP checks can take a moment.</div>
+          : win.status === "error" ? <div className="text-sm" style={{ color: "#ef4444" }}>{win.error}</div>
+            : <WinBody w={win} onUseReply={onUseReply} />}
+      </div>
+    </div>
+  );
+}
+
+function WinTaskbar({ windows, onRestore, onClose }: { windows: Win[]; onRestore: (id: string) => void; onClose: (id: string) => void }) {
+  if (!windows.length) return null;
+  return (
+    <div className="fixed z-40 bottom-3 left-1/2 -translate-x-1/2 flex gap-2 px-2 py-1.5 rounded-2xl border border-border bg-card shadow-xl max-w-[92vw] overflow-x-auto">
+      {windows.map(w => (
+        <div key={w.id} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border text-xs whitespace-nowrap">
+          <span style={{ color: w.status === "error" ? "#ef4444" : w.status === "done" ? "#10b981" : "#6366f1" }} className={w.status === "running" ? "animate-pulse" : ""}>{w.status === "running" ? "●" : w.status === "error" ? "✗" : "✓"}</span>
+          <button onClick={() => onRestore(w.id)} className="truncate max-w-[150px] text-foreground">{WIN_ICON[w.type] || ""} {w.title}</button>
+          <button onClick={() => onClose(w.id)} className="text-muted-foreground hover:text-foreground">×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Deals() {
   const [deals, setDeals] = useState<any[]>([]);
   const [filter, setFilter] = useState("active");
@@ -121,6 +183,9 @@ export default function Deals() {
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
   const [csForm, setCsForm] = useState({ title: "", summary: "", results: "", industry: "", tags: "" });
+  const [windows, setWindows] = useState<Win[]>([]);
+  const [focusedWin, setFocusedWin] = useState("");
+  const [autoFired, setAutoFired] = useState<string[]>([]);
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -135,28 +200,14 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setWindows([]); setFocusedWin(""); setAutoFired([]); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setWindows([]); setFocusedWin(""); setAutoFired([]); };
 
-  const genOffer = async () => { setToolBusy("offer"); setError(""); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the offer."); return; } setOffer(r.offer); setOpen(o => ({ ...o, offer: true })); };
-  const genRoadmap = async () => { setToolBusy("roadmap"); setError(""); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the roadmap."); return; } setRoadmap(r.roadmap); setOpen(o => ({ ...o, roadmap: true })); };
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
-  const matchCase = async (auto = false) => { setToolBusy("case"); if (!auto) setError(""); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { if (!auto) setError(r?.error || "Could not match a case study."); return; } setCaseMatch(r); setOpen(o => ({ ...o, casestudy: true })); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
   const saveCaseStudy = async () => { if (!csForm.title.trim() && !csForm.summary.trim()) { setError("Add a title or summary for the case study."); return; } const r: any = await post("bd_casestudy_save", { title: csForm.title, summary: csForm.summary, results: csForm.results, industry: csForm.industry, tags: csForm.tags.split(",").map(s => s.trim()).filter(Boolean) }); if (!r?.success) { setError(r?.error || "Could not save."); return; } setCsForm({ title: "", summary: "", results: "", industry: "", tags: "" }); loadCaseLib(); };
   const deleteCaseStudy = async (id: string) => { await post("bd_casestudy_delete", { id }); loadCaseLib(); };
   useEffect(() => { if (showCsLib) loadCaseLib(); /* eslint-disable-next-line */ }, [showCsLib]);
-
-  const runAeo = async (auto = false) => { if (!clientSite) { if (!auto) setError("No client site detected — add the client's URL in the chat."); return; } setToolBusy("aeo"); if (!auto) setError(""); const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite }); setToolBusy(""); if (!r?.success) { if (!auto) setError(r?.error || "AEO check failed."); return; } setAeo(r.report); setOpen(o => ({ ...o, aeo: true })); };
-  const runCompetitor = async () => {
-    const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
-    const keywords = compKw.split(",").map((s: string) => s.trim()).filter(Boolean);
-    setToolBusy("comp"); setError("");
-    const r: any = await post("bd_competitor_snapshot", { id: selected?.id, siteUrl: clientSite, competitors, keywords });
-    setToolBusy("");
-    if (!r?.success) { setError(r?.error || "Competitor snapshot failed."); return; }
-    setComp(r.report); setOpen(o => ({ ...o, comp: true }));
-  };
 
   const renameDeal = async (name: string) => {
     const n = name.trim(); if (!selected?.id || !n) return;
@@ -164,28 +215,9 @@ export default function Deals() {
     if (r?.deal) setSelected(r.deal); loadList();
   };
 
-  const ask = async () => {
-    if (!askInput.trim()) return;
-    setAsking(true); setError("");
-    const r: any = await post("bd_ask", { id: selected?.id, conversation, question: askInput });
-    setAsking(false);
-    if (!r?.success) { setError(r?.error || "Could not get an answer — try rephrasing."); return; }
-    setAskResult({ answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools || [] });
-  };
-
-  const runAudit = async (auto = false) => {
-    if (!clientSite) { if (!auto) setError("No client site detected. Add the client's URL in the chat first."); return; }
-    setAuditing(true); if (!auto) setError(""); setOpen(o => ({ ...o, audit: true }));
-    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id });
-    setAuditing(false);
-    if (!r?.report) { if (!auto) setError(r?.error || "Could not run the audit."); return; }
-    setAudit(r.report);
-    if (r?.report && selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
-  };
-
   /* Autonomy: when a chat is analysed, auto-fill competitor inputs and auto-fire the
-     free diagnostics (audit + AEO) + case match — once per deal, skipping anything
-     already cached on the deal, so it stays scale-safe. */
+     free diagnostics (audit + AEO) + case match — once per deal (autoFired guard),
+     skipping anything already cached on the deal. */
   useEffect(() => {
     if (!strategy) return;
     const f = strategy.deal_facts || {};
@@ -194,9 +226,8 @@ export default function Deals() {
     const site = strategy.client_site || (f.urls || [])[0] || "";
     if (!site) return;
     const cached = new Set((selected?.attachments || []).map((a: any) => a.kind));
-    if (!audit && !auditing && !cached.has("audit")) runAudit(true);
-    if (!aeo && !cached.has("aeo")) runAeo(true);
-    if (!caseMatch) matchCase(true);
+    if (!autoFired.includes("audit") && !cached.has("audit")) { setAutoFired(a => [...a, "audit"]); runAudit(true); }
+    if (!autoFired.includes("aeo") && !cached.has("aeo")) { setAutoFired(a => [...a, "aeo"]); runAeo(true); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy]);
 
@@ -265,6 +296,41 @@ export default function Deals() {
   };
   const copy = (t: string) => { try { navigator.clipboard.writeText(t); } catch { /* ignore */ } };
 
+  /* ── Desktop windowing: tools run as app windows (or minimised loader pills). ── */
+  const newWin = (type: string, title: string, focus: boolean) => { const id = type + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6); setWindows(w => [...w.filter(x => !(x.type === type && x.status === "running")), { id, type, title, status: "running" as const }]); if (focus) setFocusedWin(id); return id; };
+  const patchWin = (id: string, patch: Partial<Win>) => setWindows(w => w.map(x => x.id === id ? { ...x, ...patch } : x));
+  const closeWin = (id: string) => { setWindows(w => w.filter(x => x.id !== id)); setFocusedWin(f => f === id ? "" : f); };
+  const useReply = (t: string) => { setReplyDraft(t); copy(t); };
+  const downloadWin = (w: Win) => { try { const blob = new Blob([winExportText(w)], { type: "text/plain" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${w.type}-${(clientName || "lead").replace(/\W+/g, "_")}.txt`; a.click(); URL.revokeObjectURL(url); } catch { /* ignore */ } };
+
+  const runAudit = async (auto = false) => {
+    if (!clientSite) { if (!auto) setError("No client site detected. Analyse the chat first."); return; }
+    const id = newWin("audit", `Site audit · ${clientSite}`, !auto);
+    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id });
+    if (!r?.report) { patchWin(id, { status: "error", error: r?.error || "Could not run the audit." }); return; }
+    patchWin(id, { status: "done", result: r.report });
+    if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
+  };
+  const runAeo = async (auto = false) => {
+    if (!clientSite) { if (!auto) setError("No client site detected — add the client's URL in the chat."); return; }
+    const id = newWin("aeo", `AEO readiness · ${clientSite}`, !auto);
+    const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite });
+    if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "AEO check failed." }); return; }
+    patchWin(id, { status: "done", result: r.report });
+  };
+  const runCompetitor = async () => {
+    const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
+    const keywords = (compKw.trim() ? compKw : (df.target_keywords || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
+    const id = newWin("competitor", "Competitor snapshot", true);
+    const r: any = await post("bd_competitor_snapshot", { id: selected?.id, siteUrl: clientSite, competitors, keywords });
+    if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Competitor snapshot failed." }); return; }
+    patchWin(id, { status: "done", result: r.report });
+  };
+  const genOffer = async () => { const id = newWin("offer", "Offer & pricing", true); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not build the offer." }); return; } patchWin(id, { status: "done", result: r.offer }); };
+  const genRoadmap = async () => { const id = newWin("roadmap", "30/60/90 roadmap", true); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not build the roadmap." }); return; } patchWin(id, { status: "done", result: r.roadmap }); };
+  const matchCase = async (auto = false) => { const id = newWin("casestudy", "Relevant case study", !auto); const r: any = await post("bd_casestudy_match", { id: selected?.id, conversation }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "No matching case study." }); return; } patchWin(id, { status: "done", result: r }); };
+  const ask = async () => { if (!askInput.trim()) return; const q = askInput; setAskInput(""); const id = newWin("ask", q.length > 40 ? q.slice(0, 40) + "…" : q, true); const r: any = await post("bd_ask", { id: selected?.id, conversation, question: q }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not answer." }); return; } patchWin(id, { status: "done", result: { answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools } }); };
+
   const launchDemo = () => {
     try {
       sessionStorage.setItem("wizard_restore", JSON.stringify({
@@ -282,6 +348,7 @@ export default function Deals() {
   const intel = strategy?.client_intel || {};
   const df = strategy?.deal_facts || {};
   const hasFacts = !!(df.budget || df.timeline || df.location || df.platform || df.service || df.deliverables?.length || df.urls?.length || df.competitors?.length || df.prices_discussed?.length || df.files_shared?.length || df.key_dates?.length || df.other_facts?.length);
+  const focusedWindow = windows.find(w => w.id === focusedWin);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -460,85 +527,24 @@ export default function Deals() {
                 </Acc>
               )}
 
-              <Acc open={open} toggle={toggle} k="audit" title="Quick site audit" defaultBadge="demo · inline">
-                <button onClick={() => runAudit()} disabled={auditing || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{auditing ? "Auditing…" : clientSite ? `Audit ${clientSite}` : "No client site detected yet"}</button>
-                {audit && (
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <p className="text-foreground">Crawled {audit.pages_reachable} page(s) of {audit.project_domain}.</p>
-                    {audit.performance && <p>Performance {audit.performance.performance_score}/100 · LCP {audit.performance.lcp}{audit.performance.cls ? ` · CLS ${audit.performance.cls}` : ""}</p>}
-                    {Object.entries(audit.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 8).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}
-                    {Object.keys(audit.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(audit.schema_coverage).join(", ")}</p>}
-                    <p className="text-[11px] text-muted-foreground/70">Saved to this deal and folded into the strategy. Run the full audit in the Wizard for the deep report.</p>
-                  </div>
-                )}
-              </Acc>
-
-              <Acc open={open} toggle={toggle} k="aeo" title="AEO / GEO readiness" defaultBadge="AI search">
-                <button onClick={() => runAeo()} disabled={toolBusy === "aeo" || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "aeo" ? "Checking…" : clientSite ? "Check AI-search readiness" : "No client site detected"}</button>
-                {aeo && (
-                  <div className="text-xs space-y-1">
-                    {aeo.signals?.map((s: any, i: number) => <div key={i} style={{ color: s.ok ? "#10b981" : "#ef4444" }}>{s.ok ? "✓" : "✗"} <span className="text-foreground">{s.label}</span></div>)}
-                    {aeo.schema_types?.length > 0 && <p className="text-muted-foreground">Schema found: {aeo.schema_types.join(", ")}</p>}
-                    <p className="text-muted-foreground">{aeo.robots_ai}</p>
-                    {aeo.recommendations?.length > 0 && <div><span className="text-foreground font-semibold">Fixes to pitch:</span><List items={aeo.recommendations} /></div>}
-                  </div>
-                )}
-              </Acc>
-
-              <Acc open={open} toggle={toggle} k="comp" title="Competitor snapshot" defaultBadge="SERP">
-                <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-1" />
-                <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords: e.g. luxury interior design scottsdale" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
-                <button onClick={runCompetitor} disabled={toolBusy === "comp"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "comp" ? "Analysing…" : "Run competitor snapshot"}</button>
-                {comp && (
-                  <div className="text-xs space-y-1.5">
-                    {comp.summary && <p className="text-muted-foreground">{comp.summary}</p>}
-                    {comp.keyword_gap?.biggest_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Where they beat you:</span><ul className="list-disc ml-4 text-muted-foreground">{comp.keyword_gap.biggest_gaps.slice(0, 5).map((g: any, i: number) => <li key={i}>"{g.query}" — {g.competitor} #{g.competitor_position}{g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}</li>)}</ul></div>}
-                    {comp.content_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Content gaps:</span><ul className="list-disc ml-4 text-muted-foreground">{comp.content_gaps.slice(0, 5).map((c: any, i: number) => <li key={i}>{c.topic || c.query || JSON.stringify(c).slice(0, 60)}</li>)}</ul></div>}
-                  </div>
-                )}
-              </Acc>
-
-              <Acc open={open} toggle={toggle} k="offer" title="Offer & pricing" defaultBadge="close the deal">
-                <button onClick={genOffer} disabled={toolBusy === "offer"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "offer" ? "Building…" : "Build offer"}</button>
-                {offer && (
-                  <div className="text-xs space-y-1.5">
-                    <div className="text-foreground font-semibold">{offer.recommended_package} · {offer.price_band} · {offer.delivery_time}</div>
-                    {offer.scope?.length > 0 && <div><span className="text-muted-foreground">Includes:</span><List items={offer.scope} /></div>}
-                    {offer.deliverables?.length > 0 && <div><span className="text-muted-foreground">Deliverables:</span><List items={offer.deliverables} /></div>}
-                    {offer.addons?.length > 0 && <div><span className="text-muted-foreground">Add-ons:</span><ul className="list-disc ml-4 text-muted-foreground">{offer.addons.map((a: any, i: number) => <li key={i}>{a.name} — {a.price}</li>)}</ul></div>}
-                    {offer.rationale && <p className="text-muted-foreground">{offer.rationale}</p>}
-                    {offer.offer_text && <div className="rounded border border-primary/30 bg-primary/5 p-2"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Offer message</span><button onClick={() => copy(offer.offer_text)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{offer.offer_text}</p></div>}
-                  </div>
-                )}
-              </Acc>
-
-              <Acc open={open} toggle={toggle} k="roadmap" title="30 / 60 / 90 roadmap" defaultBadge="proof">
-                <button onClick={genRoadmap} disabled={toolBusy === "roadmap"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "roadmap" ? "Building…" : "Generate roadmap"}</button>
-                {roadmap && (
-                  <div className="text-xs space-y-1.5">
-                    {roadmap.summary && <p className="text-muted-foreground">{roadmap.summary}</p>}
-                    {roadmap.phase_30?.length > 0 && <div><span className="text-foreground font-semibold">First 30 days</span><List items={roadmap.phase_30} /></div>}
-                    {roadmap.phase_60?.length > 0 && <div><span className="text-foreground font-semibold">Days 31–60</span><List items={roadmap.phase_60} /></div>}
-                    {roadmap.phase_90?.length > 0 && <div><span className="text-foreground font-semibold">Days 61–90</span><List items={roadmap.phase_90} /></div>}
-                    <button onClick={() => copy(`First 30 days:\n- ${(roadmap.phase_30 || []).join("\n- ")}\n\nDays 31-60:\n- ${(roadmap.phase_60 || []).join("\n- ")}\n\nDays 61-90:\n- ${(roadmap.phase_90 || []).join("\n- ")}`)} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Copy roadmap</button>
-                  </div>
-                )}
-              </Acc>
-
-              <Acc open={open} toggle={toggle} k="casestudy" title="Case study" defaultBadge="proof">
-                <div className="flex items-center gap-2 mb-2">
-                  <button onClick={() => matchCase()} disabled={toolBusy === "case"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{toolBusy === "case" ? "Matching…" : "Find relevant case study"}</button>
-                  <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] text-muted-foreground underline">Manage library</button>
+              <Acc open={open} toggle={toggle} k="apps" title="Run a tool" defaultBadge="opens as a window">
+                <div className="grid grid-cols-2 gap-1.5 mb-2">
+                  <button onClick={() => runAudit()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🔍 Site audit</button>
+                  <button onClick={() => runAeo()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🤖 AEO readiness</button>
+                  <button onClick={() => genOffer()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">💰 Offer &amp; pricing</button>
+                  <button onClick={() => genRoadmap()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">🗺 30/60/90 roadmap</button>
+                  <button onClick={() => matchCase()} className="text-[11px] px-2 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">📂 Case study</button>
+                  <button onClick={() => setShowCsLib(v => !v)} className="text-[11px] px-2 py-1.5 rounded-lg border border-border text-muted-foreground hover:border-primary">⚙ Case library</button>
                 </div>
-                {caseMatch && (
-                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs mb-2">
-                    {caseMatch.matched?.title && <div className="text-foreground font-semibold">{caseMatch.matched.title}{caseMatch.matched.industry ? ` · ${caseMatch.matched.industry}` : ""}</div>}
-                    {caseMatch.why && <p className="text-muted-foreground">{caseMatch.why}</p>}
-                    {caseMatch.client_snippet && <div className="mt-1"><div className="flex items-center justify-between mb-1"><span className="text-[10px] font-semibold text-primary uppercase tracking-wider">Share with client</span><button onClick={() => { setReplyDraft(caseMatch.client_snippet); copy(caseMatch.client_snippet); }} className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/30">Use &amp; copy</button></div><p className="whitespace-pre-wrap break-words text-foreground">{caseMatch.client_snippet}</p></div>}
-                  </div>
-                )}
+                <div className="rounded-lg border border-border p-2">
+                  <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Competitor snapshot</div>
+                  <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-1" />
+                  <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords (prefilled from facts)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
+                  <button onClick={() => runCompetitor()} className="text-[11px] px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20">⚔ Run competitor snapshot</button>
+                </div>
                 {showCsLib && (
-                  <div className="text-xs space-y-2">
+                  <div className="text-xs space-y-2 mt-2 rounded-lg border border-border p-2">
+                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Case study library</div>
                     {caseLib.map(c => <div key={c.id} className="flex items-center justify-between gap-2 border-b border-border pb-1"><span className="truncate text-foreground">{c.title || "Untitled"}{c.industry ? ` · ${c.industry}` : ""}</span><button onClick={() => deleteCaseStudy(c.id)} className="text-muted-foreground hover:text-foreground">×</button></div>)}
                     <div className="space-y-1 pt-1">
                       <input value={csForm.title} onChange={e => setCsForm({ ...csForm, title: e.target.value })} placeholder="Title (e.g. Shopify store, +120% organic)" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary" />
@@ -590,6 +596,8 @@ export default function Deals() {
           )}
         </div>
       </div>
+      {focusedWindow && <WinManager win={focusedWindow} onMin={() => setFocusedWin("")} onClose={() => closeWin(focusedWindow.id)} onDownload={() => downloadWin(focusedWindow)} onUseReply={useReply} />}
+      <WinTaskbar windows={windows} onRestore={setFocusedWin} onClose={closeWin} />
     </div>
   );
 }
