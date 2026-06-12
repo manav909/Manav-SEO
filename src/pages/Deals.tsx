@@ -269,6 +269,7 @@ export default function Deals() {
   const [compCo, setCompCo] = useState("");
   const [compKw, setCompKw] = useState("");
   const [siteInput, setSiteInput] = useState("");
+  const [doneActions, setDoneActions] = useState<string[]>([]);
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -293,8 +294,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -437,7 +438,25 @@ export default function Deals() {
     if (!g?.success) { patchWin(id, { status: "error", error: g?.error || r?.error || "Could not produce a case study." }); return; }
     patchWin(id, { status: "done", result: { generated: true, ...g.draft } });
   };
-  const ask = async () => { if (!askInput.trim()) return; const q = askInput; setAskInput(""); const id = newWin("ask", q.length > 40 ? q.slice(0, 40) + "…" : q, true); const r: any = await post("bd_ask", { id: selected?.id, conversation, question: q }); if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not answer." }); return; } patchWin(id, { status: "done", result: { answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools } }); };
+  const askQuestion = async (q: string) => {
+    if (!q.trim()) return;
+    const id = newWin("ask", q.length > 40 ? q.slice(0, 40) + "…" : q, true);
+    const r: any = await post("bd_ask", { id: selected?.id, conversation, question: q });
+    if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Could not answer." }); return; }
+    patchWin(id, { status: "done", result: { answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools } });
+  };
+  const ask = () => { const q = askInput; setAskInput(""); askQuestion(q); };
+  const actionForText = (text: string): { label: string; run: () => void } => {
+    const t = (text || "").toLowerCase();
+    if (/audit|crawl|site health|technical|broken link|core web|page speed|indexing/.test(t)) return { label: "Run audit", run: () => runAudit() };
+    if (/aeo|geo|schema|llms\.txt|answer engine|ai overview|ai search|structured data|featured snippet/.test(t)) return { label: "Check AEO", run: () => runAeo() };
+    if (/offer|pricing|price|package|quote|proposal/.test(t)) return { label: "Build offer", run: () => genOffer() };
+    if (/roadmap|30\/60\/90|plan|timeline|milestone|strategy doc/.test(t)) return { label: "Build roadmap", run: () => genRoadmap() };
+    if (/case stud|portfolio|proof|testimonial|past work|example of/.test(t)) return { label: "Case study", run: () => matchCase() };
+    if (/competitor|serp|gap analysis|benchmark|rank.*compar/.test(t)) return { label: "Competitor", run: () => runCompetitor() };
+    if (/repl|respond|message|answer|follow.?up|reach out|send them|outreach|pitch/.test(t)) return { label: "Draft reply", run: () => genVariants() };
+    return { label: "Draft this", run: () => askQuestion(`How should I handle this, and draft anything I can send to the client: ${text}`) };
+  };
 
   const launchDemo = () => {
     try {
@@ -622,7 +641,7 @@ export default function Deals() {
                 </div>
               )}
 
-              {strategy?.next_move && <Acc open={open} toggle={toggle} k="next" title="Next best move"><div className="rounded-lg border border-primary/30 bg-primary/5 p-2 text-xs">{strategy.next_move}</div></Acc>}
+              {strategy?.next_move && <Acc open={open} toggle={toggle} k="next" title="Next best move"><div className="rounded-xl border border-primary/30 bg-primary/5 p-2.5 text-xs"><p className="text-foreground leading-relaxed">{strategy.next_move}</p><div className="mt-2">{(() => { const act = actionForText(strategy.next_move); return <button onClick={act.run} className="inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-md bg-primary text-primary-foreground hover:opacity-90 transition-opacity">▶ {act.label}</button>; })()}</div></div></Acc>}
 
               {hasFacts && (
                 <Acc open={open} toggle={toggle} k="facts" title="Deal facts" defaultBadge="captured from chat">
@@ -690,9 +709,37 @@ export default function Deals() {
                 </Acc>
               ) : null}
 
-              {strategy?.action_items?.length > 0 && <Acc open={open} toggle={toggle} k="actions" title="Do now" defaultBadge={strategy.action_items.length}><ul className="space-y-1">{strategy.action_items.map((a: any, i: number) => <li key={i} className="text-xs text-muted-foreground"><span className="text-foreground">{a.action}</span>{a.platform_can_help && <span className="ml-1"><Chip text="in-platform" color="#10b981" /></span>}</li>)}</ul></Acc>}
+              {strategy?.action_items?.length > 0 && <Acc open={open} toggle={toggle} k="actions" title="Do now" defaultBadge={strategy.action_items.filter((a: any) => !doneActions.includes(a.action)).length}>
+                <div className="space-y-1.5">
+                  {strategy.action_items.map((a: any, i: number) => {
+                    const done = doneActions.includes(a.action);
+                    const act = actionForText(a.action);
+                    return (
+                      <div key={i} className={`rounded-xl border p-2 transition-opacity ${done ? "border-border/40 opacity-50" : "border-border/60"}`}>
+                        <div className="flex items-start gap-2">
+                          <button onClick={() => setDoneActions(d => done ? d.filter(x => x !== a.action) : [...d, a.action])} className={`mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center text-[10px] shrink-0 transition-colors ${done ? "bg-emerald-500 border-emerald-500 text-white" : "border-border hover:border-primary"}`}>{done ? "✓" : ""}</button>
+                          <div className="min-w-0 flex-1">
+                            <div className={`text-xs text-foreground ${done ? "line-through" : ""}`}>{a.action}</div>
+                            {a.why && <div className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{a.why}</div>}
+                          </div>
+                        </div>
+                        {!done && <div className="flex items-center gap-1.5 mt-1.5 pl-6"><button onClick={act.run} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">▶ {act.label}</button>{a.platform_can_help && <span className="text-[9px] text-emerald-600">in-platform</span>}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </Acc>}
 
-              {strategy?.reminders?.length > 0 && <Acc open={open} toggle={toggle} k="reminders" title="Reminders" defaultBadge={strategy.reminders.length}><ul className="space-y-1">{strategy.reminders.map((r: any, i: number) => <li key={i} className="text-xs text-muted-foreground">⏰ {r.text}{r.when ? <span className="text-foreground/70"> — {r.when}</span> : null}</li>)}</ul></Acc>}
+              {strategy?.reminders?.length > 0 && <Acc open={open} toggle={toggle} k="reminders" title="Reminders" defaultBadge={strategy.reminders.length}>
+                <div className="space-y-1.5">
+                  {strategy.reminders.map((r: any, i: number) => (
+                    <div key={i} className="rounded-xl border border-border/60 p-2">
+                      <div className="text-xs text-foreground">⏰ {r.text}{r.when ? <span className="text-muted-foreground"> — {r.when}</span> : null}</div>
+                      <div className="mt-1.5"><button onClick={() => askQuestion(`Draft a short, friendly follow-up message I can send the client for this reminder: ${r.text}`)} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">✍ Draft follow-up</button></div>
+                    </div>
+                  ))}
+                </div>
+              </Acc>}
 
               {strategy?.call_script?.needed && (
                 <Acc open={open} toggle={toggle} k="call" title="Call script">
@@ -702,12 +749,22 @@ export default function Deals() {
                     {strategy.call_script.objection_handling?.length > 0 && <div><b className="text-foreground">Objections:</b><List items={strategy.call_script.objection_handling} /></div>}
                     {strategy.call_script.close && <p><b className="text-foreground">Close:</b> {strategy.call_script.close}</p>}
                   </div>
+                  <button onClick={() => copy([strategy.call_script.opening ? `Open: ${strategy.call_script.opening}` : "", (strategy.call_script.discovery_questions || []).length ? `Ask:\n- ${strategy.call_script.discovery_questions.join("\n- ")}` : "", (strategy.call_script.objection_handling || []).length ? `Objections:\n- ${strategy.call_script.objection_handling.join("\n- ")}` : "", strategy.call_script.close ? `Close: ${strategy.call_script.close}` : ""].filter(Boolean).join("\n\n"))} className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⧉ Copy script</button>
                 </Acc>
               )}
 
               {strategy?.risk_flags?.length > 0 && <Acc open={open} toggle={toggle} k="risks" title="Watch out" defaultBadge={strategy.risk_flags.length}><div className="rounded-lg border p-2" style={{ borderColor: "#f59e0b55", background: "#f59e0b11" }}><List items={strategy.risk_flags} /></div></Acc>}
 
-              {strategy?.needs_attachments?.length > 0 && <Acc open={open} toggle={toggle} k="needs" title="Add what the chat references"><div className="rounded-lg border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>{strategy.needs_attachments.map((a: any, i: number) => <div key={i} className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>)}</div></Acc>}
+              {strategy?.needs_attachments?.length > 0 && <Acc open={open} toggle={toggle} k="needs" title="Add what the chat references">
+                <div className="space-y-1.5">
+                  {strategy.needs_attachments.map((a: any, i: number) => (
+                    <div key={i} className="rounded-xl border p-2 text-xs" style={{ borderColor: "#6366f155", background: "#6366f111" }}>
+                      <div className="text-muted-foreground">📎 {a.what}{a.note ? ` — ${a.note}` : ""}</div>
+                      <div className="mt-1.5"><button onClick={() => askQuestion(`Write a short, polite message asking the client to share this so I can proceed: ${a.what}`)} className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">✍ Draft request</button></div>
+                    </div>
+                  ))}
+                </div>
+              </Acc>}
 
               {selected?.id && (selected.attachments || []).length > 0 && (
                 <Acc open={open} toggle={toggle} k="lead" title="Attachments">
