@@ -37,6 +37,15 @@ async function dealContext(id: string, conversation: string): Promise<{ conversa
   return { conversation, facts, attachments, strategySummary };
 }
 
+async function persistDiag(id: string, kind: string, name: string, text: string): Promise<void> {
+  if (!id) return;
+  try {
+    const { data } = await db().from("bd_deals").select("attachments").eq("id", id).single();
+    const existing = Array.isArray((data as any)?.attachments) ? (data as any).attachments.filter((a: any) => a.kind !== kind) : [];
+    await db().from("bd_deals").update({ attachments: [...existing, { name, kind, text, added_at: new Date().toISOString() }], updated_at: new Date().toISOString() }).eq("id", id);
+  } catch { /* non-fatal */ }
+}
+
 export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_deal_save") {
     const d = body || {};
@@ -106,6 +115,33 @@ export async function handleBd(action: string, body: any): Promise<any> {
       if (error) return { success: false, error: error.message };
       return { success: true, deal: data };
     } catch (e: any) { return { success: false, error: e?.message || "get failed" }; }
+  }
+
+  if (action === "bd_aeo_check") {
+    const siteUrl = String(body?.siteUrl || "").trim();
+    if (!siteUrl) return { success: false, error: "No client site URL — detect it from the chat or add it." };
+    try {
+      const { aeoReadinessCheck } = await import("./bd-diagnostics.js");
+      const r = await aeoReadinessCheck(siteUrl);
+      if (!r.ok || !r.report) return { success: false, error: r.error || "AEO check failed." };
+      const rep = r.report;
+      await persistDiag(String(body?.id || "").trim(), "aeo", "AEO/GEO readiness", `AEO/GEO readiness for ${rep.site}: ${rep.signals.filter(s => s.ok).length}/${rep.signals.length} signals OK. Schema: ${rep.schema_types.join(", ") || "none"}. llms.txt: ${rep.llms_txt ? "yes" : "no"}. ${rep.robots_ai}. Top fixes: ${rep.recommendations.slice(0, 3).join("; ")}.`);
+      return { success: true, report: rep };
+    } catch (e: any) { return { success: false, error: e?.message || "AEO check failed" }; }
+  }
+
+  if (action === "bd_competitor_snapshot") {
+    const siteUrl = String(body?.siteUrl || "").trim();
+    const competitors = (Array.isArray(body?.competitors) ? body.competitors : []).map((c: any) => String(c).trim()).filter(Boolean);
+    const keywords = (Array.isArray(body?.keywords) ? body.keywords : []).map((k: any) => String(k).trim()).filter(Boolean);
+    if (!competitors.length) return { success: false, error: "Add at least one competitor domain (detected from the chat or typed)." };
+    if (!keywords.length) return { success: false, error: "Add a few target keywords to compare on." };
+    try {
+      const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
+      const report = await benchmarkCompetitors({ projectId: String(body?.projectId || ""), competitors, keywords, siteUrl, maxQueries: 8, maxContentGaps: 5 });
+      await persistDiag(String(body?.id || "").trim(), "competitor", "Competitor snapshot", report.summary || `Competitor snapshot vs ${competitors.join(", ")}.`);
+      return { success: true, report };
+    } catch (e: any) { return { success: false, error: e?.message || "competitor snapshot failed" }; }
   }
 
   if (action === "bd_build_offer") {

@@ -99,6 +99,10 @@ export default function Deals() {
   const [roadmap, setRoadmap] = useState<any>(null);
   const [variants, setVariants] = useState<any[]>([]);
   const [toolBusy, setToolBusy] = useState("");
+  const [aeo, setAeo] = useState<any>(null);
+  const [comp, setComp] = useState<any>(null);
+  const [compCo, setCompCo] = useState("");
+  const [compKw, setCompKw] = useState("");
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
@@ -113,13 +117,22 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null);
-  };
-  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
+  const newDeal = () => { setSelected(null); setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); };
 
   const genOffer = async () => { setToolBusy("offer"); setError(""); const r: any = await post("bd_build_offer", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the offer."); return; } setOffer(r.offer); setOpen(o => ({ ...o, offer: true })); };
   const genRoadmap = async () => { setToolBusy("roadmap"); setError(""); const r: any = await post("bd_build_roadmap", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not build the roadmap."); return; } setRoadmap(r.roadmap); setOpen(o => ({ ...o, roadmap: true })); };
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
+  const runAeo = async () => { if (!clientSite) { setError("No client site detected — add the client's URL in the chat."); return; } setToolBusy("aeo"); setError(""); const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite }); setToolBusy(""); if (!r?.success) { setError(r?.error || "AEO check failed."); return; } setAeo(r.report); setOpen(o => ({ ...o, aeo: true })); };
+  const runCompetitor = async () => {
+    const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
+    const keywords = compKw.split(",").map((s: string) => s.trim()).filter(Boolean);
+    setToolBusy("comp"); setError("");
+    const r: any = await post("bd_competitor_snapshot", { id: selected?.id, siteUrl: clientSite, competitors, keywords });
+    setToolBusy("");
+    if (!r?.success) { setError(r?.error || "Competitor snapshot failed."); return; }
+    setComp(r.report); setOpen(o => ({ ...o, comp: true }));
+  };
 
   const renameDeal = async (name: string) => {
     const n = name.trim(); if (!selected?.id || !n) return;
@@ -328,6 +341,8 @@ export default function Deals() {
               <button onClick={() => addAndAnalyse(false)} disabled={busy === "strategize" || !pasteInput.trim()} className="text-xs px-4 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">{busy === "strategize" ? "Analysing…" : "Add & analyse"}</button>
               <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">{busy === "attach" ? "Adding…" : "📎 File"}<input type="file" accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml" className="hidden" onChange={e => attachFile(e.target.files?.[0])} disabled={busy === "attach"} /></label>
               <button onClick={() => setShowAttach(v => !v)} className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30">🎙 Transcript</button>
+              <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">📊 GSC<input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(t => attach(f.name || "GSC export", "gsc", t)).catch(() => setError("Could not read the file.")); }} disabled={busy === "attach"} /></label>
+              <label className="text-[11px] px-2.5 py-1 rounded-md bg-primary/10 text-primary border border-primary/30 cursor-pointer">📈 GA4<input type="file" accept=".csv,.tsv,.txt" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(t => attach(f.name || "GA4 export", "ga4", t)).catch(() => setError("Could not read the file.")); }} disabled={busy === "attach"} /></label>
               <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground ml-auto"><input type="checkbox" checked={autoAnalyse} onChange={e => setAutoAnalyse(e.target.checked)} />Auto</label>
             </div>
             {showAttach && (<div><textarea value={transcript} onChange={e => setTranscript(e.target.value)} placeholder="Paste the call transcript (Fiverr recordings expire ~30 days — save it now)…" className="w-full h-20 px-2 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary resize-y" /><button onClick={() => { if (transcript.trim()) { attach("call transcript", "transcript", transcript); setTranscript(""); setShowAttach(false); } }} disabled={busy === "attach" || !transcript.trim()} className="mt-1 text-[11px] px-3 py-1 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">Add transcript</button></div>)}
@@ -403,6 +418,31 @@ export default function Deals() {
                     {Object.entries(audit.issues || {}).sort((a: any, b: any) => b[1].count - a[1].count).slice(0, 8).map(([k, v]: any) => <div key={k}>• {v.count} {k.replace(/_/g, " ")}</div>)}
                     {Object.keys(audit.schema_coverage || {}).length > 0 && <p>Schema: {Object.keys(audit.schema_coverage).join(", ")}</p>}
                     <p className="text-[11px] text-muted-foreground/70">Saved to this deal and folded into the strategy. Run the full audit in the Wizard for the deep report.</p>
+                  </div>
+                )}
+              </Acc>
+
+              <Acc k="aeo" title="AEO / GEO readiness" defaultBadge="AI search">
+                <button onClick={runAeo} disabled={toolBusy === "aeo" || !clientSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "aeo" ? "Checking…" : clientSite ? "Check AI-search readiness" : "No client site detected"}</button>
+                {aeo && (
+                  <div className="text-xs space-y-1">
+                    {aeo.signals?.map((s: any, i: number) => <div key={i} style={{ color: s.ok ? "#10b981" : "#ef4444" }}>{s.ok ? "✓" : "✗"} <span className="text-foreground">{s.label}</span></div>)}
+                    {aeo.schema_types?.length > 0 && <p className="text-muted-foreground">Schema found: {aeo.schema_types.join(", ")}</p>}
+                    <p className="text-muted-foreground">{aeo.robots_ai}</p>
+                    {aeo.recommendations?.length > 0 && <div><span className="text-foreground font-semibold">Fixes to pitch:</span><List items={aeo.recommendations} /></div>}
+                  </div>
+                )}
+              </Acc>
+
+              <Acc k="comp" title="Competitor snapshot" defaultBadge="SERP">
+                <input value={compCo} onChange={e => setCompCo(e.target.value)} placeholder={(df.competitors || []).length ? (df.competitors || []).join(", ") : "competitor1.com, competitor2.com"} className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-1" />
+                <input value={compKw} onChange={e => setCompKw(e.target.value)} placeholder="target keywords: e.g. luxury interior design scottsdale" className="w-full px-2 py-1 rounded-md border border-border bg-background text-[11px] outline-none focus:border-primary mb-2" />
+                <button onClick={runCompetitor} disabled={toolBusy === "comp"} className="text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50 mb-2">{toolBusy === "comp" ? "Analysing…" : "Run competitor snapshot"}</button>
+                {comp && (
+                  <div className="text-xs space-y-1.5">
+                    {comp.summary && <p className="text-muted-foreground">{comp.summary}</p>}
+                    {comp.keyword_gap?.biggest_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Where they beat you:</span><ul className="list-disc ml-4 text-muted-foreground">{comp.keyword_gap.biggest_gaps.slice(0, 5).map((g: any, i: number) => <li key={i}>"{g.query}" — {g.competitor} #{g.competitor_position}{g.client_position ? ` vs you #${g.client_position}` : " (you absent)"}</li>)}</ul></div>}
+                    {comp.content_gaps?.length > 0 && <div><span className="text-foreground font-semibold">Content gaps:</span><ul className="list-disc ml-4 text-muted-foreground">{comp.content_gaps.slice(0, 5).map((c: any, i: number) => <li key={i}>{c.topic || c.query || JSON.stringify(c).slice(0, 60)}</li>)}</ul></div>}
                   </div>
                 )}
               </Acc>
