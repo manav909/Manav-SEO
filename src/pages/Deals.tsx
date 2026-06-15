@@ -314,7 +314,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); };
+    if ((d.conversation || "").trim().length > 40 && !(d.strategy && d.strategy.deal_state)) runStrategize(d.conversation, true);
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(d.client_site || ""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); };
   const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
@@ -337,7 +338,7 @@ export default function Deals() {
     const f = strategy.deal_facts || {};
     if (!compCo && (f.competitors || []).length) setCompCo((f.competitors || []).join(", "));
     if (!compKw && (f.target_keywords || []).length) setCompKw((f.target_keywords || []).join(", "));
-    const site = strategy.client_site || (f.urls || [])[0] || "";
+    const site = strategy.client_site || (f.urls || [])[0] || selected?.client_site || "";
     if (site && !siteInput) setSiteInput(site);
     if (!site) return;
     const dealKey = selected?.id || "new";
@@ -540,7 +541,7 @@ export default function Deals() {
   };
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
-  const clientSite = (siteInput.trim() || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").toLowerCase();
+  const clientSite = (siteInput.trim() || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || selected?.client_site || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").toLowerCase();
   const clientSiteUrl = clientSite ? `https://${clientSite}` : "";
   const messages = parseThread(conversation);
   const intel = strategy?.client_intel || {};

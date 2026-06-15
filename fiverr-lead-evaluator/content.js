@@ -428,14 +428,30 @@
     }
     return best;
   }
+  function detectClientSite() {
+    const el = convEl();
+    let corpus = (el.innerText || "");
+    try { el.querySelectorAll("a[href]").forEach((a) => { const hf = a.getAttribute("href") || ""; if (/^https?:\/\//i.test(hf)) corpus += " " + hf; }); } catch (e) { /* ignore */ }
+    let s = detectSite(corpus);
+    if (!s) s = detectSite(((document.body && document.body.innerText) || "").slice(0, 60000));
+    return s;
+  }
+  function persistSite() {
+    if (!dealId || !siteUrl) return;
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, client_site: siteUrl } }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success && deal) deal.client_site = siteUrl;
+    });
+  }
   function findDeal(then) {
-    if (!siteUrl) { const s = detectSite(grabText(false)); if (s) siteUrl = s; }
+    if (!siteUrl) { const s = detectClientSite(); if (s) siteUrl = s; }
     const handle = clientHandle();
     if (!handle) { if (then) then(); return; }
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_find", body: { client_handle: handle, platform: "fiverr", client_name: handle } }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) {
         deal = resp.data.deal; dealId = String(deal.id || ""); dealName = String(deal.client_name || handle);
         if (deal.strategy) lastStrategy = deal.strategy;
+        if (!siteUrl && deal.client_site) siteUrl = String(deal.client_site);
+        if (siteUrl && !deal.client_site) persistSite();
         engagement = mergeEngagement(deal.engagement, readEngagement());
         renderBody();
       }
@@ -486,15 +502,23 @@
     const times = Array.from(new Set([].concat(Array.isArray(prev.times) ? prev.times : [], Array.isArray(fresh.times) ? fresh.times : []))).slice(-400);
     return { times, last_seen: fresh.last_seen || prev.last_seen || "", local_time: fresh.local_time || prev.local_time || "", timezone: fresh.timezone || prev.timezone || "", observed_at: fresh.observed_at || prev.observed_at || new Date().toISOString(), first_observed: prev.first_observed || fresh.observed_at || new Date().toISOString() };
   }
+  // ---- timezone helpers: show timing in the SELLER's own zone (auto-detected), translate the client's zone ----
+  const TZ_ABBR = { "Asia/Kolkata": "IST", "Asia/Calcutta": "IST", "America/New_York": "ET", "America/Chicago": "CT", "America/Denver": "MT", "America/Los_Angeles": "PT", "America/Phoenix": "MST", "Europe/London": "UK", "Europe/Paris": "CET", "Europe/Berlin": "CET", "Asia/Dubai": "GST", "Asia/Singapore": "SGT", "Asia/Hong_Kong": "HKT", "Asia/Tokyo": "JST", "Asia/Seoul": "KST", "Australia/Sydney": "AEST", "Africa/Lagos": "WAT", "Africa/Nairobi": "EAT", "Africa/Johannesburg": "SAST", "Pacific/Auckland": "NZST", "Europe/Moscow": "MSK" };
+  const ABBR_IANA = { EST: "America/New_York", EDT: "America/New_York", ET: "America/New_York", CST: "America/Chicago", CDT: "America/Chicago", CT: "America/Chicago", MST: "America/Phoenix", MDT: "America/Denver", MT: "America/Denver", PST: "America/Los_Angeles", PDT: "America/Los_Angeles", PT: "America/Los_Angeles", GMT: "UTC", UTC: "UTC", BST: "Europe/London", CET: "Europe/Paris", CEST: "Europe/Paris", IST: "Asia/Kolkata", GST: "Asia/Dubai", SGT: "Asia/Singapore", HKT: "Asia/Hong_Kong", JST: "Asia/Tokyo", KST: "Asia/Seoul", AEST: "Australia/Sydney", AEDT: "Australia/Sydney", WAT: "Africa/Lagos", EAT: "Africa/Nairobi", CAT: "Africa/Maputo", SAST: "Africa/Johannesburg", NZST: "Pacific/Auckland", MSK: "Europe/Moscow" };
+  function dispZone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; } }
+  function zoneLabel(iana) { if (TZ_ABBR[iana]) return TZ_ABBR[iana]; try { const p = new Intl.DateTimeFormat("en-US", { timeZone: iana, timeZoneName: "short" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName"); return p ? p.value : iana; } catch (e) { return iana; } }
+  function hourInZone(d, iana) { try { return parseInt(new Intl.DateTimeFormat("en-US", { timeZone: iana, hour: "2-digit", hour12: false }).format(d), 10) % 24; } catch (e) { return d.getHours(); } }
+  function tzOffsetMin(iana) { try { const d = new Date(); const u = new Date(d.toLocaleString("en-US", { timeZone: "UTC" })); const z = new Date(d.toLocaleString("en-US", { timeZone: iana })); return Math.round((z - u) / 60000); } catch (e) { return 0; } }
+  function nowInZone(iana) { try { return new Intl.DateTimeFormat("en-US", { timeZone: iana, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date()); } catch (e) { return ""; } }
   function engagementHtml() {
     if (!engagement) return "";
-    const e = engagement;
+    const e = engagement; const dz = dispZone(); const dzLabel = zoneLabel(dz);
     const dated = (e.times || []).filter((t) => t && t[0] !== "T").map((t) => new Date(t)).filter((d) => !isNaN(d.getTime()));
     const hourly = new Array(24).fill(0); let count = 0;
     (e.times || []).forEach((t) => {
       let hr = -1;
-      if (t[0] === "T") hr = parseInt(t.slice(1, 3), 10);
-      else { const d = new Date(t); if (!isNaN(d.getTime())) hr = d.getHours(); }
+      if (t[0] === "T") hr = parseInt(t.slice(1, 3), 10);                 // time-only token, already in the seller's viewing zone (= dz)
+      else { const d = new Date(t); if (!isNaN(d.getTime())) hr = hourInZone(d, dz); } // absolute timestamp -> seller's zone
       if (hr >= 0 && hr < 24) { hourly[hr]++; count++; }
     });
     const band = (a, b) => { let s = 0; for (let i = a; i <= b; i++) s += hourly[i]; return s; };
@@ -503,19 +527,28 @@
     const top = bands.filter((b) => b[1] > 0).slice(0, 2).map((b) => b[0]).join(" & ");
     let last = "";
     if (dated.length) { const mx = Math.max.apply(null, dated.map((d) => d.getTime())); const mins = Math.round((Date.now() - mx) / 60000); last = mins < 1 ? "just now" : mins < 60 ? mins + "m ago" : mins < 1440 ? Math.round(mins / 60) + "h ago" : Math.round(mins / 1440) + "d ago"; }
+    // translate the client's detected zone into a current clock + offset vs the seller
+    let theirLine = "";
+    const cz = e.timezone && ABBR_IANA[e.timezone.replace(/[+\-].*$/, "")] ? ABBR_IANA[e.timezone.replace(/[+\-].*$/, "")] : "";
+    if (cz) {
+      const t = nowInZone(cz); const diff = Math.round((tzOffsetMin(cz) - tzOffsetMin(dz)) / 30) / 2; // hours, half-hour precision
+      const rel = diff === 0 ? "same as you" : (Math.abs(diff) + "h " + (diff < 0 ? "behind" : "ahead of") + " you");
+      theirLine = (t ? t + " " : "") + "(" + esc(e.timezone) + ") · " + rel;
+    }
     let h = `<div class="lbl" style="margin-top:0">⏱ Client timing &amp; availability</div>`;
     const rows = [];
-    if (e.local_time) rows.push(["Their local time", esc(e.local_time) + (e.timezone ? ' <span class="muted">(' + esc(e.timezone) + ")</span>" : "")]);
-    else if (e.timezone) rows.push(["Time zone", esc(e.timezone)]);
+    if (theirLine) rows.push(["Their local time now", theirLine]);
+    else if (e.local_time) rows.push(["Their local time", esc(e.local_time) + (e.timezone ? ' <span class="muted">(' + esc(e.timezone) + ")</span>" : "")]);
+    else if (e.timezone) rows.push(["Their time zone", esc(e.timezone)]);
     if (last) rows.push(["Last message", last]);
     if (e.last_seen) rows.push(["Status", esc(e.last_seen)]);
-    if (count && top) rows.push(["Usually messages", top + ` <span class="muted">(${count} seen)</span>`]);
+    if (count && top) rows.push([`Usually messages <span class="muted">(${dzLabel})</span>`, top + ` <span class="muted">(${count} seen)</span>`]);
     if (!rows.length) {
       h += `<p class="muted" style="margin:0 0 8px;font-size:10.5px">No timestamps detected on this page yet — Fiverr often hides them in hover tooltips. Right-click a message's time, Inspect, and paste me the element so I can lock onto it.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
       return h;
     }
     h += `<div class="sum" style="margin:0 0 5px">` + rows.map((r) => `<div style="display:flex;justify-content:space-between;gap:10px;margin:2px 0"><span class="muted">${r[0]}</span><span style="text-align:right">${r[1]}</span></div>`).join("") + `</div>`;
-    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">From timestamps visible in this chat${e.timezone ? "" : "; shown in your local time, so confirm their zone before reading the pattern literally"}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">Activity shown in your time zone (${dzLabel}) so you can plan${cz ? " — their clock is in the top row" : ""}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
     return h;
   }
   function renderSync() {
@@ -528,9 +561,12 @@
   function autosave() {
     if (!dealId || !sameClient()) return;
     const conv = grabText(false); if (!conv || conv.length < 30) return;
+    if (!siteUrl) { const s = detectClientSite(); if (s) { siteUrl = s; renderBody(); } }
     engagement = mergeEngagement((deal && deal.engagement) || engagement, readEngagement());
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement } }, (resp) => {
-      if (resp && resp.ok && resp.data && resp.data.success) { if (deal) deal.engagement = engagement; syncedAt = Date.now(); renderSync(); }
+    const upd = { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement };
+    if (siteUrl) upd.client_site = siteUrl;
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: upd }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success) { if (deal) { deal.engagement = engagement; if (siteUrl) deal.client_site = siteUrl; } syncedAt = Date.now(); renderSync(); }
     });
   }
   function maybeAutoEval() {
@@ -712,7 +748,7 @@
     root.querySelectorAll(".saynext").forEach((ta) => ta.addEventListener("input", (e) => { if (lastStrategy) lastStrategy.draft_reply = e.target.value; }));
     const syi = root.querySelector(".sayins"); if (syi) syi.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; if (!t.trim()) return; const box = findReplyBox(); if (!box) { askMsg = "err:Could not find Fiverr's message box. Click into it once, then press Insert again — or use Copy."; renderBody(); return; } insertIntoBox(box, t); };
     const syc = root.querySelector(".saycpy"); if (syc) syc.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; try { navigator.clipboard.writeText(t); } catch (e) { /* ignore */ } syc.textContent = "Copied"; setTimeout(() => { syc.textContent = "Copy"; }, 1200); };
-    const si = root.getElementById("ss-site"); if (si) si.addEventListener("input", (e) => { siteUrl = e.target.value; });
+    const si = root.getElementById("ss-site"); if (si) { si.addEventListener("input", (e) => { siteUrl = e.target.value.trim(); }); si.addEventListener("change", () => { persistSite(); }); }
     const ce = root.getElementById("ss-comp"); if (ce) ce.addEventListener("input", (e) => { competitors = e.target.value; });
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
     const dt = root.getElementById("ss-docstog"); if (dt) dt.onclick = () => { docsOpen = !docsOpen; renderBody(); };

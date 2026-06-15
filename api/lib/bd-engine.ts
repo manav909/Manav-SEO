@@ -154,6 +154,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (typeof body?.client_name === "string" && body.client_name.trim()) upd.client_name = body.client_name.slice(0, 200);
     if (typeof body?.conversation === "string" && body.conversation.trim()) { upd.conversation = body.conversation; upd.last_message_at = new Date().toISOString(); }
     if (body?.engagement && typeof body.engagement === "object") upd.engagement = body.engagement;
+    if (typeof body?.client_site === "string" && body.client_site.trim()) upd.client_site = body.client_site.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").slice(0, 200);
     try {
       const { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
       if (error) return { success: false, error: error.message };
