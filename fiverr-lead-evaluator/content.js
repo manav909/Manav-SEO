@@ -29,6 +29,7 @@
     .hd .ttl{font-size:13px;font-weight:700;flex:1}
     .hd button{background:transparent;border:none;color:#9aa0b5;cursor:pointer;font-size:13px;padding:4px 7px;border-radius:7px}
     .hd button:hover{background:#222840;color:#fff}
+    .syncs{font-size:10px;color:#34d399;margin-right:6px;white-space:nowrap}
     .body{padding:12px 14px;overflow-y:auto;font-size:12.5px;line-height:1.5}
     .row{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px}
     .pill{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px}
@@ -68,6 +69,7 @@
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
   let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false;
+  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [];
 
   // ---- detection ---------------------------------------------------------------
   const EXT = /\.(xlsx|xls|csv|pdf|docx?|pptx?|txt|md|json|png|jpe?g|gif|zip|rar)$/i;
@@ -155,25 +157,29 @@
     if (temp) h += `<span class="pill ${temp === "hot" ? "hot" : temp === "warm" ? "warm" : "cold"}">${esc(ds.temperature)}</span>`;
     if (s.detected_client) h += `<span class="muted">${esc(s.detected_client)}</span>`;
     h += `</div>`;
-    if (ds.summary) h += `<div class="sum">${esc(ds.summary)}</div>`;
-    if (s.next_move) h += `<div class="lbl">Next move</div><div class="next">${esc(s.next_move)}</div>`;
-    if (arr(s.action_items).length) h += `<div class="lbl">Do now</div>` + arr(s.action_items).map((a) => `<div class="act"><span class="b"></span><span>${esc(a && a.action ? a.action : a)}</span></div>`).join("");
-    if (arr(ci.wants).length) h += `<div class="lbl">What they want</div><ul>${li(ci.wants)}</ul>`;
-    if (arr(ci.pain_points).length) h += `<div class="lbl">Pain points</div><ul>${li(ci.pain_points)}</ul>`;
-    if (arr(ci.objections).length) h += `<div class="lbl">Objections / concerns</div><ul>${li(ci.objections)}</ul>`;
+    if (s.draft_reply) h += `<div class="lbl">Say this next</div><textarea class="saynext" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #6366f155;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(s.draft_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="sayins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="saycpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
+    if (s.next_move) h += `<div class="lbl">Why / next move</div><div class="next">${esc(s.next_move)}</div>`;
+    if (ci.tone) h += `<div class="lbl">Client tone</div><div class="sum">${esc(ci.tone)}</div>`;
+    if (s.expectations) h += `<div class="lbl">Their expectations</div><div class="sum">${esc(s.expectations)}</div>`;
+    if (arr(s.risk_flags).length) h += `<div class="lbl">Watch out</div><ul class="risk">${li(s.risk_flags)}</ul>`;
+    if (arr(ci.objections).length) h += `<div class="lbl">Objections to handle</div><ul>${li(ci.objections)}</ul>`;
+    if (arr(s.action_items).length) h += `<div class="lbl">Do now</div>` + arr(s.action_items).map((a) => `<div class="act"><span class="b"></span><span>${esc(a && a.action ? a.action : a)}${a && a.platform_can_help ? ` <span class="muted" style="font-size:10px">· platform can run this</span>` : ""}</span></div>`).join("");
     if (arr(ci.buying_signals).length) h += `<div class="lbl">Buying signals</div><ul>${li(ci.buying_signals)}</ul>`;
-    if (arr(s.risk_flags).length) h += `<div class="lbl">Risks</div><ul class="risk">${li(s.risk_flags)}</ul>`;
+    if (arr(ci.pain_points).length) h += `<div class="lbl">Pain points</div><ul>${li(ci.pain_points)}</ul>`;
+    let extra = "";
+    if (arr(ci.wants).length) extra += `<div class="lbl">What they want</div><ul>${li(ci.wants)}</ul>`;
+    if (ds.summary) extra += `<div class="lbl">Thread summary</div><div class="sum">${esc(ds.summary)}</div>`;
     const facts = Object.entries(f).filter(([, v]) => v && (!Array.isArray(v) || v.length)).map(([k, v]) => `<span class="fact"><b>${esc(k.replace(/_/g, " "))}:</b> ${esc(Array.isArray(v) ? v.join(", ") : v)}</span>`).join("");
-    if (facts) h += `<div class="lbl">Facts captured</div><div class="facts">${facts}</div>`;
+    if (facts) extra += `<div class="lbl">Facts on record</div><div class="facts">${facts}</div>`;
     if (cs.opening || arr(cs.discovery_questions).length || cs.close) {
-      h += `<details><summary>Call script</summary><div style="margin-top:6px">`;
-      if (cs.opening) h += `<div class="lbl">Opening</div><div class="sum">${esc(cs.opening)}</div>`;
-      if (arr(cs.discovery_questions).length) h += `<div class="lbl">Discovery</div><ul>${li(cs.discovery_questions)}</ul>`;
-      if (arr(cs.objection_handling).length) h += `<div class="lbl">Objection handling</div><ul>${li(cs.objection_handling)}</ul>`;
-      if (cs.close) h += `<div class="lbl">Close</div><div class="sum">${esc(cs.close)}</div>`;
-      h += `</div></details>`;
+      extra += `<div class="lbl">Call script</div>`;
+      if (cs.opening) extra += `<div class="sum"><b>Open:</b> ${esc(cs.opening)}</div>`;
+      if (arr(cs.discovery_questions).length) extra += `<ul>${li(cs.discovery_questions)}</ul>`;
+      if (arr(cs.objection_handling).length) extra += `<ul>${li(cs.objection_handling)}</ul>`;
+      if (cs.close) extra += `<div class="sum"><b>Close:</b> ${esc(cs.close)}</div>`;
     }
-    if (captured) h += `<div class="muted" style="font-size:10px;margin-top:8px">Evaluated ${esc(captured)} characters (chat + dropped files).</div>`;
+    if (extra) h += `<details style="margin-top:8px"><summary>More detail (summary, wants, facts, call script)</summary><div style="margin-top:6px">${extra}</div></details>`;
+    if (captured) h += `<div class="muted" style="font-size:10px;margin-top:8px">Read ${esc(captured)} characters (chat + dropped files).</div>`;
     return h;
   }
 
@@ -181,7 +187,7 @@
     if (!open) { wrap.innerHTML = launcher(); bind(); return; }
     wrap.innerHTML = `
       <div class="panel">
-        <div class="hd"><span class="dot"></span><span class="ttl">SEO Season · Lead Evaluation</span><button id="ss-min" title="Minimise">—</button></div>
+        <div class="hd"><span class="dot"></span><span class="ttl">SEO Season · Lead Cockpit</span><span class="syncs" id="ss-sync"></span><button id="ss-min" title="Minimise">—</button></div>
         <div class="body" id="ss-body"></div>
         <div class="foot"><button class="btn p" id="ss-eval">Evaluate</button><button class="btn p" id="ss-reply">✍ Reply</button><button class="btn s" id="ss-sel" title="Use highlighted text">Sel</button></div>
       </div>`;
@@ -212,6 +218,7 @@
     else h += `<p class="muted">Drop the downloaded audit / transcript into its slot above, then hit <b>Evaluate</b> — the contents get read into the analysis, not just the chat.</p>`;
     body.innerHTML = h;
     bindSlots();
+    renderSync();
   }
 
   function grabText(forceSel) {
@@ -237,13 +244,14 @@
     const extras = slots.filter((s) => s.text).map((s) => `\n\n[${s.kind === "call" ? "CALL TRANSCRIPT" : "ATTACHED DOCUMENT"}: ${s.label}]\n${s.text}`).join("");
     const full = (conv || "") + extras;
     if (body) { body.dataset.state = "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
+    lastEvalAt = Date.now();
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, id: dealId } }, (resp) => {
       const b = root.getElementById("ss-body"); if (!b) return; delete b.dataset.state;
       if (chrome.runtime.lastError) { b.dataset.error = chrome.runtime.lastError.message; renderBody(); return; }
       if (!resp || !resp.ok) { b.dataset.error = (resp && (resp.error || (resp.data && resp.data.error))) || "Request failed. Check the API address in the extension settings."; renderBody(); return; }
       const data = resp.data || {};
       if (!data.success || !data.strategy) { b.dataset.error = data.error || "The engine could not evaluate this conversation."; renderBody(); return; }
-      lastStrategy = data.strategy; b.dataset.captured = String(full.length); renderBody();
+      lastStrategy = data.strategy; lastEvalLen = (conv || "").length; b.dataset.captured = String(full.length); renderBody(); autosave();
     });
   }
 
@@ -325,6 +333,7 @@
       const data = resp.data || {};
       if (!data.success) { askMsg = "err:" + (data.error || "Could not answer."); renderBody(); return; }
       askResult = { answer: data.answer || "", client_reply: data.client_reply || "" };
+      suggestedTools = arr(data.suggested_tools);
       askMsg = (!askResult.answer && !askResult.client_reply) ? "err:Empty answer — try rephrasing." : "";
       renderBody();
     });
@@ -340,6 +349,10 @@
     if (askResult) {
       if (askResult.answer) h += `<div class="lbl">Expert take</div><div class="sum">${esc(askResult.answer)}</div>`;
       if (askResult.client_reply) h += `<div class="lbl">Ready to send</div><textarea class="askreply" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(askResult.client_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="askins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="askcpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
+    }
+    if (suggestedTools.length) {
+      const tools = suggestedTools.map((t) => ({ t, k: mapTool(t) })).filter((x) => x.k);
+      if (tools.length) h += `<div class="lbl">Senior DMS suggests — run it now</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px">` + tools.map((x) => `<button class="suggop" data-op="${x.k}" style="cursor:pointer;border:1px solid #34d39955;background:#34d39914;color:#6ee7b7;border-radius:999px;padding:4px 10px;font-size:11px;font-weight:600">⚡ ${esc(x.t)}</button>`).join("") + `</div>`;
     }
     if (askMsg && askMsg !== "loading") h += `<div class="${askMsg.indexOf("err:") === 0 ? "err" : "muted"}" style="margin:6px 0">${esc(askMsg.replace(/^(err|ok):/, ""))}</div>`;
     h += `<div style="height:1px;background:#262b3d;margin:12px 0"></div>`;
@@ -388,6 +401,55 @@
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_get", body: { id: dealId } }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) { deal = resp.data.deal; renderBody(); }
     });
+  }
+  function convEl() {
+    let best = null, bestLen = 0; const seen = new Set();
+    document.querySelectorAll('[class*="conversation" i],[class*="message" i],[class*="thread" i],[class*="chat" i],main,[role="main"]').forEach((el) => {
+      if (seen.has(el)) return; seen.add(el);
+      const t = (el.innerText || "").trim();
+      if (t.length > bestLen && t.length < 80000) { best = el; bestLen = t.length; }
+    });
+    return best || document.querySelector('main,[role="main"]') || document.body;
+  }
+  function renderSync() {
+    const el = root.getElementById("ss-sync"); if (!el) return;
+    if (!dealId) { el.textContent = watching ? "live" : ""; return; }
+    if (!syncedAt) { el.textContent = "live"; el.title = "Synced with this client in the software"; return; }
+    const s = Math.max(0, Math.round((Date.now() - syncedAt) / 1000));
+    el.textContent = "✓ synced " + (s < 5 ? "now" : s < 60 ? s + "s" : Math.round(s / 60) + "m");
+  }
+  function autosave() {
+    if (!dealId || !sameClient()) return;
+    const conv = grabText(false); if (!conv || conv.length < 30) return;
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, conversation: conv, client_name: dealName || undefined } }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success) { syncedAt = Date.now(); renderSync(); }
+    });
+  }
+  function maybeAutoEval() {
+    if (!sameClient()) return;
+    const len = (grabText(false) || "").length;
+    if (len - lastEvalLen > 200 && Date.now() - lastEvalAt > 90000) evaluate(false);
+  }
+  function watchChat() {
+    if (watching) return; watching = true;
+    try {
+      const obs = new MutationObserver(() => { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => { autosave(); maybeAutoEval(); }, 3000); });
+      obs.observe(convEl(), { childList: true, subtree: true, characterData: true });
+    } catch (e) { /* ignore */ }
+    setInterval(() => { autosave(); maybeAutoEval(); }, 25000); // backup for virtualized lists the observer can miss
+    renderSync();
+  }
+  function mapTool(s) {
+    s = String(s || "").toLowerCase();
+    if (/competitor/.test(s)) return "competitor";
+    if (/aeo|schema|geo|llms/.test(s)) return "aeo";
+    if (/audit|crawl|\bsite\b/.test(s)) return "audit";
+    return "";
+  }
+  function sameClient() {
+    const h = clientHandle();
+    if (!h || !deal || !deal.client_handle) return true; // can't tell — allow (best effort)
+    return h === deal.client_handle;
   }
   function runOp(k) {
     const siteEl = root.getElementById("ss-site"); const site = (siteEl ? siteEl.value : siteUrl || "").trim(); siteUrl = site;
@@ -468,6 +530,10 @@
     const aii = root.querySelector(".askins"); if (aii) aii.onclick = () => { const ta = root.querySelector(".askreply"); const t = ta ? ta.value : (askResult && askResult.client_reply) || ""; if (!t.trim()) return; const box = findReplyBox(); if (!box) { askMsg = "err:Could not find Fiverr's message box. Click into it once, then press Insert again — or use Copy."; renderBody(); return; } insertIntoBox(box, t); askMsg = "ok:Inserted into the message box — review it and hit send on Fiverr."; renderBody(); };
     const aic = root.querySelector(".askcpy"); if (aic) aic.onclick = () => { const ta = root.querySelector(".askreply"); const t = ta ? ta.value : (askResult && askResult.client_reply) || ""; try { navigator.clipboard.writeText(t); } catch (e) { /* ignore */ } aic.textContent = "Copied"; setTimeout(() => { aic.textContent = "Copy"; }, 1200); };
     root.querySelectorAll(".opbtn").forEach((b) => b.addEventListener("click", () => runOp(b.dataset.op)));
+    root.querySelectorAll(".suggop").forEach((b) => b.addEventListener("click", () => runOp(b.dataset.op)));
+    root.querySelectorAll(".saynext").forEach((ta) => ta.addEventListener("input", (e) => { if (lastStrategy) lastStrategy.draft_reply = e.target.value; }));
+    const syi = root.querySelector(".sayins"); if (syi) syi.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; if (!t.trim()) return; const box = findReplyBox(); if (!box) { askMsg = "err:Could not find Fiverr's message box. Click into it once, then press Insert again — or use Copy."; renderBody(); return; } insertIntoBox(box, t); };
+    const syc = root.querySelector(".saycpy"); if (syc) syc.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; try { navigator.clipboard.writeText(t); } catch (e) { /* ignore */ } syc.textContent = "Copied"; setTimeout(() => { syc.textContent = "Copy"; }, 1200); };
     const si = root.getElementById("ss-site"); if (si) si.addEventListener("input", (e) => { siteUrl = e.target.value; });
     const ce = root.getElementById("ss-comp"); if (ce) ce.addEventListener("input", (e) => { competitors = e.target.value; });
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
@@ -476,7 +542,7 @@
   }
 
   function bind() {
-    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); findDeal(() => evaluate(false)); };
+    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); findDeal(() => { evaluate(false); watchChat(); }); };
     const m = root.getElementById("ss-min"); if (m) m.onclick = () => { open = false; render(); };
     const e = root.getElementById("ss-eval"); if (e) e.onclick = () => evaluate(false);
     const rp = root.getElementById("ss-reply"); if (rp) rp.onclick = () => draftReplies();

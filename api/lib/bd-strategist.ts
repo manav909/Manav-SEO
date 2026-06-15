@@ -23,8 +23,9 @@ export interface DealStrategy {
   detected_client: string;
   client_site:     string;
   deal_state:   { stage: string; temperature: string; summary: string };
-  client_intel: { wants: string[]; pain_points: string[]; buying_signals: string[]; objections: string[]; budget_signals: string[] };
+  client_intel: { wants: string[]; pain_points: string[]; buying_signals: string[]; objections: string[]; budget_signals: string[]; tone: string };
   next_move:    string;
+  expectations: string;
   draft_reply:  string;
   action_items: Array<{ action: string; why: string; platform_can_help: boolean }>;
   call_script:  { needed: boolean; opening: string; discovery_questions: string[]; value_points: string[]; objection_handling: string[]; close: string };
@@ -52,7 +53,8 @@ const SYSTEM = [
   `- detected_client: the client's name or handle as it appears in the conversation (empty string if not stated).`,
   `- client_site: the client's OWN website domain (bare domain, no protocol). Extract it from any URL they shared or mentioned anywhere in the chat. Only empty if they truly never gave a site.`,
   `- deal_state: stage (one of: new_lead, qualifying, proposal, negotiating, demo_requested, closing, hired, in_delivery, repeat, stalled, lost), temperature (hot/warm/cold), and a one-line summary of where it stands.`,
-  `- client_intel: what the client wants, their pain points, buying signals, objections (stated or likely), and any budget signals — all read from the conversation.`,
+  `- client_intel: what the client wants, their pain points, buying signals, objections (stated or likely), any budget signals, and tone — a one-line read of the client's current emotion and communication style (e.g. 'Impatient and price-focused, warming since the audit offer'). All read from the conversation.`,
+  `- expectations: one or two lines on what THIS client is expecting or has been led to expect (timeline, results, scope), and whether that is realistic or needs gentle managing. Specific to what was actually said — not generic.`,
   `- next_move: the single best thing the seller should do next, and why, in plain terms.`,
   `- draft_reply: a ready-to-send message in a warm, confident, professional seller voice — specific to this client, moving the deal forward. Conversion-focused but NEVER pushy, and NEVER promising results, timelines, or capabilities that are not real. If the client asked something technical, answer it credibly at a senior-SEO level.`,
   `- action_items: concrete things to do now. For each, set platform_can_help true if the seller's own SEO platform can do it (for example: run a live demo audit of the client's site, ingest a document/transcript the client shared, pull Search Console data if the client granted access, build a sample deliverable).`,
@@ -62,14 +64,14 @@ const SYSTEM = [
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."]},"next_move":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","industry":"","client_type":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."],"tone":"..."},"next_move":"...","expectations":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","platform":"","service":"","industry":"","client_type":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
   detected_client: "", client_site: "",
   deal_state: { stage: "new_lead", temperature: "cold", summary: "" },
-  client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [] },
-  next_move: "", draft_reply: "", action_items: [],
+  client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [], tone: "" },
+  next_move: "", expectations: "", draft_reply: "", action_items: [],
   call_script: { needed: false, opening: "", discovery_questions: [], value_points: [], objection_handling: [], close: "" },
   needs_attachments: [], reminders: [],
   deal_facts: { budget: "", timeline: "", location: "", platform: "", service: "", industry: "", client_type: "", deliverables: [], urls: [], competitors: [], target_keywords: [], prices_discussed: [], files_shared: [], key_dates: [], other_facts: [] },
@@ -414,8 +416,9 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
       detected_client: String(p.detected_client || "").slice(0, 120),
       client_site: String(p.client_site || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""),
       deal_state: { stage: String(p.deal_state?.stage || "new_lead"), temperature: String(p.deal_state?.temperature || ""), summary: String(p.deal_state?.summary || "") },
-      client_intel: { wants: arr(p.client_intel?.wants), pain_points: arr(p.client_intel?.pain_points), buying_signals: arr(p.client_intel?.buying_signals), objections: arr(p.client_intel?.objections), budget_signals: arr(p.client_intel?.budget_signals) },
+      client_intel: { wants: arr(p.client_intel?.wants), pain_points: arr(p.client_intel?.pain_points), buying_signals: arr(p.client_intel?.buying_signals), objections: arr(p.client_intel?.objections), budget_signals: arr(p.client_intel?.budget_signals), tone: String(p.client_intel?.tone || "") },
       next_move: String(p.next_move || ""),
+      expectations: String(p.expectations || ""),
       draft_reply: String(p.draft_reply || ""),
       action_items: Array.isArray(p.action_items) ? p.action_items.map((a: any) => ({ action: String(a?.action || ""), why: String(a?.why || ""), platform_can_help: Boolean(a?.platform_can_help) })).filter((a: any) => a.action) : [],
       call_script: { needed: Boolean(p.call_script?.needed), opening: String(p.call_script?.opening || ""), discovery_questions: arr(p.call_script?.discovery_questions), value_points: arr(p.call_script?.value_points), objection_handling: arr(p.call_script?.objection_handling), close: String(p.call_script?.close || "") },
