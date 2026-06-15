@@ -26,6 +26,41 @@
     return out;
   }
   const arr = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
+  // Markdown -> clean plain text for messages that get SENT to the client (Fiverr has no markdown rendering).
+  function stripMd(s) {
+    let t = String(s == null ? "" : s);
+    t = t.replace(/```[\s\S]*?```/g, (m) => m.replace(/```[a-z]*\n?/gi, "").replace(/```/g, "").trim());
+    t = t.replace(/`([^`]+)`/g, "$1");
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/__([^_]+)__/g, "$1");
+    t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2").replace(/(^|[^_])_([^_\n]+)_/g, "$1$2");
+    t = t.replace(/^\s{0,3}#{1,6}\s+/gm, "");
+    t = t.replace(/^\s{0,3}>\s?/gm, "");
+    t = t.replace(/^\s*[-*+]\s+/gm, "• ");
+    t = t.replace(/^\s*\d{1,2}[.)]\s+/gm, (m) => m.trim() + " ");
+    t = t.replace(/^\s*[-—_*]{3,}\s*$/gm, "");
+    t = t.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)");
+    t = t.replace(/\n{3,}/g, "\n\n");
+    return t.trim();
+  }
+  // Render a dense server summary string as readable lines: narrative sentences on their own line, "Top fixes / Issues" as bullets.
+  function prettyIntel(text) {
+    let t = String(text || "").trim();
+    if (!t) return "";
+    t = t.replace(/\s+(Top fixes|Top issues|Issues|Recommendations|Fixes|Next steps|Quick wins)\s*:/gi, "\n$1:");
+    const out = [];
+    t.split(/\n+/).forEach((block) => {
+      block = block.trim(); if (!block) return;
+      const lab = block.match(/^(Top fixes|Top issues|Issues|Recommendations|Fixes|Next steps|Quick wins)\s*:\s*(.*)$/i);
+      if (lab) {
+        out.push('<div style="font-weight:600;margin:6px 0 1px;color:#dfe2f0">' + esc(lab[1]) + '</div>');
+        const items = lab[2].split(/;\s*/).map((x) => x.replace(/^[-•]\s*/, "").replace(/\.\s*$/, "").trim()).filter(Boolean);
+        (items.length ? items : [lab[2]]).forEach((it) => { if (it) out.push('<div style="padding-left:13px;text-indent:-11px;margin:2px 0">•&nbsp;' + esc(it) + '</div>'); });
+      } else {
+        block.split(/(?<=\.)\s+(?=[A-Z0-9])/).map((s) => s.trim()).filter(Boolean).forEach((s) => out.push('<div style="margin:2px 0">' + esc(s) + '</div>'));
+      }
+    });
+    return out.join("");
+  }
 
   const host = document.createElement("div");
   host.id = "seo-season-host";
@@ -181,7 +216,7 @@
     if (s.detected_client) h += `<span class="muted">${esc(s.detected_client)}</span>`;
     h += `</div>`;
     if (evalCached) h += `<div class="muted" style="font-size:10.5px;margin:2px 0 6px">Saved analysis from last time — nothing new in the chat. Tap <b>Evaluate</b> to refresh.</div>`;
-    if (s.draft_reply) h += `<div class="lbl">Say this next</div><textarea class="saynext" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #6366f155;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(s.draft_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="sayins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="saycpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
+    if (s.draft_reply) h += `<div class="lbl">Say this next</div><textarea class="saynext" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #6366f155;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(stripMd(s.draft_reply))}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="sayins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="saycpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
     if (s.next_move) h += `<div class="lbl">Why / next move</div><div class="next">${esc(s.next_move)}</div>`;
     if (ci.tone) h += `<div class="lbl">Client tone</div><div class="sum">${esc(ci.tone)}</div>`;
     if (s.expectations) h += `<div class="lbl">Their expectations</div><div class="sum">${esc(s.expectations)}</div>`;
@@ -238,7 +273,7 @@
     if (replyMsg === "loading") h += `<div class="loading"><span class="spin"></span> Writing reply options…</div>`;
     if (replies.length) {
       h += `<div class="lbl" style="margin-top:0">Reply drafts — edit, then insert</div>`;
-      h += replies.map((v, i) => `<div class="slot"><div class="slot-h"><span>✍</span><span class="slot-l">${esc(v.label || ("Option " + (i + 1)))}</span></div><textarea class="reply" data-i="${i}" style="width:100%;height:88px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(v.text)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="ins" data-i="${i}" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="cpy" data-i="${i}" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div></div>`).join("");
+      h += replies.map((v, i) => `<div class="slot"><div class="slot-h"><span>✍</span><span class="slot-l">${esc(v.label || ("Option " + (i + 1)))}</span></div><textarea class="reply" data-i="${i}" style="width:100%;height:88px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(stripMd(v.text))}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="ins" data-i="${i}" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="cpy" data-i="${i}" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div></div>`).join("");
     }
     if (replyMsg && replyMsg !== "loading") h += `<div class="${replyMsg.indexOf("err:") === 0 ? "err" : "muted"}" style="margin:6px 0">${esc(replyMsg.replace(/^(err|ok):/, ""))}</div>`;
     if (replies.length) h += `<div style="height:1px;background:#262b3d;margin:12px 0"></div>`;
@@ -394,7 +429,7 @@
     if (askMsg === "loading") h += `<div class="loading"><span class="spin"></span> Thinking like a senior SEO…</div>`;
     if (askResult) {
       if (askResult.answer) h += `<div class="lbl">Expert take</div><div class="sum">${mdLite(askResult.answer)}</div>`;
-      if (askResult.client_reply) h += `<div class="lbl">Ready to send</div><textarea class="askreply" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(askResult.client_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="askins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="askcpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
+      if (askResult.client_reply) h += `<div class="lbl">Ready to send</div><textarea class="askreply" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(stripMd(askResult.client_reply))}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="askins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="askcpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
     }
     if (suggestedTools.length) {
       const tools = suggestedTools.map((t) => ({ t, k: mapTool(t) })).filter((x) => x.k);
@@ -418,19 +453,26 @@
     if (/^(inbox|messages|new|conversations)$/i.test(h)) h = "";
     return h.trim();
   }
+  // hosts that are never the client's site: Fiverr itself, image/asset CDNs, trackers, big platforms
+  const BAD_HOST = ["fiverr", "cloudinary", "gstatic", "googleusercontent", "ggpht", "fbcdn", "cdninstagram", "twimg", "licdn", "ytimg", "googlevideo", "cloudfront", "akamai", "akamaihd", "imgix", "gravatar", "doubleclick", "googletagmanager", "google-analytics", "gmail", "google.", "googleapis", "youtube", "youtu.be", "facebook", "instagram", "linkedin", "whatsapp", "paypal", "loom.", "zoom.us", "calendly", "dropbox", "bit.ly", "tinyurl", "t.co", "wa.me", "drive.google", "docs.google", "sheets.google", "wetransfer", "imgur", "giphy", "tenor"];
+  const FILE_EXT = /^(txt|pdf|png|jpe?g|gif|webp|svg|bmp|tiff?|docx?|xlsx?|pptx?|csv|tsv|json|xml|ya?ml|html?|js|mjs|ts|css|scss|md|markdown|zip|rar|gz|tar|7z|mp[34]|m4a|wav|mov|avi|mkv|webm|woff2?|ttf|otf|eot|ico|exe|dmg|pkg|apk|sql|log|env|sh|bat|psd|ai|eps|sketch|fig)$/i;
+  function cleanDomain(s) { return String(s == null ? "" : s).trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").replace(/\.$/, "").toLowerCase(); }
+  function okHost(s) {
+    const d = cleanDomain(s);
+    if (!d || !d.includes(".")) return false;
+    if (BAD_HOST.some((b) => d.includes(b))) return false;
+    const tld = d.split(".").pop();
+    if (!/^[a-z]{2,24}$/.test(tld) || FILE_EXT.test(tld)) return false;
+    if (!/[a-z]/.test(d.slice(0, d.lastIndexOf(".")))) return false;
+    return true;
+  }
   function detectSite(text) {
     const re = /((?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+)(?:\/[^\s)]*)?/gi;
-    const skip = /(fiverr|gmail|google|youtube|facebook|fb|instagram|twitter|linkedin|whatsapp|paypal|loom|zoom|calendly|drive|docs|sheets|dropbox|bit\.ly|tinyurl|t\.co|wa\.me)\./i;
-    const fileExt = /^(txt|pdf|png|jpe?g|gif|webp|svg|bmp|tiff?|docx?|xlsx?|pptx?|csv|tsv|json|xml|ya?ml|html?|js|mjs|ts|css|scss|md|markdown|zip|rar|gz|tar|7z|mp[34]|m4a|wav|mov|avi|mkv|webm|woff2?|ttf|otf|eot|ico|exe|dmg|pkg|apk|sql|log|env|sh|bat|psd|ai|eps|sketch|fig)$/i;
     const seen = new Set(); let best = ""; let mm;
     while ((mm = re.exec(text || ""))) {
-      const d = mm[1].replace(/^https?:\/\//i, "").replace(/^www\./i, "").toLowerCase().replace(/\.$/, "");
-      if (!d.includes(".") || skip.test(d) || seen.has(d)) continue;
-      const tld = d.split(".").pop();
-      if (!/^[a-z]{2,24}$/.test(tld)) continue;                    // alpha TLD only — rejects ".m", ".23", "a.m.", "e.g.", versions, times
-      if (fileExt.test(tld)) continue;                              // not a real TLD — rejects llms.txt, robots.txt, sitemap.xml, image.png, file.pdf
-      if (!/[a-z]/.test(d.slice(0, d.lastIndexOf(".")))) continue; // the name part must contain a letter (rejects "12.34")
-      seen.add(d); if (!best) best = d;
+      const d = cleanDomain(mm[1]);
+      if (seen.has(d)) continue; seen.add(d);
+      if (okHost(d) && !best) best = d;
     }
     return best;
   }
@@ -449,15 +491,16 @@
     });
   }
   function findDeal(then) {
-    if (!siteUrl) { const s = detectClientSite(); if (s) siteUrl = s; }
     const handle = clientHandle();
     if (!handle) { if (then) then(); return; }
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_find", body: { client_handle: handle, platform: "fiverr", client_name: handle } }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) {
         deal = resp.data.deal; dealId = String(deal.id || ""); dealName = String(deal.client_name || handle);
         if (deal.strategy) lastStrategy = deal.strategy;
-        if (!siteUrl && deal.client_site) siteUrl = String(deal.client_site);
-        if (siteUrl && !deal.client_site) persistSite();
+        // resolve the client's site: prefer the LLM's extracted site (most reliable), then a valid typed/stored/regex one — never a Fiverr/CDN host
+        const cands = [lastStrategy && lastStrategy.client_site, siteUrl, deal.client_site, detectClientSite()];
+        for (const c of cands) { if (okHost(c)) { siteUrl = cleanDomain(c); break; } }
+        if (siteUrl && cleanDomain(deal.client_site) !== siteUrl) persistSite(); // write the good value back (heals an earlier bad detection)
         engagement = mergeEngagement(deal.engagement, readEngagement());
         renderBody();
       }
@@ -637,7 +680,7 @@
     let h = `<div class="lbl" style="margin-top:0">Saved intel${dealName ? " · " + esc(dealName) : ""}</div>`;
     if (!atts.length) h += `<p class="muted" style="margin:0 0 8px">Nothing saved for this client yet. Run an SEO op below — results are stored on the deal, reused next time, and fed into every expert answer.</p>`;
     else {
-      h += atts.map((a) => `<details><summary>${esc(a.kind || "note")} · ${esc(a.name || "saved")}</summary><div class="sum" style="margin-top:6px;white-space:pre-wrap">${esc(String(a.text || "").slice(0, 4000))}</div></details>`).join("");
+      h += atts.map((a) => `<details><summary>${esc(a.kind || "note")} · ${esc(a.name || "saved")}</summary><div class="sum" style="margin-top:6px">${prettyIntel(String(a.text || "").slice(0, 4000))}</div></details>`).join("");
       h += `<p class="muted" style="margin:7px 0 8px;font-size:10.5px">Stored on the deal — reused next time and fed into every expert answer.</p>`;
     }
     h += `<div style="height:1px;background:#262b3d;margin:12px 0"></div>`;
