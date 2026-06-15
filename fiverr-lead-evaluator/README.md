@@ -1,63 +1,54 @@
 # SEO Season — Fiverr Lead Cockpit (Chrome extension)
 
-A senior Digital Marketing Specialist working the chat **with** you. It keeps the lead **synced into the
-software automatically**, reads the client's **tone and expectations**, tells you **exactly what to say
-next without being asked**, runs **real SEO operations on the spot** (saved forever, fed back into every
-answer), and lets the expert **trigger those operations itself**. Built for someone non-technical: you
-don't need to know what to ask.
+A senior Digital Marketing Specialist working the chat with you, now across your whole inbox. It keeps
+each lead synced into the software, reads tone and expectations, tells you what to say next, runs real
+SEO ops on the spot, and — new in v1.6 — gives you an **Inbox board** of every conversation (prioritised
+by how hot they are and who's waiting on you) plus a **paced review** that opens and evaluates each lead
+at human speed so your CRM fills itself.
 
 ## Install
 1. **chrome://extensions** → **Developer mode** on → **Load unpacked** → select this folder.
 2. Click the extension icon → set your **API address** (default `https://seoseason.com`).
 3. After any file change: **↻ reload** on the extension card, **then refresh the Fiverr tab**.
 
-## Always in sync (autosave)
-Each Fiverr client maps to one **deal** in SEO Season, keyed by the `/inbox/<handle>` URL. When you open a
-chat the panel finds-or-creates that deal and **starts watching the conversation**. As messages come and
-go it **autosaves the chat to the software** (you'll see "✓ synced" in the header) and **re-reads the
-situation automatically** when enough has changed — no button needed. Re-open the client next week and
-everything is already there.
+## Two views — toggle in the header
+- **Chat** (default): the full cockpit for the conversation you have open (below).
+- **Inbox**: a board of your conversations. Tap **Inbox** in the header.
 
-## What the panel shows (only the advanced — not what you can already read on Fiverr)
-- **Say this next** — the exact next message to send, drafted for you. Edit it, **Insert into Fiverr**,
-  send. This is the hand-in-hand part: you don't have to ask.
-- **Why / next move · Client tone · Their expectations** — the read you can't see yourself: the client's
-  current mood and what they're expecting (and whether it needs managing).
-- **Watch out · Objections to handle · Do now · Buying signals** — what a senior DMS would flag.
-- (Summary, wants, facts and the call script are tucked under **More detail** — you can already read the
-  chat, so they don't lead.)
+## Inbox board (v1.6)
+- Tap **Load inbox** and it auto-scrolls your conversation list to load the whole inbox, then reads each
+  row: name, last-message snippet, and unread.
+- It matches every handle to your deals (read-only — no LLM, nothing created) and shows **stage** and
+  **hot/warm/cold** for leads you've already worked; unworked leads show the raw inbox until you open
+  them. Sorted so unread + hottest float to the top, so you see who to hit first.
+- Tap any row to open that conversation — the cockpit re-resolves to that client and evaluates it.
+- **Review all** runs a paced pass: it opens each conversation one at a time, waits for it to load,
+  evaluates it (which syncs the strategy to that deal), then moves on after a short delay. **Pause**,
+  **Resume**, and **Stop** are always there. Human-speed by design — it does not hammer Fiverr.
 
-## Ask the expert · and it can act
-- Type anything (*"handle their objection"*, *"answer about schema"*, *"what do I say?"*) or tap a quick
-  action. You get an **Expert take** + a **Ready to send** message → Insert into Fiverr.
-- **The expert triggers software actions itself.** When it decides a crawl, AEO check or competitor
-  snapshot would strengthen your position, those appear as **⚡ run-it buttons** — one tap runs the op,
-  saves it to the client, and feeds it back into the next answer.
-
-## Live SEO ops (heavy lifting on the server)
-Enter the client's site (auto-detected) and run **Crawl & audit**, **AEO / schema**, or **Competitor
-gap** (add competitor domains + keywords). They run server-side, persist onto the deal, and show in
-**Saved intel** — reused next time and fed into every expert answer.
-
-## Documents & calls (collapsed)
-Click to expand. Drop downloaded attachments / transcripts; parsed in-browser (`.xlsx/.xls/.csv`, `.docx`,
-`.txt/.md/.json`; pdf/images not yet) and folded into the analysis and the expert.
+## Chat cockpit (per lead)
+- **Say this next** — the exact next message, drafted, edit-and-insert.
+- Why/next move, **client tone**, **their expectations**, watch-out, objections, do-now, buying signals.
+- **Ask the expert / do** — any question or objection; Expert take + Ready-to-send → insert. The expert
+  can also surface ⚡ run-it buttons that fire a crawl / AEO / competitor op itself.
+- **Saved intel** + **Live SEO ops** (Crawl & audit, AEO/schema, Competitor gap) — server-side, saved to
+  the deal, fed back into every answer.
+- **Documents & calls** (collapsed) — drop downloaded files/transcripts. **✍ Reply** — three angles.
+- Always-in-sync: the open chat autosaves to its deal as it changes ("✓ synced" in the header).
 
 ## Insertion, and the honest limits
-Fiverr is React, so insertion uses the native value setter + input events (textarea) or
-`execCommand('insertText')` (contenteditable). The box is found heuristically (lowest visible text
-input); if it grabs the wrong field, click into the real box once and press Insert again, or **Copy**.
-**It never auto-sends** — that is always your click (account / ToS safety).
+React-aware insert into Fiverr's box (never auto-sends — you send). The message box, site detection, and
+**now the inbox list/scroll detection are all heuristic** and depend on Fiverr's markup; expect a tuning
+pass once it runs against your real inbox (right-click an inbox row → Inspect → send me the element and I
+will hard-target it). Inbox reading is limited to the on-page list — no private endpoints. The list is
+virtualised, so the board reads what auto-scroll manages to load.
 
 ## Notes
-- **No auth header** is sent (same as the web app); calls go through the background worker.
-- The deal is the **same record** the web `/deals` workspace and BDE panel use — one shared CRM. What
-  syncs from Fiverr shows up there.
-- Auto-evaluate is rate-limited (only re-reads on meaningful change, and not more than ~once a minute) so
-  it stays in sync without burning calls. Autosave of the chat text is cheap and runs more freely.
-- Engine actions: `bd_deal_find` (identity), `bd_deal_update` (autosave + sync), `bd_strategize`
-  (read-out, now incl. tone + expectations + the "say this next" draft), `bd_ask` (expert + suggested
-  actions), `bd_reply_variants`, `bd_run_audit` / `bd_aeo_check` / `bd_competitor_snapshot` (live ops),
-  `bd_deal_get` (refresh saved intel).
-- KNOWN LIMITS: heuristic message-box + site detection; pdf/image parsing not built; the expert is fed
-  your saved crawl/AEO/competitor intel but not yet your `algorithm_knowledge` / `brain_learnings`.
+- **No auth header** is sent. The deal is the same record your web `/deals` workspace and BDE panel use.
+- Engine actions: `bd_deal_find` (identity), `bd_deal_lookup` (board enrichment, read-only),
+  `bd_deal_update` (autosave), `bd_strategize` (read-out incl. tone/expectations/"say this next"),
+  `bd_ask` (expert + suggestions), `bd_reply_variants`, `bd_run_audit`/`bd_aeo_check`/`bd_competitor_snapshot`
+  (live ops), `bd_deal_get` (refresh).
+- KNOWN LIMITS: heuristic inbox/message-box/site detection; paced review is one-at-a-time (an LLM call
+  per lead); pdf/image parsing not built; expert fed saved crawl/AEO/competitor intel but not yet your
+  `algorithm_knowledge`/`brain_learnings`.

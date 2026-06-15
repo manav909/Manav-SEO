@@ -176,6 +176,27 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "deal find failed" }; }
   }
 
+  if (action === "bd_deal_lookup") {
+    const platform = String(body?.platform || "fiverr").trim().slice(0, 40);
+    const handles = (Array.isArray(body?.handles) ? body.handles : []).map((h: any) => String(h || "").trim().slice(0, 120)).filter(Boolean).slice(0, 500);
+    if (!handles.length) return { success: true, deals: [] };
+    try {
+      const { data } = await db().from("bd_deals").select("client_handle, client_name, status, strategy, last_message_at, updated_at, attachments").eq("platform", platform).in("client_handle", handles);
+      const deals = (Array.isArray(data) ? data : []).map((d: any) => ({
+        client_handle: d.client_handle,
+        client_name: d.client_name || d.client_handle,
+        status: d.status || "",
+        stage: d.strategy?.deal_state?.stage || "",
+        temperature: d.strategy?.deal_state?.temperature || "",
+        next_move: d.strategy?.next_move || "",
+        last_message_at: d.last_message_at || d.updated_at || null,
+        has_intel: Array.isArray(d.attachments) && d.attachments.length > 0,
+        evaluated: Boolean(d.strategy && d.strategy.deal_state),
+      }));
+      return { success: true, deals };
+    } catch (e: any) { return { success: false, error: e?.message || "lookup failed" }; }
+  }
+
   if (action === "bd_deal_list") {
     try {
       let q = db().from("bd_deals").select("id, client_name, client_handle, platform, brief, status, tags, last_message_at, updated_at, strategy").order("updated_at", { ascending: false }).limit(200);
