@@ -69,7 +69,7 @@
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
   let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false;
-  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [];
+  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false;
   let view = "chat", inbox = [], inboxMsg = "";
 
   // ---- detection ---------------------------------------------------------------
@@ -158,6 +158,7 @@
     if (temp) h += `<span class="pill ${temp === "hot" ? "hot" : temp === "warm" ? "warm" : "cold"}">${esc(ds.temperature)}</span>`;
     if (s.detected_client) h += `<span class="muted">${esc(s.detected_client)}</span>`;
     h += `</div>`;
+    if (evalCached) h += `<div class="muted" style="font-size:10.5px;margin:2px 0 6px">Saved analysis from last time — nothing new in the chat. Tap <b>Evaluate</b> to refresh.</div>`;
     if (s.draft_reply) h += `<div class="lbl">Say this next</div><textarea class="saynext" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #6366f155;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(s.draft_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="sayins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="saycpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
     if (s.next_move) h += `<div class="lbl">Why / next move</div><div class="next">${esc(s.next_move)}</div>`;
     if (ci.tone) h += `<div class="lbl">Client tone</div><div class="sum">${esc(ci.tone)}</div>`;
@@ -227,6 +228,17 @@
     renderSync();
   }
 
+  function maybeEvalOnOpen() {
+    // Reuse the saved analysis (instant) and only spend an LLM call when there is none or the chat has grown since it synced.
+    const liveLen = (grabText(false) || "").length;
+    const savedLen = (deal && typeof deal.conversation === "string") ? deal.conversation.length : 0;
+    const haveSaved = !!(lastStrategy && lastStrategy.deal_state);
+    if (haveSaved && savedLen > 0 && liveLen - savedLen <= 150) {
+      evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody(); return;
+    }
+    evalCached = false; evaluate(false);
+  }
+
   function grabText(forceSel) {
     const sel = (window.getSelection && window.getSelection().toString() || "").trim();
     if (forceSel) return sel;
@@ -250,7 +262,7 @@
     const extras = slots.filter((s) => s.text).map((s) => `\n\n[${s.kind === "call" ? "CALL TRANSCRIPT" : "ATTACHED DOCUMENT"}: ${s.label}]\n${s.text}`).join("");
     const full = (conv || "") + extras;
     if (body) { body.dataset.state = "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
-    lastEvalAt = Date.now();
+    lastEvalAt = Date.now(); evalCached = false;
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, id: dealId } }, (resp) => {
       const b = root.getElementById("ss-body"); if (!b) return; delete b.dataset.state;
       if (chrome.runtime.lastError) { b.dataset.error = chrome.runtime.lastError.message; renderBody(); return; }
@@ -563,7 +575,7 @@
     view = "chat"; lastStrategy = null; deal = null; dealId = ""; replies = []; askResult = null; ops = {}; suggestedTools = []; siteUrl = ""; lastEvalLen = 0;
     render();
     let tries = 0;
-    const wait = () => { tries++; if (clientHandle() === handle || tries > 12) { findDeal(() => evaluate(false)); return; } setTimeout(wait, 350); };
+    const wait = () => { tries++; if (clientHandle() === handle || tries > 12) { findDeal(() => maybeEvalOnOpen()); return; } setTimeout(wait, 350); };
     setTimeout(wait, 400);
   }
   function renderInbox() {
@@ -621,7 +633,7 @@
   }
 
   function bind() {
-    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); findDeal(() => { evaluate(false); watchChat(); }); };
+    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); findDeal(() => { maybeEvalOnOpen(); watchChat(); }); };
     const m = root.getElementById("ss-min"); if (m) m.onclick = () => { open = false; render(); };
     const v = root.getElementById("ss-view"); if (v) v.onclick = () => { view = view === "inbox" ? "chat" : "inbox"; render(); if (view === "inbox" && !inbox.length && !inboxMsg) loadInbox(); };
     const ld = root.getElementById("ss-load"); if (ld) ld.onclick = () => loadInbox();

@@ -1435,6 +1435,10 @@ Directive: build real engines (not synthetic gap-fillers) for the deliverables t
 
 **Fix — site auto-detect false positives (2026-06-09).** The "Client site" field showed junk like "23a.m" because `detectSite`'s domain regex accepted any `x.y` fragment, so timestamps ("10:23 a.m."), version strings ("12.23a"), and abbreviations ("e.g.", "p.m.") matched as domains. Fix: after the regex match, require the TLD to be `^[a-z]{2,24}$` (alphabetic, 2+ — rejects ".m", ".23", numeric/1-char TLDs) AND the name part to contain a letter (rejects "12.34"). Verified: "10:23 a.m.", "12.23a-b", "3.30pm", "e.g. i.e. p.m." → none; real domains (jordanwellnessco.com, example.co.uk, acme-corp.io) still detect. Extension-only change (content.js), no backend.
 
+**Fix — cache analysis on open, stop re-evaluating every time (2026-06-09).** Bug: opening a lead always ran `bd_strategize` (full LLM call, slow) even when nothing changed. Now `maybeEvalOnOpen()` shows the deal's saved strategy instantly (findDeal already loads `deal.strategy` into `lastStrategy`) and only spends an LLM call when there is NO saved analysis OR the live conversation grew >150 chars beyond the deal's last-synced `conversation` length. Returning to an unchanged lead = instant, zero LLM. The Evaluate button still forces a fresh run; the watcher's `maybeAutoEval` still refreshes on real growth (>200 chars + 90s cooldown). A "Saved analysis from last time" note shows when reusing (`evalCached`). Wired into both the launch open and the board's `openLead`. Extension-only change (content.js), no backend.
+
+
+
 
 
 
