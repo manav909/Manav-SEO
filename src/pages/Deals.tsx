@@ -428,7 +428,7 @@ export default function Deals() {
   const runAudit = async (auto = false) => {
     if (!clientSite) { if (auto) return; const id = newWin("audit", "Site audit", true); patchWin(id, { status: "error", error: "No client website yet — enter the client's site in the 'Client site' box at the top of the right panel, then run the audit." }); return; }
     const id = newWin("audit", `Site audit · ${clientSite}`, !auto);
-    const r: any = await post("bd_run_audit", { siteUrl: clientSite, id: selected?.id, projectId: selected?.id });
+    const r: any = await post("bd_run_audit", { siteUrl: clientSiteUrl, id: selected?.id, projectId: selected?.id });
     if (!r?.report) { patchWin(id, { status: "error", error: r?.error || "Could not run the audit." }); return; }
     patchWin(id, { status: "done", result: r.report });
     if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
@@ -436,7 +436,7 @@ export default function Deals() {
   const runAeo = async (auto = false) => {
     if (!clientSite) { if (auto) return; const id = newWin("aeo", "AEO readiness", true); patchWin(id, { status: "error", error: "No client website yet — enter the client's site in the 'Client site' box at the top of the right panel, then run the check." }); return; }
     const id = newWin("aeo", `AEO readiness · ${clientSite}`, !auto);
-    const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSite });
+    const r: any = await post("bd_aeo_check", { id: selected?.id, siteUrl: clientSiteUrl });
     if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "AEO check failed." }); return; }
     patchWin(id, { status: "done", result: r.report });
   };
@@ -444,7 +444,7 @@ export default function Deals() {
     const competitors = (compCo.trim() ? compCo : (df.competitors || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
     const keywords = (compKw.trim() ? compKw : (df.target_keywords || []).join(", ")).split(",").map((s: string) => s.trim()).filter(Boolean);
     const id = newWin("competitor", "Competitor snapshot", true);
-    const r: any = await post("bd_competitor_snapshot", { id: selected?.id, siteUrl: clientSite, competitors, keywords });
+    const r: any = await post("bd_competitor_snapshot", { id: selected?.id, siteUrl: clientSiteUrl, competitors, keywords });
     if (!r?.success) { patchWin(id, { status: "error", error: r?.error || "Competitor snapshot failed." }); return; }
     patchWin(id, { status: "done", result: r.report });
   };
@@ -483,7 +483,7 @@ export default function Deals() {
      an audit when a doc needs site data, and never fabricates or leaves blanks. */
   const genDoc = async (docType: string, label: string) => {
     const id = newWin("doc", label, true);
-    const r: any = await post("bd_generate_doc", { id: selected?.id, docType, conversation, siteUrl: clientSite, language: docLang, currency: docCurrency });
+    const r: any = await post("bd_generate_doc", { id: selected?.id, docType, conversation, siteUrl: clientSiteUrl, language: docLang, currency: docCurrency });
     if (!r?.success || !r?.html) { patchWin(id, { status: "error", error: r?.error || "Could not generate the document." }); return; }
     patchWin(id, { status: "done", result: { kind: "doc", html: r.html, title: r.title || label, docType } });
     if (selected?.id) { try { const g: any = await post("bd_deal_get", { id: selected.id }); if (g?.deal) setSelected(g.deal); } catch { /* ignore */ } }
@@ -540,7 +540,8 @@ export default function Deals() {
   };
 
   const clientName = strategy?.detected_client || selected?.client_name || "New lead";
-  const clientSite = (siteInput.trim() || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim();
+  const clientSite = (siteInput.trim() || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").toLowerCase();
+  const clientSiteUrl = clientSite ? `https://${clientSite}` : "";
   const messages = parseThread(conversation);
   const intel = strategy?.client_intel || {};
   const df = strategy?.deal_facts || {};

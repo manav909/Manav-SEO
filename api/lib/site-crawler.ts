@@ -29,8 +29,9 @@ import { fetchHtml } from "./workspace/shared.js";
 import { resolveTargetUrls } from "./workspace/shared.js";
 import { db } from "./db.js";
 
-const originOf = (u: string) => { try { const x = new URL(u); return `${x.protocol}//${x.host}`; } catch { return ""; } };
-const domainOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+const withScheme = (u: string) => { const s = String(u || "").trim().replace(/^\/+/, ""); return s && !/^https?:\/\//i.test(s) ? "https://" + s : s; };
+const originOf = (u: string) => { try { const x = new URL(withScheme(u)); return `${x.protocol}//${x.host}`; } catch { return ""; } };
+const domainOf = (u: string) => { try { return new URL(withScheme(u)).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const attr = (h: string, re: RegExp) => { const m = h.match(re); return m ? (m[1] || "").trim() : null; };
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 const ASSET_RE = /\.(jpg|jpeg|png|gif|webp|svg|ico|css|js|mjs|pdf|zip|woff2?|ttf|eot|mp4|mp3|xml|json|rss|webmanifest)(\?|$)/i;
