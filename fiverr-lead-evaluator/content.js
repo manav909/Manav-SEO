@@ -70,7 +70,7 @@
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
   let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false;
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [];
-  let view = "chat", inbox = [], inboxMsg = "", reviewing = false, reviewQueue = [], reviewIdx = 0, reviewPaused = false, reviewTimer = null, reviewDelay = 9000;
+  let view = "chat", inbox = [], inboxMsg = "";
 
   // ---- detection ---------------------------------------------------------------
   const EXT = /\.(xlsx|xls|csv|pdf|docx?|pptx?|txt|md|json|png|jpe?g|gif|zip|rar)$/i;
@@ -187,7 +187,7 @@
   function render() {
     if (!open) { wrap.innerHTML = launcher(); bind(); return; }
     const foot = view === "inbox"
-      ? `<div class="foot"><button class="btn p" id="ss-load">${inbox.length ? "Reload inbox" : "Load inbox"}</button>${reviewing ? `<button class="btn s" id="ss-rvstop">Stop review</button>` : `<button class="btn p" id="ss-review">Review all</button>`}</div>`
+      ? `<div class="foot"><button class="btn p" id="ss-load">${inbox.length ? "Refresh list" : "Load visible leads"}</button></div>`
       : `<div class="foot"><button class="btn p" id="ss-eval">Evaluate</button><button class="btn p" id="ss-reply">✍ Reply</button><button class="btn s" id="ss-sel" title="Use highlighted text">Sel</button></div>`;
     wrap.innerHTML = `
       <div class="panel">
@@ -516,17 +516,7 @@
     return h;
   }
 
-  // ---- inbox board + paced review (safe: reads the on-page list only, no private endpoints) ----
-  function inboxScrollEl() {
-    const a = document.querySelector('a[href*="/inbox/"]');
-    let el = a ? a.parentElement : null;
-    while (el && el !== document.body) {
-      const st = getComputedStyle(el);
-      if ((st.overflowY === "auto" || st.overflowY === "scroll") && el.scrollHeight > el.clientHeight + 40) return el;
-      el = el.parentElement;
-    }
-    return document.scrollingElement || document.documentElement;
-  }
+  // ---- inbox board (strictly safe: reads only conversations already on screen — no auto-scroll, no auto-open) ----
   function inboxRows() {
     const out = []; const seen = new Set();
     document.querySelectorAll('a[href*="/inbox/"]').forEach((a) => {
@@ -549,32 +539,16 @@
     const t = (x) => x === "hot" ? 0 : x === "warm" ? 1 : x === "cold" ? 2 : 3;
     return rows.slice().sort((a, b) => (Number(b.unread) - Number(a.unread)) || (t(a.temperature) - t(b.temperature)) || (String(b.last_message_at || "").localeCompare(String(a.last_message_at || ""))));
   }
-  function scanInbox(done) {
-    const el = inboxScrollEl();
-    let stable = 0, last = -1, steps = 0;
-    const tick = () => {
-      const n = inboxRows().length;
-      if (n === last) stable++; else { stable = 0; last = n; }
-      inboxMsg = "scrolling:" + n; renderInbox();
-      steps++;
-      if (stable >= 3 || steps > 60) { try { el.scrollTop = 0; } catch (e) { /* ignore */ } done(inboxRows()); return; }
-      try { el.scrollTop = el.scrollHeight; } catch (e) { /* ignore */ }
-      setTimeout(tick, 450);
-    };
-    tick();
-  }
   function loadInbox() {
-    inbox = []; inboxMsg = "loading"; renderInbox();
-    scanInbox((rows) => {
-      if (!rows.length) { inboxMsg = "err:No conversations found in the list. Open your Fiverr inbox page first, then Load inbox."; renderInbox(); return; }
-      inbox = rows; inboxMsg = "enriching"; renderInbox();
-      chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_lookup", body: { platform: "fiverr", handles: rows.map((r) => r.handle) } }, (resp) => {
-        if (resp && resp.ok && resp.data && resp.data.success && Array.isArray(resp.data.deals)) {
-          const byh = {}; resp.data.deals.forEach((d) => { byh[d.client_handle] = d; });
-          inbox = inbox.map((r) => byh[r.handle] ? Object.assign({}, r, { stage: byh[r.handle].stage, temperature: byh[r.handle].temperature, status: byh[r.handle].status, evaluated: byh[r.handle].evaluated, has_intel: byh[r.handle].has_intel, last_message_at: byh[r.handle].last_message_at }) : r);
-        }
-        inbox = sortInbox(inbox); inboxMsg = ""; renderInbox();
-      });
+    const rows = inboxRows();
+    if (!rows.length) { inbox = []; inboxMsg = "err:No conversations visible. Open your Fiverr inbox and scroll to the ones you want loaded, then Refresh."; renderInbox(); return; }
+    inbox = rows; inboxMsg = "enriching"; renderInbox();
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_lookup", body: { platform: "fiverr", handles: rows.map((r) => r.handle) } }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success && Array.isArray(resp.data.deals)) {
+        const byh = {}; resp.data.deals.forEach((d) => { byh[d.client_handle] = d; });
+        inbox = inbox.map((r) => byh[r.handle] ? Object.assign({}, r, { stage: byh[r.handle].stage, temperature: byh[r.handle].temperature, status: byh[r.handle].status, evaluated: byh[r.handle].evaluated, has_intel: byh[r.handle].has_intel, last_message_at: byh[r.handle].last_message_at }) : r);
+      }
+      inbox = sortInbox(inbox); inboxMsg = ""; renderInbox();
     });
   }
   function navTo(handle) {
@@ -589,55 +563,25 @@
     const wait = () => { tries++; if (clientHandle() === handle || tries > 12) { findDeal(() => evaluate(false)); return; } setTimeout(wait, 350); };
     setTimeout(wait, 400);
   }
-  function startReview() {
-    const q = (inbox.length ? inbox : inboxRows()).map((r) => r.handle);
-    if (!q.length) { inboxMsg = "err:Load the inbox first."; renderInbox(); return; }
-    reviewQueue = q; reviewIdx = 0; reviewing = true; reviewPaused = false; render(); reviewStep();
-  }
-  function reviewStep() {
-    if (!reviewing || reviewPaused) return;
-    if (reviewIdx >= reviewQueue.length) { reviewing = false; inboxMsg = "ok:Reviewed " + reviewQueue.length + " leads — each is synced to your deals."; render(); return; }
-    const handle = reviewQueue[reviewIdx];
-    navTo(handle);
-    lastStrategy = null; deal = null; dealId = ""; siteUrl = ""; lastEvalLen = 0;
-    renderInbox();
-    let tries = 0;
-    const wait = () => {
-      if (!reviewing || reviewPaused) return;
-      tries++;
-      if (clientHandle() === handle || tries > 14) { findDeal(() => { evaluate(false); reviewIdx++; renderInbox(); reviewTimer = setTimeout(reviewStep, reviewDelay); }); return; }
-      setTimeout(wait, 350);
-    };
-    setTimeout(wait, 500);
-  }
-  function pauseReview() { reviewPaused = !reviewPaused; clearTimeout(reviewTimer); if (!reviewPaused) reviewStep(); renderInbox(); }
-  function stopReview() { reviewing = false; reviewPaused = false; clearTimeout(reviewTimer); render(); }
   function renderInbox() {
     const body = root.getElementById("ss-body"); if (!body) return;
     let h = "";
-    if (reviewing) {
-      const cur = reviewQueue[reviewIdx] || "";
-      h += `<div class="next" style="margin-bottom:10px"><b>Paced review</b> — ${Math.min(reviewIdx + 1, reviewQueue.length)} / ${reviewQueue.length}${cur ? " · " + esc(cur) : ""}${reviewPaused ? " (paused)" : "…"}<div style="display:flex;gap:6px;margin-top:7px"><button class="rvpause" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;background:#1a1f33;color:#c7cadb">${reviewPaused ? "Resume" : "Pause"}</button><button class="rvstop" style="cursor:pointer;border:1px solid #ef444455;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:600;background:#ef444414;color:#fb7185">Stop</button></div></div>`;
-    }
     if (inboxMsg.indexOf("err:") === 0) h += `<div class="err" style="margin-bottom:8px">${esc(inboxMsg.slice(4))}</div>`;
-    else if (inboxMsg.indexOf("ok:") === 0) h += `<div class="sum" style="color:#34d399;margin-bottom:8px">${esc(inboxMsg.slice(3))}</div>`;
-    else if (inboxMsg === "loading" || inboxMsg === "enriching") h += `<div class="loading"><span class="spin"></span> ${inboxMsg === "enriching" ? "Matching to your deals…" : "Reading the inbox…"}</div>`;
-    else if (inboxMsg.indexOf("scrolling") === 0) { const n = inboxMsg.split(":")[1]; h += `<div class="loading"><span class="spin"></span> Loading the whole inbox…${n && n !== "0" ? " (" + n + " so far)" : ""}</div>`; }
+    else if (inboxMsg === "enriching") h += `<div class="loading"><span class="spin"></span> Matching to your deals…</div>`;
     if (inbox.length) {
-      h += `<div class="lbl" style="margin-top:0">Inbox · ${inbox.length} leads</div>`;
+      h += `<div class="lbl" style="margin-top:0">On screen · ${inbox.length} leads</div>`;
       h += inbox.map((r) => {
         const temp = String(r.temperature || "").toLowerCase();
         const pill = temp ? `<span class="pill ${temp === "hot" ? "hot" : temp === "warm" ? "warm" : "cold"}" style="margin-left:auto">${esc(r.temperature)}</span>` : (r.unread ? `<span class="pill hot" style="margin-left:auto">needs reply</span>` : "");
         const sub = [r.stage ? esc(r.stage) : "", r.snippet ? esc(r.snippet) : ""].filter(Boolean).join(" · ");
         return `<button class="leadrow" data-h="${esc(r.handle)}" style="display:block;width:100%;text-align:left;cursor:pointer;border:1px solid ${r.unread ? "#6366f155" : "#262b3d"};border-radius:10px;padding:8px 10px;margin-bottom:6px;background:${r.unread ? "#6366f114" : "#141828"};color:#e7e9f3"><div style="display:flex;align-items:center;gap:7px"><span style="font-weight:600;font-size:12px">${r.unread ? "● " : ""}${esc(r.name)}</span>${pill}</div>${sub ? `<div class="muted" style="font-size:10.5px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${sub}</div>` : ""}</button>`;
       }).join("");
+      h += `<p class="muted" style="font-size:10.5px;margin-top:8px">Reads only the conversations currently on your screen — it never scrolls or opens chats on its own. Scroll your Fiverr inbox to load more, then Refresh. Tap a lead to open it.</p>`;
     } else if (!inboxMsg) {
-      h += `<p class="muted">Tap <b>Load inbox</b> to read your conversation list. Hot/warm/cold and stage show for leads you have already worked; the rest show the raw inbox until you open them.</p>`;
+      h += `<p class="muted">Tap <b>Load visible leads</b> to read the conversations currently showing in your inbox. Hot/warm/cold and stage show for leads you have already worked. It reads only what is on screen — no auto-scroll, no auto-open. Scroll Fiverr yourself to load more.</p>`;
     }
     body.innerHTML = h;
     root.querySelectorAll(".leadrow").forEach((b) => b.addEventListener("click", () => openLead(b.dataset.h)));
-    const rp = root.querySelector(".rvpause"); if (rp) rp.onclick = pauseReview;
-    const rs2 = root.querySelector(".rvstop"); if (rs2) rs2.onclick = stopReview;
     renderSync();
   }
 
@@ -678,8 +622,6 @@
     const m = root.getElementById("ss-min"); if (m) m.onclick = () => { open = false; render(); };
     const v = root.getElementById("ss-view"); if (v) v.onclick = () => { view = view === "inbox" ? "chat" : "inbox"; render(); if (view === "inbox" && !inbox.length && !inboxMsg) loadInbox(); };
     const ld = root.getElementById("ss-load"); if (ld) ld.onclick = () => loadInbox();
-    const rv = root.getElementById("ss-review"); if (rv) rv.onclick = () => startReview();
-    const rvs = root.getElementById("ss-rvstop"); if (rvs) rvs.onclick = () => stopReview();
     const e = root.getElementById("ss-eval"); if (e) e.onclick = () => evaluate(false);
     const rp = root.getElementById("ss-reply"); if (rp) rp.onclick = () => draftReplies();
     const s = root.getElementById("ss-sel"); if (s) s.onclick = () => evaluate(true);
