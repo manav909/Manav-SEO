@@ -645,6 +645,21 @@
     if (!deal || !deal.client_handle) return true;
     return h === deal.client_handle;
   }
+  function suggestCompetitors() {
+    if (!dealId) { ops.competitor = { err: "Open the lead first so I have its context." }; renderBody(); return; }
+    ops.competitor = { loading: true, label: "Working out who the competitors are…" }; renderBody();
+    const conv = grabText(false);
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_suggest_competitors", body: { id: dealId, conversation: conv } }, (resp) => {
+      const data = (resp && resp.data) || {};
+      if (!resp || !resp.ok || !data.success) { ops.competitor = { err: (chrome.runtime.lastError && chrome.runtime.lastError.message) || data.error || "Could not suggest competitors — type them in manually." }; renderBody(); return; }
+      const comps = data.competitors || []; const kws = data.keywords || [];
+      if (comps.length) competitors = comps.join(", ");
+      if (kws.length && !keywords.trim()) keywords = kws.join(", ");
+      const src = data.source === "serp" ? "from live search — these actually rank for the client's terms" : "AI-suggested from context — sanity-check they are real before relying";
+      ops.competitor = comps.length ? { note: "Filled " + comps.length + " competitors (" + src + "). Review them above, then tap Competitor gap to run." } : { err: "Could not find competitors automatically — type them in manually." };
+      renderBody();
+    });
+  }
   function runOp(k) {
     const siteEl = root.getElementById("ss-site"); const site = (siteEl ? siteEl.value : siteUrl || "").trim(); siteUrl = site;
     let action, body;
@@ -655,7 +670,7 @@
       const comps = (ce ? ce.value : competitors).split(",").map((x) => x.trim()).filter(Boolean);
       const kws = (ke ? ke.value : keywords).split(",").map((x) => x.trim()).filter(Boolean);
       competitors = comps.join(", "); keywords = kws.join(", ");
-      if (!comps.length || !kws.length) { ops[k] = { err: "Add at least one competitor domain and a few target keywords." }; renderBody(); return; }
+      if (!comps.length || !kws.length) { suggestCompetitors(); return; }
       action = "bd_competitor_snapshot"; body = { id: dealId, siteUrl: site, competitors: comps, keywords: kws };
     }
     ops[k] = { loading: true }; renderBody();
@@ -693,10 +708,12 @@
     OPS.forEach((o) => { const busy = (ops[o.k] || {}).loading; h += `<button class="opbtn" data-op="${o.k}"${busy ? " disabled" : ""} style="cursor:${busy ? "default" : "pointer"};border:1px solid #2b3147;background:${busy ? "#0c0f1a" : "#1a1f33"};color:#c7cadb;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600">${esc(o.label)}</button>`; });
     h += `</div>`;
     h += `<div style="display:flex;gap:6px;margin-bottom:7px"><input id="ss-comp" placeholder="competitor domains, comma-separated" value="${esc(competitors)}" style="flex:1;min-width:0;background:#0c0f1a;border:1px solid #262b3d;border-radius:8px;color:#e7e9f3;padding:6px 8px;font-size:11px"><input id="ss-kw" placeholder="target keywords" value="${esc(keywords)}" style="flex:1;min-width:0;background:#0c0f1a;border:1px solid #262b3d;border-radius:8px;color:#e7e9f3;padding:6px 8px;font-size:11px"></div>`;
+    h += `<div style="margin-bottom:8px"><button id="ss-sugg" style="cursor:pointer;border:1px solid #4f46e5;background:#4f46e514;color:#c7d2fe;border-radius:8px;padding:6px 11px;font-size:11px;font-weight:600">✨ Suggest competitors + keywords from context</button></div>`;
     OPS.forEach((o) => {
       const st = ops[o.k]; if (!st) return;
-      if (st.loading) h += `<div class="loading"><span class="spin"></span> ${esc(o.label)} running on the server…</div>`;
+      if (st.loading) h += `<div class="loading"><span class="spin"></span> ${esc(st.label || (o.label + " running on the server…"))}</div>`;
       else if (st.err) h += `<div class="err" style="margin:4px 0">${esc(o.label)}: ${esc(st.err)}</div>`;
+      else if (st.note) h += `<div class="sum" style="margin:4px 0;color:#c7d2fe">${esc(st.note)}</div>`;
       else if (st.done) h += `<div class="sum" style="margin:4px 0"><b style="color:#34d399">✓ ${esc(o.label)}</b> — ${esc(opSummary(o.k, st.report))}. <span class="muted">Saved to this client + fed to the expert.</span></div>`;
     });
     h += `<div style="height:1px;background:#262b3d;margin:12px 0"></div>`;
@@ -800,8 +817,9 @@
     const si = root.getElementById("ss-site"); if (si) { si.addEventListener("input", (e) => { siteUrl = e.target.value.trim(); }); si.addEventListener("change", () => { persistSite(); }); }
     const ce = root.getElementById("ss-comp"); if (ce) ce.addEventListener("input", (e) => { competitors = e.target.value; });
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
+    const sg = root.getElementById("ss-sugg"); if (sg) sg.onclick = () => suggestCompetitors();
     const dt = root.getElementById("ss-docstog"); if (dt) dt.onclick = () => { docsOpen = !docsOpen; renderBody(); };
-    const txa = root.getElementById("ss-tx-attach"); if (txa) txa.onclick = () => { if (pendingTranscript && pendingTranscript.text) { zoomTx = { label: pendingTranscript.label || "Zoom call transcript", text: pendingTranscript.text }; scan(); docsOpen = true; } try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); evaluate(false); };
+    const txa = root.getElementById("ss-tx-attach"); if (txa) txa.onclick = () => { if (pendingTranscript && pendingTranscript.text) { zoomTx = { label: pendingTranscript.label || "Zoom call transcript", text: pendingTranscript.text }; scan(); docsOpen = true; if (dealId) chrome.runtime.sendMessage({ type: "callEngine", action: "bd_attach", body: { id: dealId, kind: "transcript", name: zoomTx.label, text: zoomTx.text } }, () => refreshDeal()); } try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); evaluate(false); };
     const txd = root.getElementById("ss-tx-dismiss"); if (txd) txd.onclick = () => { try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); };
     const rs = root.getElementById("ss-rescan"); if (rs) rs.onclick = () => { scan(); renderBody(); };
   }

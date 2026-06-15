@@ -68,6 +68,10 @@ async function persistDiag(id: string, kind: string, name: string, text: string)
   } catch { /* non-fatal */ }
 }
 
+function cleanHost(s: string): string {
+  return String(s || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").replace(/[?#].*$/, "").replace(/\.$/, "").toLowerCase();
+}
+
 /* Clean, professional, print-ready document renderer for generated client docs. */
 function renderDocHtml(doc: { title: string; subtitle: string; recipient: string; sections: Array<{ heading: string; body: string }>; footer: string }, brand: string, language: string): string {
   const esc = (s: string) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -376,6 +380,66 @@ export async function handleBd(action: string, body: any): Promise<any> {
       noteCall(String(body?.id || "").trim()); await persistDiag(String(body?.id || "").trim(), "aeo", "AEO/GEO readiness", `AEO/GEO readiness for ${rep.site}: ${rep.signals.filter(s => s.ok).length}/${rep.signals.length} signals OK. Schema: ${rep.schema_types.join(", ") || "none"}. llms.txt: ${rep.llms_txt ? "yes" : "no"}. ${rep.robots_ai}. Top fixes: ${rep.recommendations.slice(0, 3).join("; ")}.`);
       return { success: true, report: rep };
     } catch (e: any) { return { success: false, error: e?.message || "AEO check failed" }; }
+  }
+
+  if (action === "bd_suggest_competitors") {
+    const id = String(body?.id || "").trim();
+    const c = await dealContext(id, String(body?.conversation || ""));
+    let site = "", industry = "", country = "", existingKw: string[] = [];
+    try {
+      const { data } = await db().from("bd_deals").select("client_site, industry, country, strategy").eq("id", id).single();
+      const d: any = data || {};
+      site = String(d.client_site || "").trim(); industry = String(d.industry || "").trim(); country = String(d.country || "").trim();
+      const f = (d.strategy && d.strategy.deal_facts) || {};
+      if (Array.isArray(f.target_keywords)) existingKw = f.target_keywords.map((x: any) => String(x).trim()).filter(Boolean);
+      if (!site && d.strategy && d.strategy.client_site) site = String(d.strategy.client_site).trim();
+    } catch { /* ignore */ }
+    const { llm } = await import("./workspace/llm.js");
+    // 1) target keywords — use stated ones, else derive from context (descriptive, low-risk)
+    let keywords = existingKw.slice(0, 10);
+    if (keywords.length < 3) {
+      const kwRaw = await llm({ system: "You are a senior SEO strategist. From the client context, output ONLY a JSON array of 6-8 commercial, buyer-intent search phrases this client's own customers would type to find them (include the city/region when the business is local). No prose, no backticks.", user: `Client site: ${site || "unknown"}\nIndustry: ${industry || "unknown"}\nLocation: ${country || "unknown"}\nFacts: ${c.facts.slice(0, 2000)}\nConversation:\n${c.conversation.slice(0, 8000)}`, maxTokens: 400, timeoutMs: 45000, label: "bd-suggest-keywords" });
+      try { const a = JSON.parse(String(kwRaw || "[]").replace(/```json|```/g, "").trim()); if (Array.isArray(a)) keywords = a.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 10); } catch { /* ignore */ }
+    }
+    // 2) competitors — prefer REAL domains ranking for those keywords (SERP), else LLM-suggested
+    let competitors: string[] = []; let source = "ai_suggested";
+    const self = cleanHost(site);
+    const AGG = /(google|youtube|facebook|instagram|linkedin|twitter|x\.com|yelp|tripadvisor|wikipedia|amazon|reddit|pinterest|maps\.|bing\.|apple\.|fiverr|upwork|glassdoor|indeed|justdial|yellowpages|bbb\.org|trustpilot|crunchbase|medium\.com|quora|cloudinary|booking\.com|expedia)/i;
+    try {
+      const { fetchSerpFeatures } = await import("./serpapi.js");
+      const tally = new Map<string, number>();
+      for (const kw of keywords.slice(0, 3)) {
+        const r: any = await fetchSerpFeatures(kw, "", {}).catch(() => null);
+        const org = (r && Array.isArray(r.organic_results)) ? r.organic_results : [];
+        for (const o of org.slice(0, 8)) { const h = cleanHost(o.link || o.displayed_link || ""); if (!h || h === self || AGG.test(h)) continue; tally.set(h, (tally.get(h) || 0) + 1); }
+      }
+      competitors = [...tally.entries()].sort((a, b) => b[1] - a[1]).map((x) => x[0]).slice(0, 5);
+      if (competitors.length >= 2) source = "serp";
+    } catch { /* serp unavailable */ }
+    if (competitors.length < 2) {
+      const compRaw = await llm({ system: "You are a senior SEO competitive analyst. From the client context, output ONLY a JSON array of 4-5 LIKELY direct-competitor website domains (bare domains, no scheme, real and well-known where possible) for this business in its market. No prose, no backticks.", user: `Client site: ${site || "unknown"}\nIndustry: ${industry || "unknown"}\nLocation: ${country || "unknown"}\nKeywords: ${keywords.join(", ")}\nFacts: ${c.facts.slice(0, 2000)}`, maxTokens: 300, timeoutMs: 45000, label: "bd-suggest-competitors" });
+      try { const a = JSON.parse(String(compRaw || "[]").replace(/```json|```/g, "").trim()); if (Array.isArray(a)) { const llmC = a.map((x: any) => cleanHost(x)).filter((h: string) => h && h.includes(".") && h !== self && !AGG.test(h)); competitors = Array.from(new Set([...competitors, ...llmC])).slice(0, 5); } } catch { /* ignore */ }
+    }
+    return { success: true, competitors, keywords, source };
+  }
+
+  if (action === "bd_attach") {
+    const id = String(body?.id || "").trim();
+    if (!id) return { success: false, error: "id required." };
+    const kind = String(body?.kind || "note").trim().slice(0, 40);
+    const name = String(body?.name || "Attachment").trim().slice(0, 200);
+    const text = String(body?.text || "").trim();
+    if (!text) return { success: false, error: "Nothing to attach." };
+    try {
+      const { data } = await db().from("bd_deals").select("attachments").eq("id", id).single();
+      const existing = Array.isArray((data as any)?.attachments) ? (data as any).attachments : [];
+      const sig = text.slice(0, 200);
+      if (existing.some((a: any) => a && a.kind === kind && String(a.text || "").slice(0, 200) === sig)) return { success: true, deal: data, deduped: true };
+      const att = { name, kind, text: text.slice(0, 100000), added_at: new Date().toISOString() };
+      const { data: updated, error } = await db().from("bd_deals").update({ attachments: [...existing, att], updated_at: new Date().toISOString() }).eq("id", id).select().single();
+      if (error) return { success: false, error: error.message };
+      return { success: true, deal: updated };
+    } catch (e: any) { return { success: false, error: e?.message || "attach failed" }; }
   }
 
   if (action === "bd_competitor_snapshot") {
