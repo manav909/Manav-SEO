@@ -160,6 +160,21 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
   }
 
+  if (action === "bd_deal_find") {
+    const handle = String(body?.client_handle || "").trim().slice(0, 120);
+    const platform = String(body?.platform || "fiverr").trim().slice(0, 40);
+    const name = String(body?.client_name || "").trim().slice(0, 200);
+    if (!handle) return { success: false, error: "No client handle to identify the deal." };
+    try {
+      const { data: found } = await db().from("bd_deals").select("*").eq("client_handle", handle).eq("platform", platform).order("updated_at", { ascending: false }).limit(1);
+      if (Array.isArray(found) && found.length) return { success: true, deal: found[0], created: false };
+      const row: any = { client_name: name || handle, client_handle: handle, platform, status: "lead", updated_at: new Date().toISOString() };
+      const { data, error } = await db().from("bd_deals").insert(row).select().single();
+      if (error) return { success: false, error: error.message };
+      return { success: true, deal: data, created: true };
+    } catch (e: any) { return { success: false, error: e?.message || "deal find failed" }; }
+  }
+
   if (action === "bd_deal_list") {
     try {
       let q = db().from("bd_deals").select("id, client_name, client_handle, platform, brief, status, tags, last_message_at, updated_at, strategy").order("updated_at", { ascending: false }).limit(200);
