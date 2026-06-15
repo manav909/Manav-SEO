@@ -292,14 +292,21 @@ function BestMessagePanel({analysis,convText}:{analysis:any;convText:string}) {
 // Without lookahead, single words in long messages (Schema, Redirects, etc.) get
 // mistaken for usernames. Lookahead prevents every false positive.
 function parseFiverr(raw: string): any[] {
-  const TS_RE  = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2},?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
-  const UN_RE  = /^[a-zA-Z0-9][a-zA-Z0-9_.]{2,29}$/;
-  const SKIP_EXACT = new Set(['promoted','we have your back','learn more','translate to english']);
+  // Timestamps Fiverr may show, in any of these shapes:
+  //   "Jan 5, 10:30 AM"  "Jan 5 10:30 am"  "Jan 5, 2025, 10:30 AM"  "Mon, Jan 5, 10:30 AM"
+  //   "5 Jan, 10:30 AM"  "10:30 AM"  "Today, 10:30 AM"  "Yesterday"  "2 days ago"
+  const TS_MD   = /^((mon|tue|wed|thu|fri|sat|sun)[,\s]+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(,?\s+\d{4})?,?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
+  const TS_DM   = /^(\d{1,2}\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(,?\s+\d{4})?),?\s+\d{1,2}:\d{2}\s*(am|pm)$/i;
+  const TS_TIME = /^\d{1,2}:\d{2}\s*(am|pm)$/i;
+  const TS_REL  = /^(today|yesterday)([,\s]+\d{1,2}:\d{2}\s*(am|pm)?)?$/i;
+  const TS_AGO  = /^\d+\s+(second|minute|hour|day|week|month|year)s?\s+ago$/i;
+  const UN_RE   = /^[a-zA-Z0-9][a-zA-Z0-9_.]{2,29}$/;
+  const SKIP_EXACT = new Set(['promoted','we have your back','learn more','translate to english','show more','show less','sent an attachment']);
   const SKIP_STARTS = ['for added safety','for your protection','this message relates to'];
 
   const allLines = raw.split('\n').map(l => l.trim());
 
-  const isTS    = (l: string) => TS_RE.test(l);
+  const isTS    = (l: string) => TS_MD.test(l) || TS_DM.test(l) || TS_TIME.test(l) || TS_REL.test(l) || TS_AGO.test(l);
   const isSkip  = (l: string) => {
     const ll = l.toLowerCase();
     if (!l) return true;
@@ -309,62 +316,60 @@ function parseFiverr(raw: string): any[] {
   };
   const isUN    = (l: string) => l === 'Me' || UN_RE.test(l);
 
-  // A line is a real speaker header ONLY if a timestamp follows within 4 non-empty lines
-  // (handles: USERNAME, PROMOTED, blank, TIMESTAMP  — all valid gaps)
-  const isSpeakerLine = (idx: number): boolean => {
+  // Strict speaker header: a username line with a timestamp following within 4 non-empty lines.
+  const isSpeakerStrict = (idx: number): boolean => {
     if (!isUN(allLines[idx])) return false;
     for (let j = idx + 1; j < Math.min(idx + 5, allLines.length); j++) {
       const next = allLines[j].trim();
-      if (!next) continue;               // blank line — keep looking
-      if (isTS(next)) return true;       // timestamp found — confirmed speaker
+      if (!next) continue;               // blank — keep looking
+      if (isTS(next)) return true;       // timestamp — confirmed speaker
       if (isSkip(next)) continue;        // PROMOTED etc — keep looking
-      return false;                      // real content before timestamp — not a speaker
+      return false;                      // real content first — not a speaker
     }
     return false;
   };
 
-  const msgs: any[] = [];
-  let cur: any = null;
-  let clientName = '';
-  let skipGig = false;
-
-  for (let li = 0; li < allLines.length; li++) {
-    const line = allLines[li];
-    if (!line) continue;
-
-    if (skipGig) {
-      if (isSpeakerLine(li)) { skipGig = false; }
-      else { continue; }
+  const build = (isSpeaker: (i: number) => boolean): any[] => {
+    const msgs: any[] = [];
+    let cur: any = null; let clientName = ''; let skipGig = false;
+    for (let li = 0; li < allLines.length; li++) {
+      const line = allLines[li];
+      if (!line) continue;
+      if (skipGig) { if (isSpeaker(li)) { skipGig = false; } else { continue; } }
+      if (isSkip(line)) { if (line.toLowerCase().startsWith('this message relates to')) skipGig = true; continue; }
+      if (isTS(line)) { if (cur && !cur.timestamp) cur.timestamp = line; continue; }
+      if (isSpeaker(li)) {
+        if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+        const isMe = line === 'Me';
+        if (!isMe && !clientName) clientName = line;
+        cur = { speaker: isMe ? 'me' : 'client', speakerName: line, text: '', timestamp: '' };
+        continue;
+      }
+      if (cur) cur.text = cur.text ? cur.text + '\n' + line : line;
+      else { if (!clientName) clientName = 'Client'; cur = { speaker: 'client', speakerName: clientName, text: line, timestamp: '' }; }
     }
+    if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
+    return msgs.filter(m => m.text.trim().length > 1);
+  };
 
-    if (isSkip(line)) {
-      if (line.toLowerCase().startsWith('this message relates to')) skipGig = true;
-      continue;
-    }
+  // 1) Strict pass (username + timestamp).
+  let msgs = build(isSpeakerStrict);
 
-    if (isTS(line)) {
-      if (cur && !cur.timestamp) cur.timestamp = line;
-      continue;
-    }
-
-    if (isSpeakerLine(li)) {
-      if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
-      const isMe = line === 'Me';
-      if (!isMe && !clientName) clientName = line;
-      cur = { speaker: isMe ? 'me' : 'client', speakerName: line, text: '', timestamp: '' };
-      continue;
-    }
-
-    // Regular message text
-    if (cur) cur.text = cur.text ? cur.text + '\n' + line : line;
-    else {
-      // Text before any speaker detected — treat as client
-      if (!clientName) clientName = 'Client';
-      cur = { speaker: 'client', speakerName: clientName, text: line, timestamp: '' };
+  // 2) Fallback when the strict pass collapses (e.g. Fiverr's timestamp format changed or
+  //    is absent): split on "Me" plus any handle that appears as a standalone line 2+ times
+  //    — that repetition is the client's name recurring before each of their messages, so it
+  //    is safe (one-off words like "Okay" never qualify).
+  if (msgs.length <= 1) {
+    const counts: Record<string, number> = {};
+    for (const l of allLines) { if (l && l !== 'Me' && isUN(l) && !isSkip(l) && !isTS(l)) counts[l] = (counts[l] || 0) + 1; }
+    const handles = new Set<string>(['Me']);
+    Object.entries(counts).forEach(([t, c]) => { if (c >= 2) handles.add(t); });
+    if (handles.size > 1) {
+      const alt = build((i: number) => handles.has(allLines[i]));
+      if (alt.length > msgs.length) msgs = alt;
     }
   }
-  if (cur && cur.text.trim()) msgs.push({ ...cur, text: cur.text.trim() });
-  return msgs.filter(m => m.text.trim().length > 1);
+  return msgs;
 }
 
 
