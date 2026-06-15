@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  body { width: 280px; margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f1320; color: #e7e9f3; padding: 14px; }
+  h1 { font-size: 13px; margin: 0 0 2px; }
+  p { font-size: 11px; color: #9aa0b5; margin: 0 0 10px; line-height: 1.45; }
+  label { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #7e84a3; }
+  input { width: 100%; margin-top: 5px; background: #0c0f1a; border: 1px solid #262b3d; border-radius: 8px; color: #e7e9f3; padding: 8px 9px; font-size: 12px; }
+  button { width: 100%; margin-top: 10px; cursor: pointer; border: none; border-radius: 8px; padding: 9px; font-size: 12px; font-weight: 600; background: #4f46e5; color: #fff; }
+  button:hover { background: #5b53ea; }
+  .ok { font-size: 11px; color: #34d399; margin-top: 8px; min-height: 14px; }
+</style>
+</head>
+<body>
+  <h1>SEO Season — Fiverr Evaluator</h1>
+  <p>Where your SEO Season app is hosted. The evaluator sends the chat to <code>/api/task-engine</code> there.</p>
+  <label for="base">API address</label>
+  <input id="base" type="text" placeholder="https://seoseason.com" />
+  <button id="save">Save</button>
+  <div class="ok" id="ok"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
