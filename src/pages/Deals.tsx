@@ -656,7 +656,9 @@ export default function Deals() {
 
           {centerTab === "chat" ? (<>
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 min-h-0">
-            {messages.length === 0 && <p className="text-xs text-muted-foreground text-center py-10">Paste the Fiverr conversation below. The thread renders here; the intelligence appears on the right.</p>}
+            {messages.length === 0 && (strategy?.deal_state
+              ? <p className="text-xs text-muted-foreground text-center py-10">The analysis on the right is saved for this client. The chat itself has not synced here yet — open this client once in the Fiverr extension and it will pull the conversation in, or paste it below.</p>
+              : <p className="text-xs text-muted-foreground text-center py-10">Paste the Fiverr conversation below. The thread renders here; the intelligence appears on the right.</p>)}
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.sender === "seller" ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[80%] px-3 py-2 rounded-2xl text-sm whitespace-pre-wrap break-words ${m.sender === "seller" ? "bg-primary/10 rounded-br-sm" : "bg-muted rounded-bl-sm"}`}>{m.text}</div>

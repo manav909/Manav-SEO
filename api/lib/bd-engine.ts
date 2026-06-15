@@ -618,7 +618,10 @@ export async function handleBd(action: string, body: any): Promise<any> {
           const nameUpdate = (detected && (!curName || curName === "Untitled lead")) ? { client_name: detected } : {};
           const f: any = r.strategy.deal_facts || {};
           const newStatus = STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status;
-          await db().from("bd_deals").update({ strategy: r.strategy, status: newStatus, ...nameUpdate, industry: f.industry || deal.industry || null, country: f.location || deal.country || null, client_type: f.client_type || deal.client_type || null, updated_at: new Date().toISOString() }).eq("id", id);
+          const cleanConv = String(body?.clean_conversation || "").trim();
+          const existingConv = String(deal.conversation || "");
+          const convUpdate = (cleanConv && cleanConv.length >= existingConv.length) ? { conversation: cleanConv, last_message_at: new Date().toISOString() } : {}; // grow-only: never overwrite a longer saved chat with a partial grab
+          await db().from("bd_deals").update({ strategy: r.strategy, status: newStatus, ...nameUpdate, ...convUpdate, industry: f.industry || deal.industry || null, country: f.location || deal.country || null, client_type: f.client_type || deal.client_type || null, updated_at: new Date().toISOString() }).eq("id", id);
           appendStage(id, newStatus);
         } catch { /* non-fatal */ }
         noteCall(id);

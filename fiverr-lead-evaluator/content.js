@@ -291,8 +291,10 @@
     const liveLen = (grabText(false) || "").length;
     const savedLen = (deal && typeof deal.conversation === "string") ? deal.conversation.length : 0;
     const haveSaved = !!(lastStrategy && lastStrategy.deal_state);
-    if (haveSaved && savedLen > 0 && liveLen - savedLen <= 150) {
-      evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody(); return;
+    if (haveSaved && (savedLen === 0 || liveLen - savedLen <= 150)) {
+      evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody();
+      if (savedLen === 0) autosave(); // strategy exists but the chat was never saved — backfill it so the software has it and future opens stay instant
+      return;
     }
     evalCached = false; evaluate(false);
   }
@@ -322,7 +324,7 @@
     const full = (conv || "") + extras;
     if (body) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
     lastEvalAt = Date.now(); evalCached = false; evalErr = "";
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, id: dealId } }, (resp) => {
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, clean_conversation: conv, id: dealId } }, (resp) => {
       const b = root.getElementById("ss-body"); if (!b) return;
       const data = (resp && resp.data) || {};
       if (resp && resp.ok && data.success && data.strategy) {
@@ -615,7 +617,7 @@
     const upd = { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement };
     if (siteUrl) upd.client_site = siteUrl;
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: upd }, (resp) => {
-      if (resp && resp.ok && resp.data && resp.data.success) { if (deal) { deal.engagement = engagement; if (siteUrl) deal.client_site = siteUrl; } syncedAt = Date.now(); renderSync(); }
+      if (resp && resp.ok && resp.data && resp.data.success) { if (deal) { deal.conversation = conv; deal.engagement = engagement; if (siteUrl) deal.client_site = siteUrl; } syncedAt = Date.now(); renderSync(); }
     });
   }
   function maybeAutoEval() {
