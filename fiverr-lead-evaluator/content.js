@@ -385,6 +385,9 @@
     while ((mm = re.exec(text || ""))) {
       const d = mm[1].replace(/^https?:\/\//i, "").replace(/^www\./i, "").toLowerCase().replace(/\.$/, "");
       if (!d.includes(".") || skip.test(d) || seen.has(d)) continue;
+      const tld = d.split(".").pop();
+      if (!/^[a-z]{2,24}$/.test(tld)) continue;                    // alpha TLD only — rejects ".m", ".23", "a.m.", "e.g.", versions, times
+      if (!/[a-z]/.test(d.slice(0, d.lastIndexOf(".")))) continue; // the name part must contain a letter (rejects "12.34")
       seen.add(d); if (!best) best = d;
     }
     return best;
