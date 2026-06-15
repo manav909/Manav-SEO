@@ -289,6 +289,7 @@ export default function Deals() {
   const [engFired, setEngFired] = useState("");
   const [centerTab, setCenterTab] = useState<"chat" | "order">("chat");
   const [rightTab, setRightTab] = useState<"brief" | "tools" | "engage">("brief");
+  const [viewAtt, setViewAtt] = useState<any>(null);
   const [caseMatch, setCaseMatch] = useState<any>(null);
   const [caseLib, setCaseLib] = useState<any[]>([]);
   const [showCsLib, setShowCsLib] = useState(false);
@@ -313,8 +314,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -875,8 +876,8 @@ export default function Deals() {
               </Acc>}
 
               {selected?.id && (selected.attachments || []).length > 0 && (
-                <Acc open={open} toggle={toggle} k="lead" title="Attachments">
-                  <div className="flex flex-wrap gap-1">{selected.attachments.map((a: any, i: number) => <Chip key={i} text={`📎 ${a.name}`} color="#10b981" />)}</div>
+                <Acc open={open} toggle={toggle} k="lead" title="Attachments" defaultBadge={selected.attachments.length}>
+                  <div className="flex flex-wrap gap-1.5">{selected.attachments.map((a: any, i: number) => <button key={i} onClick={() => setViewAtt(a)} className="text-[11px] px-2 py-1 rounded-md border flex items-center gap-1 transition-colors hover:brightness-125" style={{ color: "#10b981", borderColor: "#10b98155", background: "#10b98111" }} title="Open">📎 {a.name}</button>)}</div>
                 </Acc>
               )}
             </div>
@@ -972,6 +973,22 @@ export default function Deals() {
         </div>
       </div>
       {focusedWindow && <WinManager win={focusedWindow} onMin={() => setFocusedWin("")} onClose={() => closeWin(focusedWindow.id)} onDownload={() => downloadWin(focusedWindow)} onUseReply={useReply} />}
+      {viewAtt && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" style={{ background: "rgba(10,12,24,0.5)" }} onClick={() => setViewAtt(null)}>
+          <div className="w-[660px] max-w-[94vw] max-h-[85vh] rounded-2xl border border-border bg-card shadow-2xl flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+              <span className="text-sm font-semibold tracking-tight truncate flex-1">📎 {viewAtt.name}</span>
+              {viewAtt.kind && <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">{String(viewAtt.kind).replace(/^doc:/, "doc · ")}</span>}
+              <button onClick={() => copy(viewAtt.text || "")} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors shrink-0">Copy</button>
+              <button onClick={() => { setReplyDraft(viewAtt.text || ""); copy(viewAtt.text || ""); setViewAtt(null); setCenterTab("chat"); }} className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors shrink-0">Use in reply</button>
+              <button onClick={() => setViewAtt(null)} className="w-7 h-7 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted flex items-center justify-center text-sm shrink-0">✕</button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-foreground/90">{viewAtt.text || "No readable content was stored for this item."}</p>
+            </div>
+          </div>
+        </div>
+      )}
       <WinTaskbar windows={windows} onRestore={restoreWin} onClose={closeWin} onClearDone={clearDoneWins} />
     </div>
   );
