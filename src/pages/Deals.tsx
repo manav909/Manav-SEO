@@ -303,6 +303,14 @@ export default function Deals() {
   const toggle = (k: string) => setOpen(o => ({ ...o, [k]: !o[k] }));
 
   const loadList = async () => { const r: any = await post("bd_deal_list", { status: filter, search }); if (r?.success) setDeals(r.deals || []); else if (r?.error) setError(r.error); };
+  const dedupeDeals = async () => {
+    setBusy("dedupe"); setError(""); setNotice("");
+    const r: any = await post("bd_dedupe_deals", {});
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not clean up duplicates."); return; }
+    setNotice(r.deleted ? `Merged duplicates — removed ${r.deleted} duplicate deal${r.deleted === 1 ? "" : "s"} across ${r.merged_groups} client${r.merged_groups === 1 ? "" : "s"}.` : "No duplicates found.");
+    loadList();
+  };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
 
   const applyStrategy = (s: any) => { setStrategy(s); setReplyDraft(s?.draft_reply || ""); };
@@ -568,7 +576,10 @@ export default function Deals() {
         <div className="rounded-2xl border border-border/70 bg-card shadow-sm p-3 flex flex-col min-h-0 min-w-0">
           <div className="flex items-center justify-between mb-2.5">
             <h2 className="text-[13px] font-semibold tracking-tight">Conversations</h2>
-            <button onClick={newDeal} className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium shadow-sm hover:shadow transition-shadow">+ New</button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={dedupeDeals} disabled={busy === "dedupe"} title="Merge duplicate deals for the same client into one" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-50">{busy === "dedupe" ? "Merging…" : "Clean up dupes"}</button>
+              <button onClick={newDeal} className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium shadow-sm hover:shadow transition-shadow">+ New</button>
+            </div>
           </div>
           <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && loadList()} placeholder="Search…" className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary mb-2" />
           <div className="flex gap-1 mb-2 flex-wrap">

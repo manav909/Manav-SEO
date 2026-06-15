@@ -137,15 +137,27 @@ export async function handleBd(action: string, body: any): Promise<any> {
       last_message_at: d.conversation ? new Date().toISOString() : null,
       updated_at: new Date().toISOString(),
     };
+    const upd: any = {}; for (const k of Object.keys(row)) { if (row[k] !== null && row[k] !== undefined) upd[k] = row[k]; } upd.updated_at = new Date().toISOString();
     try {
-      if (d.id) {
-        const { data, error } = await db().from("bd_deals").update(row).eq("id", d.id).select().single();
+      let sid = d.id;
+      if (!sid && row.client_handle) {
+        const { data: ex } = await db().from("bd_deals").select("id").eq("client_handle", row.client_handle).eq("platform", row.platform).order("updated_at", { ascending: false }).limit(1);
+        if (Array.isArray(ex) && ex.length) sid = ex[0].id; // an existing deal for this handle — update it instead of making a duplicate
+      }
+      if (sid) {
+        const { data, error } = await db().from("bd_deals").update(upd).eq("id", sid).select().single();
         if (error) return { success: false, error: error.message };
         return { success: true, deal: data };
       }
-      const { data, error } = await db().from("bd_deals").insert(row).select().single();
-      if (error) return { success: false, error: error.message };
-      return { success: true, deal: data };
+      const insRes = await db().from("bd_deals").insert(row).select().single();
+      if (insRes.error) {
+        if (row.client_handle) {
+          const { data: ex2 } = await db().from("bd_deals").select("id").eq("client_handle", row.client_handle).eq("platform", row.platform).order("updated_at", { ascending: false }).limit(1);
+          if (Array.isArray(ex2) && ex2.length) { const u = await db().from("bd_deals").update(upd).eq("id", ex2[0].id).select().single(); if (!u.error) return { success: true, deal: u.data }; }
+        }
+        return { success: false, error: insRes.error.message };
+      }
+      return { success: true, deal: insRes.data };
     } catch (e: any) { return { success: false, error: e?.message || "save failed" }; }
   }
 
@@ -167,6 +179,55 @@ export async function handleBd(action: string, body: any): Promise<any> {
     } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
   }
 
+  if (action === "bd_dedupe_deals") {
+    try {
+      const { data } = await db().from("bd_deals").select("id, client_name, client_handle, platform, status, strategy, conversation, attachments, engagement, client_site, tags, updated_at, last_message_at, created_at");
+      const rows = Array.isArray(data) ? data : [];
+      const ORDER = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat"]; // active advancement; terminal (stalled/lost/archived) rank -1
+      const rank = (s: any) => { const i = ORDER.indexOf(String(s || "").toLowerCase()); return i >= 0 ? i : -1; };
+      const groups = new Map<string, any[]>();
+      for (const r of rows) {
+        const h = String(r.client_handle || "").trim().toLowerCase(); if (!h) continue; // leave manual (no-handle) deals untouched
+        const key = h + "|" + String(r.platform || "fiverr").toLowerCase();
+        if (!groups.has(key)) groups.set(key, []);
+        (groups.get(key) as any[]).push(r);
+      }
+      let merged_groups = 0, deleted = 0;
+      const attSig = (a: any) => String(a?.kind || "") + "|" + String(a?.name || "") + "|" + String(a?.text || "").slice(0, 80);
+      for (const grp of groups.values()) {
+        if (grp.length < 2) continue;
+        grp.sort((a, b) => rank(b.status) - rank(a.status) || ((b.strategy && b.strategy.deal_state ? 1 : 0) - (a.strategy && a.strategy.deal_state ? 1 : 0)) || String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+        const win = grp[0]; const losers = grp.slice(1);
+        let conversation = win.conversation || "";
+        const attachments = Array.isArray(win.attachments) ? [...win.attachments] : [];
+        const seen = new Set(attachments.map(attSig));
+        let engTimes: string[] = (win.engagement && Array.isArray(win.engagement.times)) ? [...win.engagement.times] : [];
+        let strategy = (win.strategy && win.strategy.deal_state) ? win.strategy : null;
+        let client_site = win.client_site || "";
+        const tags = Array.isArray(win.tags) ? [...win.tags] : [];
+        let status = win.status; let lastMsg = win.last_message_at || "";
+        for (const L of losers) {
+          if ((L.conversation || "").length > conversation.length) conversation = L.conversation;
+          if (Array.isArray(L.attachments)) for (const a of L.attachments) { const s = attSig(a); if (!seen.has(s)) { seen.add(s); attachments.push(a); } }
+          if (L.engagement && Array.isArray(L.engagement.times)) engTimes = engTimes.concat(L.engagement.times);
+          if (!strategy && L.strategy && L.strategy.deal_state) strategy = L.strategy;
+          if (!client_site && L.client_site) client_site = L.client_site;
+          if (Array.isArray(L.tags)) for (const t of L.tags) if (!tags.includes(t)) tags.push(t);
+          if (rank(L.status) > rank(status)) status = L.status;
+          if (String(L.last_message_at || "") > String(lastMsg)) lastMsg = L.last_message_at;
+        }
+        const engagement = (win.engagement || engTimes.length) ? Object.assign({}, win.engagement || {}, { times: Array.from(new Set(engTimes)).slice(-400) }) : null;
+        const upd: any = { conversation, attachments, engagement, client_site: client_site || null, tags, status, last_message_at: lastMsg || null, updated_at: new Date().toISOString() };
+        if (strategy) upd.strategy = strategy;
+        await db().from("bd_deals").update(upd).eq("id", win.id);
+        const loserIds = losers.map((L) => L.id);
+        if (loserIds.length) { await db().from("bd_deals").delete().in("id", loserIds); deleted += loserIds.length; }
+        merged_groups++;
+      }
+      return { success: true, merged_groups, deleted };
+    } catch (e: any) { return { success: false, error: e?.message || "dedupe failed" }; }
+  }
+
   if (action === "bd_deal_find") {
     const handle = String(body?.client_handle || "").trim().slice(0, 120);
     const platform = String(body?.platform || "fiverr").trim().slice(0, 40);
@@ -176,9 +237,15 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const { data: found } = await db().from("bd_deals").select("*").eq("client_handle", handle).eq("platform", platform).order("updated_at", { ascending: false }).limit(1);
       if (Array.isArray(found) && found.length) return { success: true, deal: found[0], created: false };
       const row: any = { client_name: name || handle, client_handle: handle, platform, status: "lead", updated_at: new Date().toISOString() };
-      const { data, error } = await db().from("bd_deals").insert(row).select().single();
-      if (error) return { success: false, error: error.message };
-      return { success: true, deal: data, created: true };
+      const ins = await db().from("bd_deals").insert(row).select().single();
+      if (ins.error) {
+        // a concurrent create won the race (or the unique index rejected a dup) — return the existing row, never duplicate
+        const hEsc = handle.replace(/([%_\\])/g, "\\$1");
+        const { data: again } = await db().from("bd_deals").select("*").ilike("client_handle", hEsc).eq("platform", platform).order("updated_at", { ascending: false }).limit(1);
+        if (Array.isArray(again) && again.length) return { success: true, deal: again[0], created: false };
+        return { success: false, error: ins.error.message };
+      }
+      return { success: true, deal: ins.data, created: true };
     } catch (e: any) { return { success: false, error: e?.message || "deal find failed" }; }
   }
 
