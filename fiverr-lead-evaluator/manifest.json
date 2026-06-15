@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "SEO Season — Fiverr Lead Evaluator",
-  "version": "1.0.0",
-  "description": "Evaluate Fiverr leads live from the open chat using your SEO Season intelligence engine. No copy-paste.",
+  "version": "1.1.0",
+  "description": "Evaluate Fiverr leads live from the open chat, and capture Zoom call transcripts, using your SEO Season intelligence engine. No copy-paste.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [
     "https://*.fiverr.com/*",
     "https://seoseason.com/*",
-    "https://*.seoseason.com/*"
+    "https://*.seoseason.com/*",
+    "https://*.zoom.us/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -19,7 +20,12 @@
   "content_scripts": [
     {
       "matches": ["https://*.fiverr.com/*"],
-      "js": ["content.js"],
+      "js": ["vendor-xlsx.js", "vendor-mammoth.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.zoom.us/*"],
+      "js": ["zoom.js"],
       "run_at": "document_idle"
     }
   ]

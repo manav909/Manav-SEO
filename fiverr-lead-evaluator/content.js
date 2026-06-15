@@ -85,7 +85,7 @@
   root.appendChild(wrap);
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
-  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null;
+  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null, pendingTranscript = null, zoomTx = null;
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
@@ -103,11 +103,16 @@
     }
     return out;
   }
+  function loadPendingTranscript() {
+    try { chrome.storage.local.get("ss_pending_transcript", (r) => { pendingTranscript = (r && r.ss_pending_transcript) || null; if (open) renderBody(); }); } catch (e) { /* ignore */ }
+  }
+  try { chrome.storage.onChanged.addListener((ch, area) => { if (area === "local" && ch.ss_pending_transcript) { pendingTranscript = ch.ss_pending_transcript.newValue || null; if (open) renderBody(); } }); } catch (e) { /* ignore */ }
   function scan() {
     const files = uniqText(EXT, 200), calls = uniqText(CALL, 140);
     const next = [];
     files.forEach((name, i) => next.push({ id: "a" + i, kind: "attachment", label: name, text: "", status: "" }));
     calls.forEach((c, i) => next.push({ id: "c" + i, kind: "call", label: c, text: "", status: "" }));
+    if (zoomTx && zoomTx.text) next.push({ id: "zoom", kind: "call", label: zoomTx.label || "Zoom call transcript", text: zoomTx.text, status: "captured" });
     next.push({ id: "m", kind: "manual", label: "Other file or transcript", text: "", status: "" });
     for (const s of next) { const prev = slots.find((p) => p.label === s.label && p.kind === s.kind); if (prev) { s.text = prev.text; s.status = prev.status; } }
     slots = next;
@@ -223,6 +228,7 @@
     let h = engagementHtml() + expertHtml() + savedIntelHtml() + opsHtml();
     const detected = slots.filter((s) => s.kind !== "manual").length;
     h += `<div class="lbl" style="margin-top:0;display:flex;justify-content:space-between;align-items:center"><span id="ss-docstog" style="cursor:pointer">${docsOpen ? "▾" : "▸"} Documents &amp; calls${detected ? " (" + detected + ")" : ""}</span>${docsOpen ? `<span id="ss-rescan" style="cursor:pointer;color:#a5b4fc;text-transform:none;letter-spacing:0;font-weight:600">rescan</span>` : ""}</div>`;
+    if (pendingTranscript && pendingTranscript.text) h += `<div style="border:1px solid #4f46e5;background:#4f46e512;border-radius:10px;padding:9px 10px;margin:4px 0 8px"><div style="font-size:11.5px;color:#c7d2fe;font-weight:700;margin-bottom:4px">📥 Captured Zoom transcript ready</div><div class="muted" style="font-size:10.5px;margin-bottom:7px">${esc(pendingTranscript.label || "Zoom recording")} · ${(pendingTranscript.text.length).toLocaleString()} chars</div><div style="display:flex;gap:6px"><button id="ss-tx-attach" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:700;background:#4f46e5;color:#fff">Attach to this client &amp; analyse</button><button id="ss-tx-dismiss" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Dismiss</button></div></div>`;
     if (docsOpen) {
       const real = slots.filter((s) => s.kind !== "manual");
       if (!real.length) h += `<p class="muted" style="margin:0 0 7px">None auto-detected. Download any file from the chat and drop it below, or paste a transcript.</p>`;
@@ -752,11 +758,13 @@
     const ce = root.getElementById("ss-comp"); if (ce) ce.addEventListener("input", (e) => { competitors = e.target.value; });
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
     const dt = root.getElementById("ss-docstog"); if (dt) dt.onclick = () => { docsOpen = !docsOpen; renderBody(); };
+    const txa = root.getElementById("ss-tx-attach"); if (txa) txa.onclick = () => { if (pendingTranscript && pendingTranscript.text) { zoomTx = { label: pendingTranscript.label || "Zoom call transcript", text: pendingTranscript.text }; scan(); docsOpen = true; } try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); evaluate(false); };
+    const txd = root.getElementById("ss-tx-dismiss"); if (txd) txd.onclick = () => { try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); };
     const rs = root.getElementById("ss-rescan"); if (rs) rs.onclick = () => { scan(); renderBody(); };
   }
 
   function bind() {
-    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); findDeal(() => { maybeEvalOnOpen(); watchChat(); }); };
+    const l = root.getElementById("ss-launch"); if (l) l.onclick = () => { open = true; scan(); render(); loadPendingTranscript(); findDeal(() => { maybeEvalOnOpen(); watchChat(); }); };
     const m = root.getElementById("ss-min"); if (m) m.onclick = () => { open = false; render(); };
     const v = root.getElementById("ss-view"); if (v) v.onclick = () => { view = view === "inbox" ? "chat" : "inbox"; render(); if (view === "inbox" && !inbox.length && !inboxMsg) loadInbox(); };
     const ld = root.getElementById("ss-load"); if (ld) ld.onclick = () => loadInbox();
