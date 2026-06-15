@@ -404,8 +404,8 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
   const user = [
     opts.clientName ? `Client: ${opts.clientName}.` : ``,
     opts.brief ? `Brief / service:\n${String(opts.brief).slice(0, 6000)}` : ``,
-    opts.context ? `Context (the seller's platform, prior research, shared documents and call transcripts):\n${String(opts.context).slice(0, 16000)}` : ``,
-    `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 40000)}`,
+    opts.context ? `Context (the seller's platform, prior research, shared documents and call transcripts):\n${String(opts.context).slice(0, 12000)}` : ``,
+    `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 30000)}`,
   ].filter(Boolean).join("\n\n");
 
   const run = async (): Promise<DealStrategy | null> => {

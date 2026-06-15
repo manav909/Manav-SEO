@@ -69,7 +69,7 @@
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
   let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false;
-  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false;
+  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
   // ---- detection ---------------------------------------------------------------
@@ -219,9 +219,9 @@
     }
     if (replyMsg && replyMsg !== "loading") h += `<div class="${replyMsg.indexOf("err:") === 0 ? "err" : "muted"}" style="margin:6px 0">${esc(replyMsg.replace(/^(err|ok):/, ""))}</div>`;
     if (replies.length) h += `<div style="height:1px;background:#262b3d;margin:12px 0"></div>`;
-    if (body.dataset.state === "loading") h += `<div class="loading"><span class="spin"></span> Evaluating the chat + dropped files…</div>`;
+    if (body.dataset.state === "loading" || body.dataset.state === "retry") h += `<div class="loading"><span class="spin"></span> ${body.dataset.state === "retry" ? "Taking a moment — retrying…" : "Evaluating the chat + dropped files…"}</div>`;
     else if (body.dataset.error) h += `<div class="err">${esc(body.dataset.error)}</div>`;
-    else if (lastStrategy) h += resultHtml(lastStrategy, body.dataset.captured);
+    else if (lastStrategy) { if (evalErr) h += `<div class="err" style="margin-bottom:8px;background:#f59e0b15;border-color:#f59e0b44;color:#fbbf24">${esc(evalErr)}</div>`; h += resultHtml(lastStrategy, body.dataset.captured); }
     else h += `<p class="muted">Drop the downloaded audit / transcript into its slot above, then hit <b>Evaluate</b> — the contents get read into the analysis, not just the chat.</p>`;
     body.innerHTML = h;
     bindSlots();
@@ -254,22 +254,27 @@
     return ((main && main.innerText) || document.body.innerText || "").trim();
   }
 
-  function evaluate(forceSel) {
+  function evaluate(forceSel, attempt) {
+    attempt = attempt || 1;
     const conv = grabText(forceSel);
     const body = root.getElementById("ss-body");
     const haveFiles = slots.some((s) => s.text);
     if ((!conv || conv.length < 30) && !haveFiles) { if (body) { body.dataset.error = forceSel ? "Nothing is highlighted. Select the conversation first." : "No conversation text found. Highlight the chat and use 'Use selection'."; delete body.dataset.state; renderBody(); } return; }
     const extras = slots.filter((s) => s.text).map((s) => `\n\n[${s.kind === "call" ? "CALL TRANSCRIPT" : "ATTACHED DOCUMENT"}: ${s.label}]\n${s.text}`).join("");
     const full = (conv || "") + extras;
-    if (body) { body.dataset.state = "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
-    lastEvalAt = Date.now(); evalCached = false;
+    if (body) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
+    lastEvalAt = Date.now(); evalCached = false; evalErr = "";
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, id: dealId } }, (resp) => {
-      const b = root.getElementById("ss-body"); if (!b) return; delete b.dataset.state;
-      if (chrome.runtime.lastError) { b.dataset.error = chrome.runtime.lastError.message; renderBody(); return; }
-      if (!resp || !resp.ok) { b.dataset.error = (resp && (resp.error || (resp.data && resp.data.error))) || "Request failed. Check the API address in the extension settings."; renderBody(); return; }
-      const data = resp.data || {};
-      if (!data.success || !data.strategy) { b.dataset.error = data.error || "The engine could not evaluate this conversation."; renderBody(); return; }
-      lastStrategy = data.strategy; lastEvalLen = (conv || "").length; b.dataset.captured = String(full.length); renderBody(); autosave();
+      const b = root.getElementById("ss-body"); if (!b) return;
+      const data = (resp && resp.data) || {};
+      if (resp && resp.ok && data.success && data.strategy) {
+        delete b.dataset.state; lastStrategy = data.strategy; lastEvalLen = (conv || "").length; b.dataset.captured = String(full.length); evalErr = ""; renderBody(); autosave(); return;
+      }
+      if (attempt < 2) { setTimeout(() => evaluate(forceSel, attempt + 1), 1500); return; } // one quiet auto-retry — strategize timeouts are usually transient
+      delete b.dataset.state;
+      const errMsg = chrome.runtime.lastError ? chrome.runtime.lastError.message : (resp && (resp.error || data.error)) || "The analysis took too long. Tap Evaluate to try again.";
+      if (lastStrategy && lastStrategy.deal_state) { evalErr = "Could not refresh just now — showing your last analysis. Tap Evaluate to retry."; renderBody(); }
+      else { b.dataset.error = errMsg; renderBody(); }
     });
   }
 
