@@ -8,6 +8,23 @@
   window.__seoSeasonFiverrLoaded = true;
 
   const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // Lightweight markdown -> HTML for the panel: bold, code, headings, numbered/bulleted lists, dividers. Escapes first.
+  function mdLite(t) {
+    let s = esc(t);
+    s = s.replace(/`([^`]+)`/g, '<code style="background:#0c0f1a;border:1px solid #262b3d;border-radius:4px;padding:1px 4px;font-size:11px">$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/__([^_]+)__/g, "<b>$1</b>");
+    const lines = s.split(/\r?\n/); let out = ""; let m;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) { out += '<div style="height:5px"></div>'; continue; }
+      if (/^[-—*_]{3,}$/.test(line)) { out += '<hr style="border:none;border-top:1px solid #262b3d;margin:7px 0">'; continue; }
+      if ((m = line.match(/^#{1,6}\s*(.+)$/))) { out += `<div style="font-weight:700;margin:7px 0 2px;color:#e7e9f3">${m[1]}</div>`; continue; }
+      if ((m = line.match(/^(\d{1,2})[.)]\s+(.+)$/))) { out += `<div style="margin:3px 0;padding-left:18px;text-indent:-18px"><b>${m[1]}.</b> ${m[2]}</div>`; continue; }
+      if ((m = line.match(/^[-*•·]\s+(.+)$/))) { out += `<div style="margin:3px 0;padding-left:14px;text-indent:-12px">•&nbsp;${m[1]}</div>`; continue; }
+      out += `<div style="margin:3px 0">${line}</div>`;
+    }
+    return out;
+  }
   const arr = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
 
   const host = document.createElement("div");
@@ -68,7 +85,7 @@
   root.appendChild(wrap);
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
-  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false;
+  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null;
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
@@ -203,7 +220,7 @@
   function renderBody() {
     const body = root.getElementById("ss-body"); if (!body) return;
     if (view !== "chat") { renderSync(); return; }
-    let h = expertHtml() + savedIntelHtml() + opsHtml();
+    let h = engagementHtml() + expertHtml() + savedIntelHtml() + opsHtml();
     const detected = slots.filter((s) => s.kind !== "manual").length;
     h += `<div class="lbl" style="margin-top:0;display:flex;justify-content:space-between;align-items:center"><span id="ss-docstog" style="cursor:pointer">${docsOpen ? "▾" : "▸"} Documents &amp; calls${detected ? " (" + detected + ")" : ""}</span>${docsOpen ? `<span id="ss-rescan" style="cursor:pointer;color:#a5b4fc;text-transform:none;letter-spacing:0;font-weight:600">rescan</span>` : ""}</div>`;
     if (docsOpen) {
@@ -370,7 +387,7 @@
     h += `</div>`;
     if (askMsg === "loading") h += `<div class="loading"><span class="spin"></span> Thinking like a senior SEO…</div>`;
     if (askResult) {
-      if (askResult.answer) h += `<div class="lbl">Expert take</div><div class="sum">${esc(askResult.answer)}</div>`;
+      if (askResult.answer) h += `<div class="lbl">Expert take</div><div class="sum">${mdLite(askResult.answer)}</div>`;
       if (askResult.client_reply) h += `<div class="lbl">Ready to send</div><textarea class="askreply" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #262b3d;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(askResult.client_reply)}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="askins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="askcpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
     }
     if (suggestedTools.length) {
@@ -398,12 +415,14 @@
   function detectSite(text) {
     const re = /((?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+)(?:\/[^\s)]*)?/gi;
     const skip = /(fiverr|gmail|google|youtube|facebook|fb|instagram|twitter|linkedin|whatsapp|paypal|loom|zoom|calendly|drive|docs|sheets|dropbox|bit\.ly|tinyurl|t\.co|wa\.me)\./i;
+    const fileExt = /^(txt|pdf|png|jpe?g|gif|webp|svg|bmp|tiff?|docx?|xlsx?|pptx?|csv|tsv|json|xml|ya?ml|html?|js|mjs|ts|css|scss|md|markdown|zip|rar|gz|tar|7z|mp[34]|m4a|wav|mov|avi|mkv|webm|woff2?|ttf|otf|eot|ico|exe|dmg|pkg|apk|sql|log|env|sh|bat|psd|ai|eps|sketch|fig)$/i;
     const seen = new Set(); let best = ""; let mm;
     while ((mm = re.exec(text || ""))) {
       const d = mm[1].replace(/^https?:\/\//i, "").replace(/^www\./i, "").toLowerCase().replace(/\.$/, "");
       if (!d.includes(".") || skip.test(d) || seen.has(d)) continue;
       const tld = d.split(".").pop();
       if (!/^[a-z]{2,24}$/.test(tld)) continue;                    // alpha TLD only — rejects ".m", ".23", "a.m.", "e.g.", versions, times
+      if (fileExt.test(tld)) continue;                              // not a real TLD — rejects llms.txt, robots.txt, sitemap.xml, image.png, file.pdf
       if (!/[a-z]/.test(d.slice(0, d.lastIndexOf(".")))) continue; // the name part must contain a letter (rejects "12.34")
       seen.add(d); if (!best) best = d;
     }
@@ -417,6 +436,7 @@
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) {
         deal = resp.data.deal; dealId = String(deal.id || ""); dealName = String(deal.client_name || handle);
         if (deal.strategy) lastStrategy = deal.strategy;
+        engagement = mergeEngagement(deal.engagement, readEngagement());
         renderBody();
       }
       if (then) then();
@@ -425,7 +445,7 @@
   function refreshDeal() {
     if (!dealId) return;
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_get", body: { id: dealId } }, (resp) => {
-      if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) { deal = resp.data.deal; renderBody(); }
+      if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) { deal = resp.data.deal; engagement = mergeEngagement(deal.engagement, readEngagement()); renderBody(); }
     });
   }
   function convEl() {
@@ -437,6 +457,67 @@
     });
     return best || document.querySelector('main,[role="main"]') || document.body;
   }
+  // Read timing signals from what is visibly on the page (passive, no extra Fiverr requests).
+  function readEngagement() {
+    const e = { times: [], last_seen: "", local_time: "", timezone: "", observed_at: new Date().toISOString() };
+    const scope = convEl();
+    try {
+      scope.querySelectorAll("time[datetime],[datetime],[title],[aria-label],[data-ts],[data-timestamp]").forEach((el) => {
+        [el.getAttribute("datetime"), el.getAttribute("title"), el.getAttribute("aria-label"), el.getAttribute("data-ts"), el.getAttribute("data-timestamp")].forEach((c) => {
+          if (!c || c.length < 4 || c.length > 60) return;
+          const d = new Date(c); const ms = d.getTime();
+          if (!isNaN(ms) && d.getFullYear() > 2015 && ms <= Date.now() + 864e5) e.times.push(d.toISOString());
+        });
+      });
+    } catch (x) { /* ignore */ }
+    const txt = (scope.innerText || "").slice(0, 60000); let m;
+    const re12 = /\b(1[0-2]|0?[1-9]):([0-5][0-9])\s*([ap])\.?\s?m\.?\b/gi;
+    while ((m = re12.exec(txt))) { let hr = parseInt(m[1], 10) % 12; if (/p/i.test(m[3])) hr += 12; e.times.push("T" + String(hr).padStart(2, "0") + ":" + m[2]); }
+    const page = (document.body.innerText || "").slice(0, 40000);
+    if ((m = page.match(/last seen[^.\n]{0,40}ago/i)) || (m = page.match(/last seen[^.\n]{0,30}/i))) e.last_seen = m[0].replace(/\s+/g, " ").trim().slice(0, 60);
+    if ((m = page.match(/local time[^0-9]{0,12}(\d{1,2}:\d{2}\s*[ap]\.?\s?m\.?|\d{1,2}:\d{2})/i))) e.local_time = m[1].replace(/\s+/g, " ").trim();
+    if ((m = page.match(/\b(GMT|UTC)\s*([+\-]\s?\d{1,2}(?::?\d{2})?)/i))) e.timezone = (m[1] + m[2]).replace(/\s+/g, "").toUpperCase();
+    else if ((m = page.match(/\b(EST|EDT|PST|PDT|CST|CDT|MST|MDT|IST|GMT|UTC|CET|CEST|BST|AEST|AEDT|NZST|WAT|EAT|CAT|SAST|JST|KST|HKT|SGT|MSK|GST)\b/))) e.timezone = m[1];
+    e.times = Array.from(new Set(e.times)).slice(-300);
+    return e;
+  }
+  function mergeEngagement(prev, fresh) {
+    prev = prev && typeof prev === "object" ? prev : {}; fresh = fresh || {};
+    const times = Array.from(new Set([].concat(Array.isArray(prev.times) ? prev.times : [], Array.isArray(fresh.times) ? fresh.times : []))).slice(-400);
+    return { times, last_seen: fresh.last_seen || prev.last_seen || "", local_time: fresh.local_time || prev.local_time || "", timezone: fresh.timezone || prev.timezone || "", observed_at: fresh.observed_at || prev.observed_at || new Date().toISOString(), first_observed: prev.first_observed || fresh.observed_at || new Date().toISOString() };
+  }
+  function engagementHtml() {
+    if (!engagement) return "";
+    const e = engagement;
+    const dated = (e.times || []).filter((t) => t && t[0] !== "T").map((t) => new Date(t)).filter((d) => !isNaN(d.getTime()));
+    const hourly = new Array(24).fill(0); let count = 0;
+    (e.times || []).forEach((t) => {
+      let hr = -1;
+      if (t[0] === "T") hr = parseInt(t.slice(1, 3), 10);
+      else { const d = new Date(t); if (!isNaN(d.getTime())) hr = d.getHours(); }
+      if (hr >= 0 && hr < 24) { hourly[hr]++; count++; }
+    });
+    const band = (a, b) => { let s = 0; for (let i = a; i <= b; i++) s += hourly[i]; return s; };
+    const bands = [["morning", band(5, 11)], ["afternoon", band(12, 16)], ["evening", band(17, 21)], ["late night", band(22, 23) + band(0, 4)]];
+    bands.sort((a, b) => b[1] - a[1]);
+    const top = bands.filter((b) => b[1] > 0).slice(0, 2).map((b) => b[0]).join(" & ");
+    let last = "";
+    if (dated.length) { const mx = Math.max.apply(null, dated.map((d) => d.getTime())); const mins = Math.round((Date.now() - mx) / 60000); last = mins < 1 ? "just now" : mins < 60 ? mins + "m ago" : mins < 1440 ? Math.round(mins / 60) + "h ago" : Math.round(mins / 1440) + "d ago"; }
+    let h = `<div class="lbl" style="margin-top:0">⏱ Client timing &amp; availability</div>`;
+    const rows = [];
+    if (e.local_time) rows.push(["Their local time", esc(e.local_time) + (e.timezone ? ' <span class="muted">(' + esc(e.timezone) + ")</span>" : "")]);
+    else if (e.timezone) rows.push(["Time zone", esc(e.timezone)]);
+    if (last) rows.push(["Last message", last]);
+    if (e.last_seen) rows.push(["Status", esc(e.last_seen)]);
+    if (count && top) rows.push(["Usually messages", top + ` <span class="muted">(${count} seen)</span>`]);
+    if (!rows.length) {
+      h += `<p class="muted" style="margin:0 0 8px;font-size:10.5px">No timestamps detected on this page yet — Fiverr often hides them in hover tooltips. Right-click a message's time, Inspect, and paste me the element so I can lock onto it.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+      return h;
+    }
+    h += `<div class="sum" style="margin:0 0 5px">` + rows.map((r) => `<div style="display:flex;justify-content:space-between;gap:10px;margin:2px 0"><span class="muted">${r[0]}</span><span style="text-align:right">${r[1]}</span></div>`).join("") + `</div>`;
+    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">From timestamps visible in this chat${e.timezone ? "" : "; shown in your local time, so confirm their zone before reading the pattern literally"}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+    return h;
+  }
   function renderSync() {
     const el = root.getElementById("ss-sync"); if (!el) return;
     if (!dealId) { el.textContent = watching ? "live" : ""; return; }
@@ -447,8 +528,9 @@
   function autosave() {
     if (!dealId || !sameClient()) return;
     const conv = grabText(false); if (!conv || conv.length < 30) return;
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, conversation: conv, client_name: dealName || undefined } }, (resp) => {
-      if (resp && resp.ok && resp.data && resp.data.success) { syncedAt = Date.now(); renderSync(); }
+    engagement = mergeEngagement((deal && deal.engagement) || engagement, readEngagement());
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement } }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success) { if (deal) deal.engagement = engagement; syncedAt = Date.now(); renderSync(); }
     });
   }
   function maybeAutoEval() {
@@ -577,7 +659,7 @@
   }
   function openLead(handle) {
     navTo(handle);
-    view = "chat"; lastStrategy = null; deal = null; dealId = ""; replies = []; askResult = null; ops = {}; suggestedTools = []; siteUrl = ""; lastEvalLen = 0;
+    view = "chat"; lastStrategy = null; deal = null; dealId = ""; replies = []; askResult = null; ops = {}; suggestedTools = []; siteUrl = ""; lastEvalLen = 0; engagement = null;
     render();
     let tries = 0;
     const wait = () => { tries++; if (clientHandle() === handle || tries > 12) { findDeal(() => maybeEvalOnOpen()); return; } setTimeout(wait, 350); };
