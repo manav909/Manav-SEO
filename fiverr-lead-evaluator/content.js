@@ -121,7 +121,7 @@
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
   let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null, pendingTranscript = null, zoomTx = null;
-  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "";
+  let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "", chatObs = null, boundHandle = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
   // ---- detection ---------------------------------------------------------------
@@ -316,6 +316,7 @@
 
   function evaluate(forceSel, attempt) {
     attempt = attempt || 1;
+    const startHandle = clientHandle();
     const conv = grabText(forceSel);
     const body = root.getElementById("ss-body");
     const haveFiles = slots.some((s) => s.text);
@@ -325,6 +326,7 @@
     if (body) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
     lastEvalAt = Date.now(); evalCached = false; evalErr = "";
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, clean_conversation: conv, id: dealId } }, (resp) => {
+      if (clientHandle() !== startHandle) return; // switched clients mid-flight — drop this stale result so it does not bleed into the new client
       const b = root.getElementById("ss-body"); if (!b) return;
       const data = (resp && resp.data) || {};
       if (resp && resp.ok && data.success && data.strategy) {
@@ -626,13 +628,31 @@
     if (len - lastEvalLen > 200 && Date.now() - lastEvalAt > 90000) evaluate(false);
   }
   function watchChat() {
-    if (watching) return; watching = true;
     try {
-      const obs = new MutationObserver(() => { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => { autosave(); maybeAutoEval(); }, 3000); });
-      obs.observe(convEl(), { childList: true, subtree: true, characterData: true });
+      if (chatObs) chatObs.disconnect(); // re-point the observer at the CURRENT conversation — it is a different DOM node after a client switch
+      chatObs = new MutationObserver(() => { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => { autosave(); maybeAutoEval(); }, 3000); });
+      chatObs.observe(convEl(), { childList: true, subtree: true, characterData: true });
     } catch (e) { /* ignore */ }
-    setInterval(() => { autosave(); maybeAutoEval(); }, 25000); // backup for virtualized lists the observer can miss
+    if (!watching) { watching = true; setInterval(() => { autosave(); maybeAutoEval(); }, 25000); } // single backup timer for virtualized lists the observer can miss
     renderSync();
+  }
+
+  function rebindToClient() {
+    // a lead switch on Fiverr is a client-side route change (no page load) — wipe the previous client's analysis so nothing bleeds across, then bind live to the new client
+    lastStrategy = null; slots = []; replies = []; replyMsg = ""; askResult = null; askMsg = ""; suggestedTools = [];
+    dealId = ""; dealName = ""; deal = null; siteUrl = ""; competitors = ""; keywords = ""; ops = {}; docsOpen = false; engagement = null; zoomTx = null;
+    syncedAt = 0; lastEvalLen = 0; lastEvalAt = 0; evalCached = false; evalErr = "";
+    scan(); render();
+    findDeal(() => { maybeEvalOnOpen(); watchChat(); });
+  }
+
+  function watchRoute() {
+    boundHandle = clientHandle();
+    setInterval(() => {
+      const h = clientHandle();
+      if (h && h !== boundHandle) { boundHandle = h; if (open) rebindToClient(); } // live re-bind on lead switch — no reload, shows the cached verdict instantly then refreshes in the background
+      else if (!h && boundHandle) { boundHandle = ""; }
+    }, 800);
   }
   function mapTool(s) {
     s = String(s || "").toLowerCase();
@@ -836,5 +856,6 @@
     const s = root.getElementById("ss-sel"); if (s) s.onclick = () => evaluate(true);
   }
 
+  watchRoute();
   render();
 })();
