@@ -110,6 +110,17 @@ function aggBy(list: any[], key: string): Array<{ key: string; count: number; va
   return [...m.entries()].map(([k, v]) => ({ key: k, count: v.count, value: v.value })).sort((a, b) => b.count - a.count).slice(0, 12);
 }
 
+// Win rate by a dimension (country, client_type) across DECIDED deals only — the real "what converts" signal.
+function winRateBy(list: any[], key: string): Array<{ key: string; won: number; total: number; rate: number }> {
+  const m = new Map<string, { won: number; total: number }>();
+  for (const d of list) {
+    if (d.outcome !== "won" && d.outcome !== "lost") continue;
+    const k = (d[key] || "Unknown").toString().trim() || "Unknown";
+    const e = m.get(k) || { won: 0, total: 0 }; e.total++; if (d.outcome === "won") e.won++; m.set(k, e);
+  }
+  return [...m.entries()].map(([k, v]) => ({ key: k, won: v.won, total: v.total, rate: v.total ? Math.round((v.won / v.total) * 100) : 0 })).filter(x => x.total >= 1).sort((a, b) => b.total - a.total).slice(0, 10);
+}
+
 async function persistDiag(id: string, kind: string, name: string, text: string): Promise<void> {
   if (!id) return;
   try {
@@ -773,7 +784,8 @@ export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_hod_report") {
     try {
       const { data: deals } = await db().from("bd_deals").select("id, client_name, status, outcome, deal_value, industry, country, client_type, api_calls, created_at, updated_at, stage_history").limit(2000);
-      const { data: learnings } = await db().from("bd_learnings").select("*").order("created_at", { ascending: false }).limit(60);
+      let learnings: any[] = [];
+      try { const { data: lr } = await db().from("bd_learnings").select("*").order("created_at", { ascending: false }).limit(60); if (Array.isArray(lr)) learnings = lr; } catch { /* bd_learnings table may not be migrated — HoD still works without the per-deal outcome log */ }
       const list = (deals as any[]) || [];
       const now = Date.now();
       const won = list.filter(d => d.outcome === "won");
@@ -789,7 +801,19 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const convTimes = won.map(d => (new Date(d.updated_at).getTime() - new Date(d.created_at).getTime()) / 86400000).filter(x => x > 0);
       const avgConvDays = convTimes.length ? Math.round((convTimes.reduce((a, b) => a + b, 0) / convTimes.length) * 10) / 10 : 0;
       const hanging = active.filter(d => (now - new Date(d.updated_at).getTime()) > 4 * 86400000).map(d => ({ client_name: d.client_name, status: d.status, days: Math.floor((now - new Date(d.updated_at).getTime()) / 86400000) })).sort((a, b) => b.days - a.days).slice(0, 20);
-      return { success: true, report: { total: list.length, active: active.length, won: won.length, lost: lost.length, winRate, earnings, lostValue, totalApi, avgApi: list.length ? Math.round(totalApi / list.length) : 0, funnel, byIndustry: aggBy(list, "industry"), byCountry: aggBy(won, "country"), avgConvDays, hanging, learnings: learnings || [] } };
+      const byHour = Array(24).fill(0); // lead activity by hour, IST (UTC+5:30)
+      for (const d of list) { const t = d.created_at ? new Date(d.created_at).getTime() : 0; if (t) { const ist = new Date(t + 330 * 60000); byHour[ist.getUTCHours()]++; } }
+      const winByCountry = winRateBy(list, "country");
+      const winByType = winRateBy(list, "client_type");
+      let patterns: string[] = [];
+      try { const { data: st } = await db().from("bd_settings").select("value").eq("key", "lead_learnings").single(); const v: any = (st as any)?.value; if (v && Array.isArray(v.learnings)) patterns = v.learnings.map((x: any) => String(x)); } catch { /* none yet */ }
+      const todo: string[] = [];
+      if (hanging.length) todo.push(`Follow up on ${hanging.length} hanging lead${hanging.length === 1 ? "" : "s"} — the oldest has been quiet ${hanging[0].days} days.`);
+      for (const c of winByCountry.filter(c => c.total >= 3 && c.rate < 30 && c.key !== "Unknown").slice(0, 2)) todo.push(`${c.key}: only ${c.rate}% of ${c.total} decided deals won — consider deprioritising or tightening qualification.`);
+      for (const c of winByCountry.filter(c => c.total >= 3 && c.rate >= 50 && c.key !== "Unknown").slice(0, 1)) todo.push(`${c.key} converts well (${c.rate}% of ${c.total}) — prioritise leads from there.`);
+      if (decided >= 3 && winRate < 30) todo.push(`Overall win rate is ${winRate}% — tighten the early qualify/offer step; the patterns below show where deals slip.`);
+      if (lost.length && lostValue > earnings) todo.push(`Lost pipeline value exceeds won value — review the loss reasons below.`);
+      return { success: true, report: { total: list.length, active: active.length, won: won.length, lost: lost.length, winRate, earnings, lostValue, totalApi, avgApi: list.length ? Math.round(totalApi / list.length) : 0, funnel, byIndustry: aggBy(list, "industry"), byCountry: aggBy(won, "country"), winByCountry, winByType, byHour, patterns, todo, avgConvDays, hanging, learnings: learnings || [] } };
     } catch (e: any) { return { success: false, error: e?.message || "report failed" }; }
   }
 

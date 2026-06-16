@@ -21,8 +21,8 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
   );
 }
 
-function Bars({ rows, color = "#6366f1", fmt }: { rows: Array<{ label: string; n: number; meta?: string }>; color?: string; fmt?: (n: number) => string }) {
-  const max = Math.max(1, ...rows.map(r => r.n));
+function Bars({ rows, color = "#6366f1", fmt, max: maxProp }: { rows: Array<{ label: string; n: number; meta?: string }>; color?: string; fmt?: (n: number) => string; max?: number }) {
+  const max = maxProp ?? Math.max(1, ...rows.map(r => r.n));
   return (
     <div className="space-y-1.5">
       {rows.length === 0 && <p className="text-xs text-muted-foreground">No data yet.</p>}
@@ -75,7 +75,43 @@ export default function Hod() {
               <div className="text-xs text-muted-foreground">{r.winRate}% of decided deals won · {money(r.earnings)} earned · {money(r.lostValue)} lost</div>
             </div>
 
+            {(r.todo || []).length > 0 && (
+              <div className="rounded-2xl border p-4" style={{ borderColor: "#6366f155", background: "#6366f10a" }}>
+                <div className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: "#818cf8" }}>What to do now</div>
+                <ul className="space-y-1.5">
+                  {(r.todo || []).map((t: string, i: number) => <li key={i} className="text-xs text-foreground flex gap-2"><span style={{ color: "#818cf8" }}>▸</span><span>{t}</span></li>)}
+                </ul>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Lead activity by hour (IST)</div>
+                <div className="flex items-end gap-0.5 h-20">
+                  {(r.byHour || []).map((n: number, i: number) => { const mx = Math.max(1, ...(r.byHour || [1])); return <div key={i} title={`${i}:00 — ${n} lead${n === 1 ? "" : "s"}`} className="flex-1 rounded-t" style={{ height: `${Math.round((n / mx) * 100)}%`, background: "#6366f1aa", minHeight: n ? 2 : 0 }} />; })}
+                </div>
+                <div className="flex justify-between text-[9px] text-muted-foreground mt-1"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
+              </div>
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Win rate by region (decided deals)</div>
+                {(r.winByCountry || []).filter((c: any) => c.key !== "Unknown").length === 0 ? <p className="text-xs text-muted-foreground">Not enough decided deals yet.</p> : <Bars rows={(r.winByCountry || []).filter((c: any) => c.key !== "Unknown").map((c: any) => ({ label: c.key, n: c.rate, meta: `${c.won}/${c.total}` }))} max={100} color="#10b981" fmt={(n: number) => `${n}%`} />}
+              </div>
+            </div>
+
+            {(r.winByType || []).filter((c: any) => c.key !== "Unknown").length > 0 && (
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Win rate by client type</div>
+                <Bars rows={(r.winByType || []).filter((c: any) => c.key !== "Unknown").map((c: any) => ({ label: c.key, n: c.rate, meta: `${c.won}/${c.total}` }))} max={100} color="#06b6d4" fmt={(n: number) => `${n}%`} />
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-border bg-card p-4">
+                <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">What works for you</div>
+                <div className="space-y-1.5 max-h-72 overflow-y-auto">
+                  {(r.patterns || []).length === 0 ? <p className="text-xs text-muted-foreground">No patterns yet — open the Deals page, hit 🧠 Learnings → "Learn from my deals."</p> : (r.patterns || []).map((p: string, i: number) => <div key={i} className="text-xs text-foreground flex gap-2"><span className="text-primary">•</span><span>{p}</span></div>)}
+                </div>
+              </div>
               <div className="rounded-2xl border border-border bg-card p-4">
                 <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Pipeline funnel</div>
                 <Bars rows={(r.funnel || []).map((f: any) => ({ label: f.stage, n: f.count }))} />
