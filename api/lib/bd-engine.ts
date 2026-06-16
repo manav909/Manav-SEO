@@ -247,18 +247,19 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (typeof body?.notes === "string") upd.notes = body.notes.slice(0, 8000);
     try {
       let { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
+      let degraded: string[] = [];
       if (error && /column|schema cache|does not exist/i.test(String(error.message || ""))) {
-        // a newer optional column (engagement / client_site) may not exist in this database yet — never let that block the core save, since chat sync depends on it
-        const core: any = { updated_at: upd.updated_at };
-        if ("conversation" in upd) { core.conversation = upd.conversation; core.last_message_at = upd.last_message_at; }
-        if ("status" in upd) core.status = upd.status;
-        if ("tags" in upd) core.tags = upd.tags;
-        if ("client_name" in upd) core.client_name = upd.client_name;
-        ({ data, error } = await db().from("bd_deals").update(core).eq("id", id).select().single());
+        // A newer optional column (engagement / client_site) is not in this database yet. Strip ONLY those
+        // and keep everything else (notes, status, tags, conversation) so nothing is collaterally lost, and
+        // report what was dropped so the loss is never silent. Run the bd_deals migration to stop this.
+        const safe: any = { ...upd };
+        if ("engagement" in safe) { delete safe.engagement; degraded.push("engagement"); }
+        if ("client_site" in safe) { delete safe.client_site; degraded.push("client_site"); }
+        ({ data, error } = await db().from("bd_deals").update(safe).eq("id", id).select().single());
       }
       if (error) return { success: false, error: error.message };
       if (upd.status) appendStage(id, upd.status);
-      return { success: true, deal: data };
+      return { success: true, deal: data, ...(degraded.length ? { degraded } : {}) };
     } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
   }
 
