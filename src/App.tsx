@@ -41,6 +41,7 @@ import Workspace      from "./pages/Workspace";
 import Wizard         from "./pages/Wizard";
 import Deals          from "./pages/Deals";
 import Hod            from "./pages/Hod";
+import Vault          from "./pages/Vault";
 import Playground     from './pages/Playground';
 import AlgorithmIntel from './pages/AlgorithmIntel';
 import SystemControl  from './pages/SystemControl';
@@ -170,6 +171,7 @@ const AppRoutes = () => {
           <Route path="/wizard" element={<B name="wizard"><Wizard /></B>} />
           <Route path="/deals" element={<B name="deals"><Deals /></B>} />
           <Route path="/hod" element={<B name="hod"><Hod /></B>} />
+          <Route path="/vault" element={<B name="vault"><Vault /></B>} />
           <Route path="/presentation/:token" element={<PresentationView />} />
           <Route path="/client-comms" element={<ClientComms />} />
           <Route path="/profile/:id" element={<StaffProfile />} />

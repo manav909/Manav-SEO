@@ -17,6 +17,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { computeActivity, digestOf, vaultAsk, vaultReport, VaultDigest } from "./vault-engine.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
@@ -120,6 +121,16 @@ function winRateBy(list: any[], key: string): Array<{ key: string; won: number; 
   }
   return [...m.entries()].map(([k, v]) => ({ key: k, won: v.won, total: v.total, rate: v.total ? Math.round((v.won / v.total) * 100) : 0 })).filter(x => x.total >= 1).sort((a, b) => b.total - a.total).slice(0, 10);
 }
+
+// Render one lead digest into a compact line the LLM can read (empties dropped).
+function vaultDigestLine(dg: VaultDigest): string {
+  const bits = [dg.name + (dg.handle ? ` (@${dg.handle})` : ""), dg.status, dg.temperature, dg.health, dg.country, dg.value ? `$${dg.value}` : "", dg.idleDays != null ? `idle ${dg.idleDays}d` : ""].filter(Boolean);
+  let line = bits.join(" · ");
+  if (dg.next_move) line += ` · next: ${dg.next_move}`;
+  if (dg.summary) line += ` — ${dg.summary}`;
+  return line;
+}
+
 
 async function persistDiag(id: string, kind: string, name: string, text: string): Promise<void> {
   if (!id) return;
@@ -821,6 +832,94 @@ export async function handleBd(action: string, body: any): Promise<any> {
       if (lost.length && lostValue > earnings) todo.push(`Lost pipeline value exceeds won value — review the loss reasons below.`);
       return { success: true, report: { total: list.length, active: active.length, won: won.length, lost: lost.length, winRate, earnings, lostValue, totalApi, avgApi: list.length ? Math.round(totalApi / list.length) : 0, funnel, byIndustry: aggBy(list, "industry"), byCountry: aggBy(won, "country"), winByCountry, winByType, byHour, patterns, todo, avgConvDays, hanging, learnings: learnings || [] } };
     } catch (e: any) { return { success: false, error: e?.message || "report failed" }; }
+  }
+
+  if (action === "bd_vault_ask") {
+    const question = String(body?.question || "").trim();
+    if (!question) return { success: false, error: "Ask a question." };
+    const config = body?.config || {};
+    const history = String(body?.history || "").slice(0, 4000);
+    let target = String(body?.client || "").trim();
+    // if no client was named, try to detect a known client name/handle inside the question
+    if (!target) {
+      try {
+        const { data: roster } = await db().from("bd_deals").select("client_name, client_handle").limit(2000);
+        const ql = question.toLowerCase();
+        const hit = ((roster as any[]) || []).find((n) => (n.client_handle && ql.includes(String(n.client_handle).toLowerCase())) || (n.client_name && String(n.client_name).trim().length > 2 && ql.includes(String(n.client_name).toLowerCase())));
+        if (hit) target = String(hit.client_handle || hit.client_name);
+      } catch { /* roster read failed — fall through to population */ }
+    }
+    if (target) {
+      const safe = target.replace(/[%,]/g, "");
+      const { data: rows } = await db().from("bd_deals").select("*").or(`client_name.ilike.%${safe}%,client_handle.ilike.%${safe}%`).limit(1);
+      const d = ((rows as any[]) || [])[0];
+      if (d) {
+        const s = d.strategy && typeof d.strategy === "object" ? d.strategy : {};
+        const ctx = [
+          `Client: ${d.client_name || d.client_handle} (@${d.client_handle || ""})`,
+          `Status: ${d.status || ""} · Outcome: ${d.outcome || "open"} · Value: ${d.deal_value || 0} · Country: ${d.country || "unknown"} · Industry: ${d.industry || ""} · Type: ${d.client_type || ""}`,
+          s.verdict ? `Verdict: ${JSON.stringify(s.verdict)}` : "",
+          s.deal_state ? `Deal state: ${JSON.stringify(s.deal_state)}` : "",
+          s.client_intel ? `Client intel: ${JSON.stringify(s.client_intel)}` : "",
+          s.deal_facts ? `Deal facts: ${JSON.stringify(s.deal_facts)}` : "",
+          d.notes ? `Operator notes: ${String(d.notes).slice(0, 1500)}` : "",
+          Array.isArray(d.attachments) && d.attachments.length ? `Attachments on file: ${d.attachments.map((a: any) => (a.kind || "doc") + (a.label ? ":" + a.label : "")).join(", ")}` : "",
+          d.conversation ? `Conversation (most recent excerpt):\n${String(d.conversation).slice(-6000)}` : "",
+        ].filter(Boolean).join("\n");
+        const r = await vaultAsk({ question, scope: "client", context: ctx, history, config });
+        return { success: true, answer: r.answer, used: [String(d.client_name || d.client_handle)] };
+      }
+    }
+    // population
+    try {
+      const { data: all } = await db().from("bd_deals").select("id, client_name, client_handle, status, outcome, deal_value, country, industry, client_type, created_at, updated_at, last_message_at, strategy").limit(2000);
+      const now = Date.now();
+      const digs = ((all as any[]) || []).map((d) => digestOf(d, now)).sort((a, b) => (a.idleDays == null ? 1 : a.idleDays) - (b.idleDays == null ? 1 : b.idleDays));
+      const lines = digs.slice(0, 120).map(vaultDigestLine).join("\n");
+      const ctx = `Total leads on file: ${digs.length}. Showing the ${Math.min(120, digs.length)} most recently active.\n${lines}`;
+      const r = await vaultAsk({ question, scope: "population", context: ctx, history, config });
+      return { success: true, answer: r.answer, used: [] };
+    } catch (e: any) { return { success: false, error: e?.message || "Could not read the lead data." }; }
+  }
+
+  if (action === "bd_vault_report") {
+    const kind = String(body?.kind || "daily");
+    const scope = body?.scope || {};
+    const config = body?.config || {};
+    const force = !!body?.force;
+    const now = Date.now();
+    const windows: Record<string, number> = { hourly: 3600000, daily: 86400000, weekly: 7 * 86400000 };
+    const span = windows[kind] || 86400000;
+    const startMs = now - span;
+    const windowLabel = kind === "hourly" ? "last hour" : kind === "weekly" ? "last 7 days" : "last 24 hours";
+    const scopeKey = `${kind}|${scope.status || "all"}|${scope.country || "all"}|${scope.problem || "all"}`;
+    // serve the most recent cached report for this scope if it is still fresh (half the window), unless forced
+    if (!force) {
+      try {
+        const freshAfter = new Date(now - Math.min(span, 86400000) / 2).toISOString();
+        const { data: cached } = await db().from("vault_reports").select("*").eq("scope", scopeKey).gte("created_at", freshAfter).order("created_at", { ascending: false }).limit(1);
+        const c = ((cached as any[]) || [])[0];
+        if (c) return { success: true, report: { kind, windowLabel, scopeKey, stats: c.stats, narrative: c.narrative, generated_at: c.created_at, cached: true } };
+      } catch { /* vault_reports may not be migrated yet — compute fresh */ }
+    }
+    let list: any[] = [];
+    try {
+      const { data: deals } = await db().from("bd_deals").select("id, client_name, client_handle, status, outcome, deal_value, country, industry, client_type, created_at, updated_at, last_message_at, strategy, stage_history").limit(2000);
+      list = (deals as any[]) || [];
+    } catch (e: any) { return { success: false, error: e?.message || "Could not read the lead data." }; }
+    if (scope.status && scope.status !== "all") list = list.filter((d) => String(d.status || "") === scope.status);
+    if (scope.country && scope.country !== "all") list = list.filter((d) => String(d.country || "").toLowerCase().includes(String(scope.country).toLowerCase()));
+    const stats = computeActivity(list, startMs, now);
+    let attention = stats.inPlay;
+    if (scope.problem === "hanging") attention = stats.hanging;
+    else if (scope.problem === "at_risk") attention = stats.atRisk;
+    else if (scope.problem === "hot") attention = stats.hot;
+    const digestText = attention.slice(0, 40).map(vaultDigestLine).join("\n") || "No leads match this filter for this period.";
+    const scopeLabel = `${windowLabel}${scope.status && scope.status !== "all" ? " · status=" + scope.status : ""}${scope.country && scope.country !== "all" ? " · country=" + scope.country : ""}${scope.problem && scope.problem !== "all" ? " · focus=" + scope.problem : ""}`;
+    const r = await vaultReport({ kind, windowLabel, scopeLabel, stats, digests: digestText, config });
+    const generated_at = new Date().toISOString();
+    try { await db().from("vault_reports").insert({ kind, scope: scopeKey, window_start: new Date(startMs).toISOString(), window_end: new Date(now).toISOString(), params: scope, stats, narrative: r.narrative, created_at: generated_at }); } catch { /* table may not exist — report still returned, just not cached */ }
+    return { success: true, report: { kind, windowLabel, scopeKey, stats, narrative: r.narrative, generated_at, cached: false } };
   }
 
   return { success: false, error: `Unknown bd action: ${action}` };
