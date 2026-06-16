@@ -215,6 +215,20 @@
     if (temp) h += `<span class="pill ${temp === "hot" ? "hot" : temp === "warm" ? "warm" : "cold"}">${esc(ds.temperature)}</span>`;
     if (s.detected_client) h += `<span class="muted">${esc(s.detected_client)}</span>`;
     h += `</div>`;
+    const v = s.verdict || {};
+    const vHead = v.headline || ds.summary || "";
+    if (vHead || v.next_move || v.play || v.scope_change) {
+      const hl = String(v.health || "").toLowerCase();
+      const hColor = hl === "at_risk" ? "#ef4444" : hl === "watch" ? "#f59e0b" : hl === "healthy" ? "#22c55e" : "#6366f1";
+      const hLabel = hl === "at_risk" ? "At risk" : hl === "watch" ? "Watch" : hl === "healthy" ? "Healthy" : "";
+      h += `<div style="background:#0e1322;border:1px solid #6366f155;border-left:3px solid ${hColor};border-radius:9px;padding:9px 11px;margin:4px 0 8px">`;
+      if (vHead) h += `<div style="font-size:12.5px;font-weight:700;color:#f0f1f8;line-height:1.35">${esc(vHead)}</div>`;
+      if (hLabel || v.health_reason) h += `<div style="margin-top:5px;font-size:11px;color:#cfd3e6"><b style="color:${hColor}">${esc(hLabel)}</b>${v.health_reason ? ` — ${esc(v.health_reason)}` : ""}</div>`;
+      if (v.scope_change) h += `<div style="margin-top:5px;font-size:11px;color:#cfd3e6"><b style="color:#aeb3c9">Scope:</b> ${esc(v.scope_change)}</div>`;
+      if (v.next_move) h += `<div style="margin-top:5px;font-size:11.5px;color:#e7e9f3"><b style="color:#818cf8">Next:</b> ${esc(v.next_move)}</div>`;
+      if (v.play) h += `<div style="margin-top:3px;font-size:11px;color:#cfd3e6"><b style="color:#aeb3c9">Play:</b> ${esc(v.play)}</div>`;
+      h += `</div>`;
+    }
     if (evalCached) h += `<div class="muted" style="font-size:10.5px;margin:2px 0 6px">Saved analysis from last time — nothing new in the chat. Tap <b>Evaluate</b> to refresh.</div>`;
     if (s.draft_reply) h += `<div class="lbl">Say this next</div><textarea class="saynext" style="width:100%;height:84px;background:#0c0f1a;border:1px solid #6366f155;border-radius:7px;color:#e7e9f3;padding:7px;font-size:11.5px;resize:vertical">${esc(stripMd(s.draft_reply))}</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="sayins" style="cursor:pointer;border:none;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#4f46e5;color:#fff">Insert into Fiverr</button><button class="saycpy" style="cursor:pointer;border:1px solid #262b3d;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600;background:#1a1f33;color:#aeb3c9">Copy</button></div>`;
     if (s.next_move) h += `<div class="lbl">Why / next move</div><div class="next">${esc(s.next_move)}</div>`;

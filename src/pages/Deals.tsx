@@ -793,12 +793,28 @@ export default function Deals() {
             <div className="px-4 py-2">
               {/* always-visible summary */}
               {strategy && (
-                <div className="pb-3 border-b border-border">
-                  <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                <div className="pb-3 border-b border-border space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <Chip text={strategy.deal_state?.stage} color={stageColor(strategy.deal_state?.stage)} />
                     {strategy.deal_state?.temperature && <Chip text={strategy.deal_state.temperature} color={tempColor(strategy.deal_state.temperature)} />}
                   </div>
-                  {strategy.deal_state?.summary && <p className="text-xs text-muted-foreground">{strategy.deal_state.summary}</p>}
+                  {(() => {
+                    const v = strategy.verdict || {};
+                    const head = v.headline || strategy.deal_state?.summary || "";
+                    if (!(head || v.next_move || v.play || v.scope_change)) return null;
+                    const hl = String(v.health || "").toLowerCase();
+                    const hColor = hl === "at_risk" ? "#ef4444" : hl === "watch" ? "#f59e0b" : hl === "healthy" ? "#22c55e" : "#6366f1";
+                    const hLabel = hl === "at_risk" ? "At risk" : hl === "watch" ? "Watch" : hl === "healthy" ? "Healthy" : "";
+                    return (
+                      <div className="rounded-lg border bg-card p-2.5 text-xs space-y-1.5" style={{ borderLeftWidth: 3, borderLeftColor: hColor }}>
+                        {head && <p className="text-sm font-semibold text-foreground leading-snug">{head}</p>}
+                        {(hLabel || v.health_reason) && <p className="text-muted-foreground"><span style={{ color: hColor }} className="font-semibold">{hLabel}</span>{v.health_reason ? ` — ${v.health_reason}` : ""}</p>}
+                        {v.scope_change && <p className="text-muted-foreground"><span className="font-semibold text-foreground/70">Scope:</span> {v.scope_change}</p>}
+                        {v.next_move && <p className="text-foreground"><span className="font-semibold text-primary">Next:</span> {v.next_move}</p>}
+                        {v.play && <p className="text-muted-foreground"><span className="font-semibold text-foreground/70">Play:</span> {v.play}</p>}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
