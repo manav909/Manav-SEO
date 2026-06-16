@@ -5,6 +5,8 @@
    Backend: bd_vault_ask / bd_vault_report / bd_vault_gaps / bd_vault_train. */
 import { useState, useEffect, useRef } from "react";
 import PortalNav from "@/components/PortalNav";
+import ArtifactMarkdown from "@/components/pm/ArtifactMarkdown";
+import { openStakeholderReport, downloadStakeholderAsWord } from "@/lib/reportExport";
 
 async function post(action: string, body: any = {}) {
   const r = await fetch("/api/task-engine", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...body }) });
@@ -19,6 +21,26 @@ function ago(iso: string): string {
   const t = new Date(iso).getTime(); if (isNaN(t)) return "";
   const m = Math.round((Date.now() - t) / 60000);
   return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago";
+}
+
+function cap(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+
+// Compose a complete report document (numbers + narrative + named lead lists) as Markdown for export.
+function reportToMarkdown(rep: any): string {
+  const c = (rep.stats && rep.stats.counts) || {};
+  const out: string[] = [];
+  out.push(`**Snapshot (${rep.windowLabel}):** ${c.newLeads || 0} new · ${c.touched || 0} active in play · ${c.statusChanges || 0} status changes · ${c.won || 0} won · ${c.lost || 0} lost · ${c.active || 0} total active`);
+  out.push("");
+  out.push(rep.narrative || "");
+  const sec = (title: string, arr: any[]) => {
+    if (!arr || !arr.length) return;
+    out.push("", `## ${title}`);
+    for (const d of arr.slice(0, 20)) out.push(`- **${d.name}** — ${d.status}${d.country ? " · " + d.country : ""}${d.value ? " · $" + d.value : ""}${d.idleDays != null ? " · idle " + d.idleDays + "d" : ""}${d.next_move ? " — next: " + d.next_move : ""}`);
+  };
+  sec("Hanging leads", rep.stats && rep.stats.hanging);
+  sec("At-risk leads", rep.stats && rep.stats.atRisk);
+  sec("Hot leads", rep.stats && rep.stats.hot);
+  return out.join("\n");
 }
 
 export default function Vault() {
@@ -158,6 +180,13 @@ export default function Vault() {
     ) : null
   );
 
+  const exportBar = (md: string, meta: { title: string; kind: string; generatedAt?: string }) => (
+    <div className="flex gap-2 items-center">
+      <button onClick={() => openStakeholderReport(md, meta)} title="Opens a print-ready, branded page — use your browser Print, then Save as PDF" className="px-3 py-1.5 rounded-lg bg-primary/90 text-primary-foreground text-xs font-semibold hover:bg-primary">Export PDF</button>
+      <button onClick={() => downloadStakeholderAsWord(md, meta)} title="Download an editable Word document" className="px-3 py-1.5 rounded-lg bg-card border border-border text-xs text-muted-foreground hover:text-foreground">Word</button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
@@ -180,6 +209,7 @@ export default function Vault() {
                 {roster.map((d, i) => <option key={i} value={d.client_handle || d.client_name || ""}>{d.client_name || d.client_handle}</option>)}
               </select>
               <span className="text-[11px] text-muted-foreground">or just name a client in your question</span>
+              {msgs.length ? <div className="ml-auto">{exportBar(msgs.map((m) => m.role === "you" ? `## Q: ${m.text}` : m.text + (m.used && m.used.length ? `\n\n*Source: ${m.used.join(", ")}*` : "")).join("\n\n---\n\n"), { title: "Vault — Conversation", kind: "Client Intelligence Q&A", generatedAt: new Date().toISOString() })}</div> : null}
             </div>
 
             <div className="min-h-[320px] max-h-[52vh] overflow-y-auto space-y-3 mb-3 pr-1">
@@ -190,8 +220,8 @@ export default function Vault() {
               )}
               {msgs.map((m, i) => (
                 <div key={i} className={`flex ${m.role === "you" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap ${m.role === "you" ? "bg-primary text-primary-foreground" : "bg-card border border-border"}`}>
-                    {m.text}
+                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${m.role === "you" ? "bg-primary text-primary-foreground whitespace-pre-wrap" : "bg-card border border-border"}`}>
+                    {m.role === "vault" ? <ArtifactMarkdown body={m.text} size="sm" /> : m.text}
                     {m.used && m.used.length ? <div className="text-[11px] mt-2 opacity-70">on: {m.used.join(", ")}</div> : null}
                   </div>
                 </div>
@@ -249,7 +279,10 @@ export default function Vault() {
 
             {report && !report.error && (
               <>
-                <div className="text-xs text-muted-foreground">{report.windowLabel} · {report.cached ? "prepared " + ago(report.generated_at) : "generated " + ago(report.generated_at)}{cfg.auto > 0 ? " · auto every " + (cfg.auto < 60 ? cfg.auto + "m" : cfg.auto / 60 + "h") : ""}</div>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-xs text-muted-foreground">{report.windowLabel} · {report.cached ? "prepared " + ago(report.generated_at) : "generated " + ago(report.generated_at)}{cfg.auto > 0 ? " · auto every " + (cfg.auto < 60 ? cfg.auto + "m" : cfg.auto / 60 + "h") : ""}</div>
+                  {exportBar(reportToMarkdown(report), { title: cap(report.kind || "Daily") + " Report", kind: "Vault Report", generatedAt: report.generated_at })}
+                </div>
                 {c && (
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
                     {statCard("New leads", c.newLeads, "text-emerald-400")}
@@ -260,7 +293,7 @@ export default function Vault() {
                     {statCard("Total active", c.active)}
                   </div>
                 )}
-                <div className="rounded-2xl border border-border bg-card p-4 text-sm whitespace-pre-wrap leading-relaxed">{report.narrative}</div>
+                <div className="rounded-2xl border border-border bg-card p-5"><ArtifactMarkdown body={report.narrative} /></div>
                 <div className="grid md:grid-cols-3 gap-3">
                   {attentionList("Hanging", stats.hanging, "text-amber-400")}
                   {attentionList("At risk", stats.atRisk, "text-rose-400")}
@@ -300,8 +333,11 @@ export default function Vault() {
             {coach && coach.error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">{coach.error}</div>}
             {coach && !coach.error && (
               <>
-                <div className="text-xs text-muted-foreground">Reviewed {coach.count} recent conversation{coach.count === 1 ? "" : "s"}</div>
-                <div className="rounded-2xl border border-border bg-card p-4 text-sm whitespace-pre-wrap leading-relaxed">{coach.analysis}</div>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-xs text-muted-foreground">Reviewed {coach.count} recent conversation{coach.count === 1 ? "" : "s"}</div>
+                  {exportBar(`Reviewed ${coach.count} recent conversation${coach.count === 1 ? "" : "s"}.\n\n${coach.analysis}`, { title: "Team Coaching — Handling Analysis", kind: "Vault Coaching", generatedAt: new Date().toISOString() })}
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-5"><ArtifactMarkdown body={coach.analysis} /></div>
               </>
             )}
             {!coach && !coachLoading && <div className="text-sm text-muted-foreground p-4">Analyse handling to see the recurring gaps across your BDM conversations — slow first response, ignored buying signals, no clear next step, missed upsells, weak objection handling — each grounded in the real chats, with the fix.</div>}
@@ -323,8 +359,11 @@ export default function Vault() {
             {train && train.error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">{train.error}</div>}
             {train && !train.error && (
               <>
-                <div className="text-xs text-muted-foreground">Tutorial from {train.client}{train.hasCall ? " · chat + call" : " · chat (no call transcript on file)"}</div>
-                <div className="rounded-2xl border border-border bg-card p-5 text-sm whitespace-pre-wrap leading-relaxed">{train.tutorial}</div>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="text-xs text-muted-foreground">Tutorial from {train.client}{train.hasCall ? " · chat + call" : " · chat (no call transcript on file)"}</div>
+                  {exportBar(train.tutorial, { title: "Training Tutorial — " + train.client, kind: "Vault Training", generatedAt: new Date().toISOString() })}
+                </div>
+                <div className="rounded-2xl border border-border bg-card p-5"><ArtifactMarkdown body={train.tutorial} /></div>
               </>
             )}
             {!train && !trainLoading && <div className="text-sm text-muted-foreground p-4">Name a real client and Vault builds a training tutorial from their actual conversation — the scenario, the key moments quoted, what was handled well, what was missed, the better move, and the principle — for chat and call.</div>}
