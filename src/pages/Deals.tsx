@@ -255,6 +255,9 @@ export default function Deals() {
   const [showPrio, setShowPrio] = useState(false);
   const [deprioInput, setDeprioInput] = useState("bangladesh, pakistan, india");
   const [notesInput, setNotesInput] = useState("");
+  const [showLearn, setShowLearn] = useState(false);
+  const [learnText, setLearnText] = useState("");
+  const [learnBusy, setLearnBusy] = useState(false);
   const [autoAnalyse, setAutoAnalyse] = useState(true);
   const [lastAnalysed, setLastAnalysed] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -328,6 +331,10 @@ export default function Deals() {
     if (r.deal) setSelected(r.deal);
     setNotice("Your context saved — the analysis and replies will use it.");
   };
+  const loadLearnings = async () => { try { const r: any = await post("bd_settings_get", { key: "lead_learnings" }); if (r?.success && r.value && Array.isArray(r.value.learnings)) setLearnText(r.value.learnings.join("\n")); } catch { /* ignore */ } };
+  const runLearn = async () => { setLearnBusy(true); setError(""); const r: any = await post("bd_learn", {}); setLearnBusy(false); if (!r?.success) { setError(r?.error || "Could not learn from your deals."); return; } setLearnText((r.learnings || []).join("\n")); setNotice(`Learned from ${r.analysed} deals — review and tweak below, then Save.`); };
+  const saveLearnings = async () => { const list = learnText.split("\n").map(s => s.trim()).filter(Boolean); const r: any = await post("bd_settings_set", { key: "lead_learnings", value: { learnings: list } }); if (!r?.success) { setError(r?.error || "Could not save learnings."); return; } setShowLearn(false); setNotice("Learnings saved — future analyses and replies will use them."); };
+  useEffect(() => { if (showLearn) loadLearnings(); /* eslint-disable-next-line */ }, [showLearn]);
   useEffect(() => { (async () => { try { const r: any = await post("bd_settings_get", { key: "lead_priority" }); if (r?.success && r.value && Array.isArray(r.value.deprioritized)) setDeprioInput(r.value.deprioritized.join(", ")); } catch { /* ignore */ } })(); /* eslint-disable-next-line */ }, []);
 
   const applyStrategy = (s: any) => { setStrategy(s); setReplyDraft(s?.draft_reply || ""); };
@@ -593,11 +600,19 @@ export default function Deals() {
           <div className="flex items-center justify-between mb-2.5">
             <h2 className="text-[13px] font-semibold tracking-tight">Conversations</h2>
             <div className="flex items-center gap-1.5">
+              <button onClick={() => setShowLearn(v => !v)} title="What the AI has learned about how you sell — edit in plain English" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40">🧠 Learnings</button>
               <button onClick={() => setShowPrio(v => !v)} title="Choose which client regions to deprioritise" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40">⚙ Priority</button>
               <button onClick={dedupeDeals} disabled={busy === "dedupe"} title="Merge duplicate deals for the same client into one" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-50">{busy === "dedupe" ? "Merging…" : "Clean up dupes"}</button>
               <button onClick={newDeal} className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium shadow-sm hover:shadow transition-shadow">+ New</button>
             </div>
           </div>
+          {showLearn && (
+            <div className="mb-2 rounded-lg border border-border bg-background/60 p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-2"><div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">What works for you (one per line — editable)</div><button onClick={runLearn} disabled={learnBusy} className="text-[10px] px-2 py-1 rounded-md border border-primary/40 text-primary font-semibold disabled:opacity-50 whitespace-nowrap">{learnBusy ? "Learning…" : "Learn from my deals"}</button></div>
+              <textarea value={learnText} onChange={e => setLearnText(e.target.value)} placeholder="Click 'Learn from my deals' to draft these from your won/lost chats and calls, or write your own — one learning per line." className="w-full h-32 px-2.5 py-1.5 rounded-md border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+              <div className="flex items-center gap-2"><button onClick={saveLearnings} className="text-[10px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold">Save</button><button onClick={() => setShowLearn(false)} className="text-[10px] px-2 py-1 rounded-md border border-border text-muted-foreground">Cancel</button><span className="text-[9.5px] text-muted-foreground">Fed into every analysis and reply as your proven patterns.</span></div>
+            </div>
+          )}
           {showPrio && (
             <div className="mb-2 rounded-lg border border-border bg-background/60 p-2.5 space-y-1.5">
               <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Deprioritise leads from (comma-separated countries)</div>

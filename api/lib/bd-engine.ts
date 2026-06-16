@@ -78,6 +78,16 @@ async function leadPriorityFor(country: string): Promise<{ priority: string; rea
   if (total >= 3 && won / total >= 0.4) return { priority: "high", reason: `Strong region for you.${convNote}` };
   return { priority: "normal", reason: convNote.trim() };
 }
+
+// The seller's learned patterns (from bd_learn), injected into strategize + ask so advice tracks what works for THEM.
+async function learningsContext(): Promise<string> {
+  try {
+    const { data } = await db().from("bd_settings").select("value").eq("key", "lead_learnings").single();
+    const v: any = (data as any)?.value;
+    if (v && Array.isArray(v.learnings) && v.learnings.length) return v.learnings.map((x: any) => `- ${String(x)}`).join("\n");
+  } catch { /* none yet */ }
+  return "";
+}
 function noteCall(id: string) { if (id) bumpApiCalls(id).catch(() => { }); }
 
 async function bumpApiCalls(id: string, n = 1): Promise<void> {
@@ -245,6 +255,27 @@ export async function handleBd(action: string, body: any): Promise<any> {
       if (error) return { success: false, error: error.message };
       return { success: true };
     } catch (e: any) { return { success: false, error: e?.message || "settings save failed" }; }
+  }
+
+  if (action === "bd_learn") {
+    try {
+      const { data } = await db().from("bd_deals").select("client_name, country, outcome, deal_value, status, conversation, strategy, attachments").order("updated_at", { ascending: false }).limit(60);
+      const rows = (Array.isArray(data) ? data : []).filter((d: any) => String(d.conversation || "").length > 200);
+      if (!rows.length) return { success: false, error: "No deals with enough conversation yet to learn from. Sync a few client chats first." };
+      const deals = rows.slice(0, 25).map((d: any) => ({
+        name: String(d.client_name || ""), country: String(d.country || ""), outcome: String(d.outcome || ""), value: String(d.deal_value || ""), status: String(d.status || ""),
+        conversation: String(d.conversation || ""), facts: JSON.stringify(d.strategy?.deal_facts || {}),
+        transcripts: Array.isArray(d.attachments) ? d.attachments.filter((a: any) => a.kind === "transcript" || a.kind === "call").map((a: any) => String(a.text || "")).join("\n").slice(0, 4000) : "",
+      }));
+      let existing: string[] = [];
+      try { const { data: st } = await db().from("bd_settings").select("value").eq("key", "lead_learnings").single(); const v: any = (st as any)?.value; if (v && Array.isArray(v.learnings)) existing = v.learnings.map((x: any) => String(x)); } catch { /* none yet */ }
+      const { learnFromDeals } = await import("./bd-strategist.js");
+      const r = await learnFromDeals(deals, existing);
+      if (!r.ok) return { success: false, error: r.error };
+      try { await db().from("bd_settings").upsert({ key: "lead_learnings", value: { learnings: r.learnings, updated_at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: "key" }); }
+      catch (e: any) { return { success: false, error: "Learned, but could not save (run the bd_settings migration): " + (e?.message || "") }; }
+      return { success: true, learnings: r.learnings, analysed: deals.length };
+    } catch (e: any) { return { success: false, error: e?.message || "learn failed" }; }
   }
 
   if (action === "bd_dedupe_deals") {
@@ -629,7 +660,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
     try {
       const { askExpert } = await import("./bd-strategist.js");
-      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary, callScript: c.callScript, operatorContext: c.operatorContext });
+      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary, callScript: c.callScript, operatorContext: c.operatorContext, learnings: await learningsContext() });
       if (!r.ok) return { success: false, error: r.error };
       return { success: true, answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools };
     } catch (e: any) { return { success: false, error: e?.message || "ask failed" }; }
@@ -688,7 +719,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
         const fromAtt = deal.attachments.map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 12000)}`).join("\n\n");
         context = fromAtt + (context ? "\n\n" + context : "");
       }
-      const r = await strategizeDeal({ conversation, brief, clientName, context, operatorContext: String(deal?.notes || "") });
+      const r = await strategizeDeal({ conversation, brief, clientName, context, operatorContext: String(deal?.notes || ""), learnings: await learningsContext() });
       if (!r.ok) return { success: false, error: r.error, strategy: r.strategy };
       if (id && deal) {
         try {

@@ -368,7 +368,25 @@ export async function analyzeEngagement(opts: { conversation?: string; orderInfo
   } catch (e: any) { return { ok: false, error: e?.message || "engagement failed" }; }
 }
 
-export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string; callScript?: string; operatorContext?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
+export async function learnFromDeals(deals: Array<{ name: string; country: string; outcome: string; value: string; status: string; conversation: string; facts: string; transcripts: string }>, existing: string[]): Promise<{ ok: boolean; learnings?: string[]; error?: string }> {
+  if (!deals.length) return { ok: false, error: "No closed deals with enough conversation to learn from yet." };
+  const system = [
+    `You are analysing a freelancer's past Fiverr DEALS to learn THEIR personal patterns as a seller — how they win, how they lose, and how they handle leads. The output is a short list of concrete learnings used to advise them on future leads in line with what actually works FOR THEM.`,
+    `Look across the won and the lost deals for: what tends to CONVERT (openings, offers, moves, timing, client types, regions), what tends to LOSE (objections they mishandle, scope creep, price traps, ghosting patterns, over-promising), and recurring strengths or weaknesses in how they handle leads.`,
+    `RULES: each learning is ONE short, plain-English, SPECIFIC sentence grounded in these deals — never generic sales advice ("be responsive" is useless). Prefer patterns that repeat across deals. If existing learnings are given, keep the ones still supported, refine them, drop duplicates and anything contradicted. Return at most 18, most useful first.`,
+    `Return ONLY JSON: {"learnings":["...","..."]}`,
+  ].join("\n");
+  const dealsBlock = deals.map((d, i) => `DEAL ${i + 1} [${d.status}${d.outcome ? "/" + d.outcome : ""}${d.value ? ", value " + d.value : ""}${d.country ? ", " + d.country : ""}]\nFacts: ${String(d.facts).slice(0, 500)}\nChat: ${String(d.conversation).slice(0, 2500)}${d.transcripts ? "\nCall: " + String(d.transcripts).slice(0, 1500) : ""}`).join("\n\n---\n\n");
+  const user = [existing.length ? `Existing learnings (refine / keep / dedupe):\n- ${existing.join("\n- ")}` : ``, `Deals:\n${dealsBlock}`].filter(Boolean).join("\n\n");
+  try {
+    const raw = await llm({ system, user, maxTokens: 1800, timeoutMs: 80000, label: "bd-learn" });
+    const p = parseJsonResponse<any>(raw);
+    if (!p || !Array.isArray(p.learnings)) return { ok: false, error: "Could not extract learnings this time. Try again." };
+    return { ok: true, learnings: p.learnings.map((x: any) => String(x).trim()).filter(Boolean).slice(0, 18) };
+  } catch (e: any) { return { ok: false, error: e?.message || "learn failed" }; }
+}
+
+export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string; callScript?: string; operatorContext?: string; learnings?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
   const system = [
@@ -385,6 +403,7 @@ export async function askExpert(opts: { question: string; conversation?: string;
   ].join("\n");
   const user = [
     opts.operatorContext ? `The seller's own context for this client (authoritative — let it lead your answer):\n${String(opts.operatorContext).slice(0, 4000)}` : ``,
+    opts.learnings ? `What has worked / not worked for this seller historically (their proven patterns — apply where relevant):\n${String(opts.learnings).slice(0, 3000)}` : ``,
     opts.strategySummary ? `Deal so far: ${opts.strategySummary}` : ``,
     opts.facts ? `Captured facts: ${String(opts.facts).slice(0, 4000)}` : ``,
     opts.callScript ? `Saved call script for this deal (reuse / adapt where it helps):\n${String(opts.callScript).slice(0, 4000)}` : ``,
@@ -403,7 +422,7 @@ export async function askExpert(opts: { question: string; conversation?: string;
   }
 }
 
-export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string; operatorContext?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
+export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string; operatorContext?: string; learnings?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
   const now = new Date().toISOString();
   const convo = String(opts.conversation || "").trim();
   if (!convo) return { ok: false, strategy: { ...EMPTY, generated_at: now }, error: "Paste the client conversation first." };
@@ -411,6 +430,7 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
   const user = [
     opts.clientName ? `Client: ${opts.clientName}.` : ``,
     opts.operatorContext ? `SELLER'S OWN CONTEXT for this client — authoritative; the seller knows this client directly, so let it lead your read, next move, and draft reply even where it overrides what the chat alone would suggest:\n${String(opts.operatorContext).slice(0, 4000)}` : ``,
+    opts.learnings ? `What has worked / not worked for THIS seller historically — their proven patterns; apply where relevant when choosing the next move and draft reply:\n${String(opts.learnings).slice(0, 3000)}` : ``,
     opts.brief ? `Brief / service:\n${String(opts.brief).slice(0, 6000)}` : ``,
     opts.context ? `Context (the seller's platform, prior research, shared documents and call transcripts):\n${String(opts.context).slice(0, 12000)}` : ``,
     `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 30000)}`,
