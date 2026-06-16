@@ -17,7 +17,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
-import { computeActivity, digestOf, vaultAsk, vaultReport, VaultDigest } from "./vault-engine.js";
+import { computeActivity, digestOf, vaultAsk, vaultReport, vaultGaps, vaultTrain, VaultDigest } from "./vault-engine.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
@@ -920,6 +920,56 @@ export async function handleBd(action: string, body: any): Promise<any> {
     const generated_at = new Date().toISOString();
     try { await db().from("vault_reports").insert({ kind, scope: scopeKey, window_start: new Date(startMs).toISOString(), window_end: new Date(now).toISOString(), params: scope, stats, narrative: r.narrative, created_at: generated_at }); } catch { /* table may not exist — report still returned, just not cached */ }
     return { success: true, report: { kind, windowLabel, scopeKey, stats, narrative: r.narrative, generated_at, cached: false } };
+  }
+
+  if (action === "bd_vault_gaps") {
+    const config = body?.config || {};
+    const scope = body?.scope || {};
+    try {
+      const { data } = await db().from("bd_deals").select("client_name, client_handle, status, outcome, conversation, updated_at").not("conversation", "is", null).order("updated_at", { ascending: false }).limit(60);
+      let list = ((data as any[]) || []).filter((d) => d.conversation && String(d.conversation).trim().length > 80);
+      if (scope.status && scope.status !== "all") list = list.filter((d) => String(d.status || "") === scope.status);
+      list = list.slice(0, 40);
+      if (!list.length) return { success: true, analysis: "No conversations with enough content on file yet to analyse handling. Sync some Fiverr chats first.", count: 0 };
+      let corpus = "";
+      for (const d of list) {
+        const block = `### ${d.client_name || d.client_handle} [${d.status || ""}${d.outcome ? "/" + d.outcome : ""}]\n${String(d.conversation).slice(-2000)}\n\n`;
+        if (corpus.length + block.length > 42000) break;
+        corpus += block;
+      }
+      const r = await vaultGaps({ corpus, count: list.length, config });
+      return { success: true, analysis: r.analysis, count: list.length };
+    } catch (e: any) { return { success: false, error: e?.message || "Could not analyse handling." }; }
+  }
+
+  if (action === "bd_vault_train") {
+    const config = body?.config || {};
+    const target = String(body?.client || "").trim();
+    if (!target) return { success: false, error: "Name a client to build the tutorial from." };
+    try {
+      const safe = target.replace(/[%,]/g, "");
+      const { data: rows } = await db().from("bd_deals").select("*").or(`client_name.ilike.%${safe}%,client_handle.ilike.%${safe}%`).limit(1);
+      const d = ((rows as any[]) || [])[0];
+      if (!d) return { success: false, error: `No client matching "${target}" on file.` };
+      if (!d.conversation || String(d.conversation).trim().length < 80) return { success: false, error: `${d.client_name || target} has no conversation on file to train from yet.` };
+      const s = d.strategy && typeof d.strategy === "object" ? d.strategy : {};
+      let callText = "";
+      if (Array.isArray(d.attachments)) {
+        const call = d.attachments.find((a: any) => /transcript|call|zoom|meeting/i.test(String((a && (a.kind || a.label || a.type)) || "")));
+        if (call && (call.text || call.content)) callText = String(call.text || call.content).slice(0, 8000);
+      }
+      const ctx = [
+        `Client: ${d.client_name || d.client_handle} (@${d.client_handle || ""})`,
+        `Status: ${d.status || ""} · Outcome: ${d.outcome || "open"} · Value: ${d.deal_value || 0} · Country: ${d.country || ""} · Service: ${(s.deal_facts && s.deal_facts.service) || d.industry || ""}`,
+        s.deal_facts ? `Deal facts: ${JSON.stringify(s.deal_facts)}` : "",
+        d.won_reason ? `Won reason: ${d.won_reason}` : "",
+        d.lost_reason ? `Lost reason: ${d.lost_reason}` : "",
+        `\nCHAT CONVERSATION:\n${String(d.conversation).slice(-12000)}`,
+        callText ? `\nCALL TRANSCRIPT:\n${callText}` : "",
+      ].filter(Boolean).join("\n");
+      const r = await vaultTrain({ clientName: String(d.client_name || d.client_handle), context: ctx, hasCall: !!callText, config });
+      return { success: true, tutorial: r.tutorial, client: String(d.client_name || d.client_handle), hasCall: !!callText };
+    } catch (e: any) { return { success: false, error: e?.message || "Could not build the tutorial." }; }
   }
 
   return { success: false, error: `Unknown bd action: ${action}` };

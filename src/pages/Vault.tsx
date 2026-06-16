@@ -1,7 +1,8 @@
 /* Vault — the client-intelligence brain.
-   Ask anything about any client or the whole population, read hourly/daily/weekly
-   and on-demand reports, and control how deep the analysis goes.
-   Backend: bd_vault_ask / bd_vault_report (api/lib/vault-engine.ts via bd-engine). */
+   Ask anything about any client, read hourly/daily/weekly + on-demand reports
+   (with an optional auto-refresh timer), get BDM coaching gaps, and build training
+   tutorials from real client chats. Control how deep the analysis goes.
+   Backend: bd_vault_ask / bd_vault_report / bd_vault_gaps / bd_vault_train. */
 import { useState, useEffect, useRef } from "react";
 import PortalNav from "@/components/PortalNav";
 
@@ -21,7 +22,7 @@ function ago(iso: string): string {
 }
 
 export default function Vault() {
-  const [tab, setTab] = useState<"ask" | "reports" | "control">("ask");
+  const [tab, setTab] = useState<"ask" | "reports" | "coaching" | "training" | "control">("ask");
 
   // ---- ask ----
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -39,13 +40,23 @@ export default function Vault() {
   const [report, setReport] = useState<any>(null);
   const [repLoading, setRepLoading] = useState(false);
 
+  // ---- coaching (BDM gaps) ----
+  const [coach, setCoach] = useState<any>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachStatus, setCoachStatus] = useState("all");
+
+  // ---- training ----
+  const [trainClient, setTrainClient] = useState("");
+  const [train, setTrain] = useState<any>(null);
+  const [trainLoading, setTrainLoading] = useState(false);
+
   // ---- control ----
-  const [cfg, setCfg] = useState<{ depth: string; sections: string }>({ depth: "standard", sections: "" });
+  const [cfg, setCfg] = useState<{ depth: string; sections: string; auto: number }>({ depth: "standard", sections: "", auto: 0 });
   const [cfgSaved, setCfgSaved] = useState(false);
 
   useEffect(() => {
     post("bd_deal_list", { filter: "all" }).then((r) => { if (r && r.success && Array.isArray(r.deals)) setRoster(r.deals); }).catch(() => {});
-    post("bd_settings_get", { key: "vault_config" }).then((r) => { if (r && r.success && r.value && typeof r.value === "object") setCfg({ depth: r.value.depth || "standard", sections: r.value.sections || "" }); }).catch(() => {});
+    post("bd_settings_get", { key: "vault_config" }).then((r) => { if (r && r.success && r.value && typeof r.value === "object") setCfg({ depth: r.value.depth || "standard", sections: r.value.sections || "", auto: Number(r.value.auto) || 0 }); }).catch(() => {});
   }, []);
   useEffect(() => { if (askEnd.current) askEnd.current.scrollIntoView({ behavior: "smooth" }); }, [msgs, asking]);
 
@@ -63,20 +74,56 @@ export default function Vault() {
     setAsking(false);
   }
 
-  async function runReport(force = false) {
-    if (repLoading) return;
-    setRepLoading(true); setReport(null);
+  async function runReport(force = false, quiet = false) {
+    if (repLoading && !quiet) return;
+    if (!quiet) { setRepLoading(true); setReport(null); }
     try {
       const r = await post("bd_vault_report", { kind, scope: { status: rStatus, country: rCountry.trim(), problem: rProblem }, config: cfg, force });
-      setReport(r && r.success ? r.report : { error: (r && r.error) || "report failed" });
-    } catch (e: any) { setReport({ error: e?.message || "network error" }); }
-    setRepLoading(false);
+      if (r && r.success) setReport(r.report);
+      else if (!quiet) setReport({ error: (r && r.error) || "report failed" });
+    } catch (e: any) { if (!quiet) setReport({ error: e?.message || "network error" }); }
+    if (!quiet) setRepLoading(false);
   }
 
   async function saveCfg() {
     await post("bd_settings_set", { key: "vault_config", value: cfg });
     setCfgSaved(true); setTimeout(() => setCfgSaved(false), 1800);
   }
+
+  function setAuto(min: number) {
+    const n = { ...cfg, auto: min };
+    setCfg(n);
+    post("bd_settings_set", { key: "vault_config", value: n }).catch(() => {});
+  }
+
+  async function runCoach() {
+    if (coachLoading) return;
+    setCoachLoading(true); setCoach(null);
+    try {
+      const r = await post("bd_vault_gaps", { scope: { status: coachStatus }, config: cfg });
+      setCoach(r && r.success ? r : { error: (r && r.error) || "analysis failed" });
+    } catch (e: any) { setCoach({ error: e?.message || "network error" }); }
+    setCoachLoading(false);
+  }
+
+  async function runTrain() {
+    const who = trainClient.trim(); if (!who || trainLoading) return;
+    setTrainLoading(true); setTrain(null);
+    try {
+      const r = await post("bd_vault_train", { client: who, config: cfg });
+      setTrain(r && r.success ? r : { error: (r && r.error) || "could not build tutorial" });
+    } catch (e: any) { setTrain({ error: e?.message || "network error" }); }
+    setTrainLoading(false);
+  }
+
+  // auto-refresh: while Vault is open and a cadence is set, keep the current report warm (off = 0)
+  const tickRef = useRef<() => void>(() => {});
+  tickRef.current = () => { runReport(true, true); };
+  useEffect(() => {
+    if (!cfg.auto || cfg.auto <= 0) return;
+    const id = setInterval(() => tickRef.current(), cfg.auto * 60000);
+    return () => clearInterval(id);
+  }, [cfg.auto]);
 
   const tabBtn = (id: typeof tab, label: string) => (
     <button onClick={() => setTab(id)} className={`px-4 py-2 text-sm font-semibold rounded-lg transition ${tab === id ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:text-foreground border border-border"}`}>{label}</button>
@@ -121,7 +168,7 @@ export default function Vault() {
         </div>
         <p className="text-sm text-muted-foreground mb-5">Ask anything about any client, read hourly / daily / weekly and on-demand reports across your Fiverr activity, and set how deep the analysis goes. Grounded only in your real lead data.</p>
 
-        <div className="flex gap-2 mb-5">{tabBtn("ask", "Ask")}{tabBtn("reports", "Reports")}{tabBtn("control", "Control")}</div>
+        <div className="flex gap-2 mb-5 flex-wrap">{tabBtn("ask", "Ask")}{tabBtn("reports", "Reports")}{tabBtn("coaching", "Coaching")}{tabBtn("training", "Training")}{tabBtn("control", "Control")}</div>
 
         {/* ============ ASK ============ */}
         {tab === "ask" && (
@@ -190,11 +237,19 @@ export default function Vault() {
               <button onClick={() => runReport(true)} disabled={repLoading} className="px-3 py-2 rounded-lg bg-card border border-border text-sm text-muted-foreground disabled:opacity-50">Refresh</button>
             </div>
 
+            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+              <span>Auto-refresh while open:</span>
+              {[0, 15, 30, 60, 180].map((min) => (
+                <button key={min} onClick={() => setAuto(min)} className={`px-2.5 py-1 rounded-md border text-[12px] ${cfg.auto === min ? "bg-primary text-primary-foreground border-transparent" : "bg-card border-border"}`}>{min === 0 ? "Off" : min < 60 ? min + "m" : min / 60 + "h"}</button>
+              ))}
+              {cfg.auto > 0 ? <span className="text-[11px]">keeps the current report fresh every {cfg.auto < 60 ? cfg.auto + " min" : cfg.auto / 60 + "h"} — only while this page is open</span> : null}
+            </div>
+
             {report && report.error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">{report.error}</div>}
 
             {report && !report.error && (
               <>
-                <div className="text-xs text-muted-foreground">{report.windowLabel} · {report.cached ? "prepared " + ago(report.generated_at) : "generated " + ago(report.generated_at)}</div>
+                <div className="text-xs text-muted-foreground">{report.windowLabel} · {report.cached ? "prepared " + ago(report.generated_at) : "generated " + ago(report.generated_at)}{cfg.auto > 0 ? " · auto every " + (cfg.auto < 60 ? cfg.auto + "m" : cfg.auto / 60 + "h") : ""}</div>
                 {c && (
                   <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
                     {statCard("New leads", c.newLeads, "text-emerald-400")}
@@ -229,6 +284,53 @@ export default function Vault() {
           </div>
         )}
 
+        {/* ============ COACHING ============ */}
+        {tab === "coaching" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-card/40 p-4 flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Status filter</label>
+                <select value={coachStatus} onChange={(e) => setCoachStatus(e.target.value)} className="bg-card border border-border rounded-lg px-3 py-1.5 text-sm">
+                  <option value="all">All leads</option>{STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <button onClick={() => runCoach()} disabled={coachLoading} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">{coachLoading ? "Reading the chats…" : "Analyse handling"}</button>
+              <span className="text-[11px] text-muted-foreground">Reads recent conversations and finds what the team is missing and what to correct.</span>
+            </div>
+            {coach && coach.error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">{coach.error}</div>}
+            {coach && !coach.error && (
+              <>
+                <div className="text-xs text-muted-foreground">Reviewed {coach.count} recent conversation{coach.count === 1 ? "" : "s"}</div>
+                <div className="rounded-2xl border border-border bg-card p-4 text-sm whitespace-pre-wrap leading-relaxed">{coach.analysis}</div>
+              </>
+            )}
+            {!coach && !coachLoading && <div className="text-sm text-muted-foreground p-4">Analyse handling to see the recurring gaps across your BDM conversations — slow first response, ignored buying signals, no clear next step, missed upsells, weak objection handling — each grounded in the real chats, with the fix.</div>}
+          </div>
+        )}
+
+        {/* ============ TRAINING ============ */}
+        {tab === "training" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-border bg-card/40 p-4 flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Build from client</label>
+                <input list="vault-roster" value={trainClient} onChange={(e) => setTrainClient(e.target.value)} placeholder="type or pick a client" className="bg-card border border-border rounded-lg px-3 py-1.5 text-sm w-64" />
+                <datalist id="vault-roster">{roster.map((d, i) => <option key={i} value={d.client_name || d.client_handle || ""} />)}</datalist>
+              </div>
+              <button onClick={() => runTrain()} disabled={trainLoading || !trainClient.trim()} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">{trainLoading ? "Building tutorial…" : "Build tutorial"}</button>
+              <span className="text-[11px] text-muted-foreground">Turns one real client chat (and call, if on file) into an annotated training walkthrough.</span>
+            </div>
+            {train && train.error && <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm">{train.error}</div>}
+            {train && !train.error && (
+              <>
+                <div className="text-xs text-muted-foreground">Tutorial from {train.client}{train.hasCall ? " · chat + call" : " · chat (no call transcript on file)"}</div>
+                <div className="rounded-2xl border border-border bg-card p-5 text-sm whitespace-pre-wrap leading-relaxed">{train.tutorial}</div>
+              </>
+            )}
+            {!train && !trainLoading && <div className="text-sm text-muted-foreground p-4">Name a real client and Vault builds a training tutorial from their actual conversation — the scenario, the key moments quoted, what was handled well, what was missed, the better move, and the principle — for chat and call.</div>}
+          </div>
+        )}
+
         {/* ============ CONTROL ============ */}
         {tab === "control" && (
           <div className="rounded-2xl border border-border bg-card/40 p-5 max-w-xl space-y-5">
@@ -247,8 +349,17 @@ export default function Vault() {
                 className="w-full bg-card border border-border rounded-xl px-3 py-2 text-sm" />
               <p className="text-[12px] text-muted-foreground mt-2">Free text. Vault folds this into every report so the analysis follows what matters to you.</p>
             </div>
+            <div>
+              <label className="block text-sm font-semibold mb-2">Auto-refresh reports</label>
+              <div className="flex gap-2 flex-wrap">
+                {[0, 15, 30, 60, 180].map((min) => (
+                  <button key={min} onClick={() => setCfg({ ...cfg, auto: min })} className={`px-4 py-2 text-sm rounded-lg ${cfg.auto === min ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground"}`}>{min === 0 ? "Off" : min < 60 ? min + " min" : min / 60 + " hour"}</button>
+                ))}
+              </div>
+              <p className="text-[12px] text-muted-foreground mt-2">When on, Vault keeps the current report regenerated on this cadence so it is ready when you look — but only while this page is open (Vercel Hobby has no background scheduler). For a report waiting for you 24/7 with the page closed, point an external scheduler at the bd_vault_report endpoint.</p>
+            </div>
             <button onClick={() => saveCfg()} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold">{cfgSaved ? "Saved ✓" : "Save controls"}</button>
-            <p className="text-[12px] text-muted-foreground">These controls apply to both Ask and Reports. Per-BDM coaching reports and training tutorials arrive in the next build.</p>
+            <p className="text-[12px] text-muted-foreground">These controls apply to Ask, Reports, Coaching and Training. Per-BDM (per-person) attribution would need an owner field on deals — today Coaching is team-wide and Training is per-client.</p>
           </div>
         )}
       </div>

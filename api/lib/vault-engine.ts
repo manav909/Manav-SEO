@@ -129,3 +129,46 @@ export async function vaultReport(o: { kind: string; windowLabel: string; scopeL
   const narrative = await llm({ system, user, maxTokens: depth === "deep" ? 2600 : 1700, timeoutMs: 100000, label: "vault-report" });
   return { narrative: String(narrative || "").trim() || "Could not generate the report narrative just now. The activity numbers above are still accurate." };
 }
+
+// ---------- BDM gap analysis (team handling quality across recent conversations) ----------
+export async function vaultGaps(o: { corpus: string; count: number; config?: any }): Promise<{ analysis: string }> {
+  const depth = String((o.config && o.config.depth) || "standard");
+  const system = [
+    "You are Vault, the senior sales-coaching brain for a Fiverr SEO and digital-marketing agency run by Manav S.",
+    "You are reviewing how the agency BDMs (the seller side) actually handled recent client conversations, in order to coach the team.",
+    "You are given a corpus of recent leads, each with its status and outcome and a recent excerpt of the conversation (both the BDM messages and the client messages).",
+    "Find what the BDM team is MISSING and what needs to be corrected. Look specifically for: slow or absent first response; ignored buying signals; no clear call to action or next step; vague or generic replies; over-promising or dishonest claims; missed upsell or scope-expansion openings; weak or absent objection handling; failure to qualify or discover the client need; ghosted threads not followed up; talking about the agency instead of the client problem.",
+    "Output plain text with short clear headers:",
+    "1. Bottom line — the two or three biggest handling gaps across the team right now.",
+    "2. Gaps — each as: the gap, how often it shows up, which leads show it (name them), what correct looks like, and the specific fix.",
+    "3. What is working — handling strengths worth keeping, with examples.",
+    "4. Fix first — the highest-leverage corrections, ordered.",
+    "Rules: ground every point in the actual conversations supplied; name the real leads as evidence; never invent a quote, a lead, or a pattern that is not in the data. If the data is thin, say so. Senior sales-coach tone, direct and specific, no filler, no sycophancy.",
+    depth === "brief" ? "Keep it tight." : depth === "deep" ? "Be thorough across every gap you can evidence." : "Be concise but complete.",
+    o.config && o.config.sections ? `The operator also wants you to weigh: ${o.config.sections}.` : "",
+  ].filter(Boolean).join("\n");
+  const user = `Recent leads reviewed: ${o.count}.\n\nCONVERSATION CORPUS (most recent excerpts):\n${o.corpus}\n\nProduce the coaching analysis now, grounded only in these conversations.`;
+  const analysis = await llm({ system, user, maxTokens: depth === "deep" ? 3000 : 2000, timeoutMs: 110000, label: "vault-gaps" });
+  return { analysis: String(analysis || "").trim() || "Not enough conversation data on file yet to analyse handling gaps." };
+}
+
+// ---------- training tutorial from one real client chat + call ----------
+export async function vaultTrain(o: { clientName: string; context: string; hasCall: boolean; config?: any }): Promise<{ tutorial: string }> {
+  const depth = String((o.config && o.config.depth) || "standard");
+  const system = [
+    "You are Vault, the senior sales-trainer for a Fiverr SEO and digital-marketing agency run by Manav S.",
+    `Build a TRAINING TUTORIAL for the agency BDMs from one real client: ${o.clientName}. Use the actual conversation${o.hasCall ? " and call transcript" : ""} provided.`,
+    "This is internal coaching on the agency own client, so quote the real messages directly.",
+    "Teach by walking the real interaction. Structure as plain text with clear headers:",
+    "- Scenario: who the client was, what they wanted, and where the deal went, using the real facts and outcome.",
+    "- Key moments: step through the conversation. For EACH important moment give a short real quoted excerpt (chat or call), what was happening, what the BDM did, what was handled well, what was missed or could be stronger, the better move, and the one principle to learn.",
+    "- Cover the full range present: the opening, qualifying and discovery, pricing or budget, objections or hesitation, scope, the close or commitment, and follow-up.",
+    o.hasCall ? "- Treat the call and the chat together; note where a call moment should have been handled differently." : "- There is no call transcript on file, so train on the chat and say so once near the top.",
+    "- Lessons: the handful of transferable takeaways a BDM should carry to the next client.",
+    "Rules: quote only real excerpts from the supplied material; never invent a line, a moment, or a fact. If something was handled well, say so plainly; if it was weak, be direct about why and give the fix. Senior-trainer tone, concrete and usable, no filler.",
+    depth === "brief" ? "Keep it focused on the few most instructive moments." : depth === "deep" ? "Be thorough across every instructive moment in the interaction." : "Cover the main instructive moments.",
+  ].filter(Boolean).join("\n");
+  const user = `CLIENT MATERIAL for ${o.clientName}:\n${o.context}\n\nWrite the training tutorial now, grounded only in this material.`;
+  const tutorial = await llm({ system, user, maxTokens: depth === "deep" ? 3500 : 2600, timeoutMs: 120000, label: "vault-train" });
+  return { tutorial: String(tutorial || "").trim() || `Not enough conversation data on file for ${o.clientName} to build a tutorial yet.` };
+}
