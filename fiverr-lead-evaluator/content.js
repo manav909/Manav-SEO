@@ -265,7 +265,7 @@
       : `<div class="foot"><button class="btn p" id="ss-eval">Evaluate</button><button class="btn p" id="ss-reply">✍ Reply</button><button class="btn s" id="ss-sel" title="Use highlighted text">Sel</button></div>`;
     wrap.innerHTML = `
       <div class="panel">
-        <div class="hd"><span class="dot"></span><span class="ttl">SEO Season · Lead Cockpit</span><span class="syncs" id="ss-sync"></span><button id="ss-view" title="Toggle inbox board">${view === "inbox" ? "← Chat" : "Inbox"}</button><button id="ss-min" title="Minimise">—</button></div>
+        <div class="hd"><span class="dot"></span><span class="ttl">SEO Season · <span id="ss-client">${view === "inbox" ? "Inbox" : "Lead Cockpit"}</span></span><span class="syncs" id="ss-sync"></span><button id="ss-view" title="Toggle inbox board">${view === "inbox" ? "← Chat" : "Inbox"}</button><button id="ss-min" title="Minimise">—</button></div>
         <div class="body" id="ss-body"></div>
         ${foot}
       </div>`;
@@ -273,8 +273,24 @@
     if (view === "inbox") renderInbox(); else renderBody();
   }
 
+  function updateTitle() {
+    const el = root.getElementById("ss-client"); if (!el) return;
+    if (view === "inbox") { el.textContent = "Inbox"; el.removeAttribute("style"); el.title = ""; return; }
+    const liveH = clientHandle();
+    // Only show the client name when the loaded deal handle matches the OPEN conversation — that is the cross-check that everything below (verdict, timing, site) is genuinely this client.
+    if (deal && deal.client_handle && liveH && String(deal.client_handle).toLowerCase() === liveH.toLowerCase() && dealName) {
+      el.textContent = dealName; el.style.color = "#7dd3fc"; el.style.fontWeight = "700";
+      el.title = "Cockpit is loaded for this client — the deal handle matches the open chat (@" + liveH + "), so everything below is this client.";
+    } else if (liveH) {
+      el.textContent = "@" + liveH + " · syncing"; el.style.color = "#fbbf24"; el.style.fontWeight = "700";
+      el.title = "Binding the cockpit to this conversation — the panel below may briefly show the previous client until this finishes.";
+    } else {
+      el.textContent = "Lead Cockpit"; el.removeAttribute("style"); el.title = "";
+    }
+  }
   function renderBody() {
     const body = root.getElementById("ss-body"); if (!body) return;
+    updateTitle();
     if (view !== "chat") { renderSync(); return; }
     let h = engagementHtml() + expertHtml() + savedIntelHtml() + opsHtml();
     const detected = slots.filter((s) => s.kind !== "manual").length;
@@ -569,9 +585,10 @@
     while ((m = re12.exec(txt))) { let hr = parseInt(m[1], 10) % 12; if (/p/i.test(m[3])) hr += 12; e.times.push("T" + String(hr).padStart(2, "0") + ":" + m[2]); }
     const page = (document.body.innerText || "").slice(0, 40000);
     if ((m = page.match(/last seen[^.\n]{0,40}ago/i)) || (m = page.match(/last seen[^.\n]{0,30}/i))) e.last_seen = m[0].replace(/\s+/g, " ").trim().slice(0, 60);
-    if ((m = page.match(/local time[^0-9]{0,12}(\d{1,2}:\d{2}\s*[ap]\.?\s?m\.?|\d{1,2}:\d{2})/i))) e.local_time = m[1].replace(/\s+/g, " ").trim();
+    // Fiverr shows the client local time as "12:15 PM local time" (time BEFORE the label) — capture both orders.
+    if ((m = page.match(/local time[^0-9]{0,12}(\d{1,2}:\d{2}\s*[ap]\.?\s?m\.?|\d{1,2}:\d{2})/i)) || (m = page.match(/(\d{1,2}:\d{2}\s*[ap]\.?\s?m\.?)[^0-9a-z]{0,6}local time/i))) e.local_time = m[1].replace(/\s+/g, " ").trim();
+    // Only trust an explicit GMT/UTC offset for the zone. Do NOT scan the page for bare abbreviations (EST/IST/...): that matched the seller's own zone shown elsewhere on the page and forced every client to look like the same time as you.
     if ((m = page.match(/\b(GMT|UTC)\s*([+\-]\s?\d{1,2}(?::?\d{2})?)/i))) e.timezone = (m[1] + m[2]).replace(/\s+/g, "").toUpperCase();
-    else if ((m = page.match(/\b(EST|EDT|PST|PDT|CST|CDT|MST|MDT|IST|GMT|UTC|CET|CEST|BST|AEST|AEDT|NZST|WAT|EAT|CAT|SAST|JST|KST|HKT|SGT|MSK|GST)\b/))) e.timezone = m[1];
     e.times = Array.from(new Set(e.times)).slice(-300);
     return e;
   }
@@ -602,23 +619,25 @@
     const lt = (e.local_time || "").match(/(\d{1,2}):(\d{2})\s*([ap])?/i);
     if (lt) { let hh = parseInt(lt[1], 10) % 12; if (lt[3] && /p/i.test(lt[3])) hh += 12; let diff = (hh * 60 + parseInt(lt[2], 10)) - istNowMin; while (diff > 720) diff -= 1440; while (diff < -720) diff += 1440; offsetMin = Math.round(diff / 15) * 15; } // Fiverr's own local-time display is the most reliable signal
     else if (e.timezone) {
+      // Honor only an explicit GMT/UTC offset. A bare abbreviation (e.g. a stale "IST" persisted by the old buggy capture) is ignored so it cannot force a wrong zero offset.
       const gm = e.timezone.match(/(?:GMT|UTC)\s*([+\-])\s*(\d{1,2})(?::?(\d{2}))?/i);
-      const ABBR = { EST: -300, EDT: -240, CST: -360, CDT: -300, MST: -420, MDT: -360, PST: -480, PDT: -420, GMT: 0, UTC: 0, BST: 60, CET: 60, CEST: 120, IST: 330, GST: 240, SGT: 480, HKT: 480, JST: 540, KST: 540, AEST: 600, AEDT: 660, WAT: 60, EAT: 180, CAT: 120, SAST: 120, NZST: 720, MSK: 180 };
-      let z = null;
-      if (gm) z = (parseInt(gm[2], 10) * 60 + (gm[3] ? parseInt(gm[3], 10) : 0)) * (gm[1] === "-" ? -1 : 1);
-      else { const ab = (e.timezone.match(/[A-Z]{2,4}/) || [])[0]; if (ab && ABBR[ab] != null) z = ABBR[ab]; }
-      if (z != null) offsetMin = z - 330;
+      if (gm) offsetMin = (parseInt(gm[2], 10) * 60 + (gm[3] ? parseInt(gm[3], 10) : 0)) * (gm[1] === "-" ? -1 : 1) - 330;
     }
     const theirWindow = (istWindow && offsetMin != null) ? (fmt(peak * 60 + offsetMin) + "-" + fmt((peak + 3) * 60 + offsetMin)) : "";
-    const theirNow = offsetMin != null ? fmt(istNowMin + offsetMin) : (e.local_time || "");
+    const theirNow = offsetMin != null ? fmt(istNowMin + offsetMin) : "";
     const relWord = offsetMin == null ? "" : (offsetMin === 0 ? "same time as you" : ((Math.abs(offsetMin) % 60 === 0 ? String(Math.abs(offsetMin) / 60) : (Math.abs(offsetMin) / 60).toFixed(1)) + "h " + (offsetMin < 0 ? "behind you" : "ahead of you")));
     let last = "";
     if (dated.length) { const mx = Math.max.apply(null, dated.map((d) => d.getTime())); const mins = Math.round((Date.now() - mx) / 60000); last = mins < 1 ? "just now" : mins < 60 ? mins + "m ago" : mins < 1440 ? Math.round(mins / 60) + "h ago" : Math.round(mins / 1440) + "d ago"; }
     let h = `<div class="lbl" style="margin-top:0">⏱ Client timing &amp; availability</div>`;
     const rows = [];
-    if (istWindow) rows.push(["Active — your time (IST)", `<b>${istWindow}</b>` + (theirWindow ? ` <span class="muted">(their ${theirWindow})</span>` : "") + ` <span class="muted">· ${count} seen</span>`]);
-    if (theirNow) rows.push(["Client local time now", esc(theirNow) + (zoneShown ? ` <span class="muted">(${esc(zoneShown)})</span>` : "") + (relWord ? ` <span class="muted">· ${relWord}</span>` : "")]);
-    else if (zoneShown) rows.push(["Client time zone", esc(zoneShown)]);
+    if (offsetMin != null && theirWindow) {
+      rows.push(["Their active hours", `<b>${theirWindow}</b> <span class="muted">their time · ${count} seen</span>`]);
+      rows.push(["Be online — your IST", `<b>${istWindow}</b>`]);
+    } else if (istWindow) {
+      rows.push(["Active — your time (IST)", `<b>${istWindow}</b> <span class="muted">· ${count} seen</span>`]);
+    }
+    if (theirNow) rows.push(["Client local time now", `<b>${esc(theirNow)}</b>` + (zoneShown ? ` <span class="muted">(${esc(zoneShown)})</span>` : "") + (relWord ? ` <span class="muted">· ${relWord}</span>` : "")]);
+    else if (e.local_time) rows.push(["Client local time", esc(e.local_time)]);
     if (last) rows.push(["Last message", last]);
     if (e.last_seen) rows.push(["Status", esc(e.last_seen)]);
     if (!rows.length) {
@@ -626,7 +645,7 @@
       return h;
     }
     h += `<div class="sum" style="margin:0 0 5px">` + rows.map((r) => `<div style="display:flex;justify-content:space-between;gap:10px;margin:2px 0"><span class="muted">${r[0]}</span><span style="text-align:right">${r[1]}</span></div>`).join("") + `</div>`;
-    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">Active hours are on your IST clock so you can plan when to be online${offsetMin != null ? " — the client local window is in brackets" : ""}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">${offsetMin != null ? "Their habits are in their local time; the IST line is when to be online for them." : "Fiverr is not showing the client zone here — times are your IST from when they message. Open their profile to pin it."} Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
     return h;
   }
   function renderSync() {
