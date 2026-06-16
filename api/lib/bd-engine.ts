@@ -187,8 +187,12 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const rank = (s: any) => { const i = ORDER.indexOf(String(s || "").toLowerCase()); return i >= 0 ? i : -1; };
       const groups = new Map<string, any[]>();
       for (const r of rows) {
-        const h = String(r.client_handle || "").trim().toLowerCase(); if (!h) continue; // leave manual (no-handle) deals untouched
-        const key = h + "|" + String(r.platform || "fiverr").toLowerCase();
+        const h = String(r.client_handle || "").trim().toLowerCase();
+        const nm = String(r.client_name || "").trim().toLowerCase();
+        const generic = !nm || nm === "untitled lead" || nm === "untitled" || nm === "new lead" || nm === "lead";
+        const base = h || (!generic ? nm : ""); // group by handle, else by a specific client name — so a no-handle row merges with the handle row for the same client
+        if (!base) continue;
+        const key = base + "|" + String(r.platform || "fiverr").toLowerCase();
         if (!groups.has(key)) groups.set(key, []);
         (groups.get(key) as any[]).push(r);
       }
@@ -196,7 +200,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const attSig = (a: any) => String(a?.kind || "") + "|" + String(a?.name || "") + "|" + String(a?.text || "").slice(0, 80);
       for (const grp of groups.values()) {
         if (grp.length < 2) continue;
-        grp.sort((a, b) => rank(b.status) - rank(a.status) || ((b.strategy && b.strategy.deal_state ? 1 : 0) - (a.strategy && a.strategy.deal_state ? 1 : 0)) || String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+        grp.sort((a, b) => ((b.client_handle ? 1 : 0) - (a.client_handle ? 1 : 0)) || rank(b.status) - rank(a.status) || ((b.strategy && b.strategy.deal_state ? 1 : 0) - (a.strategy && a.strategy.deal_state ? 1 : 0)) || String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
         const win = grp[0]; const losers = grp.slice(1);
         let conversation = win.conversation || "";
         const attachments = Array.isArray(win.attachments) ? [...win.attachments] : [];

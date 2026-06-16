@@ -293,7 +293,7 @@
     const haveSaved = !!(lastStrategy && lastStrategy.deal_state);
     if (haveSaved && (savedLen === 0 || liveLen - savedLen <= 150)) {
       evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody();
-      if (savedLen === 0) autosave(); // strategy exists but the chat was never saved — backfill it so the software has it and future opens stay instant
+      autosave(); // always sync the current clean chat so the software has the latest (covers deals whose conversation was never saved)
       return;
     }
     evalCached = false; evaluate(false);
