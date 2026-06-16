@@ -23,12 +23,12 @@ export interface VaultDeal {
   id?: string; client_name?: string; client_handle?: string; status?: string; outcome?: string;
   deal_value?: number; country?: string; industry?: string; client_type?: string;
   created_at?: string; updated_at?: string; last_message_at?: string;
-  strategy?: any; stage_history?: any;
+  strategy?: any; stage_history?: any; engagement?: any;
 }
 
 export interface VaultDigest {
   name: string; handle: string; status: string; temperature: string; health: string;
-  country: string; value: number; idleDays: number | null; next_move: string; summary: string;
+  country: string; value: number; idleDays: number | null; next_move: string; summary: string; timing: string;
 }
 
 const CLOSED = ["hired", "repeat", "lost", "archived"];
@@ -40,6 +40,40 @@ function healthOf(d: VaultDeal): string { const s = strat(d); return String((s &
 function nextMoveOf(d: VaultDeal): string { const s = strat(d); return String((s && ((s.verdict && s.verdict.next_move) || s.next_move)) || "").trim(); }
 function summaryOf(d: VaultDeal): string { const s = strat(d); return String((s && ((s.verdict && s.verdict.headline) || (s.deal_state && s.deal_state.summary))) || "").trim(); }
 function idleDaysOf(d: VaultDeal, now: number): number | null { const t = asTime(d.updated_at) || asTime(d.last_message_at); return t ? Math.floor((now - t) / 86400000) : null; }
+
+// ---------- timing / availability summary (IST is the operator clock, fixed UTC+5:30) ----------
+const IST_OFFSET = 330;
+function istHourOf(d: Date): number { return Math.floor(((d.getUTCHours() * 60 + d.getUTCMinutes() + IST_OFFSET) % 1440) / 60); }
+function fmtMin(mins: number): string { mins = ((Math.round(mins) % 1440) + 1440) % 1440; let hh = Math.floor(mins / 60); const ap = hh < 12 ? "am" : "pm"; hh = hh % 12 === 0 ? 12 : hh % 12; const mm = mins % 60; return hh + (mm ? ":" + String(mm).padStart(2, "0") : "") + ap; }
+
+// Turn a stored engagement object { times[], last_seen, local_time, timezone } into a readable
+// one-line timing summary so Vault can reason about when each client is active and their zone.
+export function engagementSummary(e: any): string {
+  if (!e || typeof e !== "object") return "";
+  const times: any[] = Array.isArray(e.times) ? e.times : [];
+  const hourly = new Array(24).fill(0); let count = 0;
+  for (const t of times) {
+    let hr = -1;
+    if (typeof t === "string" && t[0] === "T") hr = parseInt(t.slice(1, 3), 10);
+    else { const d = new Date(t); if (!isNaN(d.getTime())) hr = istHourOf(d); }
+    if (hr >= 0 && hr < 24) { hourly[hr]++; count++; }
+  }
+  let peak = -1, peakSum = -1;
+  for (let i = 0; i < 24; i++) { const s = hourly[i] + hourly[(i + 1) % 24] + hourly[(i + 2) % 24]; if (s > peakSum) { peakSum = s; peak = i; } }
+  const istWindow = (count && peak >= 0 && peakSum > 0) ? (fmtMin(peak * 60) + "-" + fmtMin((peak + 3) * 60)) : "";
+  const istNowMin = (Math.floor(Date.now() / 60000) % 1440 + IST_OFFSET) % 1440;
+  let offsetMin: number | null = null;
+  const lt = String(e.local_time || "").match(/(\d{1,2}):(\d{2})\s*([ap])?/i);
+  if (lt) { let hh = parseInt(lt[1], 10) % 12; if (lt[3] && /p/i.test(lt[3])) hh += 12; let diff = (hh * 60 + parseInt(lt[2], 10)) - istNowMin; while (diff > 720) diff -= 1440; while (diff < -720) diff += 1440; offsetMin = Math.round(diff / 15) * 15; }
+  else if (e.timezone) { const gm = String(e.timezone).match(/(?:GMT|UTC)\s*([+\-])\s*(\d{1,2})(?::?(\d{2}))?/i); if (gm) offsetMin = (parseInt(gm[2], 10) * 60 + (gm[3] ? parseInt(gm[3], 10) : 0)) * (gm[1] === "-" ? -1 : 1) - IST_OFFSET; }
+  const parts: string[] = [];
+  if (istWindow) parts.push(`usually messages around ${istWindow} IST` + (offsetMin != null ? ` (their ${fmtMin(peak * 60 + offsetMin)}-${fmtMin((peak + 3) * 60 + offsetMin)})` : ""));
+  if (offsetMin != null) { const rel = offsetMin === 0 ? "same time as you" : ((Math.abs(offsetMin) % 60 === 0 ? String(Math.abs(offsetMin) / 60) : (Math.abs(offsetMin) / 60).toFixed(1)) + "h " + (offsetMin < 0 ? "behind you" : "ahead of you")); parts.push(`client local now ~${fmtMin(istNowMin + offsetMin)} (${rel})`); }
+  else if (e.local_time) parts.push(`client local time ${e.local_time}`);
+  if (e.last_seen) parts.push(String(e.last_seen));
+  if (count) parts.push(`${count} activity points`);
+  return parts.join(" · ");
+}
 
 export function digestOf(d: VaultDeal, now = Date.now()): VaultDigest {
   return {
@@ -53,6 +87,7 @@ export function digestOf(d: VaultDeal, now = Date.now()): VaultDigest {
     idleDays: idleDaysOf(d, now),
     next_move: nextMoveOf(d),
     summary: summaryOf(d),
+    timing: engagementSummary(d.engagement),
   };
 }
 

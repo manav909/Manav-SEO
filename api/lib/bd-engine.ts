@@ -17,7 +17,7 @@
 ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
-import { computeActivity, digestOf, vaultAsk, vaultReport, vaultGaps, vaultTrain, VaultDigest } from "./vault-engine.js";
+import { computeActivity, digestOf, vaultAsk, vaultReport, vaultGaps, vaultTrain, engagementSummary, VaultDigest } from "./vault-engine.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
@@ -127,8 +127,22 @@ function vaultDigestLine(dg: VaultDigest): string {
   const bits = [dg.name + (dg.handle ? ` (@${dg.handle})` : ""), dg.status, dg.temperature, dg.health, dg.country, dg.value ? `$${dg.value}` : "", dg.idleDays != null ? `idle ${dg.idleDays}d` : ""].filter(Boolean);
   let line = bits.join(" · ");
   if (dg.next_move) line += ` · next: ${dg.next_move}`;
+  if (dg.timing) line += ` · timing: ${dg.timing}`;
   if (dg.summary) line += ` — ${dg.summary}`;
   return line;
+}
+
+// Load bd_deals for Vault WITH the engagement (timing) column when it exists, falling back
+// gracefully when the column has not been migrated yet so the query never errors out.
+async function vaultLoadDeals(extraCols: string): Promise<any[]> {
+  const base = "id, client_name, client_handle, status, outcome, deal_value, country, industry, client_type, created_at, updated_at, last_message_at, strategy";
+  const extra = extraCols ? ", " + extraCols : "";
+  try {
+    const r = await db().from("bd_deals").select(base + ", engagement" + extra).limit(2000);
+    if (!r.error) return (r.data as any[]) || [];
+  } catch { /* engagement column may not exist yet — fall through */ }
+  const r2 = await db().from("bd_deals").select(base + extra).limit(2000);
+  return (r2.data as any[]) || [];
 }
 
 
@@ -856,15 +870,24 @@ export async function handleBd(action: string, body: any): Promise<any> {
       const d = ((rows as any[]) || [])[0];
       if (d) {
         const s = d.strategy && typeof d.strategy === "object" ? d.strategy : {};
+        const fmtDate = (x: any) => { const t = x ? new Date(x).getTime() : 0; return !t || isNaN(t) ? "" : new Date(t).toISOString().slice(0, 16).replace("T", " ") + " UTC"; };
+        const eng = engagementSummary(d.engagement);
+        const atts = Array.isArray(d.attachments) ? d.attachments : [];
+        let attText = "";
+        for (const a of atts) { if (a && a.text) { const block = `\n--- ${a.kind || "doc"}${a.name ? " (" + a.name + ")" : ""} ---\n${String(a.text).slice(0, 3000)}`; if (attText.length + block.length > 9000) break; attText += block; } }
         const ctx = [
           `Client: ${d.client_name || d.client_handle} (@${d.client_handle || ""})`,
           `Status: ${d.status || ""} · Outcome: ${d.outcome || "open"} · Value: ${d.deal_value || 0} · Country: ${d.country || "unknown"} · Industry: ${d.industry || ""} · Type: ${d.client_type || ""}`,
+          `Lead created: ${fmtDate(d.created_at) || "unknown"} · Last updated: ${fmtDate(d.updated_at) || "unknown"} · Last message: ${fmtDate(d.last_message_at) || "unknown"}`,
+          `Timing and availability (IST is your clock): ${eng || "no activity timing captured for this client yet"}`,
           s.verdict ? `Verdict: ${JSON.stringify(s.verdict)}` : "",
           s.deal_state ? `Deal state: ${JSON.stringify(s.deal_state)}` : "",
           s.client_intel ? `Client intel: ${JSON.stringify(s.client_intel)}` : "",
           s.deal_facts ? `Deal facts: ${JSON.stringify(s.deal_facts)}` : "",
+          Array.isArray(d.stage_history) && d.stage_history.length ? `Stage history: ${d.stage_history.map((h: any) => String((h && (h.status || h.stage)) || "") + (h && (h.at || h.when) ? "@" + fmtDate(h.at || h.when) : "")).filter(Boolean).join(" -> ")}` : "",
           d.notes ? `Operator notes: ${String(d.notes).slice(0, 1500)}` : "",
-          Array.isArray(d.attachments) && d.attachments.length ? `Attachments on file: ${d.attachments.map((a: any) => (a.kind || "doc") + (a.label ? ":" + a.label : "")).join(", ")}` : "",
+          atts.length ? `Attachments on file: ${atts.map((a: any) => (a.kind || "doc") + (a.name ? ":" + a.name : "")).join(", ")}` : "",
+          attText ? `Attachment contents:${attText}` : "",
           d.conversation ? `Conversation (most recent excerpt):\n${String(d.conversation).slice(-6000)}` : "",
         ].filter(Boolean).join("\n");
         const r = await vaultAsk({ question, scope: "client", context: ctx, history, config });
@@ -873,11 +896,11 @@ export async function handleBd(action: string, body: any): Promise<any> {
     }
     // population
     try {
-      const { data: all } = await db().from("bd_deals").select("id, client_name, client_handle, status, outcome, deal_value, country, industry, client_type, created_at, updated_at, last_message_at, strategy").limit(2000);
+      const all = await vaultLoadDeals("");
       const now = Date.now();
-      const digs = ((all as any[]) || []).map((d) => digestOf(d, now)).sort((a, b) => (a.idleDays == null ? 1 : a.idleDays) - (b.idleDays == null ? 1 : b.idleDays));
+      const digs = all.map((d) => digestOf(d, now)).sort((a, b) => (a.idleDays == null ? 1 : a.idleDays) - (b.idleDays == null ? 1 : b.idleDays));
       const lines = digs.slice(0, 120).map(vaultDigestLine).join("\n");
-      const ctx = `Total leads on file: ${digs.length}. Showing the ${Math.min(120, digs.length)} most recently active.\n${lines}`;
+      const ctx = `Total leads on file: ${digs.length}. Showing the ${Math.min(120, digs.length)} most recently active, each with status, temperature, health, country, value, idle days, next move and activity timing.\n${lines}`;
       const r = await vaultAsk({ question, scope: "population", context: ctx, history, config });
       return { success: true, answer: r.answer, used: [] };
     } catch (e: any) { return { success: false, error: e?.message || "Could not read the lead data." }; }
@@ -905,8 +928,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     }
     let list: any[] = [];
     try {
-      const { data: deals } = await db().from("bd_deals").select("id, client_name, client_handle, status, outcome, deal_value, country, industry, client_type, created_at, updated_at, last_message_at, strategy, stage_history").limit(2000);
-      list = (deals as any[]) || [];
+      list = await vaultLoadDeals("stage_history");
     } catch (e: any) { return { success: false, error: e?.message || "Could not read the lead data." }; }
     if (scope.status && scope.status !== "all") list = list.filter((d) => String(d.status || "") === scope.status);
     if (scope.country && scope.country !== "all") list = list.filter((d) => String(d.country || "").toLowerCase().includes(String(scope.country).toLowerCase()));
