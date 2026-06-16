@@ -20,14 +20,15 @@ import { db } from "./db.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
-async function dealContext(id: string, conversation: string): Promise<{ conversation: string; facts: string; attachments: string; strategySummary: string; callScript: string }> {
-  let facts = ""; let attachments = ""; let strategySummary = ""; let callScript = "";
+async function dealContext(id: string, conversation: string): Promise<{ conversation: string; facts: string; attachments: string; strategySummary: string; callScript: string; operatorContext: string }> {
+  let facts = ""; let attachments = ""; let strategySummary = ""; let callScript = ""; let operatorContext = "";
   if (id) {
     try {
-      const { data } = await db().from("bd_deals").select("conversation, strategy, attachments").eq("id", id).single();
+      const { data } = await db().from("bd_deals").select("conversation, strategy, attachments, notes").eq("id", id).single();
       const d = data as any;
       if (d) {
         conversation = conversation || d.conversation || "";
+        operatorContext = String(d.notes || "");
         facts = JSON.stringify(d.strategy?.deal_facts || {});
         strategySummary = String(d.strategy?.deal_state?.summary || "");
         const cs = d.strategy?.call_script;
@@ -45,7 +46,7 @@ async function dealContext(id: string, conversation: string): Promise<{ conversa
     } catch { /* ignore */ }
   }
   noteCall(id);
-  return { conversation, facts, attachments, strategySummary, callScript };
+  return { conversation, facts, attachments, strategySummary, callScript, operatorContext };
 }
 
 // Lead priority from the client's country + your editable deprioritised-regions list, grounded in your real conversion from the same region.
@@ -211,6 +212,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (typeof body?.conversation === "string" && body.conversation.trim()) { upd.conversation = body.conversation; upd.last_message_at = new Date().toISOString(); }
     if (body?.engagement && typeof body.engagement === "object") upd.engagement = body.engagement;
     if (typeof body?.client_site === "string" && body.client_site.trim()) upd.client_site = body.client_site.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").slice(0, 200);
+    if (typeof body?.notes === "string") upd.notes = body.notes.slice(0, 8000);
     try {
       let { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
       if (error && /column|schema cache|does not exist/i.test(String(error.message || ""))) {
@@ -627,7 +629,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
     try {
       const { askExpert } = await import("./bd-strategist.js");
-      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary, callScript: c.callScript });
+      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary, callScript: c.callScript, operatorContext: c.operatorContext });
       if (!r.ok) return { success: false, error: r.error };
       return { success: true, answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools };
     } catch (e: any) { return { success: false, error: e?.message || "ask failed" }; }
@@ -686,7 +688,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
         const fromAtt = deal.attachments.map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 12000)}`).join("\n\n");
         context = fromAtt + (context ? "\n\n" + context : "");
       }
-      const r = await strategizeDeal({ conversation, brief, clientName, context });
+      const r = await strategizeDeal({ conversation, brief, clientName, context, operatorContext: String(deal?.notes || "") });
       if (!r.ok) return { success: false, error: r.error, strategy: r.strategy };
       if (id && deal) {
         try {

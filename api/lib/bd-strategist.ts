@@ -40,6 +40,7 @@ export interface DealStrategy {
 const SYSTEM = [
   `You are an elite Fiverr business-development strategist AND a senior digital-marketing / SEO-AEO technical expert. You are helping a freelancer (the SELLER) convert a client conversation into a hired order, deliver well, and earn repeat orders.`,
   `You are given the running conversation (label whose message is whose), the brief, and any context. Read the WHOLE thread and strategise the seller's next move.`,
+  `If the seller has added their OWN context or read of this client (shown as "SELLER'S OWN CONTEXT"), treat it as AUTHORITATIVE — it reflects their direct knowledge and instructions — and let it lead your analysis, next move, and draft reply, even where it overrides what the chat alone would suggest.`,
   ``,
   `Fiverr context and rules to respect:`,
   `- Keep all communication and payment ON Fiverr; never suggest moving off-platform (it risks the seller's account).`,
@@ -85,8 +86,9 @@ const arr = (x: any): string[] => Array.isArray(x) ? x.filter((s: any) => typeof
 
 /* ─── Conversion generators (offer, roadmap, reply variants) — grounded in
    the deal facts + conversation + any audit. ─── */
-function ctxBlock(o: { conversation?: string; facts?: string; attachments?: string }): string {
+function ctxBlock(o: { conversation?: string; facts?: string; attachments?: string; operatorContext?: string }): string {
   return [
+    o.operatorContext ? `Seller's own context for this client (authoritative — let it lead): ${String(o.operatorContext).slice(0, 4000)}` : ``,
     o.facts ? `Captured deal facts: ${String(o.facts).slice(0, 4000)}` : ``,
     o.attachments ? `Audit / shared files:\n${String(o.attachments).slice(0, 8000)}` : ``,
     o.conversation ? `Conversation:\n${String(o.conversation).slice(0, 20000)}` : ``,
@@ -126,7 +128,7 @@ export async function buildRoadmap(o: { conversation?: string; facts?: string; a
   } catch (e: any) { return { ok: false, error: e?.message || "roadmap failed" }; }
 }
 
-export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string; callScript?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
+export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string; callScript?: string; operatorContext?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
   const system = [
     `You are a senior Fiverr business developer. Given the conversation (and facts/audit), write THREE different strategic reply options to the client's latest message — each a distinct angle the seller could choose.`,
     `Make them genuinely different in approach (for example: "Answer + ask for the URL", "Answer + offer a quick free audit", "Answer + soft close toward an offer"). Each in a warm, confident seller voice.`,
@@ -366,7 +368,7 @@ export async function analyzeEngagement(opts: { conversation?: string; orderInfo
   } catch (e: any) { return { ok: false, error: e?.message || "engagement failed" }; }
 }
 
-export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string; callScript?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
+export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string; callScript?: string; operatorContext?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
   const system = [
@@ -382,6 +384,7 @@ export async function askExpert(opts: { question: string; conversation?: string;
     `Return ONLY valid JSON: {"answer":"...","client_reply":"...","suggested_tools":["..."]}`,
   ].join("\n");
   const user = [
+    opts.operatorContext ? `The seller's own context for this client (authoritative — let it lead your answer):\n${String(opts.operatorContext).slice(0, 4000)}` : ``,
     opts.strategySummary ? `Deal so far: ${opts.strategySummary}` : ``,
     opts.facts ? `Captured facts: ${String(opts.facts).slice(0, 4000)}` : ``,
     opts.callScript ? `Saved call script for this deal (reuse / adapt where it helps):\n${String(opts.callScript).slice(0, 4000)}` : ``,
@@ -400,13 +403,14 @@ export async function askExpert(opts: { question: string; conversation?: string;
   }
 }
 
-export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
+export async function strategizeDeal(opts: { conversation: string; brief?: string; clientName?: string; context?: string; operatorContext?: string }): Promise<{ ok: boolean; strategy: DealStrategy; error?: string }> {
   const now = new Date().toISOString();
   const convo = String(opts.conversation || "").trim();
   if (!convo) return { ok: false, strategy: { ...EMPTY, generated_at: now }, error: "Paste the client conversation first." };
 
   const user = [
     opts.clientName ? `Client: ${opts.clientName}.` : ``,
+    opts.operatorContext ? `SELLER'S OWN CONTEXT for this client — authoritative; the seller knows this client directly, so let it lead your read, next move, and draft reply even where it overrides what the chat alone would suggest:\n${String(opts.operatorContext).slice(0, 4000)}` : ``,
     opts.brief ? `Brief / service:\n${String(opts.brief).slice(0, 6000)}` : ``,
     opts.context ? `Context (the seller's platform, prior research, shared documents and call transcripts):\n${String(opts.context).slice(0, 12000)}` : ``,
     `Conversation so far (strategise the seller's next move):\n${convo.slice(0, 30000)}`,

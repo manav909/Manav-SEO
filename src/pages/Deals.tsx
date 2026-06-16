@@ -254,6 +254,7 @@ export default function Deals() {
   const [notice, setNotice] = useState("");
   const [showPrio, setShowPrio] = useState(false);
   const [deprioInput, setDeprioInput] = useState("bangladesh, pakistan, india");
+  const [notesInput, setNotesInput] = useState("");
   const [autoAnalyse, setAutoAnalyse] = useState(true);
   const [lastAnalysed, setLastAnalysed] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -320,6 +321,13 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not save priority settings."); return; }
     setShowPrio(false); setNotice("Lead priority updated — re-analyse a lead to apply it.");
   };
+  const saveNotes = async () => {
+    if (!selected?.id) { setError("Open or start a lead first."); return; }
+    const r: any = await post("bd_deal_update", { id: selected.id, notes: notesInput });
+    if (!r?.success) { setError(r?.error || "Could not save your context."); return; }
+    if (r.deal) setSelected(r.deal);
+    setNotice("Your context saved — the analysis and replies will use it.");
+  };
   useEffect(() => { (async () => { try { const r: any = await post("bd_settings_get", { key: "lead_priority" }); if (r?.success && r.value && Array.isArray(r.value.deprioritized)) setDeprioInput(r.value.deprioritized.join(", ")); } catch { /* ignore */ } })(); /* eslint-disable-next-line */ }, []);
 
   const applyStrategy = (s: any) => { setStrategy(s); setReplyDraft(s?.draft_reply || ""); };
@@ -331,8 +339,8 @@ export default function Deals() {
     if (!r?.success) { setError(r?.error || "Could not open the deal."); return; }
     const d = r.deal;
     setSelected(d); selectedIdRef.current = d.id; setConversation(d.conversation || ""); applyStrategy(d.strategy || null); setPasteInput(""); setLastAnalysed(d.conversation || "");
-    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(d.client_site || ""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); };
-  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); setFocusedWin(""); };
+    setTags(Array.isArray(d.tags) ? d.tags : []); setConfirmDel(false); setAudit(null); setNameInput(d.client_name || ""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(d.client_site || ""); setNotesInput(d.notes || ""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); };
+  const newDeal = () => { setSelected(null); selectedIdRef.current = ""; setConversation(""); setPasteInput(""); applyStrategy(null); setError(""); setNotice(""); setLastAnalysed(""); setTags([]); setConfirmDel(false); setAudit(null); setNameInput(""); setOffer(null); setRoadmap(null); setVariants([]); setAskResult(null); setAeo(null); setComp(null); setCompCo(""); setCompKw(""); setSiteInput(""); setNotesInput(""); setDoneActions([]); setShowOrderPaste(false); setOrderInput(""); setShowDeliveredPaste(false); setDeliveredInput(""); setEngFired(""); setCenterTab("chat"); setRightTab("brief"); setViewAtt(null); setFocusedWin(""); };
 
   const genVariants = async () => { setToolBusy("variants"); setError(""); const r: any = await post("bd_reply_variants", { id: selected?.id, conversation }); setToolBusy(""); if (!r?.success) { setError(r?.error || "Could not get reply options."); return; } setVariants(r.variants || []); };
   const loadCaseLib = async () => { const r: any = await post("bd_casestudy_list", {}); if (r?.success) setCaseLib(r.case_studies || []); };
@@ -802,6 +810,13 @@ export default function Deals() {
                   )}
                 </div>
               )}
+            </div>
+          )}
+          {selected?.id && (
+            <div className="px-4 pt-3 pb-3 border-b border-border/60">
+              <div className="text-[10px] font-semibold text-primary uppercase tracking-[0.13em] mb-1.5 flex items-center gap-1.5"><span>📝</span> Your context <span className="text-muted-foreground font-normal normal-case tracking-normal">— the AI always reads this</span></div>
+              <textarea value={notesInput} onChange={e => setNotesInput(e.target.value)} placeholder="Your own read on this client — anything the chat doesn't say. What they're really after, how to handle them, your call. The analysis and replies treat this as authoritative." className="w-full h-16 px-3 py-2 rounded-xl border border-border bg-background text-xs outline-none focus:border-primary resize-y" />
+              <button onClick={saveNotes} disabled={notesInput === (selected?.notes || "")} className="mt-1.5 text-[11px] px-3.5 py-1.5 rounded-lg bg-primary text-primary-foreground font-semibold disabled:opacity-50">Save context</button>
             </div>
           )}
           {!strategy ? (

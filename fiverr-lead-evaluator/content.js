@@ -120,7 +120,7 @@
   root.appendChild(wrap);
 
   let open = false, lastStrategy = null, slots = [], replies = [], replyMsg = "", askResult = null, askMsg = "";
-  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null, pendingTranscript = null, zoomTx = null;
+  let dealId = "", dealName = "", deal = null, siteUrl = "", competitors = "", keywords = "", ops = {}, docsOpen = false, engagement = null, pendingTranscript = null, zoomTx = null, myNotes = "";
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "", chatObs = null, boundHandle = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
@@ -510,6 +510,12 @@
       if (resp && resp.ok && resp.data && resp.data.success && deal) deal.client_site = siteUrl;
     });
   }
+  function persistNotes() {
+    if (!dealId) return;
+    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, notes: myNotes } }, (resp) => {
+      if (resp && resp.ok && resp.data && resp.data.success && deal) deal.notes = myNotes;
+    });
+  }
   function findDeal(then) {
     const handle = clientHandle();
     if (!handle) { if (then) then(); return; }
@@ -517,6 +523,7 @@
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) {
         deal = resp.data.deal; dealId = String(deal.id || ""); dealName = String(deal.client_name || handle);
         if (deal.strategy) lastStrategy = deal.strategy;
+        myNotes = String(deal.notes || "");
         // resolve the client's site: prefer the LLM's extracted site (most reliable), then a valid typed/stored/regex one — never a Fiverr/CDN host
         const cands = [lastStrategy && lastStrategy.client_site, siteUrl, deal.client_site, detectClientSite()];
         for (const c of cands) { if (okHost(c)) { siteUrl = cleanDomain(c); break; } }
@@ -656,7 +663,7 @@
   function rebindToClient() {
     // a lead switch on Fiverr is a client-side route change (no page load) — wipe the previous client's analysis so nothing bleeds across, then bind live to the new client
     lastStrategy = null; slots = []; replies = []; replyMsg = ""; askResult = null; askMsg = ""; suggestedTools = [];
-    dealId = ""; dealName = ""; deal = null; siteUrl = ""; competitors = ""; keywords = ""; ops = {}; docsOpen = false; engagement = null; zoomTx = null;
+    dealId = ""; dealName = ""; deal = null; siteUrl = ""; competitors = ""; keywords = ""; ops = {}; docsOpen = false; engagement = null; zoomTx = null; myNotes = "";
     syncedAt = 0; lastEvalLen = 0; lastEvalAt = 0; evalCached = false; evalErr = "";
     scan(); render();
     findDeal(() => { maybeEvalOnOpen(); watchChat(); });
@@ -742,6 +749,7 @@
   function opsHtml() {
     let h = `<div class="lbl" style="margin-top:0">Live SEO ops <span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500">· run on the server, saved to this client</span></div>`;
     h += `<input id="ss-site" placeholder="client website (auto-detected when present)" value="${esc(siteUrl)}" style="width:100%;background:#0c0f1a;border:1px solid #262b3d;border-radius:8px;color:#e7e9f3;padding:7px 9px;font-size:11.5px;margin-bottom:7px">`;
+    h += `<div class="lbl" style="margin-top:0">Your context <span style="color:#7c83a3;font-weight:400;text-transform:none;letter-spacing:0">— the AI always reads this</span></div><textarea id="ss-notes" placeholder="Your own read on this client — anything the chat does not say. Treated as authoritative." style="width:100%;height:46px;background:#0c0f1a;border:1px solid #262b3d;border-radius:8px;color:#e7e9f3;padding:7px 9px;font-size:11.5px;margin-bottom:7px;resize:vertical">${esc(myNotes)}</textarea>`;
     h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px">`;
     OPS.forEach((o) => { const busy = (ops[o.k] || {}).loading; h += `<button class="opbtn" data-op="${o.k}"${busy ? " disabled" : ""} style="cursor:${busy ? "default" : "pointer"};border:1px solid #2b3147;background:${busy ? "#0c0f1a" : "#1a1f33"};color:#c7cadb;border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:600">${esc(o.label)}</button>`; });
     h += `</div>`;
@@ -853,6 +861,7 @@
     const syi = root.querySelector(".sayins"); if (syi) syi.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; if (!t.trim()) return; const box = findReplyBox(); if (!box) { askMsg = "err:Could not find Fiverr's message box. Click into it once, then press Insert again — or use Copy."; renderBody(); return; } insertIntoBox(box, t); };
     const syc = root.querySelector(".saycpy"); if (syc) syc.onclick = () => { const ta = root.querySelector(".saynext"); const t = ta ? ta.value : (lastStrategy && lastStrategy.draft_reply) || ""; try { navigator.clipboard.writeText(t); } catch (e) { /* ignore */ } syc.textContent = "Copied"; setTimeout(() => { syc.textContent = "Copy"; }, 1200); };
     const si = root.getElementById("ss-site"); if (si) { si.addEventListener("input", (e) => { siteUrl = e.target.value.trim(); }); si.addEventListener("change", () => { persistSite(); }); }
+    const ne = root.getElementById("ss-notes"); if (ne) { ne.addEventListener("input", (e) => { myNotes = e.target.value; }); ne.addEventListener("change", () => { persistNotes(); }); }
     const ce = root.getElementById("ss-comp"); if (ce) ce.addEventListener("input", (e) => { competitors = e.target.value; });
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
     const sg = root.getElementById("ss-sugg"); if (sg) sg.onclick = () => suggestCompetitors();
