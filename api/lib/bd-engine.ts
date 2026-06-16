@@ -182,7 +182,16 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (body?.engagement && typeof body.engagement === "object") upd.engagement = body.engagement;
     if (typeof body?.client_site === "string" && body.client_site.trim()) upd.client_site = body.client_site.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").slice(0, 200);
     try {
-      const { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
+      let { data, error } = await db().from("bd_deals").update(upd).eq("id", id).select().single();
+      if (error && /column|schema cache|does not exist/i.test(String(error.message || ""))) {
+        // a newer optional column (engagement / client_site) may not exist in this database yet — never let that block the core save, since chat sync depends on it
+        const core: any = { updated_at: upd.updated_at };
+        if ("conversation" in upd) { core.conversation = upd.conversation; core.last_message_at = upd.last_message_at; }
+        if ("status" in upd) core.status = upd.status;
+        if ("tags" in upd) core.tags = upd.tags;
+        if ("client_name" in upd) core.client_name = upd.client_name;
+        ({ data, error } = await db().from("bd_deals").update(core).eq("id", id).select().single());
+      }
       if (error) return { success: false, error: error.message };
       if (upd.status) appendStage(id, upd.status);
       return { success: true, deal: data };
@@ -191,7 +200,13 @@ export async function handleBd(action: string, body: any): Promise<any> {
 
   if (action === "bd_dedupe_deals") {
     try {
-      const { data } = await db().from("bd_deals").select("id, client_name, client_handle, platform, status, strategy, conversation, attachments, engagement, client_site, tags, updated_at, last_message_at, created_at");
+      let optCols = true;
+      let res = await db().from("bd_deals").select("id, client_name, client_handle, platform, status, strategy, conversation, attachments, engagement, client_site, tags, updated_at, last_message_at, created_at");
+      if (res.error && /column|schema cache|does not exist/i.test(String(res.error.message || ""))) {
+        optCols = false; // engagement / client_site not in this database yet — dedupe still merges everything else
+        res = await db().from("bd_deals").select("id, client_name, client_handle, platform, status, strategy, conversation, attachments, tags, updated_at, last_message_at, created_at");
+      }
+      const data = res.data;
       const rows = Array.isArray(data) ? data : [];
       const ORDER = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat"]; // active advancement; terminal (stalled/lost/archived) rank -1
       const rank = (s: any) => { const i = ORDER.indexOf(String(s || "").toLowerCase()); return i >= 0 ? i : -1; };
@@ -231,7 +246,8 @@ export async function handleBd(action: string, body: any): Promise<any> {
           if (String(L.last_message_at || "") > String(lastMsg)) lastMsg = L.last_message_at;
         }
         const engagement = (win.engagement || engTimes.length) ? Object.assign({}, win.engagement || {}, { times: Array.from(new Set(engTimes)).slice(-400) }) : null;
-        const upd: any = { conversation, attachments, engagement, client_site: client_site || null, tags, status, last_message_at: lastMsg || null, updated_at: new Date().toISOString() };
+        const upd: any = { conversation, attachments, tags, status, last_message_at: lastMsg || null, updated_at: new Date().toISOString() };
+        if (optCols) { upd.engagement = engagement; upd.client_site = client_site || null; }
         if (strategy) upd.strategy = strategy;
         await db().from("bd_deals").update(upd).eq("id", win.id);
         const loserIds = losers.map((L) => L.id);
