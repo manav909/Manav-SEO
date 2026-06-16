@@ -123,7 +123,7 @@ export async function buildRoadmap(o: { conversation?: string; facts?: string; a
   } catch (e: any) { return { ok: false, error: e?.message || "roadmap failed" }; }
 }
 
-export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
+export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string; callScript?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
   const system = [
     `You are a senior Fiverr business developer. Given the conversation (and facts/audit), write THREE different strategic reply options to the client's latest message — each a distinct angle the seller could choose.`,
     `Make them genuinely different in approach (for example: "Answer + ask for the URL", "Answer + offer a quick free audit", "Answer + soft close toward an offer"). Each in a warm, confident seller voice.`,
@@ -131,7 +131,7 @@ export async function replyVariants(o: { conversation?: string; facts?: string; 
     `Return ONLY JSON: {"variants":[{"label":"...","text":"..."},{"label":"...","text":"..."},{"label":"...","text":"..."}]}`,
   ].join("\n");
   try {
-    const raw = await llm({ system, user: ctxBlock(o) + `\n\nWrite the three reply options.`, maxTokens: 2200, timeoutMs: 80000, label: "bd-reply-variants" });
+    const raw = await llm({ system, user: ctxBlock(o) + (o.callScript ? `\n\nSaved call script for this deal:\n${String(o.callScript).slice(0, 3000)}` : "") + `\n\nWrite the three reply options.`, maxTokens: 2200, timeoutMs: 80000, label: "bd-reply-variants" });
     const p = parseJsonResponse<any>(raw);
     if (!p || !Array.isArray(p.variants)) return { ok: false, error: "Could not produce reply options. Try again." };
     return { ok: true, variants: p.variants.map((v: any) => ({ label: String(v?.label || ""), text: String(v?.text || "") })).filter((v: any) => v.text) };
@@ -363,7 +363,7 @@ export async function analyzeEngagement(opts: { conversation?: string; orderInfo
   } catch (e: any) { return { ok: false, error: e?.message || "engagement failed" }; }
 }
 
-export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
+export async function askExpert(opts: { question: string; conversation?: string; facts?: string; attachments?: string; strategySummary?: string; callScript?: string }): Promise<{ ok: boolean; answer: string; client_reply: string; suggested_tools: string[]; error?: string }> {
   const q = String(opts.question || "").trim();
   if (!q) return { ok: false, answer: "", client_reply: "", suggested_tools: [], error: "Type your question or what you are thinking." };
   const system = [
@@ -381,6 +381,7 @@ export async function askExpert(opts: { question: string; conversation?: string;
   const user = [
     opts.strategySummary ? `Deal so far: ${opts.strategySummary}` : ``,
     opts.facts ? `Captured facts: ${String(opts.facts).slice(0, 4000)}` : ``,
+    opts.callScript ? `Saved call script for this deal (reuse / adapt where it helps):\n${String(opts.callScript).slice(0, 4000)}` : ``,
     opts.attachments ? `Shared files / audit:\n${String(opts.attachments).slice(0, 10000)}` : ``,
     opts.conversation ? `Conversation:\n${String(opts.conversation).slice(0, 24000)}` : ``,
     ``,

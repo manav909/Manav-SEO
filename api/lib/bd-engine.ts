@@ -20,8 +20,8 @@ import { db } from "./db.js";
 
 const STATUSES = ["lead", "qualifying", "proposal", "negotiating", "demo_requested", "closing", "hired", "in_delivery", "repeat", "stalled", "lost", "archived"];
 
-async function dealContext(id: string, conversation: string): Promise<{ conversation: string; facts: string; attachments: string; strategySummary: string }> {
-  let facts = ""; let attachments = ""; let strategySummary = "";
+async function dealContext(id: string, conversation: string): Promise<{ conversation: string; facts: string; attachments: string; strategySummary: string; callScript: string }> {
+  let facts = ""; let attachments = ""; let strategySummary = ""; let callScript = "";
   if (id) {
     try {
       const { data } = await db().from("bd_deals").select("conversation, strategy, attachments").eq("id", id).single();
@@ -30,12 +30,22 @@ async function dealContext(id: string, conversation: string): Promise<{ conversa
         conversation = conversation || d.conversation || "";
         facts = JSON.stringify(d.strategy?.deal_facts || {});
         strategySummary = String(d.strategy?.deal_state?.summary || "");
+        const cs = d.strategy?.call_script;
+        if (cs && cs.needed) {
+          const parts: string[] = [];
+          if (cs.opening) parts.push(`Opening: ${cs.opening}`);
+          if (Array.isArray(cs.discovery_questions) && cs.discovery_questions.length) parts.push(`Discovery questions: ${cs.discovery_questions.join("; ")}`);
+          if (Array.isArray(cs.value_points) && cs.value_points.length) parts.push(`Value points: ${cs.value_points.join("; ")}`);
+          if (Array.isArray(cs.objection_handling) && cs.objection_handling.length) parts.push(`Objection handling: ${cs.objection_handling.join("; ")}`);
+          if (cs.close) parts.push(`Close: ${cs.close}`);
+          callScript = parts.join("\n");
+        }
         if (Array.isArray(d.attachments)) attachments = d.attachments.map((a: any) => `[${a.kind}: ${a.name}]\n${String(a.text || "").slice(0, 5000)}`).join("\n\n");
       }
     } catch { /* ignore */ }
   }
   noteCall(id);
-  return { conversation, facts, attachments, strategySummary };
+  return { conversation, facts, attachments, strategySummary, callScript };
 }
 function noteCall(id: string) { if (id) bumpApiCalls(id).catch(() => { }); }
 
@@ -554,7 +564,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
     try {
       const { askExpert } = await import("./bd-strategist.js");
-      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary });
+      const r = await askExpert({ question, conversation: c.conversation, facts: c.facts, attachments: c.attachments, strategySummary: c.strategySummary, callScript: c.callScript });
       if (!r.ok) return { success: false, error: r.error };
       return { success: true, answer: r.answer, client_reply: r.client_reply, suggested_tools: r.suggested_tools };
     } catch (e: any) { return { success: false, error: e?.message || "ask failed" }; }

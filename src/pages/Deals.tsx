@@ -870,10 +870,11 @@ export default function Deals() {
                   <div className="text-xs text-muted-foreground space-y-1">
                     {strategy.call_script.opening && <p><b className="text-foreground">Open:</b> {strategy.call_script.opening}</p>}
                     {strategy.call_script.discovery_questions?.length > 0 && <div><b className="text-foreground">Ask:</b><List items={strategy.call_script.discovery_questions} /></div>}
+                    {strategy.call_script.value_points?.length > 0 && <div><b className="text-foreground">Value points:</b><List items={strategy.call_script.value_points} /></div>}
                     {strategy.call_script.objection_handling?.length > 0 && <div><b className="text-foreground">Objections:</b><List items={strategy.call_script.objection_handling} /></div>}
                     {strategy.call_script.close && <p><b className="text-foreground">Close:</b> {strategy.call_script.close}</p>}
                   </div>
-                  <button onClick={() => copy([strategy.call_script.opening ? `Open: ${strategy.call_script.opening}` : "", (strategy.call_script.discovery_questions || []).length ? `Ask:\n- ${strategy.call_script.discovery_questions.join("\n- ")}` : "", (strategy.call_script.objection_handling || []).length ? `Objections:\n- ${strategy.call_script.objection_handling.join("\n- ")}` : "", strategy.call_script.close ? `Close: ${strategy.call_script.close}` : ""].filter(Boolean).join("\n\n"))} className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⧉ Copy script</button>
+                  <button onClick={() => copy([strategy.call_script.opening ? `Open: ${strategy.call_script.opening}` : "", (strategy.call_script.discovery_questions || []).length ? `Ask:\n- ${strategy.call_script.discovery_questions.join("\n- ")}` : "", (strategy.call_script.value_points || []).length ? `Value points:\n- ${strategy.call_script.value_points.join("\n- ")}` : "", (strategy.call_script.objection_handling || []).length ? `Objections:\n- ${strategy.call_script.objection_handling.join("\n- ")}` : "", strategy.call_script.close ? `Close: ${strategy.call_script.close}` : ""].filter(Boolean).join("\n\n"))} className="mt-2 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary ring-1 ring-primary/20 hover:bg-primary/15 transition-colors">⧉ Copy script</button>
                 </Acc>
               )}
 
