@@ -224,6 +224,8 @@
       h += `<div style="background:#0e1322;border:1px solid #6366f155;border-left:3px solid ${hColor};border-radius:9px;padding:9px 11px;margin:4px 0 8px">`;
       if (vHead) h += `<div style="font-size:12.5px;font-weight:700;color:#f0f1f8;line-height:1.35">${esc(vHead)}</div>`;
       if (hLabel || v.health_reason) h += `<div style="margin-top:5px;font-size:11px;color:#cfd3e6"><b style="color:${hColor}">${esc(hLabel)}</b>${v.health_reason ? ` — ${esc(v.health_reason)}` : ""}</div>`;
+      const pr = String(v.priority || "").toLowerCase();
+      if (pr) { const pColor = pr === "low" ? "#ef4444" : pr === "high" ? "#22c55e" : "#94a3b8"; const pLabel = pr === "low" ? "Low priority" : pr === "high" ? "High priority" : "Normal priority"; h += `<div style="margin-top:5px;font-size:11px"><b style="color:${pColor}">● ${pLabel}</b>${v.priority_reason ? `<span style="color:#cfd3e6"> — ${esc(v.priority_reason)}</span>` : ""}</div>`; }
       if (v.scope_change) h += `<div style="margin-top:5px;font-size:11px;color:#cfd3e6"><b style="color:#aeb3c9">Scope:</b> ${esc(v.scope_change)}</div>`;
       if (v.next_move) h += `<div style="margin-top:5px;font-size:11.5px;color:#e7e9f3"><b style="color:#818cf8">Next:</b> ${esc(v.next_move)}</div>`;
       if (v.play) h += `<div style="margin-top:3px;font-size:11px;color:#cfd3e6"><b style="color:#aeb3c9">Play:</b> ${esc(v.play)}</div>`;

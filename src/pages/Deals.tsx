@@ -252,6 +252,8 @@ export default function Deals() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [showPrio, setShowPrio] = useState(false);
+  const [deprioInput, setDeprioInput] = useState("bangladesh, pakistan, india");
   const [autoAnalyse, setAutoAnalyse] = useState(true);
   const [lastAnalysed, setLastAnalysed] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -312,6 +314,13 @@ export default function Deals() {
     loadList();
   };
   useEffect(() => { loadList(); /* eslint-disable-next-line */ }, [filter]);
+  const savePrio = async () => {
+    const list = deprioInput.split(",").map(s => s.trim()).filter(Boolean);
+    const r: any = await post("bd_settings_set", { key: "lead_priority", value: { deprioritized: list } });
+    if (!r?.success) { setError(r?.error || "Could not save priority settings."); return; }
+    setShowPrio(false); setNotice("Lead priority updated — re-analyse a lead to apply it.");
+  };
+  useEffect(() => { (async () => { try { const r: any = await post("bd_settings_get", { key: "lead_priority" }); if (r?.success && r.value && Array.isArray(r.value.deprioritized)) setDeprioInput(r.value.deprioritized.join(", ")); } catch { /* ignore */ } })(); /* eslint-disable-next-line */ }, []);
 
   const applyStrategy = (s: any) => { setStrategy(s); setReplyDraft(s?.draft_reply || ""); };
 
@@ -576,10 +585,18 @@ export default function Deals() {
           <div className="flex items-center justify-between mb-2.5">
             <h2 className="text-[13px] font-semibold tracking-tight">Conversations</h2>
             <div className="flex items-center gap-1.5">
+              <button onClick={() => setShowPrio(v => !v)} title="Choose which client regions to deprioritise" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40">⚙ Priority</button>
               <button onClick={dedupeDeals} disabled={busy === "dedupe"} title="Merge duplicate deals for the same client into one" className="text-[10px] px-2 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-50">{busy === "dedupe" ? "Merging…" : "Clean up dupes"}</button>
               <button onClick={newDeal} className="text-[11px] px-2.5 py-1 rounded-lg bg-primary text-primary-foreground font-medium shadow-sm hover:shadow transition-shadow">+ New</button>
             </div>
           </div>
+          {showPrio && (
+            <div className="mb-2 rounded-lg border border-border bg-background/60 p-2.5 space-y-1.5">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Deprioritise leads from (comma-separated countries)</div>
+              <input value={deprioInput} onChange={e => setDeprioInput(e.target.value)} placeholder="bangladesh, pakistan, india" className="w-full px-2.5 py-1.5 rounded-md border border-border bg-background text-xs outline-none focus:border-primary" />
+              <div className="flex items-center gap-2"><button onClick={savePrio} className="text-[10px] px-2.5 py-1 rounded-md bg-primary text-primary-foreground font-semibold">Save</button><button onClick={() => setShowPrio(false)} className="text-[10px] px-2 py-1 rounded-md border border-border text-muted-foreground">Cancel</button><span className="text-[9.5px] text-muted-foreground">Flagged low in the verdict, grounded in your win rate per region.</span></div>
+            </div>
+          )}
           <input value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === "Enter" && loadList()} placeholder="Search…" className="w-full px-3 py-1.5 rounded-lg border border-border bg-background text-xs outline-none focus:border-primary mb-2" />
           <div className="flex gap-1 mb-2 flex-wrap">
             {["active", "won", "archived", "all"].map(f => (<button key={f} onClick={() => setFilter(f)} className={`text-[11px] px-2 py-0.5 rounded-md border ${filter === f ? "bg-primary/15 text-primary border-primary/40" : "border-border text-muted-foreground"}`}>{f === "won" ? "Hired" : f[0].toUpperCase() + f.slice(1)}</button>))}
@@ -809,6 +826,7 @@ export default function Deals() {
                       <div className="rounded-lg border bg-card p-2.5 text-xs space-y-1.5" style={{ borderLeftWidth: 3, borderLeftColor: hColor }}>
                         {head && <p className="text-sm font-semibold text-foreground leading-snug">{head}</p>}
                         {(hLabel || v.health_reason) && <p className="text-muted-foreground"><span style={{ color: hColor }} className="font-semibold">{hLabel}</span>{v.health_reason ? ` — ${v.health_reason}` : ""}</p>}
+                        {v.priority && (() => { const pr = String(v.priority).toLowerCase(); const pColor = pr === "low" ? "#ef4444" : pr === "high" ? "#22c55e" : "#94a3b8"; const pLabel = pr === "low" ? "Low priority" : pr === "high" ? "High priority" : "Normal priority"; return <p style={{ color: pColor }} className="font-semibold">● {pLabel}{v.priority_reason ? <span className="text-muted-foreground font-normal"> — {v.priority_reason}</span> : null}</p>; })()}
                         {v.scope_change && <p className="text-muted-foreground"><span className="font-semibold text-foreground/70">Scope:</span> {v.scope_change}</p>}
                         {v.next_move && <p className="text-foreground"><span className="font-semibold text-primary">Next:</span> {v.next_move}</p>}
                         {v.play && <p className="text-muted-foreground"><span className="font-semibold text-foreground/70">Play:</span> {v.play}</p>}

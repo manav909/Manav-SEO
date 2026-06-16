@@ -47,6 +47,36 @@ async function dealContext(id: string, conversation: string): Promise<{ conversa
   noteCall(id);
   return { conversation, facts, attachments, strategySummary, callScript };
 }
+
+// Lead priority from the client's country + your editable deprioritised-regions list, grounded in your real conversion from the same region.
+async function leadPriorityFor(country: string): Promise<{ priority: string; reason: string }> {
+  const cl = String(country || "").trim().toLowerCase();
+  if (!cl) return { priority: "", reason: "" };
+  let deprio = ["bangladesh", "pakistan", "india"]; // default; editable via bd_settings key 'lead_priority'
+  try {
+    const { data } = await db().from("bd_settings").select("value").eq("key", "lead_priority").single();
+    const v: any = (data as any)?.value;
+    if (v && Array.isArray(v.deprioritized) && v.deprioritized.length) deprio = v.deprioritized.map((x: any) => String(x).trim().toLowerCase()).filter(Boolean);
+  } catch { /* table may not exist yet — use default */ }
+  const matched = deprio.find((rg) => rg && cl.includes(rg));
+  const region = matched || cl;
+  let won = 0, total = 0;
+  try {
+    const { data } = await db().from("bd_deals").select("country, status, outcome");
+    for (const d of (Array.isArray(data) ? data : [])) {
+      const c = String((d as any).country || "").trim().toLowerCase();
+      if (!c || !c.includes(region)) continue;
+      total++;
+      const st = String((d as any).status || "").toLowerCase(); const oc = String((d as any).outcome || "").toLowerCase();
+      if (st === "hired" || st === "repeat" || st === "in_delivery" || oc === "won" || oc === "hired") won++;
+    }
+  } catch { /* ignore */ }
+  const label = (matched || country).replace(/\b\w/g, (m) => m.toUpperCase());
+  const convNote = total >= 2 ? ` You have won ${won} of ${total} leads from ${label}.` : "";
+  if (matched) return { priority: "low", reason: `Deprioritised region (your setting).${convNote}` };
+  if (total >= 3 && won / total >= 0.4) return { priority: "high", reason: `Strong region for you.${convNote}` };
+  return { priority: "normal", reason: convNote.trim() };
+}
 function noteCall(id: string) { if (id) bumpApiCalls(id).catch(() => { }); }
 
 async function bumpApiCalls(id: string, n = 1): Promise<void> {
@@ -196,6 +226,23 @@ export async function handleBd(action: string, body: any): Promise<any> {
       if (upd.status) appendStage(id, upd.status);
       return { success: true, deal: data };
     } catch (e: any) { return { success: false, error: e?.message || "update failed" }; }
+  }
+
+  if (action === "bd_settings_get") {
+    const key = String(body?.key || "").trim();
+    if (!key) return { success: false, error: "key required." };
+    try { const { data } = await db().from("bd_settings").select("value").eq("key", key).single(); return { success: true, value: (data as any)?.value ?? null }; }
+    catch { return { success: true, value: null }; } // table may not exist yet
+  }
+
+  if (action === "bd_settings_set") {
+    const key = String(body?.key || "").trim();
+    if (!key) return { success: false, error: "key required." };
+    try {
+      const { error } = await db().from("bd_settings").upsert({ key, value: body?.value ?? null, updated_at: new Date().toISOString() }, { onConflict: "key" });
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (e: any) { return { success: false, error: e?.message || "settings save failed" }; }
   }
 
   if (action === "bd_dedupe_deals") {
@@ -651,7 +698,9 @@ export async function handleBd(action: string, body: any): Promise<any> {
           const cleanConv = String(body?.clean_conversation || "").trim();
           const existingConv = String(deal.conversation || "");
           const convUpdate = (cleanConv && cleanConv.length >= existingConv.length) ? { conversation: cleanConv, last_message_at: new Date().toISOString() } : {}; // grow-only: never overwrite a longer saved chat with a partial grab
-          await db().from("bd_deals").update({ strategy: r.strategy, status: newStatus, ...nameUpdate, ...convUpdate, industry: f.industry || deal.industry || null, country: f.location || deal.country || null, client_type: f.client_type || deal.client_type || null, updated_at: new Date().toISOString() }).eq("id", id);
+          const dealCountry = String(f.country || f.location || deal.country || "").trim();
+          try { const pr = await leadPriorityFor(dealCountry); if (pr.priority) { r.strategy.verdict = r.strategy.verdict || ({} as any); (r.strategy.verdict as any).priority = pr.priority; (r.strategy.verdict as any).priority_reason = pr.reason; } } catch { /* non-fatal */ }
+          await db().from("bd_deals").update({ strategy: r.strategy, status: newStatus, ...nameUpdate, ...convUpdate, industry: f.industry || deal.industry || null, country: dealCountry || deal.country || null, client_type: f.client_type || deal.client_type || null, updated_at: new Date().toISOString() }).eq("id", id);
           appendStage(id, newStatus);
         } catch { /* non-fatal */ }
         noteCall(id);
