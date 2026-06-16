@@ -303,16 +303,17 @@
   }
 
   function maybeEvalOnOpen() {
-    // Reuse the saved analysis (instant) and only spend an LLM call when there is none or the chat has grown since it synced.
+    // Switching to a lead must feel instant. If there is a saved analysis, show it immediately with no spinner. If the chat has grown since it synced, refresh quietly in the background behind the visible verdict. Only block (show the loading state) when there is nothing saved to show yet.
     const liveLen = (grabText(false) || "").length;
     const savedLen = (deal && typeof deal.conversation === "string") ? deal.conversation.length : 0;
     const haveSaved = !!(lastStrategy && lastStrategy.deal_state);
-    if (haveSaved && (savedLen === 0 || liveLen - savedLen <= 150)) {
-      evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody();
-      autosave(); // always sync the current clean chat so the software has the latest (covers deals whose conversation was never saved)
+    if (haveSaved) {
+      evalCached = true; lastEvalLen = liveLen; lastEvalAt = Date.now(); renderBody(); // last verdict on screen at once
+      autosave(); // sync the current clean chat so the software has the latest
+      if (savedLen > 0 && liveLen - savedLen > 150) evaluate(false, 1, true); // chat moved on -> refresh in the background, keep showing the verdict
       return;
     }
-    evalCached = false; evaluate(false);
+    evalCached = false; evaluate(false); // nothing saved yet -> first analysis has to run
   }
 
   function grabText(forceSel) {
@@ -330,7 +331,7 @@
     return ((main && main.innerText) || document.body.innerText || "").trim();
   }
 
-  function evaluate(forceSel, attempt) {
+  function evaluate(forceSel, attempt, bg) {
     attempt = attempt || 1;
     const startHandle = clientHandle();
     const conv = grabText(forceSel);
@@ -339,7 +340,7 @@
     if ((!conv || conv.length < 30) && !haveFiles) { if (body) { body.dataset.error = forceSel ? "Nothing is highlighted. Select the conversation first." : "No conversation text found. Highlight the chat and use 'Use selection'."; delete body.dataset.state; renderBody(); } return; }
     const extras = slots.filter((s) => s.text).map((s) => `\n\n[${s.kind === "call" ? "CALL TRANSCRIPT" : "ATTACHED DOCUMENT"}: ${s.label}]\n${s.text}`).join("");
     const full = (conv || "") + extras;
-    if (body) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
+    if (body && !bg) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
     lastEvalAt = Date.now(); evalCached = false; evalErr = "";
     chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, clean_conversation: conv, id: dealId } }, (resp) => {
       if (clientHandle() !== startHandle) return; // switched clients mid-flight — drop this stale result so it does not bleed into the new client
@@ -348,8 +349,9 @@
       if (resp && resp.ok && data.success && data.strategy) {
         delete b.dataset.state; lastStrategy = data.strategy; lastEvalLen = (conv || "").length; b.dataset.captured = String(full.length); evalErr = ""; renderBody(); autosave(); return;
       }
-      if (attempt < 2) { setTimeout(() => evaluate(forceSel, attempt + 1), 1500); return; } // one quiet auto-retry — strategize timeouts are usually transient
+      if (attempt < 2) { setTimeout(() => evaluate(forceSel, attempt + 1, bg), 1500); return; } // one quiet auto-retry — strategize timeouts are usually transient
       delete b.dataset.state;
+      if (bg) { renderBody(); return; } // a background refresh failed — keep the verdict already on screen, no error noise
       const errMsg = chrome.runtime.lastError ? chrome.runtime.lastError.message : (resp && (resp.error || data.error)) || "The analysis took too long. Tap Evaluate to try again.";
       if (lastStrategy && lastStrategy.deal_state) { evalErr = "Could not refresh just now — showing your last analysis. Tap Evaluate to retry."; renderBody(); }
       else { b.dataset.error = errMsg; renderBody(); }
@@ -525,7 +527,7 @@
         if (deal.strategy) lastStrategy = deal.strategy;
         myNotes = String(deal.notes || "");
         // resolve the client's site: prefer the LLM's extracted site (most reliable), then a valid typed/stored/regex one — never a Fiverr/CDN host
-        const cands = [lastStrategy && lastStrategy.client_site, siteUrl, deal.client_site, detectClientSite()];
+        const cands = [lastStrategy && lastStrategy.client_site, deal.client_site]; // verified sources only: the analysis-detected site, then the stored one. Never scan the page here — that grabbed a URL belonging to a different lead and ran ops on it.
         for (const c of cands) { if (okHost(c)) { siteUrl = cleanDomain(c); break; } }
         if (siteUrl && cleanDomain(deal.client_site) !== siteUrl) persistSite(); // write the good value back (heals an earlier bad detection)
         engagement = mergeEngagement(deal.engagement, readEngagement());
@@ -578,53 +580,53 @@
     const times = Array.from(new Set([].concat(Array.isArray(prev.times) ? prev.times : [], Array.isArray(fresh.times) ? fresh.times : []))).slice(-400);
     return { times, last_seen: fresh.last_seen || prev.last_seen || "", local_time: fresh.local_time || prev.local_time || "", timezone: fresh.timezone || prev.timezone || "", observed_at: fresh.observed_at || prev.observed_at || new Date().toISOString(), first_observed: prev.first_observed || fresh.observed_at || new Date().toISOString() };
   }
-  // ---- timezone helpers: show timing in the SELLER's own zone (auto-detected), translate the client's zone ----
-  const TZ_ABBR = { "Asia/Kolkata": "IST", "Asia/Calcutta": "IST", "America/New_York": "ET", "America/Chicago": "CT", "America/Denver": "MT", "America/Los_Angeles": "PT", "America/Phoenix": "MST", "Europe/London": "UK", "Europe/Paris": "CET", "Europe/Berlin": "CET", "Asia/Dubai": "GST", "Asia/Singapore": "SGT", "Asia/Hong_Kong": "HKT", "Asia/Tokyo": "JST", "Asia/Seoul": "KST", "Australia/Sydney": "AEST", "Africa/Lagos": "WAT", "Africa/Nairobi": "EAT", "Africa/Johannesburg": "SAST", "Pacific/Auckland": "NZST", "Europe/Moscow": "MSK" };
-  const ABBR_IANA = { EST: "America/New_York", EDT: "America/New_York", ET: "America/New_York", CST: "America/Chicago", CDT: "America/Chicago", CT: "America/Chicago", MST: "America/Phoenix", MDT: "America/Denver", MT: "America/Denver", PST: "America/Los_Angeles", PDT: "America/Los_Angeles", PT: "America/Los_Angeles", GMT: "UTC", UTC: "UTC", BST: "Europe/London", CET: "Europe/Paris", CEST: "Europe/Paris", IST: "Asia/Kolkata", GST: "Asia/Dubai", SGT: "Asia/Singapore", HKT: "Asia/Hong_Kong", JST: "Asia/Tokyo", KST: "Asia/Seoul", AEST: "Australia/Sydney", AEDT: "Australia/Sydney", WAT: "Africa/Lagos", EAT: "Africa/Nairobi", CAT: "Africa/Maputo", SAST: "Africa/Johannesburg", NZST: "Pacific/Auckland", MSK: "Europe/Moscow" };
-  function dispZone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; } }
-  function zoneLabel(iana) { if (TZ_ABBR[iana]) return TZ_ABBR[iana]; try { const p = new Intl.DateTimeFormat("en-US", { timeZone: iana, timeZoneName: "short" }).formatToParts(new Date()).find((x) => x.type === "timeZoneName"); return p ? p.value : iana; } catch (e) { return iana; } }
-  function hourInZone(d, iana) { try { return parseInt(new Intl.DateTimeFormat("en-US", { timeZone: iana, hour: "2-digit", hour12: false }).format(d), 10) % 24; } catch (e) { return d.getHours(); } }
-  function tzOffsetMin(iana) { try { const d = new Date(); const u = new Date(d.toLocaleString("en-US", { timeZone: "UTC" })); const z = new Date(d.toLocaleString("en-US", { timeZone: iana })); return Math.round((z - u) / 60000); } catch (e) { return 0; } }
-  function nowInZone(iana) { try { return new Intl.DateTimeFormat("en-US", { timeZone: iana, hour: "numeric", minute: "2-digit", hour12: true }).format(new Date()); } catch (e) { return ""; } }
+  // ---- timezone: show client activity on YOUR clock (IST, a fixed UTC+5:30 so no DST math), and derive the client local time from Fiverr's own display ----
   function engagementHtml() {
     if (!engagement) return "";
-    const e = engagement; const dz = dispZone(); const dzLabel = zoneLabel(dz);
+    const e = engagement;
+    const istHourOf = (d) => Math.floor(((d.getUTCHours() * 60 + d.getUTCMinutes() + 330) % 1440) / 60); // any timestamp -> hour on your IST clock
+    const fmt = (mins) => { mins = ((Math.round(mins) % 1440) + 1440) % 1440; let hh = Math.floor(mins / 60); const ap = hh < 12 ? "am" : "pm"; hh = hh % 12 === 0 ? 12 : hh % 12; const mm = mins % 60; return hh + (mm ? ":" + String(mm).padStart(2, "0") : "") + ap; };
     const dated = (e.times || []).filter((t) => t && t[0] !== "T").map((t) => new Date(t)).filter((d) => !isNaN(d.getTime()));
     const hourly = new Array(24).fill(0); let count = 0;
     (e.times || []).forEach((t) => {
       let hr = -1;
-      if (t[0] === "T") hr = parseInt(t.slice(1, 3), 10);                 // time-only token, already in the seller's viewing zone (= dz)
-      else { const d = new Date(t); if (!isNaN(d.getTime())) hr = hourInZone(d, dz); } // absolute timestamp -> seller's zone
+      if (t[0] === "T") hr = parseInt(t.slice(1, 3), 10);                  // visible clock text — Fiverr already renders it in your IST view
+      else { const d = new Date(t); if (!isNaN(d.getTime())) hr = istHourOf(d); } // absolute timestamp -> your IST hour
       if (hr >= 0 && hr < 24) { hourly[hr]++; count++; }
     });
-    const band = (a, b) => { let s = 0; for (let i = a; i <= b; i++) s += hourly[i]; return s; };
-    const bands = [["morning", band(5, 11)], ["afternoon", band(12, 16)], ["evening", band(17, 21)], ["late night", band(22, 23) + band(0, 4)]];
-    bands.sort((a, b) => b[1] - a[1]);
-    const top = bands.filter((b) => b[1] > 0).slice(0, 2).map((b) => b[0]).join(" & ");
+    let peak = -1, peakSum = -1;
+    for (let i = 0; i < 24; i++) { const s = hourly[i] + hourly[(i + 1) % 24] + hourly[(i + 2) % 24]; if (s > peakSum) { peakSum = s; peak = i; } } // busiest 3-hour window in IST
+    const istWindow = (count && peak >= 0 && peakSum > 0) ? (fmt(peak * 60) + "-" + fmt((peak + 3) * 60)) : "";
+    const istNowMin = (Math.floor(Date.now() / 60000) % 1440 + 330) % 1440; // current IST minute-of-day, independent of the browser zone
+    let offsetMin = null; const zoneShown = e.timezone || "";
+    const lt = (e.local_time || "").match(/(\d{1,2}):(\d{2})\s*([ap])?/i);
+    if (lt) { let hh = parseInt(lt[1], 10) % 12; if (lt[3] && /p/i.test(lt[3])) hh += 12; let diff = (hh * 60 + parseInt(lt[2], 10)) - istNowMin; while (diff > 720) diff -= 1440; while (diff < -720) diff += 1440; offsetMin = Math.round(diff / 15) * 15; } // Fiverr's own local-time display is the most reliable signal
+    else if (e.timezone) {
+      const gm = e.timezone.match(/(?:GMT|UTC)\s*([+\-])\s*(\d{1,2})(?::?(\d{2}))?/i);
+      const ABBR = { EST: -300, EDT: -240, CST: -360, CDT: -300, MST: -420, MDT: -360, PST: -480, PDT: -420, GMT: 0, UTC: 0, BST: 60, CET: 60, CEST: 120, IST: 330, GST: 240, SGT: 480, HKT: 480, JST: 540, KST: 540, AEST: 600, AEDT: 660, WAT: 60, EAT: 180, CAT: 120, SAST: 120, NZST: 720, MSK: 180 };
+      let z = null;
+      if (gm) z = (parseInt(gm[2], 10) * 60 + (gm[3] ? parseInt(gm[3], 10) : 0)) * (gm[1] === "-" ? -1 : 1);
+      else { const ab = (e.timezone.match(/[A-Z]{2,4}/) || [])[0]; if (ab && ABBR[ab] != null) z = ABBR[ab]; }
+      if (z != null) offsetMin = z - 330;
+    }
+    const theirWindow = (istWindow && offsetMin != null) ? (fmt(peak * 60 + offsetMin) + "-" + fmt((peak + 3) * 60 + offsetMin)) : "";
+    const theirNow = offsetMin != null ? fmt(istNowMin + offsetMin) : (e.local_time || "");
+    const relWord = offsetMin == null ? "" : (offsetMin === 0 ? "same time as you" : ((Math.abs(offsetMin) % 60 === 0 ? String(Math.abs(offsetMin) / 60) : (Math.abs(offsetMin) / 60).toFixed(1)) + "h " + (offsetMin < 0 ? "behind you" : "ahead of you")));
     let last = "";
     if (dated.length) { const mx = Math.max.apply(null, dated.map((d) => d.getTime())); const mins = Math.round((Date.now() - mx) / 60000); last = mins < 1 ? "just now" : mins < 60 ? mins + "m ago" : mins < 1440 ? Math.round(mins / 60) + "h ago" : Math.round(mins / 1440) + "d ago"; }
-    // translate the client's detected zone into a current clock + offset vs the seller
-    let theirLine = "";
-    const cz = e.timezone && ABBR_IANA[e.timezone.replace(/[+\-].*$/, "")] ? ABBR_IANA[e.timezone.replace(/[+\-].*$/, "")] : "";
-    if (cz) {
-      const t = nowInZone(cz); const diff = Math.round((tzOffsetMin(cz) - tzOffsetMin(dz)) / 30) / 2; // hours, half-hour precision
-      const rel = diff === 0 ? "same as you" : (Math.abs(diff) + "h " + (diff < 0 ? "behind" : "ahead of") + " you");
-      theirLine = (t ? t + " " : "") + "(" + esc(e.timezone) + ") · " + rel;
-    }
     let h = `<div class="lbl" style="margin-top:0">⏱ Client timing &amp; availability</div>`;
     const rows = [];
-    if (theirLine) rows.push(["Their local time now", theirLine]);
-    else if (e.local_time) rows.push(["Their local time", esc(e.local_time) + (e.timezone ? ' <span class="muted">(' + esc(e.timezone) + ")</span>" : "")]);
-    else if (e.timezone) rows.push(["Their time zone", esc(e.timezone)]);
+    if (istWindow) rows.push(["Active — your time (IST)", `<b>${istWindow}</b>` + (theirWindow ? ` <span class="muted">(their ${theirWindow})</span>` : "") + ` <span class="muted">· ${count} seen</span>`]);
+    if (theirNow) rows.push(["Client local time now", esc(theirNow) + (zoneShown ? ` <span class="muted">(${esc(zoneShown)})</span>` : "") + (relWord ? ` <span class="muted">· ${relWord}</span>` : "")]);
+    else if (zoneShown) rows.push(["Client time zone", esc(zoneShown)]);
     if (last) rows.push(["Last message", last]);
     if (e.last_seen) rows.push(["Status", esc(e.last_seen)]);
-    if (count && top) rows.push([`Usually messages <span class="muted">(${dzLabel})</span>`, top + ` <span class="muted">(${count} seen)</span>`]);
     if (!rows.length) {
-      h += `<p class="muted" style="margin:0 0 8px;font-size:10.5px">No timestamps detected on this page yet — Fiverr often hides them in hover tooltips. Right-click a message's time, Inspect, and paste me the element so I can lock onto it.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+      h += `<p class="muted" style="margin:0 0 8px;font-size:10.5px">No timestamps detected on this page yet — Fiverr often hides them in hover tooltips. Right-click the time on a message, choose Inspect, and paste me the element so I can lock onto it.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
       return h;
     }
     h += `<div class="sum" style="margin:0 0 5px">` + rows.map((r) => `<div style="display:flex;justify-content:space-between;gap:10px;margin:2px 0"><span class="muted">${r[0]}</span><span style="text-align:right">${r[1]}</span></div>`).join("") + `</div>`;
-    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">Activity shown in your time zone (${dzLabel}) so you can plan${cz ? " — their clock is in the top row" : ""}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
+    h += `<p class="muted" style="margin:0 0 8px;font-size:10px">Active hours are on your IST clock so you can plan when to be online${offsetMin != null ? " — the client local window is in brackets" : ""}. Builds up across visits.</p><div style="height:1px;background:#262b3d;margin:10px 0"></div>`;
     return h;
   }
   function renderSync() {
@@ -637,7 +639,7 @@
   function autosave() {
     if (!dealId || !sameClient()) return;
     const conv = grabText(false); if (!conv || conv.length < 30) return;
-    if (!siteUrl) { const s = detectClientSite(); if (s) { siteUrl = s; renderBody(); } }
+    // Do not scan the page for a site here. Autosave persists a site only when analysis verified one or you typed it, so one lead's URL never bleeds into another.
     engagement = mergeEngagement((deal && deal.engagement) || engagement, readEngagement());
     const upd = { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement };
     if (siteUrl) upd.client_site = siteUrl;

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SEO Season — Fiverr Lead Evaluator",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Evaluate Fiverr leads live from the open chat, and capture Zoom call transcripts, using your SEO Season intelligence engine. No copy-paste.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": [

@@ -770,7 +770,13 @@ export async function handleBd(action: string, body: any): Promise<any> {
     try {
       const { data: deal } = await db().from("bd_deals").select("*").eq("id", id).single();
       const d = deal as any;
-      await db().from("bd_deals").update({ outcome, deal_value: dealValue, status, ...(outcome === "won" ? { won_reason: reason } : { lost_reason: reason }), updated_at: new Date().toISOString() }).eq("id", id);
+      const baseUpd: any = { outcome, deal_value: dealValue, status, updated_at: new Date().toISOString() };
+      let { error: oerr } = await db().from("bd_deals").update({ ...baseUpd, ...(outcome === "won" ? { won_reason: reason } : { lost_reason: reason }) }).eq("id", id);
+      if (oerr && /column|schema cache|does not exist/i.test(String(oerr.message || ""))) {
+        // won_reason / lost_reason may not be migrated yet — never let that block recording the outcome, since HoD conversion data and learnings depend on it. The reason still flows into the learning below.
+        ({ error: oerr } = await db().from("bd_deals").update(baseUpd).eq("id", id));
+      }
+      if (oerr) return { success: false, error: oerr.message };
       appendStage(id, status);
       try {
         const { analyzeOutcome } = await import("./bd-strategist.js");
