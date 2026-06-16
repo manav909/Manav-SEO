@@ -124,6 +124,27 @@
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "", chatObs = null, boundHandle = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
+  // Every backend call goes through here so a loading state can NEVER hang forever.
+  // In Manifest V3 the background service worker can be killed mid-request, or its fetch
+  // can stall, in which case the sendMessage callback never fires and the spinner stays
+  // up indefinitely. This wraps the call with a watchdog timeout and a single-fire guard,
+  // so the callback always runs exactly once — with the real response, or a synthetic
+  // failure on timeout / lost connection. A late real response after a timeout is dropped.
+  function callEngine(action, body, cb, timeoutMs) {
+    let done = false, timer = null;
+    const finish = (resp) => { if (done) return; done = true; if (timer) clearTimeout(timer); try { cb(resp); } catch (e) { /* ignore */ } };
+    timer = setTimeout(() => finish({ ok: false, timedOut: true, error: "This took too long. Tap to try again." }), timeoutMs || 50000);
+    try {
+      chrome.runtime.sendMessage({ type: "callEngine", action: action, body: body || {} }, (resp) => {
+        const le = chrome.runtime.lastError; // read it so Chrome does not log an unchecked-error warning
+        if (le && !resp) { finish({ ok: false, error: le.message || "Connection lost. Tap to try again." }); return; }
+        finish(resp || { ok: false, error: "No response. Tap to try again." });
+      });
+    } catch (e) {
+      finish({ ok: false, error: String((e && e.message) || e) });
+    }
+  }
+
   // ---- detection ---------------------------------------------------------------
   const EXT = /\.(xlsx|xls|csv|pdf|docx?|pptx?|txt|md|json|png|jpe?g|gif|zip|rar)$/i;
   const CALL = /(video call|voice call|audio call|missed call|call ended|call started|incoming call|outgoing call|zoom meeting|scheduled a call|call request|joined the call|left the call)/i;
@@ -358,7 +379,7 @@
     const full = (conv || "") + extras;
     if (body && !bg) { body.dataset.state = attempt > 1 ? "retry" : "loading"; delete body.dataset.error; delete body.dataset.captured; renderBody(); }
     lastEvalAt = Date.now(); evalCached = false; evalErr = "";
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_strategize", body: { conversation: full, clean_conversation: conv, id: dealId } }, (resp) => {
+    callEngine("bd_strategize", { conversation: full, clean_conversation: conv, id: dealId }, (resp) => {
       if (clientHandle() !== startHandle) return; // switched clients mid-flight — drop this stale result so it does not bleed into the new client
       const b = root.getElementById("ss-body"); if (!b) return;
       const data = (resp && resp.data) || {};
@@ -411,7 +432,7 @@
     const full = (conv || "") + extras;
     if (!full || full.length < 30) { replyMsg = "err:No conversation found to reply to."; renderBody(); return; }
     replyMsg = "loading"; renderBody();
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_reply_variants", body: { conversation: full, id: dealId } }, (resp) => {
+    callEngine("bd_reply_variants", { conversation: full, id: dealId }, (resp) => {
       if (chrome.runtime.lastError) { replyMsg = "err:" + chrome.runtime.lastError.message; renderBody(); return; }
       if (!resp || !resp.ok) { replyMsg = "err:" + ((resp && (resp.error || (resp.data && resp.data.error))) || "Request failed. Check the API address in settings."); renderBody(); return; }
       const data = resp.data || {};
@@ -446,7 +467,7 @@
     const full = (conv || "") + extras;
     if ((!full || full.length < 20) && !question) { askMsg = "err:Open a conversation first (or use Sel to select the chat)."; renderBody(); return; }
     askMsg = "loading"; askResult = null; renderBody();
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_ask", body: { conversation: full, question, id: dealId } }, (resp) => {
+    callEngine("bd_ask", { conversation: full, question, id: dealId }, (resp) => {
       if (chrome.runtime.lastError) { askMsg = "err:" + chrome.runtime.lastError.message; renderBody(); return; }
       if (!resp || !resp.ok) { askMsg = "err:" + ((resp && (resp.error || (resp.data && resp.data.error))) || "Request failed. Check the API address in settings."); renderBody(); return; }
       const data = resp.data || {};
@@ -524,20 +545,20 @@
   }
   function persistSite() {
     if (!dealId || !siteUrl) return;
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, client_site: siteUrl } }, (resp) => {
+    callEngine("bd_deal_update", { id: dealId, client_site: siteUrl }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && deal) deal.client_site = siteUrl;
     });
   }
   function persistNotes() {
     if (!dealId) return;
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: { id: dealId, notes: myNotes } }, (resp) => {
+    callEngine("bd_deal_update", { id: dealId, notes: myNotes }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && deal) deal.notes = myNotes;
     });
   }
   function findDeal(then) {
     const handle = clientHandle();
     if (!handle) { if (then) then(); return; }
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_find", body: { client_handle: handle, platform: "fiverr", client_name: handle } }, (resp) => {
+    callEngine("bd_deal_find", { client_handle: handle, platform: "fiverr", client_name: handle }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) {
         deal = resp.data.deal; dealId = String(deal.id || ""); dealName = String(deal.client_name || handle);
         if (deal.strategy) lastStrategy = deal.strategy;
@@ -554,7 +575,7 @@
   }
   function refreshDeal() {
     if (!dealId) return;
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_get", body: { id: dealId } }, (resp) => {
+    callEngine("bd_deal_get", { id: dealId }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && resp.data.deal) { deal = resp.data.deal; engagement = mergeEngagement(deal.engagement, readEngagement()); renderBody(); }
     });
   }
@@ -662,7 +683,7 @@
     engagement = mergeEngagement((deal && deal.engagement) || engagement, readEngagement());
     const upd = { id: dealId, conversation: conv, client_name: dealName || undefined, engagement: engagement };
     if (siteUrl) upd.client_site = siteUrl;
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_update", body: upd }, (resp) => {
+    callEngine("bd_deal_update", upd, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success) { if (deal) { deal.conversation = conv; deal.engagement = engagement; if (siteUrl) deal.client_site = siteUrl; } syncedAt = Date.now(); renderSync(); }
     });
   }
@@ -715,7 +736,7 @@
     if (!dealId) { ops.competitor = { err: "Open the lead first so I have its context." }; renderBody(); return; }
     ops.competitor = { loading: true, label: "Working out who the competitors are…" }; renderBody();
     const conv = grabText(false);
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_suggest_competitors", body: { id: dealId, conversation: conv } }, (resp) => {
+    callEngine("bd_suggest_competitors", { id: dealId, conversation: conv }, (resp) => {
       const data = (resp && resp.data) || {};
       if (!resp || !resp.ok || !data.success) { ops.competitor = { err: (chrome.runtime.lastError && chrome.runtime.lastError.message) || data.error || "Could not suggest competitors — type them in manually." }; renderBody(); return; }
       const comps = data.competitors || []; const kws = data.keywords || [];
@@ -740,7 +761,7 @@
       action = "bd_competitor_snapshot"; body = { id: dealId, siteUrl: site, competitors: comps, keywords: kws };
     }
     ops[k] = { loading: true }; renderBody();
-    chrome.runtime.sendMessage({ type: "callEngine", action, body }, (resp) => {
+    callEngine(action, body, (resp) => {
       if (chrome.runtime.lastError) { ops[k] = { err: chrome.runtime.lastError.message }; renderBody(); return; }
       if (!resp || !resp.ok) { ops[k] = { err: (resp && (resp.error || (resp.data && resp.data.error))) || "Request failed. Check the API address in settings." }; renderBody(); return; }
       const data = resp.data || {};
@@ -814,7 +835,7 @@
     const rows = inboxRows();
     if (!rows.length) { inbox = []; inboxMsg = "err:No conversations visible. Open your Fiverr inbox and scroll to the ones you want loaded, then Refresh."; renderInbox(); return; }
     inbox = rows; inboxMsg = "enriching"; renderInbox();
-    chrome.runtime.sendMessage({ type: "callEngine", action: "bd_deal_lookup", body: { platform: "fiverr", handles: rows.map((r) => r.handle) } }, (resp) => {
+    callEngine("bd_deal_lookup", { platform: "fiverr", handles: rows.map((r) => r.handle) }, (resp) => {
       if (resp && resp.ok && resp.data && resp.data.success && Array.isArray(resp.data.deals)) {
         const byh = {}; resp.data.deals.forEach((d) => { byh[d.client_handle] = d; });
         inbox = inbox.map((r) => byh[r.handle] ? Object.assign({}, r, { stage: byh[r.handle].stage, temperature: byh[r.handle].temperature, status: byh[r.handle].status, evaluated: byh[r.handle].evaluated, has_intel: byh[r.handle].has_intel, last_message_at: byh[r.handle].last_message_at }) : r);
@@ -887,7 +908,7 @@
     const ke = root.getElementById("ss-kw"); if (ke) ke.addEventListener("input", (e) => { keywords = e.target.value; });
     const sg = root.getElementById("ss-sugg"); if (sg) sg.onclick = () => suggestCompetitors();
     const dt = root.getElementById("ss-docstog"); if (dt) dt.onclick = () => { docsOpen = !docsOpen; renderBody(); };
-    const txa = root.getElementById("ss-tx-attach"); if (txa) txa.onclick = () => { if (pendingTranscript && pendingTranscript.text) { zoomTx = { label: pendingTranscript.label || "Zoom call transcript", text: pendingTranscript.text }; scan(); docsOpen = true; if (dealId) chrome.runtime.sendMessage({ type: "callEngine", action: "bd_attach", body: { id: dealId, kind: "transcript", name: zoomTx.label, text: zoomTx.text } }, () => refreshDeal()); } try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); evaluate(false); };
+    const txa = root.getElementById("ss-tx-attach"); if (txa) txa.onclick = () => { if (pendingTranscript && pendingTranscript.text) { zoomTx = { label: pendingTranscript.label || "Zoom call transcript", text: pendingTranscript.text }; scan(); docsOpen = true; if (dealId) callEngine("bd_attach", { id: dealId, kind: "transcript", name: zoomTx.label, text: zoomTx.text }, () => refreshDeal()); } try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); evaluate(false); };
     const txd = root.getElementById("ss-tx-dismiss"); if (txd) txd.onclick = () => { try { chrome.storage.local.remove("ss_pending_transcript"); } catch (e) { /* ignore */ } pendingTranscript = null; renderBody(); };
     const rs = root.getElementById("ss-rescan"); if (rs) rs.onclick = () => { scan(); renderBody(); };
   }
