@@ -687,8 +687,33 @@ export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_reply_variants") {
     const c = await dealContext(String(body?.id || "").trim(), String(body?.conversation || ""));
     if (!c.conversation.trim()) return { success: false, error: "Paste the conversation first." };
-    try { const { replyVariants } = await import("./bd-strategist.js"); const r = await replyVariants(c); return r.ok ? { success: true, variants: r.variants } : { success: false, error: r.error }; }
+    const replyLanguage = String(body?.reply_language || "").toLowerCase() === "english" ? "english" : "client";
+    let clientLanguage = String(body?.client_language || "").trim();
+    if (!clientLanguage && String(body?.id || "").trim()) {
+      try { const { data } = await db().from("bd_deals").select("strategy").eq("id", String(body.id).trim()).single(); clientLanguage = String((data?.strategy as any)?.conversation_language || "").trim(); } catch { /* ignore */ }
+    }
+    try { const { replyVariants } = await import("./bd-strategist.js"); const r = await replyVariants({ ...c, replyLanguage, clientLanguage }); return r.ok ? { success: true, variants: r.variants } : { success: false, error: r.error }; }
     catch (e: any) { return { success: false, error: e?.message || "variants failed" }; }
+  }
+
+  if (action === "bd_translate") {
+    const text = String(body?.text || "").trim();
+    if (!text) return { success: false, error: "Nothing to translate." };
+    try {
+      const { llm } = await import("./workspace/llm.js");
+      const out = await llm({
+        system: [
+          `You translate a client conversation into clear, natural English for a senior operator who reads English only. The operator needs to understand exactly what was said.`,
+          `Preserve the structure: if the original labels who said what (the seller versus the client), keep those labels. Keep line breaks and message order.`,
+          `KEEP EXACTLY AS WRITTEN, never translate or alter: urls, email addresses, domains, keywords the client is targeting, brand names, product names, numbers, prices, currency, dates, and technical terms.`,
+          `If a passage is already in English, leave it exactly as it is. Do not summarise, do not add commentary. Return ONLY the English version of the conversation, nothing else.`,
+        ].join("\n"),
+        user: text.slice(0, 24000), maxTokens: 3000, timeoutMs: 80000, label: "bd-translate",
+      });
+      const translation = String(out || "").trim();
+      if (!translation) return { success: false, error: "Translation came back empty. Try again." };
+      return { success: true, translation };
+    } catch (e: any) { return { success: false, error: e?.message || "translate failed" }; }
   }
 
   if (action === "bd_ask") {

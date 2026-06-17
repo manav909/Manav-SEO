@@ -22,6 +22,7 @@ import { llm, parseJsonResponse } from "./workspace/llm.js";
 export interface DealStrategy {
   detected_client: string;
   client_site:     string;
+  conversation_language: string;
   verdict:      { headline: string; scope_change: string; health: string; health_reason: string; next_move: string; play: string; priority: string; priority_reason: string };
   deal_state:   { stage: string; temperature: string; summary: string };
   client_intel: { wants: string[]; pain_points: string[]; buying_signals: string[]; objections: string[]; budget_signals: string[]; tone: string };
@@ -66,12 +67,19 @@ const SYSTEM = [
   ``,
   `HARD RULES: base everything on the actual conversation and context. Do not invent client statements. The draft reply must be truthful — no fake case studies, no guaranteed rankings, no invented results. If winning the deal seems to need a claim that is not true, flag it in risk_flags instead of writing it.`,
   ``,
+  `LANGUAGE — read this carefully. You report to a senior operator who reads ENGLISH ONLY, while the client may write in ANY language:`,
+  `- Read and fully understand the conversation no matter what language it is written in.`,
+  `- Write ALL of your analysis and commentary in clear ENGLISH so the operator understands everything: verdict, deal_state.summary, client_intel, expectations, next_move, call_script, action_items, risk_flags, reminders, needs_attachments.`,
+  `- conversation_language: name the language the CLIENT is writing in (for example "Spanish", "German", "Arabic", or "English"). If the client writes in more than one language, name the dominant one.`,
+  `- PRESERVE VERBATIM, in the client's ORIGINAL language, ALL work data — NEVER translate these: target_keywords, urls, client_site, competitors, deliverables, service and platform names, brand names, and any technical SEO term. The SEO work targets the client's own market and language; a translated keyword targets the wrong search results and destroys the work. Quality is never compromised for the sake of translation. Copy them exactly as written, character for character.`,
+  `- draft_reply: by DEFAULT write it in the CLIENT'S OWN language so the client reads it naturally and warmly (write it in English only when the client is already writing in English). Even inside a reply written in the client's language, keep every URL, keyword, brand name and technical term exactly as-is — do not translate those.`,
+  ``,
   `Return ONLY valid JSON, no prose, no fences:`,
-  `{"detected_client":"...","client_site":"...","verdict":{"headline":"...","scope_change":"...","health":"healthy","health_reason":"...","next_move":"...","play":"..."},"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."],"tone":"..."},"next_move":"...","expectations":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","country":"","platform":"","service":"","industry":"","client_type":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
+  `{"detected_client":"...","client_site":"...","conversation_language":"...","verdict":{"headline":"...","scope_change":"...","health":"healthy","health_reason":"...","next_move":"...","play":"..."},"deal_state":{"stage":"...","temperature":"...","summary":"..."},"client_intel":{"wants":["..."],"pain_points":["..."],"buying_signals":["..."],"objections":["..."],"budget_signals":["..."],"tone":"..."},"next_move":"...","expectations":"...","draft_reply":"...","action_items":[{"action":"...","why":"...","platform_can_help":false}],"call_script":{"needed":false,"opening":"...","discovery_questions":["..."],"value_points":["..."],"objection_handling":["..."],"close":"..."},"needs_attachments":[{"kind":"document","what":"...","note":"..."}],"reminders":[{"text":"...","when":"..."}],"deal_facts":{"budget":"","timeline":"","location":"","country":"","platform":"","service":"","industry":"","client_type":"","deliverables":[],"urls":[],"competitors":[],"target_keywords":[],"prices_discussed":[],"files_shared":[],"key_dates":[],"other_facts":[]},"risk_flags":["..."]}`,
 ].join("\n");
 
 const EMPTY: DealStrategy = {
-  detected_client: "", client_site: "",
+  detected_client: "", client_site: "", conversation_language: "",
   verdict: { headline: "", scope_change: "", health: "", health_reason: "", next_move: "", play: "", priority: "", priority_reason: "" },
   deal_state: { stage: "new_lead", temperature: "cold", summary: "" },
   client_intel: { wants: [], pain_points: [], buying_signals: [], objections: [], budget_signals: [], tone: "" },
@@ -102,6 +110,7 @@ export async function buildOffer(o: { conversation?: string; facts?: string; att
     `Recommend a realistic Fiverr custom offer. If the client stated a budget, respect it or justify a sensible range around it. Scope must match the price — do not over-promise. Pricing should reflect typical Fiverr SEO/AEO ranges, not agency retainers.`,
     `Return: recommended_package (name), price_band (a USD range), delivery_time, scope (what is included, list), deliverables (concrete outputs, list), addons (optional extras with a price each), rationale (one short paragraph on why this scope/price fits), and offer_text (the exact message to send to the client alongside the Fiverr offer).`,
     `HARD RULES: no guaranteed rankings or fabricated outcomes; be honest about what is and is not included; keep it senior and practical.`,
+    `WORK DATA: keep all keywords, urls, domains, competitor and brand names, and technical terms EXACTLY as the client wrote them, in their original language — never translate them; a translated keyword targets the wrong market and ruins the work.`,
     `Return ONLY JSON: {"recommended_package":"...","price_band":"...","delivery_time":"...","scope":["..."],"deliverables":["..."],"addons":[{"name":"...","price":"..."}],"rationale":"...","offer_text":"..."}`,
   ].join("\n");
   try {
@@ -118,6 +127,7 @@ export async function buildRoadmap(o: { conversation?: string; facts?: string; a
     `You are a senior SEO/AEO strategist writing a credible 30/60/90-day plan for a specific client, to share during the sales conversation. Use the deal facts, the conversation, and any audit findings.`,
     `Be concrete and specific to this client (their platform, their issues, their goals) — not a generic template. Each phase is a short list of the actual work.`,
     `HARD RULES: honest and realistic; no guaranteed rankings; sequence the work sensibly (technical/foundation first, then content/authority, then AEO/scale).`,
+    `WORK DATA: keep all keywords, urls, domains, competitor and brand names, and technical terms EXACTLY as the client wrote them, in their original language — never translate them; a translated keyword targets the wrong market and ruins the work.`,
     `Return ONLY JSON: {"summary":"...","phase_30":["..."],"phase_60":["..."],"phase_90":["..."]}`,
   ].join("\n");
   try {
@@ -128,11 +138,15 @@ export async function buildRoadmap(o: { conversation?: string; facts?: string; a
   } catch (e: any) { return { ok: false, error: e?.message || "roadmap failed" }; }
 }
 
-export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string; callScript?: string; operatorContext?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
+export async function replyVariants(o: { conversation?: string; facts?: string; attachments?: string; callScript?: string; operatorContext?: string; replyLanguage?: string; clientLanguage?: string }): Promise<{ ok: boolean; variants?: Array<{ label: string; text: string }>; error?: string }> {
+  const langLine = String(o.replyLanguage || "").toLowerCase() === "english"
+    ? `LANGUAGE: write all three replies in clear ENGLISH. Keep any URLs, keywords, brand names and technical terms exactly as written.`
+    : `LANGUAGE: write all three replies in the CLIENT'S OWN language${o.clientLanguage ? ` (${o.clientLanguage})` : ""} so the client reads them naturally and warmly — match the client's language and tone. If the client is writing in English, write in English. Keep every URL, keyword, brand name and technical term exactly as written — do not translate those, even inside a reply written in the client's language.`;
   const system = [
     `You are a senior Fiverr business developer. Given the conversation (and facts/audit), write THREE different strategic reply options to the client's latest message — each a distinct angle the seller could choose.`,
     `Make them genuinely different in approach (for example: "Answer + ask for the URL", "Answer + offer a quick free audit", "Answer + soft close toward an offer"). Each in a warm, confident seller voice.`,
     `HARD RULES: truthful — no guaranteed rankings or fabricated results; specific to this client.`,
+    langLine,
     `Return ONLY JSON: {"variants":[{"label":"...","text":"..."},{"label":"...","text":"..."},{"label":"...","text":"..."}]}`,
   ].join("\n");
   try {
@@ -443,6 +457,7 @@ export async function strategizeDeal(opts: { conversation: string; brief?: strin
     return {
       detected_client: String(p.detected_client || "").slice(0, 120),
       client_site: String(p.client_site || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, ""),
+      conversation_language: String(p.conversation_language || "").trim().slice(0, 40),
       verdict: { headline: String(p.verdict?.headline || ""), scope_change: String(p.verdict?.scope_change || ""), health: String(p.verdict?.health || "").toLowerCase(), health_reason: String(p.verdict?.health_reason || ""), next_move: String(p.verdict?.next_move || ""), play: String(p.verdict?.play || ""), priority: String(p.verdict?.priority || ""), priority_reason: String(p.verdict?.priority_reason || "") },
       deal_state: { stage: String(p.deal_state?.stage || "new_lead"), temperature: String(p.deal_state?.temperature || ""), summary: String(p.deal_state?.summary || "") },
       client_intel: { wants: arr(p.client_intel?.wants), pain_points: arr(p.client_intel?.pain_points), buying_signals: arr(p.client_intel?.buying_signals), objections: arr(p.client_intel?.objections), budget_signals: arr(p.client_intel?.budget_signals), tone: String(p.client_intel?.tone || "") },
