@@ -193,7 +193,13 @@ export async function gatherOnpageAudit(opts: { projectId: string; targetUrls: s
   L.push(`|---|---|---|---|---|---|---|`);
   for (const p of loaded) L.push(`| ${pathOf(p.url)} | ${p.title_len} | ${p.h1 ? "yes" : "MISSING"} | ${p.meta ? "yes" : "MISSING"} | ${p.word_count} | ${p.schema ? "yes" : "no"} | ${p.noindex ? "NOINDEX" : "ok"} |`);
   const failed = pages.filter(p => !p.loaded);
-  if (failed.length) { L.push(`\n_${failed.length} pages failed to load (unverified): ${failed.map(p => pathOf(p.url)).join(", ")}_`); }
+  if (failed.length) {
+    const blocked = failed.filter(p => p.blocked);
+    const blockNote = blocked.length
+      ? ` ${blocked.length} returned HTTP 401/403/429/5xx — blocked or challenged, almost certainly a WAF or bot rule rejecting the crawler rather than a confirmed on-page condition; verify against Search Console before treating it as a site issue.`
+      : "";
+    L.push(`\n_${failed.length} pages could not be audited (unverified).${blockNote} Pages: ${failed.map(p => `${pathOf(p.url)}${p.status ? ` [HTTP ${p.status}]` : ""}`).join(", ")}_`);
+  }
   L.push(`\n## Worth investigating further`); for (const w of worth_deeper) L.push(`- ${w}`);
   L.push(`\n## Provenance`); for (const f of provenance) L.push(`- ${f.source}: ${f.value}${f.note ? ` (${f.note})` : ""} — ${new Date(f.fetched_at).toLocaleString()}`);
   return { evidence, report_md: L.join("\n") };

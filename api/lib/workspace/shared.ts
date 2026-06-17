@@ -35,26 +35,75 @@ export async function withTimeout<T>(p: Promise<T>, label = "q", ms = 12000): Pr
 }
 
 /* ─── live HTML fetch with hard kill ───────────────────────────── */
+/* A real browser UA. The old "SEOSeasonBot/1.0" identifier was being blocked or
+   challenged by site WAFs (Cloudflare, hosting rules), which returned a 403 page
+   while Googlebot — whitelisted — saw the real page. Crawling as a normal browser
+   gets the same page Google indexes, so on-page facts match reality. */
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+      headers: { "User-Agent": BROWSER_UA, "Accept": "text/html,application/xhtml+xml,*/*" },
       redirect: "follow", signal: controller.signal,
     });
     return (await r.text()) || "";
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
+/* Status-aware fetch. Returns the body ONLY on a genuine 2xx response, plus the
+   HTTP status, final URL, and any X-Robots-Tag header. This is what lets callers
+   tell a real page from a 403/challenge/error body — the distinction the audit
+   crawler previously lacked, which is why it reported a WAF block page's title,
+   word count and robots meta as if they were the target page's. */
+export async function fetchPageRaw(url: string, ms = 12000): Promise<{
+  ok: boolean; status: number; html: string; finalUrl: string; xRobotsTag: string; blocked: boolean;
+}> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": BROWSER_UA, "Accept": "text/html,application/xhtml+xml,*/*" },
+      redirect: "follow", signal: controller.signal,
+    });
+    const status = r.status;
+    const ok = status >= 200 && status < 300;
+    const xRobotsTag = r.headers.get("x-robots-tag") || "";
+    const finalUrl = (r as any).url || url;
+    /* never read a 4xx/5xx body as page content — it is an error or challenge page */
+    const html = ok ? ((await r.text()) || "") : "";
+    /* 401/403/429/5xx = access blocked or challenged, not a missing or noindex page */
+    const blocked = status === 401 || status === 403 || status === 429 || status >= 500;
+    return { ok, status, html, finalUrl, xRobotsTag, blocked };
+  } catch {
+    return { ok: false, status: 0, html: "", finalUrl: url, xRobotsTag: "", blocked: false };
+  } finally { clearTimeout(timer); }
+}
+
 /** Fetch a URL and return verified on-page facts (status, indexability, title,
-    h1, meta, word count, schema). Used for both target and competitor pages. */
+    h1, meta, word count, schema). Used for both target and competitor pages.
+    On a non-2xx (blocked/challenged/error), returns loaded:false with the real
+    status and NO parsed facts — it never treats an error page's body as content. */
 export async function fetchPageFacts(url: string): Promise<{
-  url: string; loaded: boolean; status_ok: boolean;
+  url: string; loaded: boolean; status_ok: boolean; status: number; blocked: boolean;
   title: string; title_len: number; h1: string; meta: string;
   word_count: number; noindex: boolean; canonical: string; schema: boolean;
 }> {
-  const html = await fetchHtml(url);
+  const { ok, status, html, blocked, xRobotsTag } = await fetchPageRaw(url);
+  /* fetch failed / blocked / challenged — report it honestly. NEVER parse the
+     error body for title/word-count/robots. Parsing a 403 block page is exactly
+     what produced the bogus "403 + noindex + 11 words" reading on every page
+     while Googlebot saw the real, indexed page. */
+  if (!ok) {
+    return {
+      url, loaded: false, status_ok: false, status, blocked,
+      title: "", title_len: 0, h1: "", meta: "",
+      word_count: 0, noindex: false, canonical: "", schema: false,
+    };
+  }
   const loaded = html.length > 300;
   const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
   const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
@@ -62,10 +111,17 @@ export async function fetchPageFacts(url: string): Promise<{
   const canonical = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']*)["']/i) || [])[1]?.trim() || "";
   const wordCount = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ").split(/\s+/).filter(w => w.length > 2).length;
-  const noindex = /<meta[^>]+name=["']robots["'][^>]+noindex/i.test(html) || /noindex/i.test(html.slice(0, 3000));
+  /* indexability = a real robots-meta noindex OR an X-Robots-Tag: noindex header.
+     The old code also matched the bare word "noindex" anywhere in the first 3000
+     chars, which false-positives on any page that merely mentions it (or on an
+     error page). Require the actual directive instead. */
+  const metaNoindex   = /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*\bnoindex\b/i.test(html);
+  const headerNoindex = /\bnoindex\b/i.test(xRobotsTag);
+  const noindex = metaNoindex || headerNoindex;
   const schema = /application\/ld\+json/i.test(html);
   return {
-    url, loaded, status_ok: loaded, title, title_len: title.length, h1, meta,
+    url, loaded, status_ok: true, status, blocked: false,
+    title, title_len: title.length, h1, meta,
     word_count: wordCount, noindex, canonical, schema,
   };
 }
