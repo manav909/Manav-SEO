@@ -164,7 +164,7 @@ async function pmDeleteCard(cardId: string) {
 async function pmGatherRequirements(projectId: string) {
   if (!projectId) return { success: false, error: "projectId required" };
   try {
-    const [projR, auditR, algoR, brainR, knowledgeR, docsR, crawlR] =
+    const [projR, auditR, algoR, brainR, knowledgeR, docsR, crawlR, deepR] =
       await Promise.allSettled([
         db().from("projects").select("*").eq("id", projectId).maybeSingle(),
         db().from("audit_reports").select("*")
@@ -184,6 +184,13 @@ async function pmGatherRequirements(projectId: string) {
         db().from("crawled_pages")
           .select("url,page_analysis,crawl_status,crawled_at")
           .eq("project_id", projectId).order("crawled_at", { ascending: false }).limit(40),
+        /* Deep technical audit findings — the rich per-finding rows the
+           SEO-campaign audit writes to its own table (separate from
+           audit_reports). Surfaced here so the Requirements tab and the card
+           strategist are grounded in the deep audit, not just the light one. */
+        db().from("technical_audit_findings")
+          .select("audit_run_id,audited_url,audit_kind,severity,finding_title,finding_detail,recommendation,created_at")
+          .eq("project_id", projectId).order("created_at", { ascending: false }).limit(150),
       ]);
 
     let projError = "";
@@ -197,6 +204,7 @@ async function pmGatherRequirements(projectId: string) {
 
     const proj      = val(projR) || {};
     const audits    = Array.isArray(val(auditR))     ? val(auditR)     : [];
+    const deepFindings = Array.isArray(val(deepR))   ? val(deepR)      : [];
     const algo      = Array.isArray(val(algoR))      ? val(algoR)      : [];
     const brainAll  = Array.isArray(val(brainR))     ? val(brainR)     : [];
     const knowledge = Array.isArray(val(knowledgeR)) ? val(knowledgeR) : [];
@@ -397,6 +405,60 @@ async function pmGatherRequirements(projectId: string) {
         competitive: competitive.slice(0, 500),
       };
     };
+
+    /* Build ONE SourceRef from the latest deep-audit run's findings
+       (technical_audit_findings). This is the rich audit — it renders as a
+       real findings list in the Requirements tab and grounds the strategist.
+       Rows arrive newest-first; we take the most recent audit_run_id. */
+    const sevRank = (s: string): number =>
+      (({ red: 0, amber: 1, info: 2, green: 3 }) as Record<string, number>)[String(s || "").toLowerCase()] ?? 4;
+    const buildDeepAudit = (rows: any[]): any | null => {
+      if (!Array.isArray(rows) || !rows.length) return null;
+      const latestRunId = rows[0]?.audit_run_id || null;
+      const runRows = latestRunId ? rows.filter((r) => (r?.audit_run_id || null) === latestRunId) : rows;
+      const sev = (r: any) => String(r?.severity || "").toLowerCase();
+      const red   = runRows.filter((r) => sev(r) === "red");
+      const amber = runRows.filter((r) => sev(r) === "amber");
+      const findings = runRows
+        .slice()
+        .sort((a, b) => sevRank(a?.severity) - sevRank(b?.severity))
+        .slice(0, 40)
+        .map((r) => ({
+          area:           String(r?.audit_kind || "general"),
+          severity:       sev(r),
+          title:          String(r?.finding_title || ""),
+          detail:         r?.finding_detail ? String(r.finding_detail) : "",
+          recommendation: r?.recommendation ? String(r.recommendation) : "",
+        }))
+        .filter((f) => f.title);
+      if (!findings.length) return null;
+      const date   = String(runRows[0]?.created_at || "").split("T")[0] || "recent";
+      const url    = runRows.find((r) => r?.audited_url)?.audited_url || "";
+      const topRed = red.slice(0, 3).map((r) => String(r?.finding_title || "")).filter(Boolean);
+      const detail = {
+        verdict:       `${red.length} critical and ${amber.length} warning finding${amber.length === 1 ? "" : "s"} from the deep technical audit.`,
+        biggestWin:    "",
+        urgentGap:     topRed.join("; "),
+        strengths:     [] as string[],
+        opportunities: [] as string[],
+        technical:     "",
+        content:       "",
+        visibility:    "",
+        competitive:   "",
+      };
+      return {
+        kind: "audit", refId: latestRunId || undefined,
+        label: `Deep technical audit ${date} — ${red.length} critical, ${amber.length} warning${amber.length === 1 ? "" : "s"}`,
+        overview: `Deep technical SEO audit: ${runRows.length} finding${runRows.length === 1 ? "" : "s"} (${red.length} critical, ${amber.length} warnings).`,
+        url,
+        highlights: topRed,
+        competitors: [] as string[],
+        keywords: [] as string[],
+        detail,
+        findings,
+      };
+    };
+    const deepAudit = buildDeepAudit(deepFindings);
 
     /* ── Crawl: organise pages at the keyword -> landing-page grain ──
        Each crawled page declares its content type and the keywords found
@@ -756,16 +818,20 @@ async function pmGatherRequirements(projectId: string) {
         };
       }),
 
-      audits: audits.map((a: any) => ({
-        kind: "audit", refId: a?.id,
-        label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${auditScore(a) ?? "n/a"}`,
-        overview: auditOverview(a),
-        url: a?.url || "",
-        highlights: auditWins(a),
-        competitors: Array.isArray(a?.competitors) ? a.competitors.filter(Boolean) : [],
-        keywords:    Array.isArray(a?.keywords) ? a.keywords.filter(Boolean) : [],
-        detail:      auditDetail(a),
-      })),
+      audits: [
+        /* deep audit first (richest + most authoritative), then the light audit_reports rows */
+        ...(deepAudit ? [deepAudit] : []),
+        ...audits.map((a: any) => ({
+          kind: "audit", refId: a?.id,
+          label: `Audit ${(a?.created_at || "").split("T")[0] || "recent"} — score ${auditScore(a) ?? "n/a"}`,
+          overview: auditOverview(a),
+          url: a?.url || "",
+          highlights: auditWins(a),
+          competitors: Array.isArray(a?.competitors) ? a.competitors.filter(Boolean) : [],
+          keywords:    Array.isArray(a?.keywords) ? a.keywords.filter(Boolean) : [],
+          detail:      auditDetail(a),
+        })),
+      ],
       /* Algorithm intelligence — the built-in TOPIC_CATALOG merged with
          the project's saved Library rows. Saved rows carry real depth
          (practices, ranking factors, checklist items); the card
@@ -1037,12 +1103,21 @@ async function pmGenerateCards(projectId: string) {
       : "KEYWORD -> LANDING PAGE: no crawl data yet.",
     "",
     (ctx.audits || []).length
-      ? "AUDIT FINDINGS:\n" + ctx.audits.slice(0, 2).map((a: any) =>
-          `  - ${a.label}: ${a.detail?.verdict || a.overview || "(no detail)"}\n` +
-          (a.detail?.urgentGap ? `    Urgent: ${a.detail.urgentGap}\n` : "") +
-          (a.detail?.biggestWin ? `    Win: ${a.detail.biggestWin}\n` : "") +
-          (a.detail?.competitive ? `    Competitive: ${a.detail.competitive.slice(0, 200)}` : "")
-        ).join("\n")
+      ? "AUDIT FINDINGS:\n" + ctx.audits.slice(0, 2).map((a: any) => {
+          const head =
+            `  - ${a.label}: ${a.detail?.verdict || a.overview || "(no detail)"}\n` +
+            (a.detail?.urgentGap ? `    Urgent: ${a.detail.urgentGap}\n` : "") +
+            (a.detail?.biggestWin ? `    Win: ${a.detail.biggestWin}\n` : "") +
+            (a.detail?.competitive ? `    Competitive: ${a.detail.competitive.slice(0, 200)}\n` : "");
+          /* deep audit present — ground the strategist in its actual findings */
+          const fl = Array.isArray(a.findings) ? a.findings : [];
+          if (!fl.length) return head;
+          const top = fl.slice(0, 8).map((f: any) =>
+            `      [${String(f.severity || "").toUpperCase()}] ${f.title}` +
+            (f.recommendation ? ` -> ${String(f.recommendation).slice(0, 160)}` : "")
+          ).join("\n");
+          return head + "    Key findings:\n" + top;
+        }).join("\n")
       : "AUDIT FINDINGS: none.",
     "",
     (ctx.brain || []).length

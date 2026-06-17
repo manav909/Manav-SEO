@@ -103,6 +103,7 @@ export interface SourceRef {
   competitors?: string[];   // audit: the competitors analysed
   keywords?:    string[];   // audit: the keywords analysed
   detail?:      AuditDetail; // audit: the full extracted findings
+  findings?:    AuditFinding[]; // audit: structured deep-audit findings (technical_audit_findings)
   saved?:       boolean;     // algorithm: backed by a saved Library row
   impact?:      string;      // algorithm: impact level
   practices?:   string[];    // algorithm: best practices (when saved)
@@ -297,6 +298,17 @@ export interface AuditDetail {
   content:       string;
   visibility:    string;
   competitive:   string;
+}
+
+/* A single row from the deep technical audit (technical_audit_findings table).
+   Richer than the light run-analysis audit — carries severity, the finding,
+   and the recommended fix. */
+export interface AuditFinding {
+  area:            string; // audit_kind, e.g. technical / content / performance
+  severity:        string; // red | amber | green | info
+  title:           string;
+  detail?:         string;
+  recommendation?: string;
 }
 
 /* ═══════════════════════════════════════════════════════════

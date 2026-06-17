@@ -843,7 +843,9 @@ function AuditSection({
       {(() => {
         const a = audits[open] || audits[0];
         const d = a.detail;
+        const findings = a.findings || [];
         const hasDetail =
+          findings.length > 0 ||
           !!(d && (d.verdict || d.technical || d.content || d.visibility || d.competitive
                 || d.biggestWin || d.urgentGap || d.opportunities?.length));
 
@@ -897,6 +899,51 @@ function AuditSection({
                     <li key={i} className="text-xs text-foreground/85">• {o}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {findings.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                  Deep audit findings ({findings.length})
+                </div>
+                {findings.map((f, i) => {
+                  const sevTone = f.severity === 'red'
+                    ? 'border-red-500/40 bg-red-500/5'
+                    : f.severity === 'amber'
+                    ? 'border-amber-500/30 bg-amber-500/5'
+                    : f.severity === 'green'
+                    ? 'border-green-500/30 bg-green-500/5'
+                    : 'border-border bg-background/50';
+                  const sevLabel = f.severity === 'red'
+                    ? 'text-red-400'
+                    : f.severity === 'amber'
+                    ? 'text-amber-300'
+                    : f.severity === 'green'
+                    ? 'text-green-400'
+                    : 'text-muted-foreground';
+                  return (
+                    <div key={i} className={`rounded-lg border p-3 ${sevTone}`}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${sevLabel}`}>
+                          {f.severity || 'info'}
+                        </span>
+                        {f.area && (
+                          <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{f.area}</span>
+                        )}
+                      </div>
+                      <div className="text-xs font-semibold text-foreground/90">{f.title}</div>
+                      {f.detail && (
+                        <div className="text-xs text-foreground/75 leading-relaxed mt-1 whitespace-pre-wrap">{f.detail}</div>
+                      )}
+                      {f.recommendation && (
+                        <div className="text-xs text-foreground/85 leading-relaxed mt-1">
+                          <span className="text-muted-foreground">Fix: </span>{f.recommendation}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
 
