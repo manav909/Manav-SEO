@@ -356,13 +356,17 @@ async function runContentAgent(url: string, html: string, keywords: string[], br
   ];
 
   if (!html) {
+    /* page could not be fetched — return the SAME complete shape as the catch
+       path below. This branch previously omitted algorithm_health_score (and a
+       few list fields), so when a site blocked or timed out on the server-side
+       fetch, content.algorithm_health_score.value threw downstream and the entire
+       audit died with "Cannot read properties of undefined (reading value)". */
     return {
       eeat_score:              dp(null, 0, [], ['Could not fetch page']),
       content_authority_score: dp(null, 0, [], ['Could not fetch page']),
       llm_readiness_score:     dp(null, 0, [], ['Could not fetch page']),
-      story:                   '',
-      strengths:               [],
-      gaps:                    [],
+      algorithm_health_score:  dp(null, 0, [], ['Could not fetch page']),
+      story: '', eeat_evidence: [], strengths: [], gaps: [], llm_factors: [], keyword_presence: {},
       limitations,
     };
   }
