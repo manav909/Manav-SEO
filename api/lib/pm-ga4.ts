@@ -226,26 +226,39 @@ export async function ga4ListProperties(projectId: string): Promise<{
   const { token, error } = await getAccessToken(projectId);
   if (error) return { success: false, error };
   try {
-    /* fetch accountSummaries — returns accounts + properties in one call */
-    const res = await fetch(`${ADMIN_API}/accountSummaries`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const t = await res.text().catch(() => "");
-      return { success: false, error: `GA4 admin API: ${res.status} ${t.slice(0, 200)}` };
-    }
-    const j = await res.json() as any;
+    /* fetch accountSummaries — returns accounts plus their property summaries. The
+       Admin API paginates by ACCOUNT summary (default 50, max 200) and bundles every
+       property inside each account, so we page through nextPageToken to capture every
+       account the user can see. Without this loop, an email with access to more than the
+       first page of accounts only ever sees a truncated property list. */
     const properties: { id: string; name: string; account: string }[] = [];
-    for (const acc of (j?.accountSummaries || [])) {
-      for (const p of (acc?.propertySummaries || [])) {
-        /* p.property is like "properties/123456789" */
-        properties.push({
-          id:      p.property,
-          name:    p.displayName || p.property,
-          account: acc.displayName || acc.account || "",
-        });
+    let pageToken = "";
+    let pages = 0;
+    do {
+      const url = new URL(`${ADMIN_API}/accountSummaries`);
+      url.searchParams.set("pageSize", "200");
+      if (pageToken) url.searchParams.set("pageToken", pageToken);
+      const res = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        return { success: false, error: `GA4 admin API: ${res.status} ${t.slice(0, 200)}` };
       }
-    }
+      const j = await res.json() as any;
+      for (const acc of (j?.accountSummaries || [])) {
+        for (const p of (acc?.propertySummaries || [])) {
+          /* p.property is like "properties/123456789" */
+          properties.push({
+            id:      p.property,
+            name:    p.displayName || p.property,
+            account: acc.displayName || acc.account || "",
+          });
+        }
+      }
+      pageToken = String(j?.nextPageToken || "");
+      pages += 1;
+    } while (pageToken && pages < 25); // hard page cap so a malformed token can never loop forever
     return { success: true, properties };
   } catch (e: any) {
     return { success: false, error: e?.message || "list failed" };
