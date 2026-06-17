@@ -133,7 +133,7 @@
   function callEngine(action, body, cb, timeoutMs) {
     let done = false, timer = null;
     const finish = (resp) => { if (done) return; done = true; if (timer) clearTimeout(timer); try { cb(resp); } catch (e) { /* ignore */ } };
-    timer = setTimeout(() => finish({ ok: false, timedOut: true, error: "This took too long. Tap to try again." }), timeoutMs || 50000);
+    timer = setTimeout(() => finish({ ok: false, timedOut: true, error: "This took too long. Tap to try again." }), timeoutMs || 160000);
     try {
       chrome.runtime.sendMessage({ type: "callEngine", action: action, body: body || {} }, (resp) => {
         const le = chrome.runtime.lastError; // read it so Chrome does not log an unchecked-error warning
@@ -386,7 +386,7 @@
       if (resp && resp.ok && data.success && data.strategy) {
         delete b.dataset.state; lastStrategy = data.strategy; lastEvalLen = (conv || "").length; b.dataset.captured = String(full.length); evalErr = ""; renderBody(); autosave(); return;
       }
-      if (attempt < 2) { setTimeout(() => evaluate(forceSel, attempt + 1, bg), 1500); return; } // one quiet auto-retry — strategize timeouts are usually transient
+      if (attempt < 2 && !(resp && resp.timedOut)) { setTimeout(() => evaluate(forceSel, attempt + 1, bg), 1500); return; } // one quiet auto-retry for a transient error — but a genuine timeout already waited the full window, so never double it
       delete b.dataset.state;
       if (bg) { renderBody(); return; } // a background refresh failed — keep the verdict already on screen, no error noise
       const errMsg = chrome.runtime.lastError ? chrome.runtime.lastError.message : (resp && (resp.error || data.error)) || "The analysis took too long. Tap Evaluate to try again.";

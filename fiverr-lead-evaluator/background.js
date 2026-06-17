@@ -13,7 +13,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     apiBase((base) => {
       (async () => {
         const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 45000); // never let a request hang the panel forever
+        const timer = setTimeout(() => ctrl.abort(), 150000); // ceiling sits above the server LLM timeouts (strategize 90s, engagement 100s, doc-gen 110s) so genuine calls finish; only a true hang aborts
         try {
           const res = await fetch(base + "/api/task-engine", {
             method: "POST",
@@ -27,7 +27,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse({ ok: res.ok, status: res.status, data });
         } catch (e) {
           const aborted = e && e.name === "AbortError";
-          sendResponse({ ok: false, error: aborted ? "The server took too long to respond. Tap to try again." : String((e && e.message) || e) });
+          sendResponse({ ok: false, timedOut: aborted, error: aborted ? "The server took too long to respond. Tap to try again." : String((e && e.message) || e) });
         } finally {
           clearTimeout(timer);
         }
