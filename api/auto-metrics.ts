@@ -17,7 +17,7 @@ async function fetchText(url: string, timeout = 25000): Promise<string> {
 async function fetchRaw(url: string, timeout = 15000): Promise<string> {
   try {
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOBot/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' },
       signal: AbortSignal.timeout(timeout),
     });
     if (!res.ok) return '';

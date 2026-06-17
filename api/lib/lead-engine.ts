@@ -4,7 +4,7 @@ export async function captureAndScoreLead(input:LeadInput){
   const urlClean=input.url.replace(/^https?:\/\//,"").replace(/\/$/,"");
   let score=30;const audit:any={};
   try{
-    const res=await fetch(`https://${urlClean}`,{headers:{"User-Agent":"SEOSeason-Audit/1.0"},signal:AbortSignal.timeout(8000)});
+    const res=await fetch(`https://${urlClean}`,{headers:{"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},signal:AbortSignal.timeout(8000)});
     const html=(await res.text()).slice(0,6000);
     audit.hasTitle=/<title>[^<]{10,}/i.test(html);
     audit.hasMeta=/meta name="description"/i.test(html);

@@ -207,7 +207,7 @@ const dp = (value: any, confidence: number, sources: string[], limitations: stri
 async function fetchPage(url: string): Promise<string> {
   try {
     const r = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOSeason/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36', 'Accept': 'text/html,application/xhtml+xml,*/*' },
       signal: AbortSignal.timeout(12000),
     });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);

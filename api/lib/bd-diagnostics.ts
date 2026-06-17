@@ -18,7 +18,7 @@ async function fetchText(url: string, ms = 9000): Promise<{ status: number; text
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {
-    const r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": "Mozilla/5.0 (compatible; SEO-Season-AEO/1.0)" } });
+    const r = await fetch(url, { signal: ctl.signal, headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" } });
     const text = await r.text().catch(() => "");
     return { status: r.status, text };
   } catch {

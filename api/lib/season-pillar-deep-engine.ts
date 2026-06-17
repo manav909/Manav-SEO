@@ -70,9 +70,12 @@ async function fetchHtml(url: string): Promise<string> {
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "Accept": "text/html,application/xhtml+xml,*/*" },
       redirect: "follow", signal: controller.signal,
     });
+    /* never parse a 4xx/5xx body — an error or WAF challenge page is not the page,
+       and treating it as content fabricates false 403/noindex/thin findings */
+    if (!r.ok) return "";
     return (await r.text()) || "";
   } catch { return ""; } finally { clearTimeout(timer); }
 }
@@ -502,7 +505,7 @@ export async function runDeepPillarAnalysis(opts: {
         const h1 = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
         const meta = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) || [])[1]?.trim() || "";
         const wc = html.replace(/<[^>]+>/g, " ").split(/\s+/).filter(w => w.length > 2).length;
-        const noindex = /noindex/i.test(html.slice(0, 2000));
+        const noindex = /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*\bnoindex\b/i.test(html);
         const schema = /application\/ld\+json/i.test(html);
         return { url, title, h1, meta, wc, noindex, schema, loaded: html.length > 500 };
       })),

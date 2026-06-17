@@ -95,10 +95,13 @@ async function fetchHtml(url: string): Promise<string> {
   const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOSeasonBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "Accept": "text/html,application/xhtml+xml,*/*" },
       redirect: "follow",
       signal: controller.signal,
     });
+    /* never parse a 4xx/5xx body — an error or WAF challenge page is not the page,
+       and treating it as content fabricates false 403/noindex/thin findings */
+    if (!r.ok) return "";
     const text = await r.text();
     return text || "";
   } catch {
@@ -130,7 +133,10 @@ function extractPageFacts(html: string, url: string): {
   const title       = (html.match(/<title[^>]*>([^<]+)<\/title>/i) || [])[1]?.trim() || "";
   const h1          = (html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
   const metaDesc    = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) || [])[1]?.trim() || "";
-  const hasNoindex  = /noindex/i.test(html.slice(0, 2000));
+  /* require an actual robots-meta noindex directive — not the bare word "noindex"
+     appearing anywhere in the markup (which false-positives on any page that merely
+     mentions it, e.g. an SEO article, or on an error page) */
+  const hasNoindex  = /<meta[^>]+name=["']robots["'][^>]+content=["'][^"']*\bnoindex\b/i.test(html);
   const canonMatch  = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
   const canonicalUrl = canonMatch?.[1] || "";
   const hasCanonical = !!canonicalUrl;

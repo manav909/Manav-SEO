@@ -1744,7 +1744,7 @@ Return ONLY raw JSON:
         system: sys2, messages: [{ role: "user", content: usr2 }]
       });
       const raw = (_r.content[0] as any).text || "{}";
-            const result: any = safeParseJSON(raw);
+            let result: any = safeParseJSON(raw);
       if (!result) {
         return ok(res, { success: false, error: "Claude returned unparseable response", rawPreview: raw.slice(0, 400) });
       }
@@ -3191,7 +3191,7 @@ Respond with JSON only:
     try{
       const domain=competitorUrl.replace(/^https?:\/\//,"").split("/")[0];
       let html="";
-      try{const r=await fetch(`https://${domain}`,{headers:{"User-Agent":"Mozilla/5.0"},signal:AbortSignal.timeout(8000)});html=(await r.text()).slice(0,5000);}catch{}
+      try{const r=await fetch(`https://${domain}`,{headers:{"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},signal:AbortSignal.timeout(8000)});html=(await r.text()).slice(0,5000);}catch{}
       const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
         body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:800,

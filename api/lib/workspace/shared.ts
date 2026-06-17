@@ -50,6 +50,8 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
       headers: { "User-Agent": BROWSER_UA, "Accept": "text/html,application/xhtml+xml,*/*" },
       redirect: "follow", signal: controller.signal,
     });
+    /* never return a 4xx/5xx body so no caller parses an error or challenge page */
+    if (!r.ok) return "";
     return (await r.text()) || "";
   } catch { return ""; } finally { clearTimeout(timer); }
 }

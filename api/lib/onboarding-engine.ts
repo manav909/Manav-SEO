@@ -9,7 +9,7 @@ export async function startOnboarding(projectId:string){
       const url=project.url||"";
       let discovery:any={url,started_at:new Date().toISOString()};
       try{
-        const res=await fetch(url,{headers:{"User-Agent":"SEOSeason/1.0"},signal:AbortSignal.timeout(8000)});
+        const res=await fetch(url,{headers:{"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"},signal:AbortSignal.timeout(8000)});
         const html=await res.text();
         discovery.cms=html.includes("wp-content")?"WordPress":html.includes("Shopify")?"Shopify":"Unknown";
         discovery.hasSchema=/ld\+json/.test(html);

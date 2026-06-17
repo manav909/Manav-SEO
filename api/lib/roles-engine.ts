@@ -67,7 +67,7 @@ export async function generateInstantAuditShowcase(url: string, forLead?: string
 
   try {
     const response = await fetch("https://" + urlClean, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; SEOBot/1.0)" },
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" },
       signal: AbortSignal.timeout(8000),
     });
     const html = (await response.text()).slice(0, 8000);
