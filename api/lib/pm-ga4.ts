@@ -68,7 +68,11 @@ export async function ga4OauthStart(projectId: string): Promise<{
     url.searchParams.set("response_type", "code");
     url.searchParams.set("scope",         SCOPE);
     url.searchParams.set("access_type",   "offline");
-    url.searchParams.set("prompt",        "consent");
+    // select_account forces Google to show the account chooser every time, so a
+    // different Gmail can be picked per project (or switched on a project) without
+    // signing out / using incognito. consent stays so a refresh token is still
+    // re-issued on every authorization (offline access type alone does not guarantee it).
+    url.searchParams.set("prompt",        "select_account consent");
     url.searchParams.set("state",         state);
     return { success: true, url: url.toString() };
   } catch (e: any) {
