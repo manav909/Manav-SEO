@@ -31,6 +31,13 @@ export async function llm(opts: {
     return "";
   }
 
+  // Anchor every call to the real current date so the model never reasons from its
+  // training-era year (for example treating 2025 as current or upcoming). Fully dynamic —
+  // stays correct in 2026, 2027 and beyond; a year is never hardcoded.
+  const _today = new Date();
+  const _dateContext = `**CURRENT DATE CONTEXT:** Today is ${_today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}. The current year is ${_today.getUTCFullYear()}. Treat this as the present moment. Reason about every date, month, deadline, schedule, follow-up and any reference to "this year", "next month" or upcoming time relative to this date. Never treat ${_today.getUTCFullYear() - 1} or any earlier year as the current or an upcoming year.`;
+  const _system = system ? `${_dateContext}\n\n${system}` : _dateContext;
+
   const RETRYABLE_HTTP = new Set([429, 503, 529]);
   const MAX_ATTEMPTS = 3;
   const BACKOFFS_MS = [1000, 4000];
@@ -49,7 +56,7 @@ export async function llm(opts: {
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
-        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system: _system, messages: [{ role: "user", content: user }] }),
       });
       if (r.ok) {
         const d = await r.json();
