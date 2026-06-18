@@ -494,21 +494,29 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (id) { try { const { data } = await db().from("bd_deals").select("*").eq("id", id).single(); deal = data; strategy = (deal as any)?.strategy; } catch { /* ignore */ } }
     if (!c.conversation.trim() && !c.facts && !strategy) return { success: false, error: "Analyse the chat first so the document has real context to work from." };
     // Auto-gather: if this doc benefits from site data and none is on the deal yet, run a fresh audit.
+    // Audit grounding: the audit report is a deliverable built on a CURRENT, full crawl, so it ALWAYS
+    // re-crawls. Other site-grounded docs re-crawl when the deal has no audit yet or its stored audit is
+    // stale (older than 30 min) — reusing a stale stored audit is exactly what made a freshly-fixed crawler
+    // still emit the old page count. When we crawl, we ground on the fresh result and drop any stale stored
+    // audit (non-audit attachments like briefs/transcripts are kept).
     let auditText = c.attachments || "";
     const siteUrl = String(body?.siteUrl || strategy?.client_site || (strategy?.deal_facts?.urls || [])[0] || "").trim();
     const needsSite = ["proposal", "audit_report", "strategy_brief", "pitch_email"].includes(docType);
-    const hasAuditCtx = /\b(audit|crawl|pages|schema|performance|aeo|readiness)\b/i.test(auditText);
-    if (needsSite && !hasAuditCtx && siteUrl) {
+    const isAuditReport = docType === "audit_report";
+    const auditAtt = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.find((a: any) => a.kind === "audit") : null;
+    const auditStaleOrMissing = !auditAtt || !auditAtt.added_at || (Date.now() - new Date(auditAtt.added_at).getTime()) > 30 * 60000;
+    if (needsSite && siteUrl && (isAuditReport || auditStaleOrMissing)) {
       try {
         const { crawlSite } = await import("./site-crawler.js");
-        const report = await crawlSite({ projectId: id, siteUrl, maxPages: 80 });
+        const report = await crawlSite({ projectId: id, siteUrl, maxPages: isAuditReport ? 120 : 80 });
         if (report && report.pages_reachable > 0) {
           const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${(v as any).count} ${String(k).replace(/_/g, " ")}`).join(", ");
-          const fresh = `Site audit of ${report.project_domain} — crawled ${report.pages_reachable} pages. Issues found: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema present: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
-          auditText = fresh + (auditText ? "\n\n" + auditText : "");
+          const fresh = `Site audit of ${report.project_domain} — crawled ${report.pages_reachable} page(s)${report.sitemap_url_count ? ` of ${report.sitemap_url_count} listed in the sitemap` : ""}. Issues found: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema present: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
+          const nonAudit = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.filter((a: any) => a.kind !== "audit").map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 8000)}`).join("\n\n") : "";
+          auditText = fresh + (nonAudit ? "\n\n" + nonAudit : "");
           await persistDiag(id, "audit", "Quick site audit", fresh);
         }
-      } catch { /* non-fatal — generate from conversation/facts */ }
+      } catch { /* non-fatal — fall back to existing context */ }
     }
     // Real, traceable grounding: current algorithm knowledge + proven results.
     const [algoR, brainR] = await Promise.allSettled([
