@@ -501,7 +501,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (needsSite && !hasAuditCtx && siteUrl) {
       try {
         const { crawlSite } = await import("./site-crawler.js");
-        const report = await crawlSite({ projectId: id, siteUrl, maxPages: 30 });
+        const report = await crawlSite({ projectId: id, siteUrl, maxPages: 80 });
         if (report && report.pages_reachable > 0) {
           const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${(v as any).count} ${String(k).replace(/_/g, " ")}`).join(", ");
           const fresh = `Site audit of ${report.project_domain} — crawled ${report.pages_reachable} pages. Issues found: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema present: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
@@ -733,7 +733,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     if (!siteUrl) return { success: false, error: "No client site URL to audit — add it or detect it from the chat." };
     try {
       const { crawlSite } = await import("./site-crawler.js");
-      const report = await crawlSite({ projectId: String(body?.projectId || ""), siteUrl, maxPages: Math.min(Number(body?.maxPages) || 40, 60) });
+      const report = await crawlSite({ projectId: String(body?.projectId || ""), siteUrl, maxPages: Math.min(Number(body?.maxPages) || 120, 120) });
       /* Persist a concise summary on the deal so it informs future strategy. */
       const id = String(body?.id || "").trim();
       if (id && report.pages_reachable > 0) {

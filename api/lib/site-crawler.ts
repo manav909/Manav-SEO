@@ -36,6 +36,9 @@ const attr = (h: string, re: RegExp) => { const m = h.match(re); return m ? (m[1
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 const ASSET_RE = /\.(jpg|jpeg|png|gif|webp|svg|ico|css|js|mjs|pdf|zip|woff2?|ttf|eot|mp4|mp3|xml|json|rss|webmanifest)(\?|$)/i;
 const SKIP_PATH_RE = /\/(cart|checkout|account|login|logout|wp-admin|wp-json|cdn-cgi)(\/|$)/i;
+const SITEMAP_LOC_RE = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
+const parseSitemapLocs = (xml: string): string[] => Array.from(xml.matchAll(SITEMAP_LOC_RE)).map(m => m[1].trim().replace(/&amp;/gi, "&")).filter(Boolean);
+const isSitemapIndex = (xml: string): boolean => /<sitemapindex[\s>]/i.test(xml);
 
 interface PageSig {
   url: string; ok: boolean; status: number;
@@ -94,11 +97,59 @@ async function runPsi(url: string, key: string): Promise<any | null> {
 export interface SiteAuditReport {
   project_domain: string; generated_at: string;
   pages_crawled: number; pages_reachable: number; crawl_capped: boolean;
+  sitemap_url_count: number; discovery: string;
   issues: Record<string, { count: number; pages: string[] }>;
   schema_coverage: Record<string, number>;
   broken_links: string[];
   performance: any | null;
   summary: string; limits: string[];
+}
+
+/* CMS-agnostic sitemap discovery. Finds the sitemap the way Google does:
+   robots.txt first (the authoritative, platform-independent declaration),
+   then the conventional locations used by Wix, WordPress core, Yoast/RankMath,
+   Shopify, Squarespace and most platforms. Expands a sitemap INDEX into its
+   child sitemaps (any depth, bounded) and returns every page URL on this
+   domain. The sitemap is self-canonicalising — its <loc> entries carry the
+   site's preferred host (www / non-www), so we end up crawling exactly what
+   the site itself declares. Returns an empty list cleanly when no sitemap
+   exists (the caller then falls back to link discovery). */
+async function discoverSitemapUrls(root: string, projectDomain: string, cap: number): Promise<{ urls: string[]; files: number }> {
+  const origin = root.replace(/\/+$/, "");
+  const tried = new Set<string>();
+  const toFetch: string[] = [];
+  const enqueue = (u: string) => { const k = u.replace(/\/+$/, ""); if (k && !tried.has(k)) { tried.add(k); toFetch.push(u); } };
+
+  /* 1) robots.txt — every CMS that auto-generates sitemaps declares them here. */
+  try {
+    const robots = await fetchHtml(origin + "/robots.txt");
+    if (robots) for (const m of robots.matchAll(/^[ \t]*sitemap:[ \t]*(\S+)/gim)) { try { enqueue(new URL(m[1].trim(), origin).toString()); } catch { /* skip */ } }
+  } catch { /* ignore */ }
+  /* 2) conventional locations across platforms. */
+  for (const p of ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-index.xml", "/wp-sitemap.xml", "/sitemap/sitemap.xml"]) enqueue(origin + p);
+
+  const pages = new Set<string>();
+  let filesParsed = 0;
+  const MAX_FILES = 30;                              // bound fan-out across index + children
+  const HARD_URL_CAP = Math.max(cap * 5, 600);       // collect generously; the caller crawls up to its own cap
+
+  while (toFetch.length && filesParsed < MAX_FILES && pages.size < HARD_URL_CAP) {
+    const sm = toFetch.shift()!;
+    let xml = "";
+    try { xml = await fetchHtml(sm); } catch { xml = ""; }
+    if (!xml || !/<loc>/i.test(xml)) continue;       // missing, gzipped, or not a sitemap -> skip cleanly
+    filesParsed++;
+    const locs = parseSitemapLocs(xml);
+    if (isSitemapIndex(xml)) {
+      for (const child of locs) { try { const c = new URL(child, origin).toString(); if (domainOf(c) === projectDomain && toFetch.length < 200) enqueue(c); } catch { /* skip */ } }
+    } else {
+      for (const u of locs) {
+        let clean = ""; try { clean = new URL(u, origin).toString().split("#")[0]; } catch { continue; }
+        if (domainOf(clean) === projectDomain && !ASSET_RE.test(clean) && !SKIP_PATH_RE.test(clean)) pages.add(clean);
+      }
+    }
+  }
+  return { urls: Array.from(pages), files: filesParsed };
 }
 
 export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
@@ -109,13 +160,24 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
   if (!root) { const tu = await resolveTargetUrls(undefined, opts.projectId).catch(() => ({ urls: [] as string[], source: "" })); root = originOf((tu.urls || [])[0] || ""); }
   const projectDomain = domainOf(root || opts.siteUrl || "");
-  const empty = (msg: string): SiteAuditReport => ({ project_domain: projectDomain, generated_at: now, pages_crawled: 0, pages_reachable: 0, crawl_capped: false, issues: {}, schema_coverage: {}, broken_links: [], performance: null, summary: msg, limits: ["No crawlable site URL available."] });
+  const empty = (msg: string): SiteAuditReport => ({ project_domain: projectDomain, generated_at: now, pages_crawled: 0, pages_reachable: 0, crawl_capped: false, sitemap_url_count: 0, discovery: "none", issues: {}, schema_coverage: {}, broken_links: [], performance: null, summary: msg, limits: ["No crawlable site URL available."] });
   if (!root) return empty("Could not resolve a site URL to crawl. Supply the site URL.");
 
-  /* BFS crawl with concurrency. */
+  /* Discover the site's real URL set from its sitemap FIRST (CMS-agnostic),
+     then crawl. The homepage is seeded first (it anchors link-discovery of any
+     orphan pages the sitemap omits, and the PageSpeed pass), followed by every
+     URL the sitemap declares. Falls back to pure link-crawling when no sitemap
+     is found. */
   const start = root.endsWith("/") ? root : root + "/";
+  const sm = await discoverSitemapUrls(root, projectDomain, maxPages).catch(() => ({ urls: [] as string[], files: 0 }));
+  const sitemapCount = sm.urls.length;
+  const sitemapFiles = sm.files;
   const visited = new Set<string>();
-  const queue: string[] = [start];
+  const queue: string[] = [];
+  const seeded = new Set<string>();
+  const enqueueSeed = (u: string) => { const k = u.replace(/\/$/, ""); if (k && !seeded.has(k)) { seeded.add(k); queue.push(u); } };
+  enqueueSeed(start);
+  for (const u of sm.urls) enqueueSeed(u);
   const pages: PageSig[] = [];
   const broken: string[] = [];
 
@@ -167,16 +229,21 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   const performance = await runPsi(start, await loadPsiKey(opts.projectId));
 
   const topIssues = Object.entries(issue).sort((a, b) => b[1].count - a[1].count).slice(0, 5).map(([k, v]) => `${v.count} ${k.replace(/_/g, " ")}`).join(", ");
+  const sitemapNote = sitemapCount > 0
+    ? ` Discovery used the sitemap: ${sitemapCount} URL(s) across ${sitemapFiles} sitemap file(s)${crawlCapped ? `, more than this pass audited` : ``}.`
+    : ` No sitemap was found, so discovery was by following internal links only.`;
   const summary = ok.length === 0
     ? `Could not crawl any pages of ${projectDomain}. The site may block automated requests, or the URL may be wrong.`
-    : `Crawled ${ok.length} page(s) of ${projectDomain}${crawlCapped ? ` (capped at ${maxPages}; more remain)` : ` (full set within the cap)`}. Top issues: ${topIssues || "none of the tracked issues found"}.${performance ? ` Homepage performance score ${performance.performance_score}/100 (LCP ${performance.lcp}).` : ""}`;
+    : `Crawled ${ok.length} page(s) of ${projectDomain}${crawlCapped ? ` (capped at ${maxPages}; more remain)` : ` (full set within the cap)`}.${sitemapNote} Top issues: ${topIssues || "none of the tracked issues found"}.${performance ? ` Homepage performance score ${performance.performance_score}/100 (LCP ${performance.lcp}).` : ""}`;
 
   const limits = [
-    `Crawl is capped at ${maxPages} pages per pass; counts are over the ${ok.length} pages crawled, not necessarily the entire site. Full-site crawling at scale needs background processing.`,
+    sitemapCount > 0
+      ? `Discovery seeded from the sitemap (${sitemapCount} URL(s) across ${sitemapFiles} file(s)) plus internal links. The crawl is capped at ${maxPages} pages per pass; counts are over the ${ok.length} pages crawled${crawlCapped ? `. The sitemap declares more URLs than the cap — raise maxPages or use background crawling for full coverage` : ` (the full declared set fit within the cap)`}.`
+      : `No sitemap was found; discovery followed internal links from the homepage, capped at ${maxPages} pages per pass. JavaScript-rendered link grids (common on Wix/Shopify) can hide pages from a static crawler — adding or exposing a sitemap would surface them.`,
     `Broken-link detection covers internal links reached during the crawl, not an exhaustive link check.`,
     `Performance is a single best-effort PageSpeed run on the homepage (mobile)${performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
 
-  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, summary, limits };
+  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, summary, limits };
 }
