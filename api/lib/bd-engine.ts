@@ -512,7 +512,10 @@ export async function handleBd(action: string, body: any): Promise<any> {
         if (report && report.pages_reachable > 0) {
           const issues = Object.entries(report.issues || {}).map(([k, v]: any) => `${(v as any).count} ${String(k).replace(/_/g, " ")}`).join(", ");
           const fresh = `Site audit of ${report.project_domain} — crawled ${report.pages_reachable} page(s)${report.sitemap_url_count ? ` of ${report.sitemap_url_count} listed in the sitemap` : ""}. Issues found: ${issues || "none of the tracked issues"}.${report.performance ? ` Performance ${report.performance.performance_score}/100, LCP ${report.performance.lcp}.` : ""} Schema present: ${Object.keys(report.schema_coverage || {}).join(", ") || "none"}.`;
-          const nonAudit = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.filter((a: any) => a.kind !== "audit").map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 8000)}`).join("\n\n") : "";
+          // Ground ONLY on the fresh crawl + genuine inputs (transcripts, briefs, orders, uploads).
+          // Drop prior audits AND prior GENERATED documents (kind "doc:*") — feeding an earlier audit
+          // report back in makes the model echo its own stale page count instead of the fresh crawl.
+          const nonAudit = Array.isArray((deal as any)?.attachments) ? (deal as any).attachments.filter((a: any) => a.kind !== "audit" && !String(a.kind || "").startsWith("doc:")).map((a: any) => `[${a.kind || "file"}: ${a.name || "attachment"}]\n${String(a.text || "").slice(0, 8000)}`).join("\n\n") : "";
           auditText = fresh + (nonAudit ? "\n\n" + nonAudit : "");
           await persistDiag(id, "audit", "Quick site audit", fresh);
         }
