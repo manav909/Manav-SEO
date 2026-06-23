@@ -155,6 +155,19 @@ async function persistDiag(id: string, kind: string, name: string, text: string)
   } catch { /* non-fatal */ }
 }
 
+// A real client name or Fiverr handle is short and is NOT a sentence fragment. This gates the deal name so a
+// chat fragment the analysis sometimes returns as detected_client (e.g. "This message relates to ...",
+// "Please review each attachment") can never become the deal name, and a previously stored fragment is healed.
+function looksLikeName(s: any): boolean {
+  const n = String(s == null ? "" : s).trim();
+  if (n.length < 2 || n.length > 40) return false;
+  if (n.toLowerCase() === "untitled lead") return false; // placeholder, always replaceable
+  if (/[.!?]/.test(n) || /\.\.\.$/.test(n) || /[,:;]\s/.test(n)) return false; // sentence punctuation = message text
+  if (n.split(/\s+/).length > 3) return false; // names and handles are 1-3 tokens; 4+ is a fragment
+  if (/^(this|that|these|those|please|thanks?|thank|hi|hello|hey|dear|hope|here|there|attached|attachment|regarding|kindly|sorry|okay|ok|sure|noted|understood|message|messages|order|offer|deliver|delivered|review|reviewed|sent|sending|share|shared|sharing|fwd|re|see|check|let|sounds)\b/i.test(n)) return false;
+  return true;
+}
+
 function cleanHost(s: string): string {
   return String(s || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/.*$/, "").replace(/[?#].*$/, "").replace(/\.$/, "").toLowerCase();
 }
@@ -211,7 +224,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
   if (action === "bd_deal_save") {
     const d = body || {};
     const row: any = {
-      client_name: String(d.client_name || "Untitled lead").slice(0, 200),
+      client_name: (looksLikeName(d.client_name) ? String(d.client_name).trim() : (looksLikeName(d.client_handle) ? String(d.client_handle).trim() : "Untitled lead")).slice(0, 200),
       client_handle: d.client_handle ? String(d.client_handle).slice(0, 120) : null,
       platform: String(d.platform || "fiverr").slice(0, 40),
       brief: d.brief != null ? String(d.brief) : null,
@@ -383,7 +396,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
     try {
       const { data: found } = await db().from("bd_deals").select("*").eq("client_handle", handle).eq("platform", platform).order("updated_at", { ascending: false }).limit(1);
       if (Array.isArray(found) && found.length) return { success: true, deal: found[0], created: false };
-      const row: any = { client_name: name || handle, client_handle: handle, platform, status: "lead", updated_at: new Date().toISOString() };
+      const row: any = { client_name: (looksLikeName(name) ? name : (looksLikeName(handle) ? handle : "Untitled lead")), client_handle: handle, platform, status: "lead", updated_at: new Date().toISOString() };
       const ins = await db().from("bd_deals").insert(row).select().single();
       if (ins.error) {
         // a concurrent create won the race (or the unique index rejected a dup) — return the existing row, never duplicate
@@ -798,7 +811,16 @@ export async function handleBd(action: string, body: any): Promise<any> {
         try {
           const detected = String(r.strategy.detected_client || "").trim();
           const curName = String(deal.client_name || "").trim();
-          const nameUpdate = (detected && (!curName || curName === "Untitled lead")) ? { client_name: detected } : {};
+          const dealHandle = String(deal.client_handle || "").trim();
+          // Heal: if the current name is blank, the placeholder, or a stored fragment, replace it with the best
+          // VALID source (a real detected name, then the handle). If nothing valid is available, wipe a misleading
+          // fragment back to the placeholder rather than leave it. A name that already looks real is left untouched.
+          let nameUpdate: any = {};
+          if (!looksLikeName(curName)) {
+            const better = looksLikeName(detected) ? detected : (looksLikeName(dealHandle) ? dealHandle : "");
+            if (better && better !== curName) nameUpdate = { client_name: better };
+            else if (!better && curName && curName.toLowerCase() !== "untitled lead") nameUpdate = { client_name: "Untitled lead" };
+          }
           const f: any = r.strategy.deal_facts || {};
           const newStatus = STATUSES.includes(r.strategy.deal_state.stage) ? r.strategy.deal_state.stage : deal.status;
           const cleanConv = String(body?.clean_conversation || "").trim();
