@@ -1712,3 +1712,28 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 - Don't ship a fourth guest-post budget-tune. If 12.21.3 fails, go to parallel batching.
 - Don't touch layout without explicit unfreeze.
 - Don't claim a step "renders correctly" without an operator run — the orphaned-step finding proves documentation can drift from what actually executes.
+
+---
+
+## COST CONTROL STANDARD (LLM spend) — keystone established
+
+**Single entry point.** Every new Anthropic call routes through `callLLM` in `api/lib/llm-client.ts`. No engine added or modified from this point opens `api.anthropic.com/v1/messages` directly. The 40+ legacy direct callers migrate onto it one engine at a time, each verified (typecheck + build green) before the next.
+
+**Safety contract.** `callLLM` is fallback-safe by construction: response cache, prompt cache, daily cap, and metering are each wrapped so any failure degrades to a plain direct call — the same request the engine made before migrating. It can make a call cheaper or skip it; it cannot break a call that would otherwise have succeeded. Prompt caching specifically retries once without `cache_control` if a cached request returns non-OK.
+
+**Model tiering (`tier` or explicit `model`):**
+- `economy` (Haiku) — classification, extraction, tagging, short structured output, routing decisions. Use wherever output quality is not sensitive to model strength.
+- `standard` (Sonnet) — reasoning, client-facing generation, anything where quality is the product. This is the default and matches pre-migration behaviour.
+- `premium` — reserved (currently Sonnet; no Opus in the platform).
+- Models are env-overridable: `SEASON_MODEL_ECONOMY`, `SEASON_MODEL_STANDARD`, `SEASON_MODEL_PREMIUM` — a model swap needs no code redeploy.
+
+**Prompt caching (`cacheSystem: true`).** Set it whenever the static system prefix exceeds ~4000 chars (~1000 tokens, the API cache floor). Below that it is an automatic no-op, so it is safe to leave on. Highest-value targets: engines carrying large fixed instruction blocks.
+
+**Response caching (`responseCache: { key, projectId?, ttlMinutes? }`).** Opt-in, for deterministic and repeatable generations only. Never use it for conversational or time-sensitive output. Uses the generic `ai_content_cache (cache_key, response, project_id)` shape.
+
+**Daily cap (`capProjectId`, `capLimit?`).** Pass `capProjectId` for engines that do NOT already enforce their own cap, to bring them under the central ceiling (`SEASON_LLM_DAILY_CAP`, default 50). Engines with an existing cap (e.g. `season-llm`) leave it unset to avoid double counting.
+
+**Metering.** On by default. Writes a usage breadcrumb to `activity_log` under `source = "llm_usage"` — deliberately distinct from the cap source `"llm"`, so the cost ledger never inflates the cap counter. Pass `engine` and `projectId` for attribution. This is the before/after data source.
+
+**First migration:** `season-llm.ts` (chat brain) — routed through `callLLM`, model unchanged (Sonnet, quality call), metering on. Direct dollar saving on this engine is ~0 by design (prompt below cache floor, not downgraded); its purpose was to prove the keystone safe in the live hot path and put the highest-frequency engine on the meter. Real savings begin with the heavy-prompt engines next in queue.
+

@@ -21,6 +21,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { callLLM } from "./llm-client.js";
 import { PLATFORM_SELF_KNOWLEDGE } from "./season-self-knowledge.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
@@ -90,31 +91,28 @@ export async function seasonLlmHandle(opts: {
   }
   messagesPayload.push({ role: 'user', content: userMessage });
 
-  /* ─── Call Anthropic ─── */
-  let raw: any;
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: MAX_TOK,
-        system: systemPrompt,
-        messages: messagesPayload,
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      return softFail(`Anthropic API returned ${res.status}. Body: ${body.slice(0, 200)}`, "anthropic_error");
-    }
-    raw = await res.json();
-  } catch (e: any) {
-    return softFail(`Network error reaching Anthropic: ${e?.message || "unknown"}`, "network_error");
-  }
+  /* ─── Call Anthropic via the central LLM client (keystone) ───
+     Routed through callLLM so this call is metered and centrally
+     controllable. Model stays standard (Sonnet): this is a structured
+     reasoning call where quality matters, so it is NOT downgraded.
+     cacheSystem is requested but is a safe no-op here because this
+     system prompt is below the API cache floor — left on so the day this
+     prompt grows past the floor, caching activates automatically.
+     The local DAILY_CAP check above still governs the cap, so capProjectId
+     is intentionally not passed (no double counting). */
+  const call = await callLLM({
+    model: MODEL,
+    system: systemPrompt,
+    messages: messagesPayload,
+    maxTokens: MAX_TOK,
+    cacheSystem: true,
+    meter: true,
+    engine: "season-llm",
+    projectId,
+  });
+  if (call.rateLimited) return rateLimited(used);
+  if (!call.ok) return softFail(`Anthropic call failed (${call.error || "unknown"}).`, "anthropic_error");
+  const raw: any = call.raw;
 
   /* ─── Extract text ─── */
   const text = (raw?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
