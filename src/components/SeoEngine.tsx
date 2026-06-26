@@ -284,13 +284,25 @@ export const SeoEngine = ({
       const flushT = () => {
         if (tRows.length < 2) { tRows = []; inT = false; return; }
         const cols = Math.max(...tRows.map(r => r.length)); const cw = maxWidth / cols;
+        const fs = 8, lh = fs * 0.45, padTop = 1.6, padBot = 2.4;
         tRows.forEach((row, ri) => {
-          if (ri === 1) return; checkPage(9); const isH = ri === 0;
-          pdf.setFontSize(8); pdf.setFont('helvetica', isH ? 'bold' : 'normal');
+          if (ri === 1) return;                         // skip the |---| separator row
+          const isH = ri === 0;
+          /* Pre-wrap every cell so the row knows the true height it needs.
+             Row height is driven by the tallest cell, so multi-line cells no
+             longer overprint the row beneath them. */
+          const wrapped = Array.from({ length: cols }, (_, ci) =>
+            pdf.splitTextToSize(cl((row[ci] || '').trim()), cw - 3));
+          const maxLines = Math.max(1, ...wrapped.map(w => w.length));
+          const rowH = maxLines * lh + padTop + padBot;
+          checkPage(rowH);
+          pdf.setFontSize(fs); pdf.setFont('helvetica', isH ? 'bold' : 'normal');
           pdf.setTextColor(isH ? 30 : 60, isH ? 30 : 60, isH ? 30 : 60);
-          if (isH) { pdf.setFillColor(235,235,245); pdf.rect(margin, y-5, maxWidth, 7, 'F'); }
-          row.forEach((cell, ci) => pdf.text(pdf.splitTextToSize(cl(cell.trim()), cw-2), margin+ci*cw+1, y));
-          pdf.setDrawColor(210,210,220); pdf.line(margin, y+2.5, margin+maxWidth, y+2.5); y += 7;
+          if (isH) { pdf.setFillColor(235,235,245); pdf.rect(margin, y, maxWidth, rowH, 'F'); }
+          const baseline = y + padTop + lh;             // baseline of the first wrapped line
+          wrapped.forEach((w, ci) => pdf.text(w, margin + ci * cw + 1.5, baseline));
+          pdf.setDrawColor(210,210,220); pdf.line(margin, y + rowH, margin + maxWidth, y + rowH);
+          y += rowH;
         });
         y += 4; tRows = []; inT = false;
       };
