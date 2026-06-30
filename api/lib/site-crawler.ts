@@ -34,6 +34,45 @@ const originOf = (u: string) => { try { const x = new URL(withScheme(u)); return
 const domainOf = (u: string) => { try { return new URL(withScheme(u)).hostname.replace(/^www\./, ""); } catch { return ""; } };
 const attr = (h: string, re: RegExp) => { const m = h.match(re); return m ? (m[1] || "").trim() : null; };
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+
+/* Order-independent attribute extraction. HTML attributes have no required
+   order, so a pattern like name="description"[...]content="..." silently fails
+   whenever a generator (Webflow, for one) emits content="..."[...]name="...".
+   These isolate the tag first, then read each attribute regardless of order,
+   which is what prevents false "missing meta" / "missing canonical" findings. */
+const metaByName = (html: string, wanted: string): string => {
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    const n = (tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i) || [])[1];
+    if (n && n.toLowerCase() === wanted) {
+      const c = (tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i) || [])[1];
+      if (c && c.trim()) return c.trim();
+    }
+  }
+  return "";
+};
+const canonicalHref = (html: string): string | null => {
+  for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+    if (/\brel\s*=\s*["']canonical["']/i.test(tag)) {
+      const h = (tag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1];
+      if (h) return h.trim();
+    }
+  }
+  return null;
+};
+
+/* Canonical dedup key: the same logical page under http/https, with or without
+   www, and with or without a trailing slash collapses to ONE key, so a
+   redirecting host variant (non-www -> www) is never crawled twice — which
+   protects the page-cap budget and stops a page being flagged as a duplicate
+   of itself. */
+const canonKey = (u: string): string => {
+  try {
+    const x = new URL(withScheme(u));
+    const host = x.hostname.replace(/^www\./i, "").toLowerCase();
+    const path = x.pathname.replace(/\/+$/, "") || "/";
+    return `${host}${path}${x.search}`;
+  } catch { return String(u || "").replace(/\/$/, ""); }
+};
 const ASSET_RE = /\.(jpg|jpeg|png|gif|webp|svg|ico|css|js|mjs|pdf|zip|woff2?|ttf|eot|mp4|mp3|xml|json|rss|webmanifest)(\?|$)/i;
 const SKIP_PATH_RE = /\/(cart|checkout|account|login|logout|wp-admin|wp-json|cdn-cgi)(\/|$)/i;
 const SITEMAP_LOC_RE = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
@@ -65,10 +104,10 @@ function extract(url: string, html: string, status: number): PageSig {
   const text = (html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ");
   return {
     url, ok, status,
-    title, meta: attr(html || "", /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || "",
+    title, meta: metaByName(html || "", "description"),
     h1_count: h1s.length, h1: h1s[0] || "",
-    canonical: attr(html || "", /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i),
-    noindex: /noindex/i.test(attr(html || "", /<meta[^>]+name=["']robots["'][^>]+content=["']([^"']+)["']/i) || ""),
+    canonical: canonicalHref(html || ""),
+    noindex: /noindex/i.test(metaByName(html || "", "robots")),
     schema_types: Array.from(new Set(schema_types)),
     word_count: (text.match(/\b\w+\b/g) || []).length,
     images_total: imgs.length,
@@ -175,7 +214,7 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   const visited = new Set<string>();
   const queue: string[] = [];
   const seeded = new Set<string>();
-  const enqueueSeed = (u: string) => { const k = u.replace(/\/$/, ""); if (k && !seeded.has(k)) { seeded.add(k); queue.push(u); } };
+  const enqueueSeed = (u: string) => { const k = canonKey(u); if (k && !seeded.has(k)) { seeded.add(k); queue.push(u); } };
   enqueueSeed(start);
   for (const u of sm.urls) enqueueSeed(u);
   const pages: PageSig[] = [];
@@ -185,7 +224,7 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     const batch: string[] = [];
     while (queue.length && batch.length < concurrency && pages.length + batch.length < maxPages) {
       const u = queue.shift()!;
-      const key = u.replace(/\/$/, "");
+      const key = canonKey(u);
       if (visited.has(key)) continue;
       visited.add(key); batch.push(u);
     }
@@ -195,7 +234,7 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
       const sig = extract(f.u, f.html, f.ok ? 200 : 0);
       pages.push(sig);
       if (!f.ok) { broken.push(f.u); continue; }
-      for (const link of sig.links) { const k = link.replace(/\/$/, ""); if (!visited.has(k) && queue.length < 800) queue.push(link); }
+      for (const link of sig.links) { const k = canonKey(link); if (!visited.has(k) && queue.length < 800) queue.push(link); }
     }
   }
   const crawlCapped = queue.length > 0;

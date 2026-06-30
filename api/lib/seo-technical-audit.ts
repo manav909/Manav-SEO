@@ -1137,9 +1137,15 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
   }
 
   /* Meta description.
-     Phase 16.3 — decode HTML entities at extraction (matches title handling). */
-  const metaDescMatch = /<meta\s+[^>]*name=["']description["'][^>]*content=["']([^"']*)["']/i.exec(html);
-  const metaDesc = decodeHtmlEntities((metaDescMatch?.[1]?.trim()) || '');
+     Phase 16.3 — decode HTML entities at extraction (matches title handling).
+     Order-independent: isolate the meta tag whose name is "description", then
+     read its content attribute regardless of attribute order, so a
+     content-before-name tag (Webflow and others) is not falsely seen as missing. */
+  const metaDescTag = (html.match(/<meta\b[^>]*>/gi) || []).find(t => {
+    const n = (t.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i) || [])[1];
+    return !!n && n.toLowerCase() === 'description';
+  }) || '';
+  const metaDesc = decodeHtmlEntities(((metaDescTag.match(/\bcontent\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim());
   if (!metaDesc) {
     findings.push({
       audit_kind: 'meta_tags', severity: 'amber',
@@ -1274,9 +1280,10 @@ async function checkOnPageFundamentals(url: string): Promise<Finding[]> {
     });
   }
 
-  /* Canonical */
-  const canonicalMatch = /<link\s+[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["']/i.exec(html);
-  const canonical = canonicalMatch?.[1] || '';
+  /* Canonical — order-independent: find the link tag with rel="canonical",
+     then read href regardless of attribute order. */
+  const canonicalTag = (html.match(/<link\b[^>]*>/gi) || []).find(t => /\brel\s*=\s*["']canonical["']/i.test(t)) || '';
+  const canonical = (canonicalTag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
   if (!canonical) {
     findings.push({
       audit_kind: 'canonical', severity: 'amber',
