@@ -17,7 +17,7 @@
    Build 2 will add the coaching pair (BDM gap analysis + training tutorials).
 ════════════════════════════════════════════════════════════════ */
 
-import { llm } from "./workspace/llm.js";
+import { llm, llmComplete } from "./workspace/llm.js";
 
 export interface VaultDeal {
   id?: string; client_name?: string; client_handle?: string; status?: string; outcome?: string;
@@ -205,6 +205,16 @@ export async function vaultTrain(o: { clientName: string; context: string; hasCa
     depth === "brief" ? "Keep it focused on the few most instructive moments." : depth === "deep" ? "Be thorough across every instructive moment in the interaction." : "Cover the main instructive moments.",
   ].filter(Boolean).join("\n");
   const user = `CLIENT MATERIAL for ${o.clientName}:\n${o.context}\n\nWrite the training tutorial now, grounded only in this material.`;
-  const tutorial = await llm({ system, user, maxTokens: depth === "deep" ? 3500 : 2600, timeoutMs: 120000, label: "vault-train" });
+  /* Generated with continuation so the tutorial is never cut off at the token
+     ceiling. A normal doc completes in one segment at this raised cap; longer
+     interactions auto-continue to completion. */
+  const { text } = await llmComplete({
+    system, user,
+    maxTokens: depth === "deep" ? 8000 : 6000,
+    timeoutMs: 90000,
+    label: "vault-train",
+    maxSegments: 3,
+  });
+  const tutorial = text;
   return { tutorial: String(tutorial || "").trim() || `Not enough conversation data on file for ${o.clientName} to build a tutorial yet.` };
 }

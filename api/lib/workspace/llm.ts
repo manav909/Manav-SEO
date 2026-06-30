@@ -197,3 +197,55 @@ export async function llmWithTools(opts: {
   }
   return null;
 }
+
+/* ════════════ Complete (continuation-safe) LLM call ═════════════
+   Generates a WHOLE response, continuing past the per-call output ceiling
+   until the model actually finishes (stop_reason !== "max_tokens").
+
+   Each continuation re-sends the prompt plus everything generated so far as
+   an assistant prefill, so the model resumes from the exact point it stopped
+   with no repetition and no restated headings. This is what guarantees a
+   complete document instead of one truncated mid-sentence at the token limit.
+
+   maxSegments bounds total work so the loop can never exceed the serverless
+   function budget. Most documents finish in a single segment; continuation is
+   the safety net for the long tail.
+══════════════════════════════════════════════════════════════════ */
+export async function llmComplete(opts: {
+  system: string;
+  user: string;
+  maxTokens?: number;     // per-segment output ceiling
+  timeoutMs?: number;     // per-segment timeout
+  label?: string;
+  maxSegments?: number;   // hard ceiling on continuations (time-budget guard)
+}): Promise<{ text: string; complete: boolean; segments: number }> {
+  const { system, user, maxTokens = 8000, timeoutMs = 90000, label = "llm-complete", maxSegments = 3 } = opts;
+
+  const _today = new Date();
+  const _dateContext = `**CURRENT DATE CONTEXT:** Today is ${_today.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}. The current year is ${_today.getUTCFullYear()}. Treat this as the present moment. Reason about every date, month, deadline, schedule, follow-up and any reference to "this year", "next month" or upcoming time relative to this date. Never treat ${_today.getUTCFullYear() - 1} or any earlier year as the current or an upcoming year.`;
+  const _system = system ? `${_dateContext}\n\n${system}` : _dateContext;
+
+  let acc = "";
+  let complete = false;
+  let segments = 0;
+
+  for (let seg = 0; seg < maxSegments; seg++) {
+    /* On a continuation, the trailing assistant turn is the text generated so
+       far. The model continues that turn directly. Trailing whitespace is
+       stripped because the API rejects an assistant prefill that ends in it. */
+    const messages: Array<{ role: "user" | "assistant"; content: any }> = acc
+      ? [{ role: "user", content: user }, { role: "assistant", content: acc.replace(/\s+$/, "") }]
+      : [{ role: "user", content: user }];
+
+    const res = await llmWithTools({ system: _system, messages, maxTokens, timeoutMs, label });
+    segments++;
+    if (!res) break;  // hard failure — return whatever was produced so far
+
+    const piece = (res.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("");
+    acc += piece;
+
+    if (res.stop_reason !== "max_tokens") { complete = true; break; }
+  }
+
+  return { text: acc.trim(), complete, segments };
+}
