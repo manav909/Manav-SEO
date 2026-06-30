@@ -1099,13 +1099,13 @@ Return ONLY raw JSON:
         const jh: any = { "Accept": "text/html", "X-Return-Format": "html", "X-No-Cache": "true" };
         if (jKey) jh["Authorization"] = "Bearer " + jKey;
         const jr = await fetch("https://r.jina.ai/https://" + rawUrl, { headers: jh, signal: AbortSignal.timeout(14000), redirect: "follow" });
-        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 14000); _fetched = true; } }
+        if (jr.ok) { const t = await jr.text(); if (t.length > 500 && !t.includes("blocked")) { _html = t.slice(0, 80000); _fetched = true; } }
       } catch {}
       if (!_fetched) {
         for (const v of ["https://"+rawUrl, "https://www."+rawUrl, "http://"+rawUrl]) {
           try {
             const dr = await fetch(v, { headers: hdrs, signal: AbortSignal.timeout(10000), redirect: "follow" });
-            if (dr.ok) { const t = await dr.text(); if (t.length > 200) { _html = t.slice(0, 14000); _fetched = true; break; } }
+            if (dr.ok) { const t = await dr.text(); if (t.length > 200) { _html = t.slice(0, 80000); _fetched = true; break; } }
           } catch {}
         }
       }
@@ -1129,15 +1129,59 @@ Return ONLY raw JSON:
       if (algoData.length) ctxParts.push("Relevant algorithm updates: " + algoData.map((a:any) => a.topic + " — " + (a.summary||"").slice(0,80)).join("; "));
       if (brainData.length) ctxParts.push("Proven results: " + brainData.map((b:any) => b.improvement).join("; "));
       const salesInst = salesContext ? "SALES BRIEF — follow every instruction precisely:\n" + String(salesContext).slice(0, 600) : "";
+
+      /* Deterministic on-page signals extracted from the FULL fetched HTML
+         (not the truncated excerpt). These are the authoritative source for any
+         structural claim, so the model cannot report a tag or schema type as
+         absent merely because it fell outside the excerpt below. JSON-LD is
+         parsed the same way the crawler parses it. */
+      const _sig = (() => {
+        const h = _html || "";
+        const schema = new Set<string>();
+        for (const m of h.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+          try {
+            const walk = (o: any) => {
+              if (!o) return;
+              if (Array.isArray(o)) { o.forEach(walk); return; }
+              const t = o["@type"]; if (t) (Array.isArray(t) ? t : [t]).forEach((x: any) => schema.add(String(x)));
+              if (o["@graph"]) walk(o["@graph"]);
+            };
+            walk(JSON.parse(m[1].trim()));
+          } catch { /* skip unparseable block */ }
+        }
+        const h1s = Array.from(h.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)).map(m => m[1].replace(/<[^>]+>/g, "").trim()).filter(Boolean);
+        let metaDesc = "";
+        for (const tag of h.match(/<meta\b[^>]*>/gi) || []) {
+          const n = (tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i) || [])[1];
+          if (n && n.toLowerCase() === "description") { const c = (tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i) || [])[1]; if (c && c.trim()) { metaDesc = c.trim(); break; } }
+        }
+        let canon = "";
+        for (const tag of h.match(/<link\b[^>]*>/gi) || []) {
+          if (/\brel\s*=\s*["']canonical["']/i.test(tag)) { const href = (tag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1]; if (href) { canon = href.trim(); break; } }
+        }
+        const title = ((h.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1] || "").trim();
+        return { schema_types: Array.from(schema), h1_count: h1s.length, h1_text: h1s[0] || "", meta_description: metaDesc, canonical: canon, title };
+      })();
+      const verifiedBlock = [
+        "VERIFIED ON-PAGE SIGNALS — authoritative, extracted by deterministic parsers from the FULL page.",
+        "Use ONLY these for any technical or structural claim (schema, H1, meta description, canonical, title). The HTML excerpt further down is TRUNCATED: never state that a tag, schema type, or element is missing unless it is absent from THIS verified list.",
+        `- JSON-LD schema types present: ${_sig.schema_types.length ? _sig.schema_types.join(", ") : "NONE DETECTED"}`,
+        `- H1 tags found: ${_sig.h1_count}${_sig.h1_text ? ` (first H1: "${_sig.h1_text.slice(0, 120)}")` : ""}`,
+        `- Meta description: ${_sig.meta_description ? `PRESENT ("${_sig.meta_description.slice(0, 140)}")` : "NONE DETECTED"}`,
+        `- Canonical tag: ${_sig.canonical ? `PRESENT (${_sig.canonical})` : "NONE DETECTED"}`,
+        `- Title tag: ${_sig.title ? `"${_sig.title.slice(0, 140)}"` : "NONE DETECTED"}`,
+      ].join("\n");
+
       const _ac = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
       const schemaStr = '{"score":<0-100>,"executiveSummary":"<3-4 sentences about this specific site>","categories":[{"name":"Technical SEO","score":<0-100>,"narrative":"<2-3 sentences for this site>","issues":[{"issue":"<specific>","severity":"critical|high|medium|low","explanation":"<2 sentences why it matters>","fix":"<specific step>","algorithmNote":"<or null>"}]},{"name":"On-Page SEO","score":<0-100>,"narrative":"<narrative>","issues":[...]},{"name":"Content Quality","score":<0-100>,"narrative":"<narrative>","issues":[...]},{"name":"User Experience","score":<0-100>,"narrative":"<narrative>","issues":[...]}],"quickWins":["<action>","<action>","<action>"],"algorithmHighlights":["<update>","<update>"],"showcase_message":"<one sentence>","contextSummary":"<what was adjusted based on sales brief, or empty string>"}';
       const prompt = [
         "You are a senior SEO consultant writing a client-facing audit. Return ONLY raw JSON. No markdown. No code fences.",
-        "Write as a real expert — specific to THIS site. Reference actual HTML content.",
+        "Write as a real expert — specific to THIS site. Ground every structural claim in the VERIFIED ON-PAGE SIGNALS below; never claim something is missing if the verified signals show it is present. Do not infer absence from the truncated HTML excerpt.",
         "URL: https://" + rawUrl,
         ctxParts.length ? "Context: " + ctxParts.join(" | ") : "",
         salesInst,
-        "HTML from their site:\n" + _html.slice(0, 12000),
+        verifiedBlock,
+        "HTML excerpt from their site (TRUNCATED — for tone and visible-content reference only, NOT a basis for absence claims):\n" + _html.slice(0, 12000),
         "Return this JSON structure (4 categories, 2-4 issues each, no line breaks in strings):",
         schemaStr,
       ].filter(Boolean).join("\n");
