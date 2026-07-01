@@ -14,6 +14,8 @@
 const MODEL = "claude-sonnet-4-6";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 
+import { logLlmUsage } from "../llm-usage.js";
+
 /** Call the model with a hard timeout. Returns text or "" on any failure.
     Retries on Anthropic overload responses (529/503/429 or "overloaded_error")
     up to 3 attempts with backoff so transient infra blips don't surface to
@@ -41,6 +43,7 @@ export async function llm(opts: {
   const RETRYABLE_HTTP = new Set([429, 503, 529]);
   const MAX_ATTEMPTS = 3;
   const BACKOFFS_MS = [1000, 4000];
+  const _t0 = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (attempt > 1) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
@@ -61,6 +64,7 @@ export async function llm(opts: {
       if (r.ok) {
         const d = await r.json();
         clearTimeout(timer);
+        await logLlmUsage({ engine: label, model: MODEL, usage: d?.usage || {}, latencyMs: Date.now() - _t0 });
         return (d?.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n");
       }
       const t = await r.text().catch(() => "");
@@ -156,6 +160,7 @@ export async function llmWithTools(opts: {
   const RETRYABLE_HTTP = new Set([429, 503, 529]);
   const MAX_ATTEMPTS = 3;
   const BACKOFFS_MS = [1000, 4000];
+  const _t0 = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     if (attempt > 1) await new Promise(r => setTimeout(r, BACKOFFS_MS[attempt - 2]));
@@ -173,6 +178,7 @@ export async function llmWithTools(opts: {
       if (r.ok) {
         const d = await r.json();
         clearTimeout(timer);
+        await logLlmUsage({ engine: label, model: MODEL, usage: d?.usage || {}, latencyMs: Date.now() - _t0 });
         return { content: d?.content || [], stop_reason: d?.stop_reason || "end_turn", usage: d?.usage };
       }
       const t = await r.text().catch(() => "");

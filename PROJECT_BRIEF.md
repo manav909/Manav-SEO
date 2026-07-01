@@ -1737,3 +1737,32 @@ The click-next screen with live stage status. This is layout. Frozen until Manav
 
 **First migration:** `season-llm.ts` (chat brain) — routed through `callLLM`, model unchanged (Sonnet, quality call), metering on. Direct dollar saving on this engine is ~0 by design (prompt below cache floor, not downgraded); its purpose was to prove the keystone safe in the live hot path and put the highest-frequency engine on the meter. Real savings begin with the heavy-prompt engines next in queue.
 
+
+### LLM USAGE LEDGER (cost + time + purpose)
+
+Single primitive: `logLlmUsage` in `api/lib/llm-usage.ts`. Every metered call records purpose (label/engine), model, tokens (fresh / cache-read / cache-write / output), **cost in USD**, **latency in ms**, project, and timestamp — written to `activity_log` under `source = "llm_usage"` (never collides with the cap source `"llm"`). Fail-safe: a logging error never breaks a call.
+
+Pricing lives in `llm-usage.ts` (`costOf`), verified against Anthropic rates (Sonnet 4.6 $3/$15, Haiku 4.5 $1/$5, Opus 4.8 $5/$25; cache read = 0.1x input, 5-min cache write = 1.25x input). Override any model rate at runtime via env `LLM_PRICE_<MODEL>_IN` / `_OUT` (dollars per million) — no redeploy needed on a price change.
+
+**Covered automatically:** every call through `callLLM` (llm-client.ts), `llm` and `llmWithTools` (workspace/llm.ts) — which is the season chat, vault, bd-strategist, and all workspace deep-steps.
+
+**Not yet covered:** the ~40 engines that still call `api.anthropic.com/v1/messages` directly. Wire each with the standard three-line pattern, or migrate it to `callLLM`:
+```
+const _t0 = Date.now();
+/* ... existing fetch, get `data` ... */
+await logLlmUsage({ engine: "<purpose>", model: MODEL, usage: data?.usage || {}, latencyMs: Date.now() - _t0, projectId });
+```
+
+**Ledger query (cost + time by purpose, last 7 days):**
+```
+select technical->>'purpose' as purpose, technical->>'model' as model,
+       count(*) as calls,
+       round(sum((technical->>'cost_usd')::numeric), 4)      as cost_usd,
+       round(avg((technical->>'latency_ms')::numeric))       as avg_ms,
+       sum((technical->>'total_input_tokens')::int)          as in_tokens,
+       sum((technical->>'output_tokens')::int)               as out_tokens
+from activity_log
+where source = 'llm_usage' and created_at > now() - interval '7 days'
+group by 1,2 order by cost_usd desc nulls last;
+```
+

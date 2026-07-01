@@ -27,6 +27,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { logLlmUsage } from "./llm-usage.js";
 
 /* ─── Tiering ────────────────────────────────────────────────────
    Standard maps to the model every engine used before migration, so a
@@ -114,6 +115,7 @@ export async function callLLM(opts: LlmCallOpts): Promise<LlmCallResult> {
     ok: false, text: "", raw: null, model,
     fromCache: false, rateLimited: false, usage: {},
   };
+  const _callStart = Date.now();
 
   if (!ANTHROPIC_API_KEY) {
     return { ...base, error: "no_api_key" };
@@ -157,6 +159,7 @@ export async function callLLM(opts: LlmCallOpts): Promise<LlmCallResult> {
   if (!attempt.ok && wantCache) {
     attempt = await sendOnce(model, opts, false);
   }
+  const latencyMs = Date.now() - _callStart;
   if (!attempt.ok) {
     return { ...base, error: attempt.error || "anthropic_error" };
   }
@@ -170,9 +173,18 @@ export async function callLLM(opts: LlmCallOpts): Promise<LlmCallResult> {
     try { await writeResponseCache(opts.responseCache, text, usage); } catch { /* non-fatal */ }
   }
 
-  /* ── 5. Metering (default on, non-fatal, isolated source) ───────── */
+  /* ── 5. Metering (default on, non-fatal, isolated source) ─────────
+     Routed through the shared ledger so cost (USD) and latency are recorded
+     alongside tokens, identically to every other metered path. */
   if (opts.meter !== false) {
-    try { await meterUsage(opts, model, usage, false); } catch { /* non-fatal */ }
+    await logLlmUsage({
+      engine: opts.engine || "llm-client",
+      model,
+      usage,
+      latencyMs,
+      projectId: opts.projectId ?? null,
+      fromCache: false,
+    });
   }
 
   return { ok: true, text, raw, model, fromCache: false, rateLimited: false, usage };
@@ -275,27 +287,10 @@ async function writeResponseCache(
 /* Metering writes under source "llm_usage" — deliberately distinct from
    the cap source "llm" — so it provides a clean cost ledger for before/after
    analysis without ever inflating the daily-cap counter. */
-async function meterUsage(
-  opts: LlmCallOpts,
-  model: string,
-  usage: LlmUsage,
-  fromCache: boolean,
-): Promise<void> {
-  await db().from("activity_log").insert({
-    project_id: opts.projectId ?? null,
-    event_type: "llm_call",
-    source: "llm_usage",
-    headline: `LLM ${opts.engine || "call"} via ${model}`,
-    detail: `in=${usage.input_tokens || 0} out=${usage.output_tokens || 0} cache_read=${usage.cache_read_input_tokens || 0}`,
-    technical: {
-      engine: opts.engine || null,
-      model,
-      from_cache: fromCache,
-      input_tokens: usage.input_tokens || 0,
-      output_tokens: usage.output_tokens || 0,
-      cache_read_input_tokens: usage.cache_read_input_tokens || 0,
-      cache_creation_input_tokens: usage.cache_creation_input_tokens || 0,
-    },
-    severity: "info",
-  });
+async function meterUsage(): Promise<void> {
+  /* Deprecated — usage metering now lives in ./llm-usage.ts (logLlmUsage),
+     which records cost and latency in addition to tokens. Kept as a no-op
+     to avoid touching any unexpected caller; safe to delete once confirmed
+     unreferenced. */
 }
+void meterUsage;
