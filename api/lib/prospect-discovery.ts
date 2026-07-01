@@ -27,6 +27,7 @@
    ════════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { logLlmUsage } from "./llm-usage.js";
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 // Build 12.8.4 — match the model alias used by the 98 other call sites in
@@ -176,6 +177,7 @@ async function callAnthropicWithWebSearch(opts: {
 
       if (r.ok) {
         const d = await r.json();
+        await logLlmUsage({ engine: `prospect-discovery:${opts.label}`, model: MODEL, usage: d?.usage || {}, latencyMs: duration, projectId: opts.discovery_id ?? null });
         const blocks = d?.content || [];
         const textBlocks = blocks.filter((b: any) => b.type === "text").map((b: any) => b.text || "");
         const text = textBlocks.join("\n\n").trim();

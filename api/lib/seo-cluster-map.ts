@@ -22,6 +22,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
+import { logLlmUsage } from "./llm-usage.js";
 import { writeReportToPanel, recordOpportunity } from "./seo-campaign-engine.js";
 import { fetchSerpFeatures } from "./serpapi.js";
 
@@ -818,6 +819,7 @@ ${competitorContext}
 Generate 4-6 aspirational topical clusters. Each cluster should be a content category the project should build coverage for.`;
 
   try {
+    const _t0 = Date.now();
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -835,6 +837,7 @@ Generate 4-6 aspirational topical clusters. Each cluster should be a content cat
     });
     if (!res.ok) throw new Error(`LLM HTTP ${res.status}`);
     const data = await res.json();
+    await logLlmUsage({ engine: "seo-cluster-map", model: MODEL, usage: data?.usage || {}, latencyMs: Date.now() - _t0, projectId: (opts as any)?.projectId ?? null });
     const text = (data?.content?.[0]?.text || '').trim();
     const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
     const parsed = JSON.parse(cleaned);
