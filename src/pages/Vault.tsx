@@ -222,7 +222,7 @@ export default function Vault() {
                 {roster.map((d, i) => <option key={i} value={d.client_handle || d.client_name || ""}>{d.client_name || d.client_handle}</option>)}
               </select>
               <span className="text-[11px] text-muted-foreground">or just name a client in your question</span>
-              {msgs.length ? <div className="ml-auto">{exportBar(msgs.map((m) => m.role === "you" ? `## Q: ${m.text}` : m.text + (m.used && m.used.length ? `\n\n*Source: ${m.used.join(", ")}*` : "")).join("\n\n---\n\n"), { title: "Vault — Conversation", kind: "Client Intelligence Q&A", generatedAt: new Date().toISOString() })}</div> : null}
+              {msgs.some((m) => m.role === "vault") ? <div className="ml-auto">{exportBar(msgs.filter((m) => m.role === "vault").map((m) => m.text + (m.used && m.used.length ? `\n\n*Source: ${m.used.join(", ")}*` : "")).join("\n\n---\n\n"), { title: "Vault — Client Analysis", kind: "Client Intelligence", generatedAt: new Date().toISOString() })}</div> : null}
             </div>
 
             <div className="min-h-[320px] max-h-[52vh] overflow-y-auto space-y-3 mb-3 pr-1">
