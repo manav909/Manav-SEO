@@ -12,6 +12,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth }     from "@/contexts/AuthContext";
 import { ProjectProvider }             from "@/contexts/ProjectContext";
 import MissionControl                  from "./pages/MissionControl";
+import CostControl                     from "./pages/CostControl";
 import BrandStudio                     from "./pages/BrandStudio";
 import ClientWorkspace                 from "./pages/ClientWorkspace";
 import InviteRedeem                    from "./pages/InviteRedeem";
@@ -147,6 +148,7 @@ const AppRoutes = () => {
         <Route path="/workspace"       element={<B name="workspace">      <StaffGuard perm="playground">     <Workspace />      </StaffGuard></B>} />
         <Route path="/site-manager"    element={<B name="site-manager">   <StaffGuard perm="playground">     <SiteManager />    </StaffGuard></B>} />
         <Route path="/system-control"  element={<B name="system-control"> <StaffGuard perm="system_control"> <SystemControl />  </StaffGuard></B>} />
+        <Route path="/cost-control"     element={<B name="cost-control">   <StaffGuard perm="system_control"> <CostControl />    </StaffGuard></B>} />
         <Route path="/algorithm-intel" element={<B name="algo-intel">     <StaffGuard perm="algorithm_intel"><AlgorithmIntel /> </StaffGuard></B>} />
         <Route path="/brain-learning"  element={<B name="brain-learning"> <StaffGuard perm="brain_learning"> <BrainLearning />  </StaffGuard></B>} />
         <Route path="/desk"            element={<B name="desk">           <StaffGuard perm="brain_learning"> <Desk />           </StaffGuard></B>} />
