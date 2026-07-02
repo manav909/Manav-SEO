@@ -50,6 +50,14 @@ export default function Vault() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [asking, setAsking] = useState(false);
+  const [askStage, setAskStage] = useState(0);
+  const client_stage_labels = [
+    "Reading the CRM data and transcript…",
+    "Tracing the moments that moved the deal…",
+    "Evaluating the decisions and the timing…",
+    "Weighing the live risks and next moves…",
+    "Writing the full analysis…",
+  ];
   const [client, setClient] = useState("");
   const [roster, setRoster] = useState<RosterItem[]>([]);
   const askEnd = useRef<HTMLDivElement>(null);
@@ -81,6 +89,11 @@ export default function Vault() {
     post("bd_settings_get", { key: "vault_config" }).then((r) => { if (r && r.success && r.value && typeof r.value === "object") setCfg({ depth: r.value.depth || "standard", sections: r.value.sections || "", auto: Number(r.value.auto) || 0 }); }).catch(() => {});
   }, []);
   useEffect(() => { if (askEnd.current) askEnd.current.scrollIntoView({ behavior: "smooth" }); }, [msgs, asking]);
+  useEffect(() => {
+    if (!asking) { setAskStage(0); return; }
+    const t = setInterval(() => setAskStage((s) => Math.min(s + 1, client_stage_labels.length - 1)), 4500);
+    return () => clearInterval(t);
+  }, [asking]);
 
   async function sendAsk() {
     const q = input.trim(); if (!q || asking) return;
@@ -226,7 +239,14 @@ export default function Vault() {
                   </div>
                 </div>
               ))}
-              {asking && <div className="flex justify-start"><div className="rounded-2xl px-4 py-2.5 text-sm bg-card border border-border text-muted-foreground">Reading the data…</div></div>}
+              {asking && <div className="flex justify-start"><div className="rounded-2xl px-4 py-2.5 text-sm bg-card border border-border text-muted-foreground flex items-center gap-2">
+                <span className="inline-flex gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" style={{ animationDelay: "0ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" style={{ animationDelay: "200ms" }} />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary/70 animate-pulse" style={{ animationDelay: "400ms" }} />
+                </span>
+                <span>{client_stage_labels[askStage]}</span>
+              </div></div>}
               <div ref={askEnd} />
             </div>
 
