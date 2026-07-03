@@ -78,6 +78,27 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
+/* When a site WAF blocks our datacenter origin (a 401/403/429/5xx on a page that
+   real browsers and Googlebot load fine — confirmed by fetching the same URL from
+   other infrastructure), retry through a reader proxy that fetches from its own
+   IPs and returns the rendered HTML. This recovers pages that are healthy but
+   simply refuse our crawler's origin, without ever fabricating: if the reader
+   also fails, the caller keeps the honest blocked result. Set JINA_API_KEY for
+   higher throughput and reliability on multi-page crawls. */
+async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boolean; html: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const headers: Record<string, string> = { ...BROWSER_HEADERS, "X-Return-Format": "html", "X-Timeout": "20" };
+    const key = process.env.JINA_API_KEY || process.env.JINA_KEY || "";
+    if (key) headers["Authorization"] = "Bearer " + key;
+    const r = await fetch("https://r.jina.ai/" + url, { headers, redirect: "follow", signal: controller.signal });
+    if (!r.ok) return { ok: false, html: "" };
+    const html = (await r.text()) || "";
+    return { ok: html.length > 200, html };
+  } catch { return { ok: false, html: "" }; } finally { clearTimeout(timer); }
+}
+
 /* Status-aware fetch. Returns the body ONLY on a genuine 2xx response, plus the
    HTTP status, final URL, and any X-Robots-Tag header. This is what lets callers
    tell a real page from a 403/challenge/error body — the distinction the audit
@@ -94,13 +115,19 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
       redirect: "follow", signal: controller.signal,
     });
     const status = r.status;
-    const ok = status >= 200 && status < 300;
+    let ok = status >= 200 && status < 300;
     const xRobotsTag = r.headers.get("x-robots-tag") || "";
     const finalUrl = (r as any).url || url;
     /* never read a 4xx/5xx body as page content — it is an error or challenge page */
-    const html = ok ? ((await r.text()) || "") : "";
+    let html = ok ? ((await r.text()) || "") : "";
     /* 401/403/429/5xx = access blocked or challenged, not a missing or noindex page */
-    const blocked = status === 401 || status === 403 || status === 429 || status >= 500;
+    let blocked = status === 401 || status === 403 || status === 429 || status >= 500;
+    /* WAF blocked our origin — recover the real page via the reader proxy. Only on
+       blocked (never on a genuine 404), so a missing page stays missing. */
+    if (blocked) {
+      const reader = await fetchViaReader(url);
+      if (reader.ok) { html = reader.html; ok = true; blocked = false; }
+    }
     return { ok, status, html, finalUrl, xRobotsTag, blocked };
   } catch {
     return { ok: false, status: 0, html: "", finalUrl: url, xRobotsTag: "", blocked: false };
@@ -131,8 +158,24 @@ export async function fetchPageFacts(url: string): Promise<{
   const loaded = html.length > 300;
   const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
   const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
-  const meta = (html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i) || [])[1]?.trim() || "";
-  const canonical = (html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']*)["']/i) || [])[1]?.trim() || "";
+  /* Order-independent: match the tag by its identifying attribute, then read the
+     value — so a Webflow/Magento tag with content= before name= (or href= before
+     rel=) is not falsely reported as missing. This is the same fix applied in the
+     site crawler after it produced bogus "missing meta/canonical sitewide". */
+  let meta = "";
+  for (const tag of html.match(/<meta\b[^>]*>/gi) || []) {
+    if (/\bname\s*=\s*["']description["']/i.test(tag)) {
+      const c = (tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i) || [])[1];
+      if (c != null) { meta = c.trim(); break; }
+    }
+  }
+  let canonical = "";
+  for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+    if (/\brel\s*=\s*["']canonical["']/i.test(tag)) {
+      const h = (tag.match(/\bhref\s*=\s*["']([^"']+)["']/i) || [])[1];
+      if (h) { canonical = h.trim(); break; }
+    }
+  }
   const wordCount = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ").split(/\s+/).filter(w => w.length > 2).length;
   /* indexability = a real robots-meta noindex OR an X-Robots-Tag: noindex header.
