@@ -64,6 +64,33 @@ const BROWSER_HEADERS: Record<string, string> = {
   "Pragma": "no-cache",
 };
 
+/* ── WAF / bot-challenge detection ──────────────────────────────────────
+   Cloudflare, Akamai, Imperva/Incapsula, Distil, AWS WAF and similar often
+   return HTTP 200 with an interstitial ("Just a moment...", "Attention
+   Required", "Checking your browser") that carries a noindex meta and almost
+   no content. Parsing that as the real page is exactly what reported live,
+   indexed, schema-rich pages as "missing everything + NOINDEX". Every fetch
+   entry point below runs this so a challenge body is never treated as content,
+   regardless of the status code it arrived with. */
+const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|please wait|verifying you are (a )?human|are you a (human|robot)|security check|access denied|request unsuccessful|you have been blocked|access to this page has been denied/i;
+const CHALLENGE_BODY = /cf-browser-verification|cf[_-]chl|__cf_chl|challenge-platform|cdn-cgi\/challenge|turnstile|enable javascript and cookies to continue|_incapsula_|incapsula incident|imperva|distil_r_captcha|please enable cookies|checking if the site connection is secure|ddos protection by|attention required!|access to this page has been denied|client-side challenge|px-captcha/i;
+
+function looksBlocked(html: string, title: string): boolean {
+  if (!html) return false;
+  if (CHALLENGE_TITLE.test(title)) return true;
+  if (CHALLENGE_BODY.test(html)) return true;
+  /* Tiny body that also carries a bot-gate marker = interstitial. A genuinely
+     thin real page is not flagged unless it also shows a challenge fingerprint. */
+  const words = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").split(/\s+/).filter(w => w.length > 2).length;
+  if (words < 40 && /captcha|challenge|verify you are|javascript is required|enable javascript/i.test(html)) return true;
+  return false;
+}
+
+function titleOf(html: string): string {
+  return (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
+}
+
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -74,7 +101,10 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
     });
     /* never return a 4xx/5xx body so no caller parses an error or challenge page */
     if (!r.ok) return "";
-    return (await r.text()) || "";
+    const html = (await r.text()) || "";
+    /* a 200 can still be a WAF interstitial — never hand that to a parser */
+    if (looksBlocked(html, titleOf(html))) return "";
+    return html;
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
@@ -95,7 +125,10 @@ async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boolean; h
     const r = await fetch("https://r.jina.ai/" + url, { headers, redirect: "follow", signal: controller.signal });
     if (!r.ok) return { ok: false, html: "" };
     const html = (await r.text()) || "";
-    return { ok: html.length > 200, html };
+    /* the reader can itself hit a challenge or return an error shell — never
+       accept one, or we recover garbage in place of an honest blocked result */
+    if (html.length < 200 || looksBlocked(html, titleOf(html))) return { ok: false, html: "" };
+    return { ok: true, html };
   } catch { return { ok: false, html: "" }; } finally { clearTimeout(timer); }
 }
 
@@ -122,6 +155,10 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
     let html = ok ? ((await r.text()) || "") : "";
     /* 401/403/429/5xx = access blocked or challenged, not a missing or noindex page */
     let blocked = status === 401 || status === 403 || status === 429 || status >= 500;
+    /* A 200 can STILL be a WAF interstitial (Cloudflare "Just a moment..." returns
+       200). Detect it and treat as blocked, so its title / 7 words / noindex meta
+       are never reported as the real page's facts. */
+    if (ok && looksBlocked(html, titleOf(html))) { ok = false; blocked = true; html = ""; }
     /* WAF blocked our origin — recover the real page via the reader proxy. Only on
        blocked (never on a genuine 404), so a missing page stays missing. */
     if (blocked) {
