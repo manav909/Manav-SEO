@@ -229,7 +229,17 @@ async function runCrux(rec: { url?: string; origin?: string }, key: string): Pro
 
 /* Lab data (synthetic Lighthouse via PSI). Works on ANY url regardless of
    traffic, so it is the answer when a site is below the CrUX field threshold.
-   It is a controlled measurement, not real-user data — labelled as such. */
+   It is a controlled measurement, not real-user data — labelled as such. Also
+   pulls the concrete fixes (opportunities with estimated time saved) and the
+   actual LCP element, so the output is an actionable plan, not just a verdict. */
+function lcpElementOf(audit: any): string {
+  const items = audit?.details?.items || [];
+  for (const it of items) {
+    if (it?.node?.snippet) return String(it.node.snippet);
+    for (const s of (it?.items || [])) if (s?.node?.snippet) return String(s.node.snippet);
+  }
+  return "";
+}
 async function runPsiLab(url: string, key: string): Promise<any> {
   try {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 38000);
@@ -237,6 +247,13 @@ async function runPsiLab(url: string, key: string): Promise<any> {
     const r = await fetch(u, { signal: ctrl.signal }).then(x => x.json()).finally(() => clearTimeout(t));
     const lh = (r as any)?.lighthouseResult; if (!lh) return null;
     const a = lh.audits || {};
+    /* Opportunities = audits Lighthouse flags as fixable, each with an estimated
+       millisecond saving. Keep the ones with a real saving, ranked. */
+    const opps = Object.values(a)
+      .filter((au: any) => au && au.details && au.details.type === "opportunity" && (au.details.overallSavingsMs || 0) > 50 && (au.score == null || au.score < 0.9))
+      .map((au: any) => ({ title: String(au.title || ""), savings_ms: Math.round(au.details.overallSavingsMs || 0), detail: String(au.displayValue || "") }))
+      .sort((x: any, y: any) => y.savings_ms - x.savings_ms)
+      .slice(0, 6);
     return {
       url,
       perf_score: lh.categories?.performance?.score != null ? Math.round(lh.categories.performance.score * 100) : null,
@@ -244,6 +261,8 @@ async function runPsiLab(url: string, key: string): Promise<any> {
       cls: a["cumulative-layout-shift"]?.numericValue ?? null,
       tbt_ms: a["total-blocking-time"]?.numericValue ?? null,
       fcp_ms: a["first-contentful-paint"]?.numericValue ?? null,
+      lcp_element: lcpElementOf(a["largest-contentful-paint-element"]),
+      opps,
     };
   } catch { return null; }
 }
@@ -325,6 +344,19 @@ export async function gatherCoreWebVitals(opts: { projectId: string; targetUrls:
     L.push(`\n_Generated ${new Date().toLocaleString()}. This site has no CrUX field data (below Google real-user threshold), so these are PSI **lab** measurements — synthetic Lighthouse runs, not real-user data. Sampled ${lab.length} page(s)._\n`);
     L.push(`| Page | Perf score | LCP (lab) | CLS (lab) | TBT (lab) |`); L.push(`|---|---|---|---|---|`);
     for (const c of lab) { L.push(`| ${pathOf(c.url)} | ${c.perf_score != null ? c.perf_score + "/100" : "—"} | ${c.lcp_ms ? (c.lcp_ms / 1000).toFixed(2) + "s" : "—"} | ${c.cls != null ? c.cls.toFixed(3) : "—"} | ${c.tbt_ms != null ? Math.round(c.tbt_ms) + "ms" : "—"} |`); }
+    /* Per-page fix plan: the concrete opportunities and the LCP element, so this
+       is an actionable deliverable rather than a verdict. */
+    L.push(`\n## Fix plan (per page)`);
+    for (const c of lab) {
+      L.push(`\n### ${pathOf(c.url)} — ${c.perf_score != null ? c.perf_score + "/100" : "no score"}`);
+      if (c.lcp_element) L.push(`- **LCP element** (the largest thing users wait for): \`${String(c.lcp_element).replace(/`/g, "").slice(0, 160)}\``);
+      if (c.opps && c.opps.length) {
+        L.push(`- **Highest-impact fixes** (estimated time saved on this page):`);
+        for (const o of c.opps) L.push(`    - ${o.title} — save ~${(o.savings_ms / 1000).toFixed(2)}s${o.detail ? ` (${o.detail})` : ""}`);
+      } else {
+        L.push(`- No specific opportunities flagged over the reporting threshold — the slowness is likely server response time or the LCP image weight above.`);
+      }
+    }
     L.push(`\n_Lab data is a controlled single-run measurement. It shows how the page performs on a standard device and connection — useful for finding fixes — but it is not the field experience Google ranks on. Treat it as a diagnostic, not a ranking signal._`);
   } else {
     L.push(`\n_Generated ${new Date().toLocaleString()}._\n`);
