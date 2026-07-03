@@ -42,12 +42,34 @@ export async function withTimeout<T>(p: Promise<T>, label = "q", ms = 12000): Pr
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
+/* The full header set a real Chrome navigation sends. Many WAFs (Cloudflare
+   managed rules, hosting bot filters) do not block on User-Agent alone — they
+   check for the complete, self-consistent set of navigation headers. A request
+   with only UA + Accept looks automated and gets a 403 challenge; this set
+   passes the common header-completeness heuristics. Accept-Encoding is left to
+   the runtime (undici) so the body is always decoded correctly. */
+const BROWSER_HEADERS: Record<string, string> = {
+  "User-Agent": BROWSER_UA,
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "sec-ch-ua": "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": "\"Windows\"",
+  "Cache-Control": "no-cache",
+  "Pragma": "no-cache",
+};
+
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": BROWSER_UA, "Accept": "text/html,application/xhtml+xml,*/*" },
+      headers: BROWSER_HEADERS,
       redirect: "follow", signal: controller.signal,
     });
     /* never return a 4xx/5xx body so no caller parses an error or challenge page */
@@ -68,7 +90,7 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
   const timer = setTimeout(() => controller.abort(), ms);
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": BROWSER_UA, "Accept": "text/html,application/xhtml+xml,*/*" },
+      headers: BROWSER_HEADERS,
       redirect: "follow", signal: controller.signal,
     });
     const status = r.status;
