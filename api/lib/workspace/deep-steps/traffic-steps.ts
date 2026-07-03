@@ -206,38 +206,84 @@ export async function gatherOnpageAudit(opts: { projectId: string; targetUrls: s
 }
 
 /* ════════════════ CORE WEB VITALS (CrUX field) ═════════════════ */
-async function runCrux(url: string): Promise<any> {
-  const key = process.env.PAGESPEED_API_KEY || "";
-  if (!key) return null;
+async function runCrux(rec: { url?: string; origin?: string }, key: string): Promise<any> {
   try {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
     const r = await fetch(`https://chromeuxreport.googleapis.com/v1/records:queryRecord?key=${key}`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
-      body: JSON.stringify({ url, formFactor: "PHONE" }),
+      body: JSON.stringify({ ...rec, formFactor: "PHONE" }),
     }).then(x => x.json()).finally(() => clearTimeout(t));
     const m = (r as any)?.record?.metrics; if (!m) return null;
-    return { url, lcp_ms: m.largest_contentful_paint?.percentiles?.p75 ?? null, cls: m.cumulative_layout_shift?.percentiles?.p75 ?? null, inp_ms: m.interaction_to_next_paint?.percentiles?.p75 ?? null };
+    return {
+      scope: rec.url ? "page" : "origin",
+      label: rec.url || rec.origin || "",
+      lcp_ms: m.largest_contentful_paint?.percentiles?.p75 ?? null,
+      cls: m.cumulative_layout_shift?.percentiles?.p75 ?? null,
+      inp_ms: m.interaction_to_next_paint?.percentiles?.p75 ?? null,
+    };
   } catch { return null; }
 }
 export async function gatherCoreWebVitals(opts: { projectId: string; targetUrls: string[] }): Promise<StepResult> {
   const { targetUrls } = opts;
-  const data = await Promise.race([
-    Promise.all(targetUrls.slice(0, 25).map(runCrux)),
-    new Promise<any[]>((res) => setTimeout(() => res([]), 50000)),
-  ]) as any[];
-  const valid = data.filter(Boolean);
-  const provenance = [prov(valid.length, "CrUX field data", `${valid.length} of ${Math.min(targetUrls.length, 25)} pages have field data`)];
-  const fails = valid.filter(c => (c.lcp_ms && c.lcp_ms > 2500) || (c.cls && c.cls > 0.1) || (c.inp_ms && c.inp_ms > 200));
-  const worth_deeper = valid.length ? (fails.length ? [`${fails.length} pages fail a Core Web Vitals threshold — prioritise on commercially important pages.`] : []) : [`No CrUX field data — pages lack sufficient real-user traffic (a fact, not a verdict). Use Site Manager lab data.`];
+  const key = process.env.PAGESPEED_API_KEY || "";
+  const pages = targetUrls.slice(0, 25);
 
-  const evidence = { step_key: "core_web_vitals", generated_at: new Date().toISOString(), pages: valid, failing: fails, provenance, worth_deeper };
+  /* No key means no lookup happened at all — that is a configuration gap, NOT a
+     fact about the site traffic. Say exactly that instead of implying the pages
+     lack real users. */
+  if (!key) {
+    const provenance = [prov(0, "CrUX field data", "skipped — PAGESPEED_API_KEY not configured")];
+    const L = [
+      `# Core Web Vitals (field) — Evidence Report`,
+      `\n_Generated ${new Date().toLocaleString()}. CrUX field lookup was skipped._\n`,
+      `_No field data was fetched because PAGESPEED_API_KEY is not set in the environment. This is a configuration gap, not a statement about the site. Set the key to enable real Chrome-user field data with origin-level fallback._`,
+      `\n## Worth investigating further`,
+      `- Set PAGESPEED_API_KEY in the environment to enable CrUX field data and PSI lab data.`,
+      `\n## Provenance`,
+      `- ${provenance[0].source}: ${provenance[0].value} — ${new Date(provenance[0].fetched_at).toLocaleString()}`,
+    ];
+    return { evidence: { step_key: "core_web_vitals", generated_at: new Date().toISOString(), pages: [], failing: [], provenance, worth_deeper: [] }, report_md: L.join("\n") };
+  }
+
+  const pageData = (await Promise.race([
+    Promise.all(pages.map(u => runCrux({ url: u }, key))),
+    new Promise<any[]>((res) => setTimeout(() => res([]), 50000)),
+  ]) as any[]).filter(Boolean);
+
+  /* Page-level CrUX needs per-URL traffic most product pages never reach. When
+     pages come back empty, fall back to the ORIGIN record — the whole-site
+     Chrome-user aggregate, which exists for far more sites and is real field
+     data, just at site scope rather than page scope. */
+  let origin: any = null;
+  if (pageData.length < pages.length && pages.length) {
+    let originUrl = "";
+    try { originUrl = new URL(pages[0]).origin; } catch { originUrl = ""; }
+    if (originUrl) origin = await runCrux({ origin: originUrl }, key);
+  }
+
+  const valid = pageData;
+  const all = origin ? [...valid, origin] : valid;
+  const fails = all.filter(c => (c.lcp_ms && c.lcp_ms > 2500) || (c.cls && c.cls > 0.1) || (c.inp_ms && c.inp_ms > 200));
+  const provenance = [
+    prov(valid.length, "CrUX field data (page-level)", `${valid.length} of ${pages.length} pages have field data`),
+    ...(origin ? [prov(1, "CrUX field data (origin-level)", `whole-site aggregate for ${origin.label}`)] : []),
+  ];
+  const worth_deeper = all.length
+    ? (fails.length ? [`${fails.length} record(s) fail a Core Web Vitals threshold — prioritise fixes on commercially important templates.`] : [`All available field records pass Core Web Vitals thresholds.`])
+    : [`No page-level or origin-level CrUX data — the site lacks sufficient real-user traffic for field data. Use PSI lab data for a synthetic assessment.`];
+
+  const evidence = { step_key: "core_web_vitals", generated_at: new Date().toISOString(), pages: valid, origin, failing: fails, provenance, worth_deeper };
   const L: string[] = [];
   L.push(`# Core Web Vitals (field) — Evidence Report`);
-  L.push(`\n_Generated ${new Date().toLocaleString()}. Real Chrome-user p75 data from CrUX. ${valid.length} pages have field data._\n`);
-  if (valid.length) {
-    L.push(`| Page | LCP | CLS | INP | Verdict |`); L.push(`|---|---|---|---|---|`);
-    for (const c of valid) { const fail = (c.lcp_ms > 2500) || (c.cls > 0.1) || (c.inp_ms > 200); L.push(`| ${pathOf(c.url)} | ${c.lcp_ms ? (c.lcp_ms/1000).toFixed(2)+"s" : "—"} | ${c.cls ?? "—"} | ${c.inp_ms ? Math.round(c.inp_ms)+"ms" : "—"} | ${fail ? "FAILS" : "passes"} |`); }
-  } else L.push(`_No CrUX field data available — pages lack sufficient real-user traffic. This is a fact about traffic volume, not a performance verdict. Lab data (Site Manager / PSI) would be needed to assess these pages._`);
+  L.push(`\n_Generated ${new Date().toLocaleString()}. Real Chrome-user p75 data from CrUX. ${valid.length} page-level${origin ? " plus origin-level" : ""} record(s)._\n`);
+  if (all.length) {
+    L.push(`| Scope | LCP | CLS | INP | Verdict |`); L.push(`|---|---|---|---|---|`);
+    for (const c of valid) { const fail = (c.lcp_ms > 2500) || (c.cls > 0.1) || (c.inp_ms > 200); L.push(`| ${pathOf(c.label)} | ${c.lcp_ms ? (c.lcp_ms / 1000).toFixed(2) + "s" : "—"} | ${c.cls ?? "—"} | ${c.inp_ms ? Math.round(c.inp_ms) + "ms" : "—"} | ${fail ? "FAILS" : "passes"} |`); }
+    if (origin) { const fail = (origin.lcp_ms > 2500) || (origin.cls > 0.1) || (origin.inp_ms > 200); L.push(`| **Whole site (origin)** | ${origin.lcp_ms ? (origin.lcp_ms / 1000).toFixed(2) + "s" : "—"} | ${origin.cls ?? "—"} | ${origin.inp_ms ? Math.round(origin.inp_ms) + "ms" : "—"} | ${fail ? "FAILS" : "passes"} |`); }
+    if (!valid.length && origin) L.push(`\n_Individual pages lack page-level CrUX data (not enough per-URL traffic), but the site origin has aggregated field data — shown above as the whole-site Chrome-user experience._`);
+  } else {
+    L.push(`_No page-level or origin-level CrUX field data. The site lacks sufficient real-user traffic for field data. PSI lab data would give a synthetic per-page assessment._`);
+  }
   L.push(`\n## Worth investigating further`); for (const w of worth_deeper) L.push(`- ${w}`);
   L.push(`\n## Provenance`); for (const f of provenance) L.push(`- ${f.source}: ${f.value}${f.note ? ` (${f.note})` : ""} — ${new Date(f.fetched_at).toLocaleString()}`);
   return { evidence, report_md: L.join("\n") };
