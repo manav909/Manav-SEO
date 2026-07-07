@@ -63,6 +63,10 @@ export interface WizardPlan {
   exclusions:      string[];          // what the client explicitly does NOT want
   deliverable_format: string;         // e.g. "spreadsheet (Sheets/Excel) + summary doc"
   ymyl:            boolean;           // finance/health/legal — forces manual review on trust calls
+  engagement_type: "site_owner" | "reseller_productized" | "one_off_project" | "consultation";
+  artifact_mode:   "audit" | "proposal";  // which document serves the buyer
+  target_is_example: boolean;         // the URL mentioned is an example, not the site to work on
+  buyer_note:      string;            // who is buying and what they optimise for
   stages:          PlannedStage[];
   gaps:            Array<{ stage: string; missing_capability: string; note: string }>;
   manual_calls:    string[];          // stages that need human judgement
@@ -90,8 +94,18 @@ function buildClassifierSystem(): string {
     `- Capture the deliverable format the client demanded (for example, a spreadsheet, a document, specific columns).`,
     `- Set ymyl true if the site is in a Your-Money-or-Your-Life sector: finance, health, legal, insurance, or similar.`,
     ``,
+    `ALSO classify the ENGAGEMENT itself — this decides which ARTIFACT serves the buyer, which matters as much as the SEO-work archetype:`,
+    `- engagement_type: exactly one of:`,
+    `    "site_owner"          — a business wanting their OWN site analysed or improved.`,
+    `    "reseller_productized"— an agency, freelancer or reseller who wants recurring production work to deliver to THEIR OWN clients. Signals: "an example of my clients", "bring on multiple clients", "the same plan", "partner", "white label", "brand new site with my own SEO team", asks for a per-client monthly price, or frames a fixed repeatable deliverable list.`,
+    `    "one_off_project"     — a single fixed deliverable, not ongoing.`,
+    `    "consultation"        — advice or strategy only, no production.`,
+    `- artifact_mode: which document actually serves them — "audit" (a diagnosis of a specific site: findings + recommendations) OR "proposal" (a scope, delivery plan, quality standards and pricing basis for ongoing/productized work). A reseller or ongoing-retainer brief almost always needs "proposal" — auditing an example site is answering a question they did not ask.`,
+    `- target_is_example: true if ANY website URL mentioned is only an ILLUSTRATIVE EXAMPLE of the buyer's clients rather than the actual site to be worked on. "Here is an example of the clients I get: example.com" => true. Do NOT audit an example site as if it were the deliverable.`,
+    `- buyer_note: one short sentence on who is buying and what they optimise for (price, quality, or scale).`,
+    ``,
     `Return ONLY valid JSON, no prose, no markdown fences:`,
-    `{"archetype_id":"<id>","confidence":<0-100>,"requirements":["..."],"exclusions":["..."],"deliverable_format":"<short phrase>","ymyl":<true|false>}`,
+    `{"archetype_id":"<id>","confidence":<0-100>,"requirements":["..."],"exclusions":["..."],"deliverable_format":"<short phrase>","ymyl":<true|false>,"engagement_type":"<site_owner|reseller_productized|one_off_project|consultation>","artifact_mode":"<audit|proposal>","target_is_example":<true|false>,"buyer_note":"<one sentence>"}`,
   ].join("\n");
 }
 
@@ -102,6 +116,10 @@ async function classifyChat(chatText: string): Promise<{
   exclusions: string[];
   deliverable_format: string;
   ymyl: boolean;
+  engagement_type: "site_owner" | "reseller_productized" | "one_off_project" | "consultation";
+  artifact_mode: "audit" | "proposal";
+  target_is_example: boolean;
+  buyer_note: string;
 }> {
   const raw = await llm({
     system: buildClassifierSystem(),
@@ -115,6 +133,8 @@ async function classifyChat(chatText: string): Promise<{
   const validId = parsed && ARCHETYPE_IDS.includes(parsed.archetype_id)
     ? parsed.archetype_id
     : "seo_audit_roadmap"; // safe default — most general, fully scoped
+  const ENGAGEMENTS = ["site_owner", "reseller_productized", "one_off_project", "consultation"];
+  const engagement_type = ENGAGEMENTS.includes(parsed?.engagement_type) ? parsed.engagement_type : "site_owner";
 
   return {
     archetype_id: validId,
@@ -123,6 +143,12 @@ async function classifyChat(chatText: string): Promise<{
     exclusions: Array.isArray(parsed?.exclusions) ? parsed.exclusions.filter((x: any) => typeof x === "string") : [],
     deliverable_format: typeof parsed?.deliverable_format === "string" ? parsed.deliverable_format : "(not specified)",
     ymyl: Boolean(parsed?.ymyl),
+    engagement_type: engagement_type as any,
+    /* A reseller/productized engagement defaults to a proposal even if the model
+       hedged on artifact_mode — auditing their example site is the wrong artifact. */
+    artifact_mode: (parsed?.artifact_mode === "proposal" || engagement_type === "reseller_productized") ? "proposal" : "audit",
+    target_is_example: Boolean(parsed?.target_is_example),
+    buyer_note: typeof parsed?.buyer_note === "string" ? parsed.buyer_note : "",
   };
 }
 
@@ -199,6 +225,10 @@ export async function classifyAndPlan(chatText: string): Promise<WizardPlan> {
     exclusions: c.exclusions,
     deliverable_format: c.deliverable_format,
     ymyl: c.ymyl,
+    engagement_type: c.engagement_type,
+    artifact_mode: c.artifact_mode,
+    target_is_example: c.target_is_example,
+    buyer_note: c.buyer_note,
     stages,
     gaps,
     manual_calls,
@@ -311,7 +341,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
     try {
       const { assembleClientReport, assembleClientReportHtmlEnriched } = await import("./wizard-report.js");
-      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle, project_id: String(body?.projectId || "").trim() || undefined, requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined };
+      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle, project_id: String(body?.projectId || "").trim() || undefined, requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined, artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : body?.artifactMode === "audit" ? "audit" : undefined) as ("proposal" | "audit" | undefined), engagement_type: body?.engagementType ? String(body.engagementType) : undefined, target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined, buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined };
       const md = assembleClientReport(stages, o);
       const html = await assembleClientReportHtmlEnriched(stages, o);
       return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched };

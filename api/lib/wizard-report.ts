@@ -43,6 +43,10 @@ export interface ReportOptions {
   report_title?:    string;
   project_id?:      string;    // to load operator-provided materials for depth
   requirements?:    string[];  // full brief requirement list, for the coverage layer
+  artifact_mode?:   "audit" | "proposal";  // which document to produce (default audit)
+  engagement_type?: string;    // site_owner | reseller_productized | one_off_project | consultation
+  target_is_example?: boolean; // the analysed site is a representative example, not the deliverable
+  buyer_note?:      string;    // who is buying and what they optimise for
 }
 
 /* Completed sections, with duplicate sections (same engine + same summary)
@@ -579,10 +583,99 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
   } catch { return null; }
 }
 
+/* ── Proposal artifact ──────────────────────────────────────────────
+   For productized / reseller / ongoing-retainer briefs, the buyer needs a
+   SCOPE & DELIVERY proposal, not an audit of an example site. This presents
+   the full scope they asked for, how each item is produced and to what
+   standard, a capability demonstration from any live analysis, an honest
+   note on what needs a data source, the quality commitments that set the
+   work apart, and a scope-anchored investment section. Fully deterministic —
+   nothing is invented, and an example site is framed as a demonstration. */
+export function assembleProposalHtml(stages: ReportStageInput[], opts: ReportOptions = {}): { html: string; sections: number } {
+  const author = (opts.author || "Manav S").trim();
+  const client = opts.client_name || opts.client_domain || deriveClient(stages) || "your engagement";
+  const named = client && client !== "your engagement";
+  const isExample = !!opts.target_is_example;
+  const reseller = opts.engagement_type === "reseller_productized";
+  const today = fmtDate(new Date().toISOString());
+  const completed = completedStages(stages);
+  const requirements = (opts.requirements && opts.requirements.length) ? opts.requirements : completed.map(s => s.label);
+
+  const docStage = stages.find(s => Array.isArray(s.output?.requirement_findings));
+  const docAnswered = docStage ? (docStage.output.requirement_findings || []).map((r: any) => String(r.requirement || "")) : [];
+  const engineCovered = completed.filter(s => !Array.isArray(s.output?.requirement_findings)).map(s => s.label);
+  const cov = assessCoverage({ requirements, engineCovered, docAnswered });
+  const needsData = cov.items.filter(i => i.status === "uncovered");
+
+  const title = opts.report_title || (reseller ? "Productized SEO & AEO Delivery — Scope & Proposal" : "Monthly SEO & AEO Delivery — Scope & Proposal");
+  const H: string[] = [];
+  H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
+  H.push(`<div class="lh"><h1>${esc(title)}</h1><div class="by">Prepared by ${esc(author)}${named ? ` · for ${esc(client)}` : ""}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
+
+  H.push(`<h2>Understanding of the engagement</h2>`);
+  const understanding = [
+    reseller
+      ? `This proposal sets out a recurring monthly SEO and AEO production scope you can deliver to your clients — a repeatable scope and delivery plan built to a consistent quality standard across multiple clients, not an audit of a single site.`
+      : `This proposal sets out the recurring monthly SEO and AEO delivery scope, the standard each item is produced to, and the basis for pricing.`,
+    opts.buyer_note ? esc(opts.buyer_note) : "",
+    isExample ? `The site reviewed below is a representative example of your clients; the findings demonstrate the approach and quality — they are not the deliverable itself.` : "",
+  ].filter(Boolean);
+  H.push(`<p>${understanding.join(" ")}</p>`);
+
+  H.push(`<h2>Monthly delivery scope</h2>`);
+  H.push(`<p>Every item you scoped, and exactly how each is produced. Nothing is padded, and where an item needs a data source to run, that is stated plainly rather than implied.</p>`);
+  const scopeRows = cov.items.map(i => {
+    if (i.status === "delivery") return [i.requirement, i.delivery_note || "Recurring delivery work each cycle."];
+    if (i.status === "engine" || i.status === "your_data") return [i.requirement, "Produced from live analysis each cycle — demonstrated below."];
+    return [i.requirement, `Included; runs once ${i.recommendation?.data_need || "the required data source"} is connected.`];
+  });
+  if (scopeRows.length) H.push(tableHtml(["Deliverable (as you scoped it)", "How it is produced, to what standard"], scopeRows));
+
+  if (completed.length) {
+    H.push(`<h2>Capability demonstration${isExample && named ? ` — on ${esc(client)}, a representative site` : ""}</h2>`);
+    H.push(`<p>To show the delivery quality rather than assert it, the following was produced live${isExample ? " on the example site" : ""}. Every figure traces to a real source.</p>`);
+    completed.forEach(s => {
+      H.push(`<h4>${esc(s.label)}</h4>`);
+      H.push(renderBodyHtml(s.output));
+      H.push(`<p class="src"><strong>Source:</strong> ${esc(sourceLine(s.ran_engine, s.output))}</p>`);
+    });
+  }
+
+  if (needsData.length) {
+    H.push(`<h2>What we connect at kickoff</h2>`);
+    H.push(`<p>These items produce their reporting once a data source is connected — no output is fabricated in the meantime:</p>`);
+    H.push(tableHtml(["Item", "What it needs to run"], needsData.map(i => [i.requirement, `${i.recommendation?.data_need || "a data source"} — ${(i.recommendation?.best_sources || []).join("; ")}`])));
+  }
+
+  H.push(`<h2>How the quality is protected</h2><ul>`);
+  H.push(`<li><strong>Content:</strong> written to answer the real questions searchers ask, pulled from live SERP data — never thin AI filler. Any figure needing a citation is flagged for a real source, never invented.</li>`);
+  H.push(`<li><strong>Backlinks:</strong> real prospects surfaced from competitors' referring-domain gaps and earned through genuine outreach — never bought, spun, or placed on link networks, which risk Google penalties for your clients.</li>`);
+  H.push(`<li><strong>Off-site Q&A:</strong> genuinely useful answers to real questions, posted manually with disclosure per platform rules.</li>`);
+  H.push(`<li><strong>Structured data:</strong> schema generated from each page's real markup and validated — never guessed.</li>`);
+  H.push(`<li><strong>Reporting:</strong> every figure states what was measured, what was not, and its source — no fabricated metrics.</li>`);
+  H.push(`</ul>`);
+
+  H.push(`<h2>Investment</h2>`);
+  H.push(`<p>The monthly investment is quoted against the scope and volumes above, at the quality standard described${reseller ? ", with per-client tiering available as you bring on more clients" : ""}. This document defines exactly what that figure buys. <em>[Confirm the monthly figure here.]</em></p>`);
+  H.push(`<p class="muted">Quality at this scope has a real floor: genuinely-researched articles and earned links cost more to produce than thin content and bought links. Where a budget is fixed, the honest lever is scope (for example fewer articles per cycle), not quality — stated so the engagement is set up to succeed rather than disappoint.</p>`);
+
+  H.push(`<h2>Next steps</h2><ol><li>Confirm the scope and monthly volumes above.</li><li>Connect the data sources noted so reporting runs from the first cycle.</li><li>We begin delivery.</li></ol>`);
+
+  const limits = collectLimits(completed);
+  if (limits.length) { H.push(`<h2>Notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
+  H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. Scope and delivery standards as stated above. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
+  H.push(`</div></body></html>`);
+  return { html: H.join(""), sections: completed.length };
+}
+
 /* Enriched report: senior-DMS interpretation woven around the grounded
    data tables. Falls back to the data-only report if the lens is
    unavailable, with an honest note. */
 export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[], opts: ReportOptions = {}): Promise<{ html: string; sections: number; enriched: boolean }> {
+  /* Artifact routing: a productized/reseller/ongoing brief needs a scope
+     proposal, not an audit of an example site. This is the "right document for
+     the brief" decision the wizard now makes. */
+  if (opts.artifact_mode === "proposal") { const p = assembleProposalHtml(stages, opts); return { ...p, enriched: false }; }
   const author = (opts.author || "Manav S").trim();
   const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
