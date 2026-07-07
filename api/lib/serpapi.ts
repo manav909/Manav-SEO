@@ -398,6 +398,61 @@ export async function fetchSerpFeatures(
   return features;
 }
 
+/* Finds REAL question threads on Reddit and Quora for a topic — the actual
+   titles and links from a live Google search via SerpAPI. NO SYNTHESIS: every
+   question is a real, clickable thread the operator can verify. Returns an empty
+   list with a reason when there is no key or no results — never an invented
+   question. Consumes one SerpAPI search credit. */
+export async function findForumQuestions(
+  topic: string,
+  projectId: string,
+  options: { country?: string; limit?: number } = {},
+): Promise<{ questions: Array<{ question: string; url: string; source: string; snippet: string }>; error?: string }> {
+  const q = (topic || "").trim();
+  if (!q) return { questions: [], error: "no topic supplied" };
+  if (!projectId) return { questions: [], error: "no project" };
+  const apiKey = await lookupSerpApiKey(projectId);
+  if (!apiKey) return { questions: [], error: "no SerpAPI key configured — cannot find real questions, and none will be invented" };
+  const country = (options.country || "us").toLowerCase();
+  const limit = Math.max(1, Math.min(options.limit || 12, 30));
+
+  const url = new URL("https://serpapi.com/search");
+  url.searchParams.set("engine", "google");
+  url.searchParams.set("q", `${q} (site:reddit.com OR site:quora.com)`);
+  url.searchParams.set("gl", country);
+  url.searchParams.set("hl", "en");
+  url.searchParams.set("num", "30");
+  url.searchParams.set("api_key", apiKey);
+
+  try {
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return { questions: [], error: `SerpAPI HTTP ${res.status}` };
+    const json = await res.json();
+    if (json?.error) return { questions: [], error: String(json.error) };
+    const organic = Array.isArray(json?.organic_results) ? json.organic_results : [];
+    const seen = new Set<string>();
+    const questions: Array<{ question: string; url: string; source: string; snippet: string }> = [];
+    for (const r of organic) {
+      const link = typeof r?.link === "string" ? r.link : "";
+      const title = typeof r?.title === "string" ? r.title : "";
+      if (!link || !title) continue;
+      const domain = extractDomainFromUrl(link);
+      const source = /reddit\.com/i.test(domain) ? "Reddit" : /quora\.com/i.test(domain) ? "Quora" : "";
+      if (!source) continue;
+      if (seen.has(link)) continue; seen.add(link);
+      questions.push({
+        question: title.replace(/\s*[-|]\s*(Reddit|Quora).*$/i, "").trim(),
+        url: link, source,
+        snippet: typeof r?.snippet === "string" ? r.snippet : "",
+      });
+      if (questions.length >= limit) break;
+    }
+    return { questions };
+  } catch (e: any) {
+    return { questions: [], error: e?.message || "request failed" };
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────
    Helper: human-readable summary of the most impactful SERP features.
    Used by audit findings to explain WHY CTR is suppressed.

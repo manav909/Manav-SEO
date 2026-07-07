@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting", "offsite_qa_drafting"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -193,6 +193,15 @@ export async function runWizardStage(opts: {
       const report = await draftAeoArticle({ projectId, topic, siteUrl: inputs.siteUrl, clientContext: inputs.context, country: inputs.country, depth: aeoDepth });
       if (!report.ok) return result("needs_input", "aeo-article-engine.ts", report, report.notes.join(" ") || `Could not draft — supply a topic.`);
       return result("completed", "aeo-article-engine.ts", report, `Drafted "${report.title}" (${report.faq.length} FAQ entr[y], ${report.grounded_on.length} SERP signal[s]). ${report.notes[0]}`);
+    }
+
+    if (caps.includes("offsite_qa_drafting")) {
+      const topic = inputs.topic || (inputs.targetKeywords && inputs.targetKeywords[0]) || "";
+      if (!topic) return result("needs_input", "offsite-qa-engine.ts", null, `Supply inputs.topic (the topic to find real Reddit/Quora questions for). Optionally inputs.context (client context), inputs.country, and inputs.maxQuestions.`);
+      const { draftOffsiteQa } = await import("./offsite-qa-engine.js");
+      const report = await draftOffsiteQa({ projectId, topic, clientContext: inputs.context, siteUrl: inputs.siteUrl, country: inputs.country, maxQuestions: (inputs as any).maxQuestions });
+      if (!report.ok) return result("needs_connection", "offsite-qa-engine.ts", report, report.summary);
+      return result("completed", "offsite-qa-engine.ts", report, report.summary);
     }
 
     if (caps.includes("document_analysis")) {

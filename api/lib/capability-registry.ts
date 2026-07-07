@@ -302,6 +302,16 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Grounded in real SERP data (People-Also-Ask, AI-Overview citations) when a SerpAPI key is present; without it, it drafts but says so and is weaker. The writer never fabricates statistics, prices, or dates — it inserts [ADD SOURCE] markers for the operator to fill. Output is a DRAFT for human review; publishing is CMS-dependent (auto-push where a CMS API is connected, otherwise paste in).",
     mode: "needs_input",
   },
+
+  offsite_qa_drafting: {
+    id: "offsite_qa_drafting",
+    label: "Off-site Q&A — real question finder + answer drafting",
+    engine: "offsite-qa-engine.ts → draftOffsiteQa",
+    inputs_required: ["A topic or keyword", "A connected SerpAPI key (to find the real questions)"],
+    output: "Real Reddit/Quora question threads on the topic — each with its live, verifiable URL — plus a drafted, genuinely-helpful answer per question for the operator to review.",
+    limits: "Questions are REAL search results (every one has a clickable URL to verify); none are invented — no key or no results returns nothing. Answers are DRAFTS: no fabricated facts (uses [ADD SOURCE] markers), genuine value not disguised ads. The engine NEVER posts: posting is manual and must disclose any commercial relationship, because undisclosed promotion breaks Reddit/Quora rules and is astroturfing.",
+    mode: "needs_connection",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
