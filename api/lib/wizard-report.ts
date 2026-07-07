@@ -173,7 +173,7 @@ function collectSources(stages: ReportStageInput[]): string[] {
 
 export function assembleClientReport(stages: ReportStageInput[], opts: ReportOptions = {}): { markdown: string; sections: number } {
   const author = (opts.author || "Manav S").trim();
-  const client = opts.client_name || opts.client_domain || "the website";
+  const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
   const today = fmtDate(new Date().toISOString());
   const completed = stages.filter(s => s.output && (s.status === "completed" || s.status === undefined));
@@ -250,6 +250,18 @@ function mdToHtml(md: string): string {
   }
   flushUl(); flushTable();
   return out.join("");
+}
+
+/* Derive a client label from what was actually analysed, so the report never
+   falls back to "the website" when the caller did not pass a name. Reads the
+   real site/domain out of the completed stage outputs. */
+function deriveClient(stages: ReportStageInput[]): string {
+  for (const s of stages || []) {
+    const o: any = s.output; if (!o) continue;
+    const cand = o.site || o.project_domain || (o.client && (o.client.domain || o.client)) || o.url || o.client_domain;
+    if (typeof cand === "string" && cand.trim()) return cand.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  }
+  return "";
 }
 
 function renderBodyHtml(o: any): string {
@@ -343,7 +355,56 @@ function renderBodyHtml(o: any): string {
     if (opp.length) { P.push(`<h4>Paid terms where organic can reduce spend</h4>`); P.push(tableHtml(["Search term", "Paid cost", "Organic position", "Recommendation"], opp.map((r: any) => [r.term, r.paid_cost, r.organic_position ?? "not ranking", r.rationale]))); }
     return P.join("");
   }
-  return `<p>${esc(o.summary || o.note || "No formatted findings were produced for this section. If this stage needed input (target keywords, competitor domains, or a connected data source) that was not supplied, add it and re-run.")}</p>`;
+  /* Schema + llms.txt generation (deterministic engine) */
+  if (Array.isArray(o.pages) && typeof o.llms_txt === "string") {
+    const sm = o.summary && typeof o.summary === "object" ? o.summary : {};
+    const fetched = o.pages.filter((p: any) => p.fetched);
+    P.push(`<p>Crawled ${sm.crawled ?? fetched.length} page(s); generated ${sm.schema_blocks ?? 0} JSON-LD block(s), every value grounded in the page's real markup${sm.blocked ? `. ${sm.blocked} page(s) could not be crawled` : ""}.</p>`);
+    const rows = fetched.slice(0, 20).map((p: any) => [
+      (p.canonical || p.url || "").replace(/^https?:\/\/[^/]+/, "") || "/",
+      (p.existing_schema || []).join(", ") || "none",
+      (p.generated || []).map((g: any) => g["@type"]).filter(Boolean).join(", ") || "—",
+      String((p.gaps || []).length),
+    ]);
+    if (rows.length) P.push(tableHtml(["Page", "Existing schema", "Generated schema", "Gaps to supply"], rows));
+    const gaps = fetched.flatMap((p: any) => (p.gaps || []).map((g: string) => ({ page: (p.canonical || p.url || "").replace(/^https?:\/\/[^/]+/, "") || "/", gap: g }))).slice(0, 8);
+    if (gaps.length) P.push(`<h4>Fields to supply (never guessed)</h4><ul>${gaps.map((g: any) => `<li><strong>${esc(g.page)}:</strong> ${esc(g.gap)}</li>`).join("")}</ul>`);
+    const blocked = o.pages.filter((p: any) => !p.fetched);
+    if (blocked.length) P.push(`<p class="muted">${blocked.length} page(s) could not be crawled (blocked or unreachable); nothing was generated for them — no fabricated blocks.</p>`);
+    P.push(`<p class="muted">An llms.txt file was generated from the live crawl, ready to publish at the site root.</p>`);
+    return P.join("");
+  }
+  /* Backlink prospecting */
+  if (Array.isArray(o.prospects) && Array.isArray(o.competitors_analysed)) {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    if (o.prospects.length) P.push(tableHtml(["Prospect domain", "Authority", "Links to your competitors", "Overlap"],
+      o.prospects.slice(0, 20).map((p: any) => [p.domain, p.authority ?? "—", (p.links_to_competitors || []).join(", "), String(p.competitor_overlap)])));
+    if ((o.limits || []).length) P.push(`<p class="muted">${o.limits.map((l: string) => esc(l)).join(" ")}</p>`);
+    return P.join("");
+  }
+  /* AEO article draft */
+  if (typeof o.article_markdown === "string" && Array.isArray(o.faq)) {
+    if (o.title) P.push(`<p><strong>${esc(o.title)}</strong></p>`);
+    if (o.meta_description) P.push(`<p class="muted">Meta description: ${esc(o.meta_description)}</p>`);
+    if (o.article_markdown) P.push(mdToHtml(o.article_markdown.slice(0, 4000) + (o.article_markdown.length > 4000 ? "\n\n_(draft continues)_" : "")));
+    if (o.faq.length) P.push(`<h4>FAQ (from real search questions)</h4><ul>${o.faq.slice(0, 10).map((f: any) => `<li><strong>${esc(f.q)}</strong> ${esc(f.a)}</li>`).join("")}</ul>`);
+    if ((o.notes || []).length) P.push(`<p class="muted">${o.notes.map((n: string) => esc(n)).join(" ")}</p>`);
+    return P.join("");
+  }
+  /* Off-site Q&A — real questions with verifiable links */
+  if (Array.isArray(o.questions) && o.questions.length && o.questions[0] && o.questions[0].url) {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    P.push(`<h4>Real questions found (each links to a live thread)</h4><ul>${o.questions.slice(0, 15).map((q: any) => `<li><a href="${esc(q.url)}">${esc(q.question)}</a> <span class="muted">(${esc(q.source)})</span></li>`).join("")}</ul>`);
+    if ((o.notes || []).length) P.push(`<p class="muted">${o.notes.map((n: string) => esc(n)).join(" ")}</p>`);
+    return P.join("");
+  }
+
+  /* Default — NEVER coerce an object into "[object Object]". Render only a
+     string summary or note; otherwise state plainly that no formatted findings
+     were produced. This guard is what prevents an engine whose `summary` is an
+     object (rather than a string) from printing "[object Object]" to a client. */
+  const summaryStr = typeof o.summary === "string" ? o.summary : (typeof o.note === "string" ? o.note : "");
+  return `<p>${esc(summaryStr || "No formatted findings were produced for this section. If this stage needed input (a topic, competitor domains, or a connected data source) that was not supplied, add it and re-run.")}</p>`;
 }
 
 const REPORT_CSS = `
@@ -374,23 +435,38 @@ function renderCoverageHtml(opts: ReportOptions, stages: ReportStageInput[]): st
   const cov = assessCoverage({ requirements, engineCovered, docAnswered });
 
   const H: string[] = [];
-  H.push(`<h2>Data coverage and how to strengthen this audit</h2>`);
-  H.push(`<p>${cov.engine_count} requirement(s) were answered by live analysis, ${cov.your_data_count} from your uploaded reports, and ${cov.uncovered_count} are not yet covered by data.</p>`);
+  H.push(`<h2>Scope coverage — what was analysed, what is ongoing delivery, and what needs data</h2>`);
+  const analysed = cov.items.filter(i => i.status === "engine");
+  const yours = cov.items.filter(i => i.status === "your_data");
+  const delivered = cov.items.filter(i => i.status === "delivery");
   const unc = cov.items.filter(i => i.status === "uncovered");
+  const bits: string[] = [];
+  if (analysed.length) bits.push(`${analysed.length} analysed now from live data`);
+  if (yours.length) bits.push(`${yours.length} from your uploaded data`);
+  if (delivered.length) bits.push(`${delivered.length} delivered as recurring work in the engagement`);
+  if (unc.length) bits.push(`${unc.length} awaiting a data source before analysis`);
+  H.push(`<p>Of ${cov.items.length} item(s) in scope: ${bits.join(", ")}. Each is stated for what it is — analysed, delivered, or honestly pending — never padded or guessed.</p>`);
+
+  if (analysed.length || yours.length) {
+    const done = [...analysed, ...yours];
+    H.push(`<p><strong>Covered in this report:</strong> ${done.map(i => esc(i.requirement)).join("; ")}.</p>`);
+  }
+  if (delivered.length) {
+    H.push(`<h4>Recurring delivery work (performed each month — not a one-time audit finding)</h4>`);
+    H.push(tableHtml(["Deliverable", "How it is produced"], delivered.map(i => [i.requirement, i.delivery_note || "Recurring delivery work in the monthly engagement."])));
+  }
   if (unc.length) {
-    H.push(`<h4>Not yet covered — and the most trusted way to fill each</h4>`);
+    H.push(`<h4>Analysis that needs a data source to complete</h4>`);
     H.push(tableHtml(["Requirement", "Data it needs", "Best source(s) to provide it"],
       unc.map(i => [i.requirement, i.recommendation?.data_need || "supporting data", (i.recommendation?.best_sources || []).join("; ")])));
-    H.push(`<p class="muted">No specific tool is required. An export from any tool you use fills these — upload it in the materials step and re-run, and the audit will incorporate it. Where you have nothing, the points above are stated honestly rather than guessed.</p>`);
-  } else {
-    H.push(`<p class="muted">Every requirement is backed by live analysis or your provided data.</p>`);
+    H.push(`<p class="muted">Connect the source or upload an export in the materials step and re-run — the analysis will fill in. Where nothing is available, it is stated honestly rather than guessed.</p>`);
   }
   return H.join("");
 }
 
 export function assembleClientReportHtml(stages: ReportStageInput[], opts: ReportOptions = {}): { html: string; sections: number } {
   const author = (opts.author || "Manav S").trim();
-  const client = opts.client_name || opts.client_domain || "the website";
+  const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
   const today = fmtDate(new Date().toISOString());
   const completed = completedStages(stages);
@@ -484,7 +560,7 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
   if (opts.project_id) { try { material_files = (await loadMaterials(opts.project_id)).map(m => m.filename); } catch { /* non-fatal */ } }
 
   const ctx = [
-    `Client: ${opts.client_name || opts.client_domain || "the website"}.`,
+    `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
     `Interpret these section findings (real data already gathered). Write for the client.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
@@ -508,7 +584,7 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
    unavailable, with an honest note. */
 export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[], opts: ReportOptions = {}): Promise<{ html: string; sections: number; enriched: boolean }> {
   const author = (opts.author || "Manav S").trim();
-  const client = opts.client_name || opts.client_domain || "the website";
+  const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
   const today = fmtDate(new Date().toISOString());
   const completed = completedStages(stages);

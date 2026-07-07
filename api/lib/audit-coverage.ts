@@ -42,8 +42,27 @@ export function recommendSource(requirement: string): SourceRecommendation {
   return { data_need: "Supporting data for this requirement", effective_for: "answering this point with evidence rather than opinion", best_sources: ["Upload the relevant report from any tool you use (Ahrefs, Moz, Semrush, Screaming Frog, GA, and so on)"] };
 }
 
-export interface CoverageItem { requirement: string; status: "engine" | "your_data" | "uncovered"; by?: string; recommendation?: SourceRecommendation; }
-export interface CoverageReport { items: CoverageItem[]; engine_count: number; your_data_count: number; uncovered_count: number; }
+/* A DELIVERABLE is recurring work the provider performs (writing, publishing,
+   link-building, forum posts, FAQ build-out) — NOT something audited with an
+   uploaded report. Treating "8 blog articles per month" as an audit gap that
+   needs an Ahrefs export is a category error; these are described by HOW they
+   are delivered, not by what data is missing. */
+const DELIVERABLE_RE = /\b(write|writing|written|copywrit\w*|publish\w*|blog|articles?|content (creation|production)|page enhancements?|text improvements?|rewrit\w*|enhance\w*|off[- ]?site|q ?& ?a|q and a|forum|reddit|quora|backlinks?|link[- ]building|outreach|faqs?|help[- ]?cent(er|re)|schema markup|llms)\b/i;
+export function isDeliverable(requirement: string): boolean { return DELIVERABLE_RE.test(requirement); }
+
+export function deliveryNoteFor(requirement: string): string {
+  const r = requirement.toLowerCase();
+  if (/article|blog|content (creation|production)|copywrit/.test(r)) return "Ongoing content production — each article drafted by the AEO engine from the live SERP's real People-Also-Ask questions, reviewed for accuracy, then published.";
+  if (/backlink|link[- ]building|outreach/.test(r)) return "Ongoing link acquisition — real prospects surfaced from Semrush referring-domain gaps (sites linking to competitors, not you); outreach and placement performed manually, never automated.";
+  if (/off[- ]?site|q&a|q and a|forum|reddit|quora/.test(r)) return "Ongoing off-site engagement — real Reddit/Quora questions found via live search and answers drafted; posting done manually and disclosed, per platform rules.";
+  if (/faq|help[- ]?cent/.test(r)) return "Ongoing FAQ and help-centre development — structured, answer-engine-friendly Q&A built out each cycle.";
+  if (/schema markup|llms/.test(r)) return "Structured-data and llms.txt generation — grounded in the site's real markup, deployed to each page head and the site root.";
+  if (/page enhancement|text improvement|rewrite|enhance/.test(r)) return "Ongoing on-page enhancements — targeted copy improvements guided by the per-page technical audit.";
+  return "Recurring delivery work performed each cycle in the monthly engagement.";
+}
+
+export interface CoverageItem { requirement: string; status: "engine" | "your_data" | "delivery" | "uncovered"; by?: string; recommendation?: SourceRecommendation; delivery_note?: string; }
+export interface CoverageReport { items: CoverageItem[]; engine_count: number; your_data_count: number; delivery_count: number; uncovered_count: number; }
 
 export function assessCoverage(opts: {
   requirements: string[];
@@ -57,12 +76,16 @@ export function assessCoverage(opts: {
     const n = norm(req);
     if (engine.has(n)) return { requirement: req, status: "engine" as const, by: "platform analysis" };
     if (docs.has(n)) return { requirement: req, status: "your_data" as const, by: "your uploaded reports" };
+    /* A deliverable that was not analysed as a one-off is recurring work, not a
+       missing-data gap — describe how it is delivered instead of asking for a report. */
+    if (isDeliverable(req)) return { requirement: req, status: "delivery" as const, delivery_note: deliveryNoteFor(req) };
     return { requirement: req, status: "uncovered" as const, recommendation: recommendSource(req) };
   });
   return {
     items,
     engine_count: items.filter(i => i.status === "engine").length,
     your_data_count: items.filter(i => i.status === "your_data").length,
+    delivery_count: items.filter(i => i.status === "delivery").length,
     uncovered_count: items.filter(i => i.status === "uncovered").length,
   };
 }
