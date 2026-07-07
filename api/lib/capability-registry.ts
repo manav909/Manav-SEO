@@ -292,6 +292,16 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Uses live Semrush referring-domain data (consumes API units); no key or out of units, it says so and returns nothing fabricated. Competitors are operator-supplied (no auto-pick, to avoid irrelevant prospects). It finds, ranks, and scaffolds outreach — it does NOT place links: automated link placement is a Google link-spam-policy risk, so outreach and placement stay human.",
     mode: "needs_connection",
   },
+
+  aeo_article_drafting: {
+    id: "aeo_article_drafting",
+    label: "AEO article drafting (answer-engine optimised)",
+    engine: "aeo-article-engine.ts → draftAeoArticle",
+    inputs_required: ["A topic or target keyword per article", "Optional: client context and site URL for relevance"],
+    output: "A full article draft shaped for AI answer engines and featured snippets: snippet-style opening answer, H2 sections answering the real People-Also-Ask questions from the live SERP, an FAQ, title/meta, and suggested FAQPage + Article JSON-LD.",
+    limits: "Grounded in real SERP data (People-Also-Ask, AI-Overview citations) when a SerpAPI key is present; without it, it drafts but says so and is weaker. The writer never fabricates statistics, prices, or dates — it inserts [ADD SOURCE] markers for the operator to fill. Output is a DRAFT for human review; publishing is CMS-dependent (auto-push where a CMS API is connected, otherwise paste in).",
+    mode: "needs_input",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */

@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -74,7 +74,7 @@ export async function runWizardStage(opts: {
   stageId?:     string;
   capabilityIds?: string[];   // dynamic path: run these capabilities directly
   stageLabel?:  string;       // dynamic path: the client's deliverable label
-  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[]; siteUrl?: string; pageUrls?: string[]; depth?: "sample" | "standard" | "deep" };
+  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[]; siteUrl?: string; pageUrls?: string[]; depth?: "sample" | "standard" | "deep"; topic?: string; country?: string };
 }): Promise<WizardStageResult> {
   const { projectId } = opts;
   const inputs = opts.inputs || {};
@@ -183,6 +183,16 @@ export async function runWizardStage(opts: {
       const report = await prospectBacklinks({ projectId, clientDomain: inputs.siteUrl, competitors: inputs.competitors, limit: (inputs as any).limit, perDomainFetch: (inputs as any).perDomainFetch });
       if (!report.ok) return result("needs_connection", "semrush-intel.ts", report, report.summary);
       return result("completed", "semrush-intel.ts", report, report.summary);
+    }
+
+    if (caps.includes("aeo_article_drafting")) {
+      const topic = inputs.topic || (inputs.targetKeywords && inputs.targetKeywords[0]) || "";
+      if (!topic) return result("needs_input", "aeo-article-engine.ts", null, `Supply inputs.topic (the article topic or target keyword). Optionally inputs.context (client context), inputs.country, and inputs.depth (brief | standard | deep).`);
+      const aeoDepth = inputs.depth === "sample" ? "brief" : inputs.depth;
+      const { draftAeoArticle } = await import("./aeo-article-engine.js");
+      const report = await draftAeoArticle({ projectId, topic, siteUrl: inputs.siteUrl, clientContext: inputs.context, country: inputs.country, depth: aeoDepth });
+      if (!report.ok) return result("needs_input", "aeo-article-engine.ts", report, report.notes.join(" ") || `Could not draft — supply a topic.`);
+      return result("completed", "aeo-article-engine.ts", report, `Drafted "${report.title}" (${report.faq.length} FAQ entr[y], ${report.grounded_on.length} SERP signal[s]). ${report.notes[0]}`);
     }
 
     if (caps.includes("document_analysis")) {
