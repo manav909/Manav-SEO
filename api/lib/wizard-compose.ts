@@ -120,10 +120,15 @@ export async function composeDynamicPlan(brief: string): Promise<DynamicPlan> {
     const validIds: string[] = (Array.isArray(d?.capability_ids) ? d.capability_ids : [])
       .map((x: any) => String(x))
       .filter((id: string) => Boolean(getCapability(id)));
-    const declaredGap = Boolean(d?.gap) || validIds.length === 0;
-
     const { readiness, caps } = readinessOf(validIds, ymyl);
-    const is_gap = declaredGap || readiness === "gap";
+    /* A deliverable that maps to at least one REAL registry capability is NOT a
+       gap — even if the model also set gap=true wishing for a more perfect
+       dedicated engine. Real coverage wins; the honest limits of that engine
+       (e.g. "posting is manual", "informs the edit, does not auto-apply it")
+       live in the capability's own `limits`, not as a phantom "No engine".
+       Only a deliverable with ZERO real capabilities is a true gap. This kills
+       the incoherent "Requires: Ready" + "No engine" state. */
+    const is_gap = validIds.length === 0;
 
     let note: string;
     if (is_gap) {
