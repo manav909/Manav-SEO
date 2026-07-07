@@ -88,6 +88,100 @@ async function backlinksOverview(key: string, domain: string): Promise<Record<st
   } catch (e: any) { return { error: e?.message || "request failed" }; }
 }
 
+/* The referring-domain LIST (not just the count) — the real data that lets us
+   find who links to a competitor but not to the client. Consumes API units. */
+async function backlinksRefdomains(key: string, domain: string, limit: number): Promise<{ rows: Array<{ domain: string; ascore: number | null }>; error?: string }> {
+  try {
+    const u = new URL("https://api.semrush.com/analytics/v1/");
+    u.searchParams.set("key", key); u.searchParams.set("type", "backlinks_refdomains");
+    u.searchParams.set("target", domain); u.searchParams.set("target_type", "root_domain");
+    u.searchParams.set("export_columns", "domain_ascore,domain,backlinks_num");
+    u.searchParams.set("display_sort", "domain_ascore_desc");
+    u.searchParams.set("display_limit", String(Math.max(1, Math.min(limit, 2000))));
+    const r = await fetch(u.toString()); const text = await r.text();
+    const { rows, error } = parseSemrush(text);
+    if (error) return { rows: [], error };
+    return { rows: rows.map(o => ({ domain: cleanDomain(o.domain || ""), ascore: (o.domain_ascore === "" || o.domain_ascore == null) ? null : numOr(o.domain_ascore) })).filter(x => x.domain) };
+  } catch (e: any) { return { rows: [], error: e?.message || "request failed" }; }
+}
+
+/* A grounded outreach scaffold — real targeting facts plus explicit placeholders
+   the operator MUST personalise. Deliberately not a send-ready message: generic
+   automated outreach is ignored and reads as spam. */
+function outreachScaffold(domain: string, comps: string[], ascore: number | null, client: string): string {
+  const links = comps.slice(0, 2).join(" and ") + (comps.length > 2 ? ` and ${comps.length - 2} more` : "");
+  return [
+    `Target: ${domain}${ascore != null ? ` (Semrush authority ${ascore})` : ""} — already links to ${links}.`,
+    `Why it is a prospect: it links to comparable sites, so a link to ${client} fits its existing content — attainable, not cold.`,
+    `Draft (PERSONALISE before sending — generic outreach gets ignored):`,
+    `"Hi — I noticed ${domain} references ${comps[0] || "similar retailers"}. ${client} covers the same space with [YOUR SPECIFIC RESOURCE / PRODUCT / GUIDE]. If it is useful for [THEIR RELEVANT PAGE], would you consider adding it?"`,
+  ].join("\n");
+}
+
+/* Backlink prospecting: finds domains that link to competitors but NOT the
+   client (the referring-domain gap), ranked by competitor overlap + authority,
+   with an outreach scaffold each. Grounded entirely in live Semrush data — no
+   key or out of units, it says so and returns nothing. It never places a link:
+   automated placement is a Google link-spam risk, so outreach stays human. */
+export async function prospectBacklinks(opts: {
+  projectId: string; clientDomain?: string; competitors?: string[];
+  limit?: number; perDomainFetch?: number;
+}): Promise<{
+  ok: boolean; client: string;
+  prospects: Array<{ domain: string; authority: number | null; links_to_competitors: string[]; competitor_overlap: number; outreach_scaffold: string }>;
+  competitors_analysed: string[]; summary: string; limits: string[];
+}> {
+  const key = await loadSemrushKey(opts.projectId);
+  const client = cleanDomain(opts.clientDomain || "");
+  const competitors = (opts.competitors || []).map(cleanDomain).filter(Boolean);
+  const limit = Math.max(1, opts.limit || 25);
+  const per = Math.max(50, Math.min(opts.perDomainFetch || 500, 2000));
+  const base = { ok: false, client, prospects: [] as any[], competitors_analysed: [] as string[], summary: "", limits: [] as string[] };
+
+  if (!key) return { ...base, summary: "No Semrush API key. Prospecting uses live referring-domain data, never estimates — add a key to run it.", limits: ["Semrush API key required."] };
+  if (!client) return { ...base, summary: "Supply the client domain (inputs.siteUrl).", limits: ["clientDomain required."] };
+  if (!competitors.length) return { ...base, summary: "Supply competitor domains — this engine does not auto-pick competitors, by design (auto-picked competitors produce irrelevant prospects).", limits: ["competitors required (operator-supplied)."] };
+
+  const clientRes = await backlinksRefdomains(key, client, per);
+  const clientRefs = new Set(clientRes.rows.map(r => r.domain));
+  const limits: string[] = [];
+  if (clientRes.error) limits.push(`Client referring-domains lookup error: ${clientRes.error} — prospects may still include a domain that already links to you.`);
+
+  const map = new Map<string, { ascore: number | null; links: Set<string> }>();
+  const analysed: string[] = [];
+  for (const comp of competitors) {
+    const res = await backlinksRefdomains(key, comp, per);
+    if (res.error) { limits.push(`${comp}: ${res.error}`); continue; }
+    analysed.push(comp);
+    for (const row of res.rows) {
+      if (!row.domain || row.domain === client || clientRefs.has(row.domain)) continue;
+      const cur = map.get(row.domain) || { ascore: row.ascore, links: new Set<string>() };
+      if (cur.ascore == null && row.ascore != null) cur.ascore = row.ascore;
+      cur.links.add(comp); map.set(row.domain, cur);
+    }
+  }
+
+  const prospects = Array.from(map.entries())
+    .map(([domain, v]) => ({ domain, authority: v.ascore, links_to_competitors: Array.from(v.links), competitor_overlap: v.links.size }))
+    .sort((a, b) => (b.competitor_overlap - a.competitor_overlap) || ((b.authority ?? 0) - (a.authority ?? 0)))
+    .slice(0, limit)
+    .map(p => ({ ...p, outreach_scaffold: outreachScaffold(p.domain, p.links_to_competitors, p.authority, client) }));
+
+  const units = `Consumed Semrush units: ${1 + analysed.length} referring-domain pulls (client + ${analysed.length} competitor[s]), up to ${per} rows each.`;
+  return {
+    ok: prospects.length > 0 || analysed.length > 0,
+    client, prospects, competitors_analysed: analysed,
+    summary: prospects.length
+      ? `${prospects.length} link prospect(s) — domains linking to your competitors but not to you, ranked by competitor overlap and authority. ${units} Placement is manual outreach: these are real, attainable targets, never auto-placed links.`
+      : `No prospect gap found in the pulled data${analysed.length ? "" : " — no competitor data was retrieved (see limits)"}. ${units}`,
+    limits: [
+      ...limits,
+      "Every prospect already links to a comparable site, so it is attainable — but each still needs genuine human outreach. No link is ever placed automatically (auto-placement is a Google link-spam-policy risk).",
+      "Ranked on referring-domain overlap + Semrush authority; a human should still eyeball relevance before outreach.",
+    ],
+  };
+}
+
 const numOr = (v: any, d = 0) => { const n = parseFloat(String(v ?? "").replace(/[^0-9.\-]/g, "")); return Number.isFinite(n) ? n : d; };
 
 export interface DomainMetrics { domain: string; authority_score: number | null; organic_keywords: number | null; organic_traffic: number | null; total_backlinks: number | null; referring_domains: number | null; error?: string; }

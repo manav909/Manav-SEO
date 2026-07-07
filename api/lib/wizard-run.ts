@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -174,6 +174,15 @@ export async function runWizardStage(opts: {
       const report = await generateSchemaAndLlms({ projectId, siteUrl: inputs.siteUrl, pageUrls: inputs.pageUrls, depth: inputs.depth });
       if (!report.ok) return result("needs_connection", "schema-llms-engine.ts", report, `No pages could be fetched (all blocked or unreachable) — nothing was generated, so nothing is invented. ${report.summary.blocked} page(s) blocked. Verify site access or supply reachable page URLs.`);
       return result("completed", "schema-llms-engine.ts", report, report.note);
+    }
+
+    if (caps.includes("backlink_prospecting")) {
+      if (!inputs.siteUrl) return result("needs_input", "semrush-intel.ts", null, `Supply inputs.siteUrl (the client domain) and inputs.competitors (operator-supplied competitor domains). Optionally inputs.limit (prospects) and inputs.perDomainFetch (referring-domains pulled per domain).`);
+      if (!inputs.competitors || !inputs.competitors.length) return result("needs_input", "semrush-intel.ts", null, `Supply inputs.competitors — this engine does not auto-pick competitors, by design (auto-picked competitors produce irrelevant prospects).`);
+      const { prospectBacklinks } = await import("./semrush-intel.js");
+      const report = await prospectBacklinks({ projectId, clientDomain: inputs.siteUrl, competitors: inputs.competitors, limit: (inputs as any).limit, perDomainFetch: (inputs as any).perDomainFetch });
+      if (!report.ok) return result("needs_connection", "semrush-intel.ts", report, report.summary);
+      return result("completed", "semrush-intel.ts", report, report.summary);
     }
 
     if (caps.includes("document_analysis")) {

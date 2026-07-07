@@ -282,6 +282,16 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Fully deterministic — no value is ever guessed. A field absent from the markup (price, currency, logo, meta description) is reported as a gap to supply, not invented. Generation is complete; DEPLOYMENT is the operator's step (paste the JSON-LD into each page head and publish llms.txt at the site root), or an auto-push where a CMS API (e.g. Webflow) is connected. Pages behind a WAF that block the crawler produce nothing rather than a fabricated block.",
     mode: "auto",
   },
+
+  backlink_prospecting: {
+    id: "backlink_prospecting",
+    label: "Backlink prospecting + outreach targeting",
+    engine: "semrush-intel.ts → prospectBacklinks",
+    inputs_required: ["A connected Semrush API key", "The client domain", "Competitor domains (operator-supplied)"],
+    output: "A ranked list of real link prospects — domains that link to your competitors but not to you — each with its Semrush authority, which competitors it links to, and a grounded outreach scaffold to personalise.",
+    limits: "Uses live Semrush referring-domain data (consumes API units); no key or out of units, it says so and returns nothing fabricated. Competitors are operator-supplied (no auto-pick, to avoid irrelevant prospects). It finds, ranks, and scaffolds outreach — it does NOT place links: automated link placement is a Google link-spam-policy risk, so outreach and placement stay human.",
+    mode: "needs_connection",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
