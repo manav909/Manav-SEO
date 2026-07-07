@@ -153,8 +153,16 @@ function buildForPage(url: string, html: string, isHome: boolean): PageResult {
     if (canonical) product.url = canonical;
     if (description) product.description = description;
     generated.push(product); grounded.push("explicit price markup (OG/itemprop/existing schema)");
-  } else if (/\/product|\/shop|price|add to (cart|basket|bag)/i.test(html) && !ex.types.includes("Product")) {
-    gaps.push("looks like a product page but no machine-readable price found — supply price + currency to generate Product/Offer schema");
+  } else {
+    /* Only flag a genuine product page — a strong e-commerce signal, NOT the mere
+       presence of the word "price" (which appears on plenty of non-shop sites,
+       e.g. a VC firm's "share price" or legal text). Firing on "price" is what
+       told a venture-capital site to add Product/Offer schema. */
+    const strongProduct = /property=["']og:type["'][^>]*content=["']product|content=["']product["'][^>]*property=["']og:type["']|itemprop=["']offers["']|itemtype=["'][^"']*schema\.org\/Product|add to (cart|basket|bag)/i.test(html)
+      || /\/(products?|shop|store)\//i.test(url);
+    if (strongProduct && !ex.types.includes("Product")) {
+      gaps.push("appears to be a product page but no machine-readable price is in the markup — supply price + currency to generate Product/Offer schema");
+    }
   }
 
   return {
@@ -194,26 +202,35 @@ export async function generateSchemaAndLlms(opts: {
   let origin = ""; let homeUrl = opts.siteUrl;
   try { const u = new URL(opts.siteUrl); origin = u.origin; homeUrl = u.origin + "/"; } catch { /* keep as given */ }
 
+  /* Normalise a URL to origin + path without a trailing slash, so the homepage
+     is never crawled twice as "/" and "" (the duplicate-row bug). */
+  const norm = (u: string) => { try { const x = new URL(u); return (x.origin + x.pathname).replace(/\/+$/, "") || x.origin; } catch { return String(u).replace(/\/+$/, ""); } };
+
   /* Resolve the page set: caller-supplied, else discover from the homepage. */
-  let targets: string[] = (opts.pageUrls && opts.pageUrls.length ? opts.pageUrls : []).slice(0, cap);
+  let targets: string[] = (opts.pageUrls && opts.pageUrls.length ? opts.pageUrls : []);
   const homeHtml = await fetchHtml(homeUrl);
   if (!targets.length) {
-    targets = [homeUrl, ...sameOriginLinks(homeHtml, origin)].slice(0, cap);
-  } else if (!targets.includes(homeUrl)) {
-    targets = [homeUrl, ...targets].slice(0, cap);
+    targets = [homeUrl, ...sameOriginLinks(homeHtml, origin)];
+  } else if (!targets.some(t => norm(t) === norm(homeUrl))) {
+    targets = [homeUrl, ...targets];
   }
-  targets = Array.from(new Set(targets));
+  /* Dedup by normalised URL (keep first occurrence), then cap. */
+  const seen = new Set<string>(); const deduped: string[] = [];
+  for (const u of targets) { const n = norm(u); if (seen.has(n)) continue; seen.add(n); deduped.push(u); }
+  targets = deduped.slice(0, cap);
+  const homeNorm = norm(homeUrl);
 
   const pages: PageResult[] = [];
   let blocked = 0;
   for (const url of targets) {
-    const html = url === homeUrl && homeHtml ? homeHtml : await fetchHtml(url);
+    const isHome = norm(url) === homeNorm;
+    const html = isHome && homeHtml ? homeHtml : await fetchHtml(url);
     if (!html) {
       blocked++;
       pages.push({ url, fetched: false, title: "", description: "", canonical: url, existing_schema: [], generated: [], grounded_on: [], gaps: ["page could not be fetched (blocked/challenged/unreachable) — verify access; nothing generated so nothing is invented"] });
       continue;
     }
-    pages.push(buildForPage(url, html, url === homeUrl));
+    pages.push(buildForPage(url, html, isHome));
   }
 
   const siteName = metaName(homeHtml, "og:site_name") || titleOf(homeHtml);
@@ -221,13 +238,21 @@ export async function generateSchemaAndLlms(opts: {
   const llms_txt = buildLlmsTxt(siteName, siteDesc, pages);
   const schemaBlocks = pages.reduce((s, p) => s + p.generated.length, 0);
   const totalGaps = pages.reduce((s, p) => s + p.gaps.length, 0);
+  const existingTotal = pages.reduce((s, p) => s + (p.existing_schema?.length || 0), 0);
+  const crawled = pages.filter(p => p.fetched).length;
+  const existingPhrase = existingTotal === 0
+    ? `The site currently has NO structured data (schema) on the crawled pages`
+    : `The site currently has ${existingTotal} existing schema block(s) across the crawled pages`;
 
   return {
     ok: pages.some(p => p.fetched),
     site: origin || opts.siteUrl,
     pages,
     llms_txt,
-    summary: { crawled: pages.filter(p => p.fetched).length, blocked, schema_blocks: schemaBlocks, total_gaps: totalGaps },
-    note: `Generated ${schemaBlocks} JSON-LD block(s) across ${pages.filter(p => p.fetched).length} page(s), every value grounded in real markup. ${totalGaps} field(s) flagged as gaps to supply — never guessed. Deploy the JSON-LD into each page head and publish llms.txt at the site root.`,
+    summary: { crawled, blocked, schema_blocks: schemaBlocks, total_gaps: totalGaps, existing_blocks: existingTotal } as any,
+    /* Explicit existing-vs-generated so the report narrator cannot describe our
+       GENERATED markup as schema the site already has (which inverted the truth
+       on a site with zero existing schema). */
+    note: `${existingPhrase}. This engine GENERATED ${schemaBlocks} new JSON-LD block(s) across ${crawled} page(s) — every value grounded in the page's real content — ready to deploy into each page head. ${totalGaps} field(s) flagged to supply, never guessed. An llms.txt file was also generated for the site root.`,
   };
 }
