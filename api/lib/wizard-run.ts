@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -74,7 +74,7 @@ export async function runWizardStage(opts: {
   stageId?:     string;
   capabilityIds?: string[];   // dynamic path: run these capabilities directly
   stageLabel?:  string;       // dynamic path: the client's deliverable label
-  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[]; siteUrl?: string };
+  inputs?:      { targetKeywords?: string[]; campaignId?: string; runId?: string; context?: string; competitors?: string[]; siteUrl?: string; pageUrls?: string[]; depth?: "sample" | "standard" | "deep" };
 }): Promise<WizardStageResult> {
   const { projectId } = opts;
   const inputs = opts.inputs || {};
@@ -166,6 +166,14 @@ export async function runWizardStage(opts: {
       const report = await adviseCms({ projectId, siteUrl: inputs.siteUrl });
       if (report.detected_platform === "unknown" && report.findings.length === 0) return result("needs_input", "cms-advisor.ts", report, report.summary);
       return result("completed", "cms-advisor.ts", report, report.summary);
+    }
+
+    if (caps.includes("schema_llms_generation")) {
+      if (!inputs.siteUrl) return result("needs_input", "schema-llms-engine.ts", null, `Supply inputs.siteUrl (the site to generate schema and llms.txt for). Optionally inputs.pageUrls to target specific pages, and inputs.depth (sample | standard | deep).`);
+      const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
+      const report = await generateSchemaAndLlms({ projectId, siteUrl: inputs.siteUrl, pageUrls: inputs.pageUrls, depth: inputs.depth });
+      if (!report.ok) return result("needs_connection", "schema-llms-engine.ts", report, `No pages could be fetched (all blocked or unreachable) — nothing was generated, so nothing is invented. ${report.summary.blocked} page(s) blocked. Verify site access or supply reachable page URLs.`);
+      return result("completed", "schema-llms-engine.ts", report, report.note);
     }
 
     if (caps.includes("document_analysis")) {

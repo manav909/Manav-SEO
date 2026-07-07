@@ -272,6 +272,16 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Carries the classifier's honesty through to the file: redirect is a candidate, review_for_pruning needs a crawl + sitemap, and only URLs with GSC impressions are included. Returned as base64 for client download.",
     mode: "auto",
   },
+
+  schema_llms_generation: {
+    id: "schema_llms_generation",
+    label: "Schema (JSON-LD) + llms.txt generation",
+    engine: "schema-llms-engine.ts → generateSchemaAndLlms",
+    inputs_required: ["The site URL (auto-discovers pages), or a specific list of page URLs to generate for"],
+    output: "Ready-to-deploy JSON-LD for each page (WebPage, BreadcrumbList, Organization/WebSite on the homepage, and Product/Offer where a real price is in the markup), plus an llms.txt built from the live crawl. Every field traces to a real extracted tag, with a provenance note per block.",
+    limits: "Fully deterministic — no value is ever guessed. A field absent from the markup (price, currency, logo, meta description) is reported as a gap to supply, not invented. Generation is complete; DEPLOYMENT is the operator's step (paste the JSON-LD into each page head and publish llms.txt at the site root), or an auto-push where a CMS API (e.g. Webflow) is connected. Pages behind a WAF that block the crawler produce nothing rather than a fabricated block.",
+    mode: "auto",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
