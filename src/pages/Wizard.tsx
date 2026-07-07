@@ -69,6 +69,8 @@ export default function Wizard() {
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
+  const [generatingDoc, setGeneratingDoc] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
   const [analyzingDocs, setAnalyzingDocs] = useState(false);
   const [materialsInfo, setMaterialsInfo] = useState("");
@@ -93,6 +95,7 @@ export default function Wizard() {
     if (plan.client_domain && !clientSiteUrl.trim()) setClientSiteUrl(`https://${plan.client_domain}/`);
     if (Array.isArray(plan.suggested_keywords) && plan.suggested_keywords.length && !keywords.trim()) setKeywords(plan.suggested_keywords.join(", "));
     if (Array.isArray(plan.competitor_domains) && plan.competitor_domains.length && !competitors.trim()) setCompetitors(plan.competitor_domains.join(", "));
+    if (plan.artifact_mode === "proposal" || plan.artifact_mode === "audit") setDocMode(plan.artifact_mode);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan]);
 
@@ -291,6 +294,18 @@ export default function Wizard() {
     setGeneratingReport(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
+  };
+
+  const generateClientDocument = async () => {
+    const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
+    if (!siteUrl) { setError("Add the client site URL above first — the document is built from a live crawl of it."); return; }
+    const tab = window.open("", "_blank");
+    if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Running the full site analysis and assembling the document — this crawls the site, audits schema and checks search visibility, so it takes a little longer…</body>');
+    setGeneratingDoc(true); setError("");
+    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note });
+    setGeneratingDoc(false);
+    if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Document generation failed."); return; }
+    renderToTab(r.html, tab, `${docMode}-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
   };
 
   const downloadHtml = (html: string, filename: string) => {
@@ -642,6 +657,23 @@ export default function Wizard() {
                 ))}
               </div>
             )}
+
+            {/* World-class client document — runs the full no-integration analysis itself */}
+            <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-5 mt-6">
+              <div className="text-xs font-semibold text-primary mb-2 uppercase tracking-wider">Client / investor document — full analysis, no integration needed</div>
+              <p className="text-xs text-muted-foreground mb-3">Builds a complete, senior-DMS document from a live crawl of the site: site-wide on-page and technical audit, structured-data (schema) audit and generation, and search / AI-answer visibility. No GSC or other connection required. States plainly what a GSC connection would add. Opens print-ready in a new tab (Print → Save as PDF).</p>
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <div className="inline-flex rounded-lg border border-border overflow-hidden text-sm">
+                  <button onClick={() => setDocMode("audit")} className={`px-4 py-1.5 ${docMode === "audit" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Audit</button>
+                  <button onClick={() => setDocMode("proposal")} className={`px-4 py-1.5 ${docMode === "proposal" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Proposal</button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">{docMode === "proposal" ? "Scope, delivery method, quality standards and pricing basis — for a productized / reseller / retainer brief." : "Findings and recommendations — a diagnosis of the site."}</span>
+              </div>
+              <button onClick={generateClientDocument} disabled={generatingDoc}
+                className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
+                {generatingDoc ? "Analysing the site & assembling…" : `Generate client ${docMode === "proposal" ? "proposal" : "audit"}`}
+              </button>
+            </div>
 
             {/* Client-ready report — assembled from completed stages, sourced and bylined */}
             {Object.values(results).some((r: any) => r?.status === "completed") && (

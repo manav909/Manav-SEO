@@ -350,6 +350,74 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Client document — the senior-DMS, no-integration path. From a site URL
+     alone it runs the whole crawl-based analysis suite (comprehensive on-page +
+     technical + schema audit, structured-data generation, and search/AI-answer
+     visibility), then synthesises it into one client-ready document. This is the
+     honest answer to "we rarely have GSC": a live crawl yields a genuinely rich,
+     data-backed audit without any integration. Respects the audit/proposal
+     toggle and states plainly what GSC would add, in one line, not as filler. */
+  if (action === "wizard_client_document") {
+    const siteUrl = String(body?.siteUrl || "").trim();
+    const projectId = String(body?.projectId || "").trim();
+    if (!siteUrl) return { success: false, error: "Supply the site URL to build the document from." };
+    let domain = ""; let brand = "";
+    try { const u = new URL(/^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`); domain = u.hostname.replace(/^www\./, ""); brand = domain.split(".")[0]; } catch { domain = siteUrl; brand = siteUrl; }
+    const stages: any[] = [];
+
+    /* 1. Comprehensive crawl-based audit — on-page, technical, schema coverage,
+       broken links, homepage performance. No integration required. */
+    try {
+      const { crawlSite } = await import("./site-crawler.js");
+      const audit = await crawlSite({ projectId, siteUrl, maxPages: 40 });
+      if (audit && audit.pages_reachable > 0) stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
+    } catch { /* proceed with whatever gathers */ }
+
+    /* 2. Structured-data audit + generation and llms.txt. */
+    try {
+      const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
+      const schema = await generateSchemaAndLlms({ projectId, siteUrl, depth: "standard" });
+      if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
+    } catch { /* proceed */ }
+
+    /* 3. Search and AI-answer visibility for the brand — platform SerpAPI, not a
+       client integration. Shows AI-Overview presence, featured snippets, and the
+       real questions people ask, which is the AEO opportunity map. */
+    try {
+      const { fetchSerpFeatures } = await import("./serpapi.js");
+      const serp = await fetchSerpFeatures(brand, projectId, {});
+      if (serp) {
+        const parts: string[] = [];
+        parts.push(`For the brand term "${brand}", the search results ${serp.ai_overview ? `include an AI Overview${serp.ai_overview_reference_count ? ` citing ${serp.ai_overview_reference_count} source(s)` : ""}` : "do not currently show an AI Overview"}${serp.featured_snippet ? `, and a featured snippet is present${serp.featured_snippet_owner ? ` (held by ${serp.featured_snippet_owner})` : ""}` : ""}.`);
+        const ownsTop = (serp.top_10_domains || []).some((d: string) => d.includes(domain));
+        parts.push(ownsTop ? `The site appears in the top organic results for its brand.` : `The site does not appear in the top organic results for its own brand term — a visibility gap to investigate.`);
+        if ((serp.paa_questions || []).length) parts.push(`Real questions searchers ask in this space (AEO content opportunities): ${serp.paa_questions.slice(0, 6).join("; ")}.`);
+        stages.push({ label: "Search and AI-answer visibility", ran_engine: "serpapi.ts", status: "completed", output: { summary: parts.join(" ") } });
+      }
+    } catch { /* SERP is a bonus; proceed without it */ }
+
+    if (stages.length === 0) return { success: false, error: "Could not gather any data — the site may be blocking crawlers entirely, or the URL is unreachable. Verify the URL and try again." };
+
+    try {
+      const { assembleClientReport, assembleClientReportHtmlEnriched } = await import("./wizard-report.js");
+      const o = {
+        author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain || domain,
+        include_branding: Boolean(body?.includeBranding),
+        project_id: projectId || undefined,
+        requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined,
+        artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : "audit") as ("proposal" | "audit"),
+        engagement_type: body?.engagementType ? String(body.engagementType) : undefined,
+        target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined,
+        buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined,
+      };
+      const html = await assembleClientReportHtmlEnriched(stages, o);
+      const md = assembleClientReport(stages, o);
+      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine) };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "document assembly failed" };
+    }
+  }
+
   /* Build 12.38 — ingest a Semrush data sheet (numbers) as the data layer, replacing the API. */
   if (action === "semrush_ingest_sheet") {
     const projectId = String(body?.projectId || "").trim();
