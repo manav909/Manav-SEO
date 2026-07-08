@@ -173,6 +173,8 @@ export interface SiteAuditReport {
   broken_links: string[];
   performance: any | null;
   page_selection?: any;
+  homepage_title?: string;
+  homepage_h1?: string;
   summary: string; limits: string[];
 }
 
@@ -386,5 +388,5 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
 
-  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, page_selection, summary, limits };
+  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, page_selection, homepage_title: homeSig?.title || "", homepage_h1: homeSig?.h1 || "", summary, limits };
 }

@@ -459,6 +459,24 @@ function renderBodyHtml(o: any): string {
     return P.join("");
   }
 
+  /* Market & competitive search research — real SERP intelligence, charted. */
+  if (o.is_market_research) {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    if (Array.isArray(o.share_of_voice) && o.share_of_voice.length) {
+      P.push(`<h4>Who owns the search results in your space</h4>`);
+      P.push(svgBarChart(o.share_of_voice.map((x: any) => ({ label: x.domain, value: x.appearances, color: (o.client_domain && String(x.domain).includes(o.client_domain)) ? "#16a34a" : "#6366f1" })), { unit: "", labelWidth: 220 }));
+      P.push(`<p class="muted">${o.client_appears ? "Your site appears here." : "Your site does not appear at all — every result above is a competitor or third party shaping how your market sees this space."}</p>`);
+    }
+    if (Array.isArray(o.ai_citations) && o.ai_citations.length) {
+      P.push(`<h4>Who Google's AI answers cite in your space</h4>`);
+      P.push(svgBarChart(o.ai_citations.map((x: any) => ({ label: x.domain, value: x.count, color: (o.client_domain && String(x.domain).includes(o.client_domain)) ? "#16a34a" : "#d97706" })), { unit: "", labelWidth: 220 }));
+    }
+    if (Array.isArray(o.paa_questions) && o.paa_questions.length) {
+      P.push(`<h4>Real questions your audience is asking — the content and Q&A opportunity</h4><ul>${o.paa_questions.map((q: string) => `<li>${esc(q)}</li>`).join("")}</ul>`);
+    }
+    return P.join("");
+  }
+
   /* Default — NEVER coerce an object into "[object Object]". Render only a
      string summary or note; otherwise state plainly that no formatted findings
      were produced. This guard is what prevents an engine whose `summary` is an

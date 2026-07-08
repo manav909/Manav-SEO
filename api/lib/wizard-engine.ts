@@ -365,6 +365,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     try { const u = new URL(/^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`); domain = u.hostname.replace(/^www\./, ""); brand = domain.split(".")[0]; } catch { domain = siteUrl; brand = siteUrl; }
     const stages: any[] = [];
     let crawledUrls: string[] = [];
+    let homepageTopic = "";
 
     /* 1. Comprehensive crawl-based audit — on-page, technical, schema coverage,
        broken links, homepage performance. No integration required. */
@@ -374,6 +375,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       if (audit && audit.pages_reachable > 0) {
         stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
         crawledUrls = Array.isArray(audit.page_selection?.analysed_urls) ? audit.page_selection.analysed_urls : [];
+        homepageTopic = audit.homepage_h1 || audit.homepage_title || "";
       }
     } catch { /* proceed with whatever gathers */ }
 
@@ -385,21 +387,38 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
     } catch { /* proceed */ }
 
-    /* 3. Search and AI-answer visibility for the brand — platform SerpAPI, not a
-       client integration. Shows AI-Overview presence, featured snippets, and the
-       real questions people ask, which is the AEO opportunity map. */
+    /* 3. Market & competitive search research — REAL external intelligence via
+       SerpAPI (not a client integration). Queries the brand AND the site's own
+       category, then aggregates who owns the results (share of voice), who the
+       AI answers cite, and the real questions people ask. This is the data a
+       generic LLM cannot produce, and it charts. */
     try {
       const { fetchSerpFeatures } = await import("./serpapi.js");
-      const serp = await fetchSerpFeatures(brand, projectId, {});
-      if (serp) {
+      const stop = /\b(the|and|to|for|of|a|an|your|our|we|us|create|through|welcome|home|homepage|official|site|website|inc|llc|ltd|co|company|new|best|top)\b/gi;
+      let cat = String(homepageTopic || "").toLowerCase();
+      for (const w of brand.toLowerCase().split(/\s+/)) if (w.length > 2) cat = cat.replace(new RegExp(`\\b${w.replace(/[^a-z0-9]/g, "")}\\b`, "gi"), " ");
+      cat = cat.replace(stop, " ").replace(/[^a-z0-9\s]/gi, " ").replace(/\s+/g, " ").trim().split(" ").filter(Boolean).slice(0, 5).join(" ");
+      const queries = Array.from(new Set([brand, cat].filter(q => q && q.length > 2)));
+      const serps = await Promise.all(queries.map(q => fetchSerpFeatures(q, projectId, {}).catch(() => null)));
+      const valid = serps.map((s, i) => ({ q: queries[i], s })).filter(x => x.s) as Array<{ q: string; s: any }>;
+      if (valid.length) {
+        const sov: Record<string, number> = {};
+        for (const { s } of valid) for (const d of (s.top_10_domains || [])) if (d) sov[d] = (sov[d] || 0) + 1;
+        const share_of_voice = Object.entries(sov).map(([d, n]) => ({ domain: d, appearances: n })).sort((a, b) => b.appearances - a.appearances).slice(0, 12);
+        const clientAppears = Object.keys(sov).some(d => d.includes(domain));
+        const aiQueries = valid.filter(x => x.s.ai_overview).length;
+        const aiCites: Record<string, number> = {};
+        for (const { s } of valid) for (const r of (s.ai_overview_references || [])) if (r?.domain) aiCites[r.domain] = (aiCites[r.domain] || 0) + 1;
+        const ai_citations = Object.entries(aiCites).map(([d, n]) => ({ domain: d, count: n })).sort((a, b) => b.count - a.count).slice(0, 10);
+        const paa = Array.from(new Set(valid.flatMap(x => x.s.paa_questions || []))).slice(0, 10);
         const parts: string[] = [];
-        parts.push(`For the brand term "${brand}", the search results ${serp.ai_overview ? `include an AI Overview${serp.ai_overview_reference_count ? ` citing ${serp.ai_overview_reference_count} source(s)` : ""}` : "do not currently show an AI Overview"}${serp.featured_snippet ? `, and a featured snippet is present${serp.featured_snippet_owner ? ` (held by ${serp.featured_snippet_owner})` : ""}` : ""}.`);
-        const ownsTop = (serp.top_10_domains || []).some((d: string) => d.includes(domain));
-        parts.push(ownsTop ? `The site appears in the top organic results for its brand.` : `The site does not appear in the top organic results for its own brand term — a visibility gap to investigate.`);
-        if ((serp.paa_questions || []).length) parts.push(`Real questions searchers ask in this space (AEO content opportunities): ${serp.paa_questions.slice(0, 6).join("; ")}.`);
-        stages.push({ label: "Search and AI-answer visibility", ran_engine: "serpapi.ts", status: "completed", output: { summary: parts.join(" ") } });
+        parts.push(`Across ${valid.length} live search(es) (${queries.join('", "')}), ${clientAppears ? `${domain} appears in the top results` : `${domain} does NOT appear in the top results — its own space is owned by other sites`}.`);
+        if (share_of_voice.length) parts.push(`The domains that own the top results are led by ${share_of_voice.slice(0, 3).map(x => `${x.domain} (${x.appearances})`).join(", ")}.`);
+        if (aiQueries > 0) parts.push(`${aiQueries} of ${valid.length} of these searches show a Google AI Overview${ai_citations.length ? `, citing ${ai_citations.map(x => x.domain).slice(0, 4).join(", ")}` : ""} — and ${clientAppears ? "the client" : `${domain}`} ${ai_citations.some(x => x.domain.includes(domain)) ? "is among them" : "is not cited"}.`);
+        if (paa.length) parts.push(`Real questions this audience searches (the content/Q&A opportunity): ${paa.slice(0, 6).join("; ")}.`);
+        stages.push({ label: "Market and competitive search visibility", ran_engine: "serpapi.ts", status: "completed", output: { is_market_research: true, queries, share_of_voice, client_appears: clientAppears, client_domain: domain, ai_overview_queries: aiQueries, total_queries: valid.length, ai_citations, paa_questions: paa, summary: parts.join(" ") } });
       }
-    } catch { /* SERP is a bonus; proceed without it */ }
+    } catch { /* research is a bonus; proceed without it */ }
 
     if (stages.length === 0) return { success: false, error: "Could not gather any data — the site may be blocking crawlers entirely, or the URL is unreachable. Verify the URL and try again." };
 
