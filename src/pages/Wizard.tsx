@@ -70,6 +70,7 @@ export default function Wizard() {
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
+  const [docEmphasis, setDocEmphasis] = useState("");
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
   const [analyzingDocs, setAnalyzingDocs] = useState(false);
@@ -302,7 +303,7 @@ export default function Wizard() {
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Running the full site analysis and assembling the document — this crawls the site, audits schema and checks search visibility, so it takes a little longer…</body>');
     setGeneratingDoc(true); setError("");
-    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note });
+    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, operatorEmphasis: docEmphasis.trim() || undefined });
     setGeneratingDoc(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Document generation failed."); return; }
     renderToTab(r.html, tab, `${docMode}-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
@@ -662,6 +663,10 @@ export default function Wizard() {
             <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 p-5 mt-6">
               <div className="text-xs font-semibold text-primary mb-2 uppercase tracking-wider">Client / investor document — full analysis, no integration needed</div>
               <p className="text-xs text-muted-foreground mb-3">Builds a complete, senior-DMS document from a live crawl of the site: site-wide on-page and technical audit, structured-data (schema) audit and generation, and search / AI-answer visibility. No GSC or other connection required. States plainly what a GSC connection would add. Opens print-ready in a new tab (Print → Save as PDF).</p>
+              <label className="block text-[11px] font-medium text-muted-foreground mb-1">Your context / what to emphasise (optional — set your angle before running)</label>
+              <textarea value={docEmphasis} onChange={(e) => setDocEmphasis(e.target.value)} rows={2}
+                placeholder="e.g. We sell content, AEO and link-building — not speed fixes. Emphasise the AI-visibility and schema gaps. The buyer is a reseller who cares about repeatable quality at scale."
+                className="w-full mb-3 rounded-lg border border-border bg-background px-3 py-2 text-xs text-foreground placeholder:text-muted-foreground/60 resize-y" />
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <div className="inline-flex rounded-lg border border-border overflow-hidden text-sm">
                   <button onClick={() => setDocMode("audit")} className={`px-4 py-1.5 ${docMode === "audit" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Audit</button>

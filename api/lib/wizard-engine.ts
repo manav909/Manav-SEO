@@ -341,7 +341,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
     try {
       const { assembleClientReport, assembleClientReportHtmlEnriched } = await import("./wizard-report.js");
-      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle, project_id: String(body?.projectId || "").trim() || undefined, requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined, artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : body?.artifactMode === "audit" ? "audit" : undefined) as ("proposal" | "audit" | undefined), engagement_type: body?.engagementType ? String(body.engagementType) : undefined, target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined, buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined };
+      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), report_title: body?.reportTitle, project_id: String(body?.projectId || "").trim() || undefined, requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined, artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : body?.artifactMode === "audit" ? "audit" : undefined) as ("proposal" | "audit" | undefined), engagement_type: body?.engagementType ? String(body.engagementType) : undefined, target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined, buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined, operator_emphasis: body?.operatorEmphasis ? String(body.operatorEmphasis) : undefined };
       const md = assembleClientReport(stages, o);
       const html = await assembleClientReportHtmlEnriched(stages, o);
       return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched };
@@ -413,7 +413,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : "audit") as ("proposal" | "audit"),
         engagement_type: body?.engagementType ? String(body.engagementType) : undefined,
         target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined,
-        buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined,
+        buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined, operator_emphasis: body?.operatorEmphasis ? String(body.operatorEmphasis) : undefined,
       };
       const html = await assembleClientReportHtmlEnriched(stages, o);
       const md = assembleClientReport(stages, o);

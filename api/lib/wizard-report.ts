@@ -47,6 +47,7 @@ export interface ReportOptions {
   engagement_type?: string;    // site_owner | reseller_productized | one_off_project | consultation
   target_is_example?: boolean; // the analysed site is a representative example, not the deliverable
   buyer_note?:      string;    // who is buying and what they optimise for
+  operator_emphasis?: string;  // the operator's own context / what to emphasise, set before running
 }
 
 /* Completed sections, with duplicate sections (same engine + same summary)
@@ -618,6 +619,7 @@ const DMS_SYSTEM = [
   ``,
   `SELL THE PLAN WITH DATA — this report exists to convert the lead, factually:`,
   `- Connect every finding to a service being sold: finding -> consequence for their business -> the specific service that fixes it. A gap you found is the proof that a service is needed. Example shape: "Your homepage FAQ has no schema, so you are invisible to AI answers on the exact questions investors ask — this is precisely what the AEO/schema service fixes."`,
+  `- STAY IN THE SERVICE LANE. The services listed above define what is being sold. Build the sales case ONLY on findings those services address (content, schema/AEO, on-page, links, Q&A, and the like). A finding OUTSIDE the services being sold — most commonly site speed / performance / Core Web Vitals when the services are content and AEO — is reported HONESTLY in one line as an observation, noted as "a fix for your web/dev team, outside this engagement", and is NEVER the basis of the sales case, the headline, or a recommendation you are selling. Do not over-emphasise what you are not being paid to fix. Lead with what these services actually change.`,
   `- Handle the objection before it is raised, with data, not pressure. Anticipate the two or three things a sceptical buyer (or their own senior marketer) would push back on — "we have our own SEO team", "is this worth the spend", "can you really deliver at quality" — and answer each with a fact from the findings. Never beg; let the evidence do the convincing.`,
   `- Where a real, checkable example or reference genuinely strengthens the case (a well-known competitor doing it right, a concrete before/after mechanism), use it — but only if true. No invented case studies, no fabricated stats.`,
   `- Be persuasive by being RIGHT, not loud. No hype, no "act now", no salesy adjectives. The most convincing thing is an accurate, specific diagnosis the buyer recognises as true.`,
@@ -640,6 +642,7 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     `PURPOSE OF THIS REPORT: it backs a SALE. We are pitching the services below to this prospect and this report must, using ONLY honest data, make the factual case that they should buy — and answer their likely objections before they raise them.`,
     opts.engagement_type ? `Who we are convincing: ${opts.engagement_type === "reseller_productized" ? "a reseller/agency deciding whether to make us their production partner across their clients" : opts.engagement_type === "site_owner" ? "the business owner whose site this is" : "the prospect"}.` : "",
     opts.buyer_note ? `What they care about: ${opts.buyer_note}` : "",
+    opts.operator_emphasis ? `THE OPERATOR'S OWN STEER — treat this as a priority instruction for what to emphasise and how to frame the report:\n${opts.operator_emphasis}` : "",
     (opts.requirements && opts.requirements.length)
       ? `THE SERVICES/PLANS WE ARE SELLING (what the prospect scoped and is curious about) — every finding must connect to one of these and show why the service is worth buying:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
       : `No explicit brief was supplied; audit the site's health and opportunities.`,
