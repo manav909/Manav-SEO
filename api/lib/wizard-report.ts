@@ -25,7 +25,7 @@
    client-side). Multi-tenant: no stored values.
 ════════════════════════════════════════════════════════════════ */
 
-import { llm, parseJsonResponse } from "./workspace/llm.js";
+import { llm, llmComplete, parseJsonResponse } from "./workspace/llm.js";
 import { loadMaterials, materialsForPrompt } from "./client-materials.js";
 import { assessCoverage } from "./audit-coverage.js";
 
@@ -590,8 +590,16 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
   const run = async (): Promise<(SeniorDmsResult & { material_files: string[] }) | null> => {
-    const raw = await llm({ system: DMS_SYSTEM, user: ctx, maxTokens: 4000, timeoutMs: 90000, label: "wizard-report-dms" });
-    const parsed = parseJsonResponse<any>(raw);
+    /* Continuation-safe with ample tokens: the richer senior synthesis over
+       several data-heavy sections overflowed a single 4k call, truncating the
+       JSON and silently falling back to raw tables. This lets it complete. */
+    const { text: raw } = await llmComplete({ system: DMS_SYSTEM, user: ctx, maxTokens: 8000, timeoutMs: 90000, label: "wizard-report-dms", maxSegments: 2 });
+    let parsed = parseJsonResponse<any>(raw);
+    /* Salvage: if the strict parse missed, slice the outermost JSON object. */
+    if (!parsed || !Array.isArray(parsed?.sections)) {
+      const s = String(raw || ""); const a = s.indexOf("{"); const b = s.lastIndexOf("}");
+      if (a >= 0 && b > a) { try { parsed = JSON.parse(s.slice(a, b + 1)); } catch { /* keep null */ } }
+    }
     if (!parsed || !Array.isArray(parsed.sections)) return null;
     const map: Record<string, SectionInterpretation> = {};
     for (const sec of parsed.sections) if (sec?.id) map[sec.id] = { id: sec.id, interpretation: String(sec.interpretation || ""), why_it_matters: String(sec.why_it_matters || ""), recommendations: Array.isArray(sec.recommendations) ? sec.recommendations.filter((x: any) => typeof x === "string") : [], priority: String(sec.priority || "") };

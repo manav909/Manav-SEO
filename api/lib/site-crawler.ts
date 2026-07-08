@@ -204,15 +204,22 @@ function classifyUrl(url: string): { cls: PageClass; score: number; reason: stri
   try { path = (new URL(url).pathname || "/").toLowerCase().replace(/\/+$/, "") || "/"; } catch { /* keep default */ }
   if (path === "/") return { cls: "homepage", score: 100, reason: "the homepage — the first impression and highest-traffic page" };
   const seg = path.slice(1);
-  /* leftover theme/demo/boilerplate pages a template shipped with */
-  if (/(^|\/)(home-?page-?\d+|homepage-?\d+|elementor(-\d+)?|demo(-\d+)?|sample-?page|blog-?grid(-col)?(-\d+)?|masonry(-col)?(-\d+)?|portfolio-?grid|shortcodes?|typography|elements?(-demo)?|coming-?soon)($|\/)/.test(seg)
+  /* leftover theme/demo/boilerplate pages a template shipped with — expanded to
+     catch the common artefacts (blog-classic, grid-no-gap, service-det-ads,
+     service-logo, services-2, client-01, element, column, etc.) */
+  if (/(^|\/)(home-?page-?\d+|homepage-?\d+|elementor(-\d+)?|demo(-\d+)?|sample-?page|blog-?(grid|classic|standard|list|masonry|large|small)(-col)?(-\d+)?|masonry(-col)?(-\d+)?|grid(-no-gap|-\d+)?|portfolio-?grid|shortcodes?|typography|elements?(-demo)?|element|columns?|coming-?soon|service-det[a-z-]*|service-logo|services?-\d+)($|\/)/.test(seg)
+    || /(^|\/)client\/client-?\d+/.test(seg)
     || (/-\d+$/.test(seg) && /(contact|about|home|service|blog|team|page)/.test(seg)))
     return { cls: "boilerplate_demo", score: 4, reason: "looks like a leftover theme/demo page — a strong candidate for removal" };
   if (/(^|\/)(privacy|terms|disclaimer|cookies?|gdpr|legal|404|thank-?you|cart|checkout|my-?account|login|log-?in|register|wp-|feed|sitemap)($|\/|-)/.test(seg))
     return { cls: "legal", score: 9, reason: "a legal or utility page — low commercial priority" };
   if (/(^|\/)(page\/\d+|tag|tags|category|categories|author|archive)($|\/)/.test(seg))
     return { cls: "utility", score: 7, reason: "an archive or pagination page" };
-  if (/(^|\/)(services?|products?|solutions?|offerings?|pricing|plans?|about(-us)?|company|team|contact(-us)?|investments?|portfolio|work|case-?stud(y|ies)|clients?|industries|sectors|acquisitions?|strategy|wealth)($|\/|-)/.test(seg))
+  if (/(^|\/)(team-?members?|our-?team|people|staff|leadership)($|\/)/.test(seg))
+    return { cls: "content", score: 42, reason: "a team / bio page — supports expertise and trust signals (E-E-A-T)" };
+  if (/(^|\/)(portfolio|case-?stud(y|ies)|projects?)($|\/)/.test(seg))
+    return { cls: "commercial", score: 55, reason: "a portfolio / case-study page — proof of work that supports conversions" };
+  if (/(^|\/)(services?|products?|solutions?|offerings?|pricing|plans?|about(-us)?|company|contact(-us)?|investments?|clients?|industries|sectors|acquisitions?|strategy|wealth)($|\/|-)/.test(seg))
     return { cls: "commercial", score: 80, reason: "a primary commercial / high-intent page — where enquiries are won" };
   if (/(^|\/)(blog|news|insights?|articles?|resources?|guides?|learn|press)($|\/)/.test(seg))
     return { cls: "content", score: 45, reason: "a content / thought-leadership page — authority and AEO surface" };
@@ -287,15 +294,20 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
 
   /* Selection rationale for the report — the "which pages and why" a senior states. */
   const pathOf = (u: string) => { try { return new URL(u).pathname || u; } catch { return u; } };
+  /* Only pages that ACTUALLY LOADED may be listed as diagnosed — a broken page
+     must never appear as a "prioritised page we analysed" (that contradiction
+     is an instant credibility loss). */
+  const brokenSet = new Set(broken.map(canonKey));
+  const loadedSelected = selected.filter(s => !brokenSet.has(canonKey(s.u)));
   const byClass: Record<string, number> = {};
-  for (const s of selected) byClass[s.cls] = (byClass[s.cls] || 0) + 1;
+  for (const s of loadedSelected) byClass[s.cls] = (byClass[s.cls] || 0) + 1;
   const page_selection = {
     total_candidates: candidates.size,
-    analysed: selected.length,
-    prioritised: selected.filter(s => s.score >= 45).map(s => ({ url: s.u, why: s.reason })).slice(0, 24),
+    analysed: ok.length,
+    prioritised: loadedSelected.filter(s => s.score >= 42).map(s => ({ url: s.u, why: s.reason })).slice(0, 18),
     flagged_boilerplate: allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
     by_class: byClass,
-    rationale: `From ${candidates.size} discoverable page(s), the ${selected.length} highest-value pages were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${allBoilerplate.length ? ` ${allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
+    rationale: `From ${candidates.size} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${allBoilerplate.length ? ` ${allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
   };
 
   /* Aggregate site-wide issues. */
