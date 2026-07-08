@@ -573,8 +573,8 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
    section; this layer is reviewable interpretation, not new fact.
 ════════════════════════════════════════════════════════════════ */
 
-interface SectionInterpretation { id: string; interpretation: string; why_it_matters: string; recommendations: string[]; priority: string; }
-interface SeniorDmsResult { executive_summary: string; bottom_line?: string; sections: Record<string, SectionInterpretation>; }
+interface DmsSection { heading: string; body: string; }
+interface SeniorDmsResult { title?: string; bottom_line?: string; sections: DmsSection[]; }
 
 /* Compact, bounded data brief per section for the model to interpret. */
 function dataBrief(s: ReportStageInput, idx: number): any {
@@ -625,8 +625,14 @@ const DMS_SYSTEM = [
   `- Be persuasive by being RIGHT, not loud. No hype, no "act now", no salesy adjectives. The most convincing thing is an accurate, specific diagnosis the buyer recognises as true.`,
   `- Write a bottom_line: three to five sentences that state, factually, what is broken today, what the engagement changes, and why moving now beats waiting — the honest close.`,
   ``,
-  `Return ONLY valid JSON, no prose, no fences. The executive_summary must open with the single most important finding and read like a senior wrote it. Priorities across sections must be differentiated (not all "high"):`,
-  `{"executive_summary":"...","bottom_line":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high|medium|low"}]}`,
+  `DESIGN THE DOCUMENT FOR THIS BRIEF — do not fill a fixed template:`,
+  `- YOU choose the sections, their headings, and their order — the way a senior would structure a document to make THIS specific case to THIS specific prospect. Never reuse generic headings like "Executive Summary / Findings / Recommendations". Craft headings that speak to this brief and this business (for example "Why investors cannot find you in AI search", "The credibility gap a founder sees in ten seconds", "What your own SEO team cannot do without this data").`,
+  `- Open with the section that most advances the sale. Group findings by the STORY, not by which engine produced them. Weave the real findings, exact numbers, and specific pages into the prose of each section.`,
+  `- Aim for four to seven tight sections plus the bottom line. Each heading earns its place; each body carries weight.`,
+  `- Also give the whole document a specific, non-generic title naming the prospect and the point of the analysis.`,
+  ``,
+  `Return ONLY valid JSON, no prose, no fences:`,
+  `{"title":"a specific, bespoke document title for this prospect","sections":[{"heading":"a bespoke section heading crafted for this brief","body":"markdown analysis weaving in the real findings, numbers and pages, tied to the services, handling objections with data"}],"bottom_line":"the factual close"}`,
 ].join("\n");
 
 async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): Promise<(SeniorDmsResult & { material_files: string[] }) | null> {
@@ -661,9 +667,12 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
       if (a >= 0 && b > a) { try { parsed = JSON.parse(s.slice(a, b + 1)); } catch { /* keep null */ } }
     }
     if (!parsed || !Array.isArray(parsed.sections)) return null;
-    const map: Record<string, SectionInterpretation> = {};
-    for (const sec of parsed.sections) if (sec?.id) map[sec.id] = { id: sec.id, interpretation: String(sec.interpretation || ""), why_it_matters: String(sec.why_it_matters || ""), recommendations: Array.isArray(sec.recommendations) ? sec.recommendations.filter((x: any) => typeof x === "string") : [], priority: String(sec.priority || "") };
-    return { executive_summary: String(parsed.executive_summary || ""), bottom_line: String(parsed.bottom_line || ""), sections: map, material_files };
+    const sections: DmsSection[] = parsed.sections
+      .filter((s: any) => s && (s.heading || s.body))
+      .map((s: any) => ({ heading: String(s.heading || "").trim(), body: String(s.body || "").trim() }))
+      .filter((s: DmsSection) => s.body.length > 0);
+    if (!sections.length) return null;
+    return { title: String(parsed.title || "").trim() || undefined, bottom_line: String(parsed.bottom_line || "").trim(), sections, material_files };
   };
   try {
     let r = await run();
@@ -776,31 +785,34 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   const dms = await seniorDmsPass(stages, opts);
   if (!dms) { const base = assembleClientReportHtml(stages, opts); return { html: base.html.replace("</div></body>", `<p class="muted">Note: the written interpretation layer was unavailable for this run; the findings and data below are complete and accurate.</p></div></body>`), sections: base.sections, enriched: false }; }
 
+  const docTitle = dms.title || title;
   const H: string[] = [];
-  H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
-  H.push(`<div class="lh"><h1>${esc(title)}</h1><div class="by">Prepared by ${esc(author)}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
-  H.push(`<h2>Executive summary</h2>${mdToHtml(dms.executive_summary)}`);
+  H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(docTitle)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
+  H.push(`<div class="lh"><h1>${esc(docTitle)}</h1><div class="by">Prepared by ${esc(author)}${client && client !== "the website" ? ` · ${esc(client)}` : ""}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
 
-  completed.forEach((s, i) => {
-    const interp = dms.sections[`sec_${i}`];
-    H.push(`<h2>${esc(s.label)}</h2>`);
-    if (interp) {
-      if (interp.priority) H.push(`<p class="muted">Priority: ${esc(interp.priority)}</p>`);
-      if (interp.interpretation) H.push(mdToHtml(interp.interpretation));
-      if (interp.why_it_matters) H.push(`<p><strong>Why this matters:</strong> ${esc(interp.why_it_matters)}</p>`);
-      if (interp.recommendations.length) H.push(`<h4>Recommendations</h4><ol>${interp.recommendations.map(r => `<li>${esc(r)}</li>`).join("")}</ol>`);
-    }
-    H.push(`<h4>Supporting data</h4>`);
+  /* The bespoke analysis — the senior authored the structure for THIS brief. */
+  for (const sec of dms.sections) {
+    if (sec.heading) H.push(`<h2>${esc(sec.heading)}</h2>`);
+    if (sec.body) H.push(mdToHtml(sec.body));
+  }
+
+  if (dms.bottom_line) H.push(`<h2>The bottom line</h2>${mdToHtml(dms.bottom_line)}`);
+
+  /* The data behind the analysis — every claim above traces to this. Kept as a
+     clearly-labelled evidence section (charts + tables) so the numbers are
+     deterministic and verifiable, never something the narrative could invent. */
+  H.push(`<h2>The data behind this analysis</h2><p class="muted">Every figure in the analysis above comes from here — a live crawl, PageSpeed, and live search results. No Search Console or analytics data was used.</p>`);
+  completed.forEach((s) => {
+    H.push(`<h3>${esc(s.label)}</h3>`);
     H.push(renderBodyHtml(s.output));
     H.push(`<p class="src"><strong>Source:</strong> ${esc(sourceLine(s.ran_engine, s.output))}</p>`);
   });
 
-  H.push(`<h2>Sources and how to verify</h2><p>Every figure above traces to one of these sources, each independently verifiable:</p><ul>`);
+  H.push(`<h2>Sources and how to verify</h2><ul>`);
   for (const src of collectSources(completed)) H.push(`<li>${esc(src)}</li>`);
   if (dms.material_files.length) H.push(`<li>Operator-provided materials and client files: ${esc(dms.material_files.join(", "))}.</li>`);
   H.push(`</ul>`);
   H.push(renderCoverageHtml(opts, stages));
-  if (dms.bottom_line) H.push(`<h2>The bottom line</h2>${mdToHtml(dms.bottom_line)}`);
   const limits = collectLimits(completed);
   if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. The written interpretation is the analyst's reading of the data shown; the supporting data and sources under each section are the record. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
