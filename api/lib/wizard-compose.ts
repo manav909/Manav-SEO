@@ -117,9 +117,28 @@ export async function composeDynamicPlan(brief: string): Promise<DynamicPlan> {
   const stages: DynamicStage[] = rawDeliverables.map((d: any, i: number) => {
     const title = String(d?.title || `Deliverable ${i + 1}`).trim();
     /* Validate mapped ids against the real registry — drop anything invented. */
-    const validIds: string[] = (Array.isArray(d?.capability_ids) ? d.capability_ids : [])
+    let validIds: string[] = (Array.isArray(d?.capability_ids) ? d.capability_ids : [])
       .map((x: any) => String(x))
       .filter((id: string) => Boolean(getCapability(id)));
+    /* Deterministic informing-capability fallback. Some deliverables are DELIVERY
+       work that existing engines INFORM even though no single engine produces them
+       end to end — e.g. on-page copy enhancements: the per-URL audit says what is
+       weak, the content-structure guidance says how to shape it, and a human
+       writes the edit. The composer is an LLM and maps these inconsistently
+       (sometimes to the informing engines, sometimes to nothing and calls it a
+       gap wanting a phantom "new engine"). When the model leaves such a
+       deliverable unmapped, map it to the REAL informing capabilities instead, so
+       the same brief resolves the same way every time — covered, not a false gap. */
+    if (validIds.length === 0) {
+      const t = title.toLowerCase();
+      const INFORMED_BY: Array<{ re: RegExp; ids: string[] }> = [
+        { re: /(on-?page|page).{0,20}(enhanc|improv|edit|rewrit|text|copy)|(enhanc|improv|edit|rewrit).{0,20}(on-?page|page|copy|text)|minor.{0,10}text|text.{0,10}improv/i, ids: ["onpage_audit", "geo_content_template"] },
+        { re: /faq|help.?cent/i, ids: ["geo_content_template"] },
+      ];
+      for (const m of INFORMED_BY) {
+        if (m.re.test(t)) { const ids = m.ids.filter(id => getCapability(id)); if (ids.length) { validIds = ids; break; } }
+      }
+    }
     const { readiness, caps } = readinessOf(validIds, ymyl);
     /* A deliverable that maps to at least one REAL registry capability is NOT a
        gap — even if the model also set gap=true wishing for a more perfect
