@@ -112,6 +112,78 @@ function breadcrumbFor(url: string, title: string): any | null {
   return { "@context": "https://schema.org", "@type": "BreadcrumbList", itemListElement: items };
 }
 
+function stripTags(s: string): string {
+  return s.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
+}
+/* Deterministic FAQ detection — real Q&A already on the page. Catches native
+   <details> accordions, question-form headings, and common accordion/toggle
+   markup (Elementor, Bootstrap). Every pair is grounded in the page; nothing is
+   invented. This is the biggest AEO miss on most sites. */
+function extractFaqs(html: string): Array<{ q: string; a: string }> {
+  const faqs: Array<{ q: string; a: string }> = [];
+  const seen = new Set<string>();
+  const looksLikeQuestion = (q: string) => /\?$/.test(q) || /^(what|who|how|why|when|where|can|do|does|is|are|should|which|will|may|might)\b/i.test(q);
+  const push = (q0: string, a0: string) => {
+    const q = q0.trim(), a = a0.trim();
+    if (q.length < 8 || q.length > 220 || a.length < 20 || a.length > 1400) return;
+    if (!looksLikeQuestion(q)) return;
+    const k = q.toLowerCase().replace(/\s+/g, " ");
+    if (seen.has(k)) return; seen.add(k);
+    faqs.push({ q, a });
+  };
+  /* 1. native <details><summary>Q</summary> A </details> */
+  for (const m of html.matchAll(/<details[^>]*>([\s\S]*?)<\/details>/gi)) {
+    const inner = m[1];
+    const qm = inner.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i);
+    if (qm) push(stripTags(qm[1]), stripTags(inner.replace(/<summary[\s\S]*?<\/summary>/i, "")));
+  }
+  /* 2. question-form headings (h2-h5) followed by their content block */
+  const parts = html.split(/(?=<h[2-5][\s>])/i);
+  for (const part of parts) {
+    const hm = part.match(/^<h[2-5][^>]*>([\s\S]*?)<\/h[2-5]>/i);
+    if (!hm) continue;
+    const q = stripTags(hm[1]);
+    if (!looksLikeQuestion(q)) continue;
+    push(q, stripTags(part.replace(/^<h[2-5][^>]*>[\s\S]*?<\/h[2-5]>/i, "")).slice(0, 900));
+  }
+  /* 3. accordion/toggle title -> adjacent content (Elementor, Bootstrap, generic) */
+  for (const m of html.matchAll(/class=["'][^"']*(?:accordion-title|faq-question|elementor-(?:accordion|toggle|tab)-title|toggle-title|question)[^"']*["'][^>]*>([\s\S]*?)<\/[a-z0-9]+>([\s\S]{0,120}?)class=["'][^"']*(?:accordion-content|faq-answer|elementor-(?:accordion|toggle|tab)-content|toggle-content|answer|elementor-tab-content)[^"']*["'][^>]*>([\s\S]*?)<\/[a-z0-9]+>/gi)) {
+    push(stripTags(m[1]), stripTags(m[3]));
+  }
+  return faqs.slice(0, 12);
+}
+/* Real social profiles for Organization.sameAs — the authoritative links Google
+   and AI engines use to confirm entity identity. Extracted from the page, never
+   guessed. */
+function extractSocialLinks(html: string): string[] {
+  const out = new Set<string>();
+  for (const m of html.match(/https?:\/\/(?:www\.)?(?:facebook|linkedin|twitter|x|instagram|youtube|tiktok|pinterest|crunchbase)\.com\/[^\s"'<>)]+/gi) || []) {
+    const u = m.replace(/[),.]+$/, "");
+    if (!/\/(?:sharer|share|intent|plugins|dialog)\b/i.test(u)) out.add(u);
+  }
+  return Array.from(out).slice(0, 8);
+}
+function extractPhone(html: string): string {
+  return (html.match(/tel:\s*([+\d][\d\s().\-]{6,})/i) || [])[1]?.trim().replace(/\s+/g, " ") || "";
+}
+/* Person schema from a real team/bio page: name from the URL slug, role from the
+   H1/title where present. Only on obvious team pages; never invented. */
+function personFromPage(url: string, html: string): { name: string; jobTitle: string } | null {
+  let path = ""; try { path = new URL(url).pathname.toLowerCase(); } catch { return null; }
+  const m = path.match(/\/(?:team-?members?|team|people|staff)\/([a-z0-9-]+)\/?$/);
+  if (!m) return null;
+  const slug = m[1];
+  if (slug.length < 3 || /^\d+$/.test(slug)) return null;
+  const name = slug.split("-").filter(Boolean).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1];
+  const h1text = h1 ? stripTags(h1) : "";
+  let jobTitle = "";
+  const roleMatch = h1text.match(/\b(CEO|CFO|COO|CTO|President|Vice President|VP|Founder|Co-?Founder|Partner|Director|Managing Director|Principal|Manager|Associate|Advisor|Consultant|Agent|Broker|Analyst|Controller|Coordinator)\b/i);
+  if (roleMatch) jobTitle = roleMatch[0];
+  return { name, jobTitle };
+}
+
 function buildForPage(url: string, html: string, isHome: boolean): PageResult {
   const title = titleOf(html);
   const description = metaName(html, "description");
@@ -134,13 +206,38 @@ function buildForPage(url: string, html: string, isHome: boolean): PageResult {
   if (isHome) {
     const siteName = metaName(html, "og:site_name") || title;
     const logo = metaName(html, "og:image");
+    const social = extractSocialLinks(html);
+    const phone = extractPhone(html);
     let origin = ""; try { origin = new URL(canonical).origin; } catch { origin = url; }
     if (siteName) {
       const org: any = { "@context": "https://schema.org", "@type": "Organization", name: siteName, url: origin };
       if (logo) org.logo = logo; else gaps.push("no og:image on homepage — supply a logo URL for Organization.logo");
-      generated.push(org); grounded.push("og:site_name / title" + (logo ? " + og:image" : ""));
+      if (social.length) org.sameAs = social;
+      if (phone) org.telephone = phone;
+      generated.push(org);
+      grounded.push("og:site_name / title" + (logo ? " + og:image" : "") + (social.length ? ` + ${social.length} social profile(s)` : "") + (phone ? " + phone" : ""));
       generated.push({ "@context": "https://schema.org", "@type": "WebSite", name: siteName, url: origin });
+      if (!social.length) gaps.push("no social profile links found on the homepage — add them (usually footer icons) so Organization.sameAs can confirm your entity to Google and AI engines (important where a brand competes with sibling brands)");
     }
+  }
+
+  /* FAQPage — from REAL Q&A already on the page. The single biggest AEO win most
+     sites leave on the table: an FAQ section with no FAQPage markup. */
+  if (!ex.types.includes("FAQPage")) {
+    const faqs = extractFaqs(html);
+    if (faqs.length >= 2) {
+      generated.push({ "@context": "https://schema.org", "@type": "FAQPage", mainEntity: faqs.map(f => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })) });
+      grounded.push(`${faqs.length} real FAQ Q&A pair(s) found on the page — a strong AEO / rich-result opportunity`);
+    }
+  }
+
+  /* Person — on a real team/bio page, from the URL and the H1. */
+  const person = personFromPage(url, html);
+  if (person && person.name && !ex.types.includes("Person")) {
+    const ps: any = { "@context": "https://schema.org", "@type": "Person", name: person.name, url: canonical };
+    if (person.jobTitle) ps.jobTitle = person.jobTitle;
+    generated.push(ps);
+    grounded.push(`team/bio page — Person "${person.name}"${person.jobTitle ? ` (${person.jobTitle})` : ""} from the URL and heading`);
   }
 
   /* Product Offer — ONLY if price is in the markup. Never invented. */
