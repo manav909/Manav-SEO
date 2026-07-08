@@ -364,19 +364,24 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     let domain = ""; let brand = "";
     try { const u = new URL(/^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`); domain = u.hostname.replace(/^www\./, ""); brand = domain.split(".")[0]; } catch { domain = siteUrl; brand = siteUrl; }
     const stages: any[] = [];
+    let crawledUrls: string[] = [];
 
     /* 1. Comprehensive crawl-based audit — on-page, technical, schema coverage,
        broken links, homepage performance. No integration required. */
     try {
       const { crawlSite } = await import("./site-crawler.js");
       const audit = await crawlSite({ projectId, siteUrl, maxPages: 100 });
-      if (audit && audit.pages_reachable > 0) stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
+      if (audit && audit.pages_reachable > 0) {
+        stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
+        crawledUrls = Array.isArray(audit.page_selection?.analysed_urls) ? audit.page_selection.analysed_urls : [];
+      }
     } catch { /* proceed with whatever gathers */ }
 
-    /* 2. Structured-data audit + generation and llms.txt. */
+    /* 2. Structured-data audit + generation, ON THE SAME PAGES the crawl
+       analysed — so the report speaks about one coherent set, not two scopes. */
     try {
       const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
-      const schema = await generateSchemaAndLlms({ projectId, siteUrl, depth: "standard" });
+      const schema = await generateSchemaAndLlms({ projectId, siteUrl, pageUrls: crawledUrls.length ? crawledUrls : undefined, depth: "deep" });
       if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
     } catch { /* proceed */ }
 

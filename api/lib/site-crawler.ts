@@ -335,6 +335,7 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   const page_selection = {
     total_candidates: candidates.size,
     analysed: ok.length,
+    analysed_urls: ok.map(p => p.url),
     prioritised: loadedSelected.filter(s => s.score >= 42).map(s => ({ url: s.u, why: s.reason })).slice(0, 18),
     flagged_boilerplate: allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
     by_class: byClass,

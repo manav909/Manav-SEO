@@ -375,9 +375,7 @@ function renderBodyHtml(o: any): string {
       const rows = issueEntries.map(([k, v]: any) => [String(k).replace(/_/g, " "), v.count, (v.pages || []).slice(0, 3).join(", ")]);
       P.push(tableHtml(["Issue", "Pages affected", "Examples"], rows));
     }
-    const sc = Object.entries(o.schema_coverage || {});
-    if (sc.length) P.push(`<p class="muted"><strong>Schema found:</strong> ${sc.map(([t, n]: any) => `${esc(t)} (${n})`).join(", ")}.</p>`);
-    if (o.broken_links?.length) P.push(`<p class="muted"><strong>Broken/unreachable URLs found:</strong> ${o.broken_links.slice(0, 10).map((u: string) => esc(u)).join("; ")}.</p>`);
+    if (o.broken_links?.length) P.push(`<p class="muted"><strong>Pages the crawler could not reach (may be WAF/rate-limiting rather than truly broken — verify):</strong> ${o.broken_links.slice(0, 10).map((u: string) => esc(u)).join("; ")}.</p>`);
     return P.join("");
   }
 
@@ -612,6 +610,12 @@ const DMS_SYSTEM = [
   `- The operator's provided materials are real source — use them to deepen sections and attribute to "your provided materials".`,
   `- If a section's data is genuinely thin, say so in one honest line; do not pad. Write in clear business English, no tool names, no jargon dumps, never salesy.`,
   ``,
+  `WRITE WITH WEIGHT — this is what separates a senior report from a generated one:`,
+  `- Every sentence must carry a specific fact, number, page, or action. If a sentence could apply to any website, delete it. No throat-clearing ("In today's digital landscape..."), no restating the obvious, no filler.`,
+  `- ONE voice, ONE argument. You are the sole author. Connect findings into a single line of reasoning — do not emit disconnected observations. If two findings share a cause, they are one point.`,
+  `- Be concise. A tight paragraph that lands beats three that circle. Recommendations are imperative and specific ("Add FAQPage schema to the homepage's six-question FAQ" — not "consider improving structured data").`,
+  `- The executive_summary opens with the single most important finding for THIS business, ties directly to the client's brief, and could not have been written about any other site.`,
+  ``,
   `Return ONLY valid JSON, no prose, no fences. The executive_summary must open with the single most important finding and read like a senior wrote it. Priorities across sections must be differentiated (not all "high"):`,
   `{"executive_summary":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high|medium|low"}]}`,
 ].join("\n");
@@ -626,7 +630,10 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
 
   const ctx = [
     `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
-    `Interpret these section findings (real data already gathered). Write for the client.`,
+    (opts.requirements && opts.requirements.length)
+      ? `THE CLIENT'S BRIEF — every part of the report must map back to these, in their terms:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
+      : `No explicit brief was supplied; audit the site's health and opportunities.`,
+    `Interpret these section findings (real data already gathered) and write ONE coherent senior analysis. Lead with the single most important finding. Connect related findings into one diagnosis. Answer the brief above.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
   const run = async (): Promise<(SeniorDmsResult & { material_files: string[] }) | null> => {
