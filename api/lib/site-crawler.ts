@@ -141,6 +141,7 @@ export interface SiteAuditReport {
   schema_coverage: Record<string, number>;
   broken_links: string[];
   performance: any | null;
+  page_selection?: any;
   summary: string; limits: string[];
 }
 
@@ -191,9 +192,36 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
   return { urls: Array.from(pages), files: filesParsed };
 }
 
+/* ── Senior-lens page selection ──────────────────────────────────────
+   Score each candidate URL by how much it matters to the business, so the
+   crawl budget is spent on the pages a senior SEO would diagnose first — the
+   homepage and money pages — not whatever the sitemap happens to list first.
+   Also detects leftover theme/demo boilerplate, which is a real insight (it
+   causes the duplicate-title/meta clusters and should be removed). */
+type PageClass = "homepage" | "commercial" | "content" | "other" | "utility" | "legal" | "boilerplate_demo";
+function classifyUrl(url: string): { cls: PageClass; score: number; reason: string } {
+  let path = "/";
+  try { path = (new URL(url).pathname || "/").toLowerCase().replace(/\/+$/, "") || "/"; } catch { /* keep default */ }
+  if (path === "/") return { cls: "homepage", score: 100, reason: "the homepage — the first impression and highest-traffic page" };
+  const seg = path.slice(1);
+  /* leftover theme/demo/boilerplate pages a template shipped with */
+  if (/(^|\/)(home-?page-?\d+|homepage-?\d+|elementor(-\d+)?|demo(-\d+)?|sample-?page|blog-?grid(-col)?(-\d+)?|masonry(-col)?(-\d+)?|portfolio-?grid|shortcodes?|typography|elements?(-demo)?|coming-?soon)($|\/)/.test(seg)
+    || (/-\d+$/.test(seg) && /(contact|about|home|service|blog|team|page)/.test(seg)))
+    return { cls: "boilerplate_demo", score: 4, reason: "looks like a leftover theme/demo page — a strong candidate for removal" };
+  if (/(^|\/)(privacy|terms|disclaimer|cookies?|gdpr|legal|404|thank-?you|cart|checkout|my-?account|login|log-?in|register|wp-|feed|sitemap)($|\/|-)/.test(seg))
+    return { cls: "legal", score: 9, reason: "a legal or utility page — low commercial priority" };
+  if (/(^|\/)(page\/\d+|tag|tags|category|categories|author|archive)($|\/)/.test(seg))
+    return { cls: "utility", score: 7, reason: "an archive or pagination page" };
+  if (/(^|\/)(services?|products?|solutions?|offerings?|pricing|plans?|about(-us)?|company|team|contact(-us)?|investments?|portfolio|work|case-?stud(y|ies)|clients?|industries|sectors|acquisitions?|strategy|wealth)($|\/|-)/.test(seg))
+    return { cls: "commercial", score: 80, reason: "a primary commercial / high-intent page — where enquiries are won" };
+  if (/(^|\/)(blog|news|insights?|articles?|resources?|guides?|learn|press)($|\/)/.test(seg))
+    return { cls: "content", score: 45, reason: "a content / thought-leadership page — authority and AEO surface" };
+  return { cls: "other", score: 28, reason: "a standard content page" };
+}
+
 export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
   const now = new Date().toISOString();
-  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 50, 120));
+  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 60, 150));
   const concurrency = Math.max(2, Math.min(opts.concurrency ?? 6, 10));
 
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
@@ -212,33 +240,63 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   const sitemapCount = sm.urls.length;
   const sitemapFiles = sm.files;
   const visited = new Set<string>();
-  const queue: string[] = [];
-  const seeded = new Set<string>();
-  const enqueueSeed = (u: string) => { const k = canonKey(u); if (k && !seeded.has(k)) { seeded.add(k); queue.push(u); } };
-  enqueueSeed(start);
-  for (const u of sm.urls) enqueueSeed(u);
   const pages: PageSig[] = [];
   const broken: string[] = [];
 
-  while (queue.length && pages.length < maxPages) {
-    const batch: string[] = [];
-    while (queue.length && batch.length < concurrency && pages.length + batch.length < maxPages) {
-      const u = queue.shift()!;
-      const key = canonKey(u);
-      if (visited.has(key)) continue;
-      visited.add(key); batch.push(u);
-    }
-    if (!batch.length) break;
-    const fetched = await Promise.all(batch.map(async u => { try { const html = await fetchHtml(u); return { u, html, ok: !!html && html.length > 50 }; } catch { return { u, html: "", ok: false }; } }));
+  /* SMART PAGE SELECTION (senior-DMS lens). Gather the real candidate set
+     (sitemap + the homepage's own links), score each by business importance,
+     and diagnose the highest-value pages first — homepage and money pages —
+     while keeping a few boilerplate/legal examples to flag. The selection and
+     its reasons are returned so the report can state WHICH pages and WHY. */
+  const homeHtml = await fetchHtml(start).catch(() => "");
+  const homeSig = homeHtml ? extract(start, homeHtml, 200) : null;
+  const candidates = new Map<string, string>();
+  const addCand = (u: string) => { const k = canonKey(u); if (k && !candidates.has(k)) candidates.set(k, u); };
+  addCand(start);
+  for (const u of sm.urls) addCand(u);
+  if (homeSig) for (const link of homeSig.links) addCand(link);
+
+  const scored = Array.from(candidates.values()).map(u => ({ u, ...classifyUrl(u) }));
+  scored.sort((a, b) => b.score - a.score);
+  const allBoilerplate = scored.filter(s => s.cls === "boilerplate_demo");
+  const selected: typeof scored = [];
+  let legalCount = 0, boilerCount = 0;
+  for (const s of scored) {
+    if (selected.length >= maxPages) break;
+    if (s.cls === "legal") { if (legalCount >= 3) continue; legalCount++; }
+    if (s.cls === "boilerplate_demo") { if (boilerCount >= 4) continue; boilerCount++; }
+    selected.push(s);
+  }
+
+  /* Crawl the selected set in parallel batches (homepage html reused). */
+  for (let i = 0; i < selected.length; i += concurrency) {
+    const batch = selected.slice(i, i + concurrency);
+    const fetched = await Promise.all(batch.map(async s => {
+      if (canonKey(s.u) === canonKey(start) && homeHtml) return { u: s.u, html: homeHtml, ok: homeHtml.length > 50 };
+      try { const html = await fetchHtml(s.u); return { u: s.u, html, ok: !!html && html.length > 50 }; } catch { return { u: s.u, html: "", ok: false }; }
+    }));
     for (const f of fetched) {
+      const key = canonKey(f.u); if (visited.has(key)) continue; visited.add(key);
       const sig = extract(f.u, f.html, f.ok ? 200 : 0);
       pages.push(sig);
-      if (!f.ok) { broken.push(f.u); continue; }
-      for (const link of sig.links) { const k = canonKey(link); if (!visited.has(k) && queue.length < 800) queue.push(link); }
+      if (!f.ok) broken.push(f.u);
     }
   }
-  const crawlCapped = queue.length > 0;
+  const crawlCapped = candidates.size > selected.length;
   const ok = pages.filter(p => p.ok);
+
+  /* Selection rationale for the report — the "which pages and why" a senior states. */
+  const pathOf = (u: string) => { try { return new URL(u).pathname || u; } catch { return u; } };
+  const byClass: Record<string, number> = {};
+  for (const s of selected) byClass[s.cls] = (byClass[s.cls] || 0) + 1;
+  const page_selection = {
+    total_candidates: candidates.size,
+    analysed: selected.length,
+    prioritised: selected.filter(s => s.score >= 45).map(s => ({ url: s.u, why: s.reason })).slice(0, 24),
+    flagged_boilerplate: allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
+    by_class: byClass,
+    rationale: `From ${candidates.size} discoverable page(s), the ${selected.length} highest-value pages were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${allBoilerplate.length ? ` ${allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
+  };
 
   /* Aggregate site-wide issues. */
   const issue: Record<string, { count: number; pages: string[] }> = {};
@@ -284,5 +342,5 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
 
-  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, summary, limits };
+  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, page_selection, summary, limits };
 }

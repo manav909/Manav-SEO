@@ -323,7 +323,16 @@ function renderBodyHtml(o: any): string {
   /* Full-site crawl audit */
   if (o.issues && typeof o.pages_reachable === "number") {
     P.push(`<p>Crawled ${o.pages_reachable} page(s) of ${esc(o.project_domain)}${o.crawl_capped ? " (capped; more pages remain)" : ""}.</p>`);
-    if (o.performance) P.push(`<p><strong>Performance (homepage, mobile):</strong> score ${o.performance.performance_score}/100${o.performance.lcp ? `, LCP ${esc(o.performance.lcp)}` : ""}${o.performance.tbt ? `, TBT ${esc(o.performance.tbt)}` : ""}${o.performance.cls ? `, CLS ${esc(o.performance.cls)}` : ""}.</p>`);
+    /* Which pages, and why — the senior-lens selection stated openly. */
+    if (o.page_selection && o.page_selection.rationale) {
+      P.push(`<h4>Pages analysed, and why these</h4>`);
+      P.push(`<p>${esc(o.page_selection.rationale)}</p>`);
+      const pr = Array.isArray(o.page_selection.prioritised) ? o.page_selection.prioritised : [];
+      if (pr.length) P.push(tableHtml(["Page prioritised", "Why it was chosen"], pr.map((x: any) => [x.url ? (function () { try { return new URL(x.url).pathname; } catch { return x.url; } })() : String(x), x.why || ""])));
+      const bp = Array.isArray(o.page_selection.flagged_boilerplate) ? o.page_selection.flagged_boilerplate : [];
+      if (bp.length) P.push(`<p class="muted"><strong>Flagged as likely leftover theme/demo pages (recommend removing):</strong> ${bp.map((u: string) => esc(u)).join(", ")}.</p>`);
+    }
+    if (o.performance) P.push(`<p><strong>Performance (homepage, mobile):</strong> score ${o.performance.performance_score}/100${o.performance.lcp ? `, LCP ${esc(o.performance.lcp)}` : ""}${o.performance.tbt ? `, TBT ${esc(o.performance.tbt)}` : ""}${o.performance.cls ? `, CLS ${esc(o.performance.cls)}` : ""}. <span class="muted">(single lab run — indicative, not a field average)</span></p>`);
     const rows = Object.entries(o.issues).sort((a: any, b: any) => b[1].count - a[1].count).map(([k, v]: any) => [String(k).replace(/_/g, " "), v.count, (v.pages || []).slice(0, 3).join(", ")]);
     if (rows.length) { P.push(`<h4>On-page and technical issues (site-wide)</h4>`); P.push(tableHtml(["Issue", "Pages affected", "Examples"], rows)); }
     const sc = Object.entries(o.schema_coverage || {});

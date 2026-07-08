@@ -369,7 +369,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
        broken links, homepage performance. No integration required. */
     try {
       const { crawlSite } = await import("./site-crawler.js");
-      const audit = await crawlSite({ projectId, siteUrl, maxPages: 40 });
+      const audit = await crawlSite({ projectId, siteUrl, maxPages: 60 });
       if (audit && audit.pages_reachable > 0) stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
     } catch { /* proceed with whatever gathers */ }
 
