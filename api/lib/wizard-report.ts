@@ -78,13 +78,21 @@ function sourceLine(ranEngine: string | null | undefined, output: any): string {
   const e = String(ranEngine || "").toLowerCase();
   const date = fmtDate(output?.generated_at);
   const dom = output?.project_domain || "";
+  /* Honest per-engine attribution. The cardinal rule: NEVER cite Google Search
+     Console unless the engine actually used it — a no-GSC crawl report that
+     claims "Source: Search Console" is a fabricated citation. */
+  if (/site-crawler/.test(e)) return `A live crawl of the site${output?.pages_reachable ? ` (${output.pages_reachable} pages reached)` : ""}${output?.performance ? ` plus a Google PageSpeed (Lighthouse) run on the homepage` : ""}${date ? `, ${date}` : ""}. No Search Console data was used.`;
+  if (/schema-llms/.test(e)) return `A live crawl and on-page markup analysis${output?.summary?.crawled ? ` of ${output.summary.crawled} page(s)` : ""}${date ? `, ${date}` : ""}. Schema is read from, and generated against, the pages' real HTML.`;
+  if (/serpapi/.test(e)) return `Live Google search results (via SerpAPI)${date ? `, ${date}` : ""}. This is public SERP data, not Search Console.`;
+  if (/aeo-article|offsite-qa/.test(e)) return `Live Google search results (via SerpAPI) for the topic${date ? `, ${date}` : ""}.`;
+  if (/semrush/.test(e)) return `Semrush live API (referring-domain and authority data)${date ? `, ${date}` : ""}.`;
   if (/competitor-benchmark/.test(e)) return `Live Google search results and direct page crawls${date ? `, checked ${date}` : ""}.`;
   if (/cms-advisor/.test(e)) return `A direct crawl of the website${Array.isArray(output?.pages_examined) && output.pages_examined.length ? ` (${output.pages_examined.length} pages examined)` : ""}${date ? `, ${date}` : ""}.`;
   if (/paid-organic/.test(e)) return `The client's own Google Ads search-terms export, cross-referenced with Google Search Console.`;
   if (/detectcannibalization/.test(e)) return `Google Search Console query and page data${dom ? ` for ${dom}` : ""}${date ? `, as of ${date}` : ""}.`;
   if (/url-classifier|url-inventory|topical-authority/.test(e)) return `Google Search Console${dom ? ` (property: ${dom})` : ""}${date ? `, data as of ${date}` : ""}.`;
   if (/geo|aioverview|workspace|client-report/.test(e)) return `Live search-results analysis${date ? `, ${date}` : ""}.`;
-  return date ? `Search Console and on-site analysis, ${date}.` : `Search Console and on-site analysis.`;
+  return date ? `Live on-site analysis, ${date}. No Search Console data was used.` : `Live on-site analysis. No Search Console data was used.`;
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -538,21 +546,25 @@ function dataBrief(s: ReportStageInput, idx: number): any {
 }
 
 const DMS_SYSTEM = [
-  `You are a senior digital marketing strategist writing an SEO and AEO audit FOR A CLIENT — a business owner, not a technician.`,
-  `You are given the REAL findings from the analysis: actual numbers and items. Interpret them through a senior practitioner's lens and write for the client.`,
+  `You are a SENIOR SEO and digital-marketing strategist writing a client-ready audit for a business owner or investor — someone paying for judgement, not a list of machine findings. Your job is to make them think "this person actually understands my business and my site."`,
+  `You are given the REAL findings from the analysis (actual numbers, pages, and items). Interpret them the way a seasoned practitioner would.`,
   ``,
-  `For the whole report, write an executive_summary: what the analysis found overall and what it means for their business.`,
-  `For each section, write: interpretation (what this finding means in plain business terms), why_it_matters (the impact on visibility, traffic, enquiries, revenue, or wasted spend), recommendations (specific actions in priority order), and a priority (high/medium/low).`,
+  `HOW A SENIOR THINKS — do all of this:`,
+  `1. DIAGNOSE ROOT CAUSES, do not list symptoms. When several findings share one cause, say so as ONE diagnosis with ONE fix. Example: duplicate titles + duplicate meta descriptions + missing H1s + URLs like /homepage-04/, /homepage-05/, /blog-grid-col-4/, /masonry-col-4/, /contact-2/ almost always mean the site was built on a theme and the template's DEMO pages were never removed — that is ONE problem ("clean up leftover theme/boilerplate pages"), not five. Spot patterns like this and name the underlying cause.`,
+  `2. LEAD WITH THE ONE THING THAT MATTERS MOST. Open the executive summary with the single most business-critical finding stated bluntly, then the next one or two. If the site does not rank for its own brand name, that is almost always the headline for any real business — treat it as urgent, not a footnote.`,
+  `3. PRIORITISE RUTHLESSLY. Not everything is "high". Reserve "high" for what genuinely costs the business money or credibility now. Order recommendations by impact-per-effort; put the fastest high-impact win first.`,
+  `4. TIE EVERY POINT TO THIS SPECIFIC CLIENT'S BUSINESS. Read what the business is from the pages and brand, and frame consequences in their terms (for a VC firm: credibility with founders, LPs, and co-investors who research them; for a shop: lost sales). Generic "Google likes fast sites" is not senior; "a founder comparing three VC firms on their phone will bounce before your page loads, and you never knew they visited" is.`,
+  `5. BE TRANSPARENT ABOUT SCOPE. In one line, say what was analysed and how much — e.g. "39 of the 309 pages in your sitemap were crawled this pass" — so the reader knows the basis and its limits. Never imply more coverage than the data shows.`,
   ``,
   `HARD RULES — non-negotiable:`,
-  `- Use ONLY the numbers and facts in the provided data and the operator-provided materials (if any). Do NOT invent metrics, pages, competitors, dates, or claims that are not present in either.`,
-  `- The operator-provided materials are real source: the operator's own analysis and the client's files. Use them to DEEPEN each section and to answer brief points the live-engine data does not fully cover. Attribute to "provided materials" where a point comes from them.`,
-  `- Answer EVERY section/requirement substantively. If neither the engine data nor the materials cover a requirement, say plainly what is needed to answer it (for example, "this needs Search Console access" or "provide the client's analytics") rather than padding or inventing.`,
-  `- If a section's data is thin, say so plainly. Do NOT pad it to look substantial.`,
-  `- Write in clear business English. No tool names, no jargon dumps, not salesy.`,
+  `- Use ONLY the numbers, pages, and facts in the provided data and the operator's materials. Never invent metrics, pages, competitors, dates, or claims.`,
+  `- NEVER cite a data source that was not used. If there is no Search Console / analytics data in the findings, do NOT mention Search Console as a source or basis — the analysis here is a live crawl, PageSpeed, and live search results. Claiming GSC you do not have destroys trust.`,
+  `- Where a real figure would strengthen a point but is not in the data, say what is needed to get it (e.g. "connect Search Console to confirm which pages Google indexes") rather than inventing it.`,
+  `- The operator's provided materials are real source — use them to deepen sections and attribute to "your provided materials".`,
+  `- If a section's data is genuinely thin, say so in one honest line; do not pad. Write in clear business English, no tool names, no jargon dumps, never salesy.`,
   ``,
-  `Return ONLY valid JSON, no prose, no fences:`,
-  `{"executive_summary":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high"}]}`,
+  `Return ONLY valid JSON, no prose, no fences. The executive_summary must open with the single most important finding and read like a senior wrote it. Priorities across sections must be differentiated (not all "high"):`,
+  `{"executive_summary":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high|medium|low"}]}`,
 ].join("\n");
 
 async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): Promise<(SeniorDmsResult & { material_files: string[] }) | null> {
@@ -627,7 +639,8 @@ export function assembleProposalHtml(stages: ReportStageInput[], opts: ReportOpt
   const scopeRows = cov.items.map(i => {
     if (i.status === "delivery") return [i.requirement, i.delivery_note || "Recurring delivery work each cycle."];
     if (i.status === "engine" || i.status === "your_data") return [i.requirement, "Produced from live analysis each cycle — demonstrated below."];
-    return [i.requirement, `Included; runs once ${i.recommendation?.data_need || "the required data source"} is connected.`];
+    const how = i.recommendation ? ((i.recommendation.best_sources && i.recommendation.best_sources[0]) || i.recommendation.data_need) : "the required data source";
+    return [i.requirement, `Included — ${how}.`];
   });
   if (scopeRows.length) H.push(tableHtml(["Deliverable (as you scoped it)", "How it is produced, to what standard"], scopeRows));
 

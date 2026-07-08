@@ -23,11 +23,16 @@ export interface SourceRecommendation { data_need: string; effective_for: string
    the most trusted sources to supply it. Order = most trusted first.
    The documents step can ingest an export from any of these. */
 const NEED_RULES: Array<{ re: RegExp; rec: SourceRecommendation }> = [
+  /* Technical / Lighthouse / speed is something the platform MEASURES itself via
+     its PageSpeed run in the crawl audit — it must never be sent to "upload an
+     Ahrefs export". This rule keeps the recommendation honest and correct. */
+  { re: /lighthouse|page\s?speed|pagespeed|technical seo|site speed|load (time|speed)|performance score|page speed score|90\+/i,
+    rec: { data_need: "An in-platform PageSpeed (Lighthouse) run", effective_for: "measuring load speed and Core Web Vitals on the target page", best_sources: ["Runs in-platform on the crawled pages — no upload needed; connect nothing"] } },
   { re: /backlink|referring domain|link gap|authority score|domain authority|\bDA\b|\bDR\b/i,
     rec: { data_need: "Backlink / authority data", effective_for: "competitive authority benchmarking and link-building strategy", best_sources: ["Ahrefs (export or API)", "Semrush (export or API)", "Majestic"] } },
   { re: /keyword (volume|gap|research)|missing keyword|search volume|ranking keyword|keyword difficulty/i,
     rec: { data_need: "Keyword database (volumes, gaps, difficulty)", effective_for: "finding the keywords competitors rank for that the client does not, and sizing the opportunity", best_sources: ["Semrush (export or API)", "Ahrefs", "Google Keyword Planner export"] } },
-  { re: /impression|click-through|\bCTR\b|average position|which pages.*index|indexed pages|search console|\bGSC\b/i,
+  { re: /impression|click-through|\bCTR\b|average position|which pages.*index|indexed pages|search console|\bGSC\b|keyword reporting|rank tracking|ranking report/i,
     rec: { data_need: "Google Search Console data", effective_for: "seeing exactly what Google shows the site — impressions, CTR, positions, indexation", best_sources: ["Connect Google Search Console", "Upload a GSC performance export"] } },
   { re: /core web vital|\bCWV\b|field data|real user/i,
     rec: { data_need: "Core Web Vitals field data", effective_for: "real-user performance (not just lab), which affects rankings", best_sources: ["Connect Google Search Console (CrUX)", "PageSpeed / CrUX"] } },
