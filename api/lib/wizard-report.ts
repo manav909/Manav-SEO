@@ -573,7 +573,7 @@ export function assembleClientReportHtml(stages: ReportStageInput[], opts: Repor
 ════════════════════════════════════════════════════════════════ */
 
 interface SectionInterpretation { id: string; interpretation: string; why_it_matters: string; recommendations: string[]; priority: string; }
-interface SeniorDmsResult { executive_summary: string; sections: Record<string, SectionInterpretation>; }
+interface SeniorDmsResult { executive_summary: string; bottom_line?: string; sections: Record<string, SectionInterpretation>; }
 
 /* Compact, bounded data brief per section for the model to interpret. */
 function dataBrief(s: ReportStageInput, idx: number): any {
@@ -616,8 +616,15 @@ const DMS_SYSTEM = [
   `- Be concise. A tight paragraph that lands beats three that circle. Recommendations are imperative and specific ("Add FAQPage schema to the homepage's six-question FAQ" — not "consider improving structured data").`,
   `- The executive_summary opens with the single most important finding for THIS business, ties directly to the client's brief, and could not have been written about any other site.`,
   ``,
+  `SELL THE PLAN WITH DATA — this report exists to convert the lead, factually:`,
+  `- Connect every finding to a service being sold: finding -> consequence for their business -> the specific service that fixes it. A gap you found is the proof that a service is needed. Example shape: "Your homepage FAQ has no schema, so you are invisible to AI answers on the exact questions investors ask — this is precisely what the AEO/schema service fixes."`,
+  `- Handle the objection before it is raised, with data, not pressure. Anticipate the two or three things a sceptical buyer (or their own senior marketer) would push back on — "we have our own SEO team", "is this worth the spend", "can you really deliver at quality" — and answer each with a fact from the findings. Never beg; let the evidence do the convincing.`,
+  `- Where a real, checkable example or reference genuinely strengthens the case (a well-known competitor doing it right, a concrete before/after mechanism), use it — but only if true. No invented case studies, no fabricated stats.`,
+  `- Be persuasive by being RIGHT, not loud. No hype, no "act now", no salesy adjectives. The most convincing thing is an accurate, specific diagnosis the buyer recognises as true.`,
+  `- Write a bottom_line: three to five sentences that state, factually, what is broken today, what the engagement changes, and why moving now beats waiting — the honest close.`,
+  ``,
   `Return ONLY valid JSON, no prose, no fences. The executive_summary must open with the single most important finding and read like a senior wrote it. Priorities across sections must be differentiated (not all "high"):`,
-  `{"executive_summary":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high|medium|low"}]}`,
+  `{"executive_summary":"...","bottom_line":"...","sections":[{"id":"sec_0","interpretation":"...","why_it_matters":"...","recommendations":["..."],"priority":"high|medium|low"}]}`,
 ].join("\n");
 
 async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): Promise<(SeniorDmsResult & { material_files: string[] }) | null> {
@@ -630,10 +637,13 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
 
   const ctx = [
     `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
+    `PURPOSE OF THIS REPORT: it backs a SALE. We are pitching the services below to this prospect and this report must, using ONLY honest data, make the factual case that they should buy — and answer their likely objections before they raise them.`,
+    opts.engagement_type ? `Who we are convincing: ${opts.engagement_type === "reseller_productized" ? "a reseller/agency deciding whether to make us their production partner across their clients" : opts.engagement_type === "site_owner" ? "the business owner whose site this is" : "the prospect"}.` : "",
+    opts.buyer_note ? `What they care about: ${opts.buyer_note}` : "",
     (opts.requirements && opts.requirements.length)
-      ? `THE CLIENT'S BRIEF — every part of the report must map back to these, in their terms:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
+      ? `THE SERVICES/PLANS WE ARE SELLING (what the prospect scoped and is curious about) — every finding must connect to one of these and show why the service is worth buying:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
       : `No explicit brief was supplied; audit the site's health and opportunities.`,
-    `Interpret these section findings (real data already gathered) and write ONE coherent senior analysis. Lead with the single most important finding. Connect related findings into one diagnosis. Answer the brief above.`,
+    `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement. Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
   const run = async (): Promise<(SeniorDmsResult & { material_files: string[] }) | null> => {
@@ -650,7 +660,7 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     if (!parsed || !Array.isArray(parsed.sections)) return null;
     const map: Record<string, SectionInterpretation> = {};
     for (const sec of parsed.sections) if (sec?.id) map[sec.id] = { id: sec.id, interpretation: String(sec.interpretation || ""), why_it_matters: String(sec.why_it_matters || ""), recommendations: Array.isArray(sec.recommendations) ? sec.recommendations.filter((x: any) => typeof x === "string") : [], priority: String(sec.priority || "") };
-    return { executive_summary: String(parsed.executive_summary || ""), sections: map, material_files };
+    return { executive_summary: String(parsed.executive_summary || ""), bottom_line: String(parsed.bottom_line || ""), sections: map, material_files };
   };
   try {
     let r = await run();
@@ -787,6 +797,7 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   if (dms.material_files.length) H.push(`<li>Operator-provided materials and client files: ${esc(dms.material_files.join(", "))}.</li>`);
   H.push(`</ul>`);
   H.push(renderCoverageHtml(opts, stages));
+  if (dms.bottom_line) H.push(`<h2>The bottom line</h2>${mdToHtml(dms.bottom_line)}`);
   const limits = collectLimits(completed);
   if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. The written interpretation is the analyst's reading of the data shown; the supporting data and sources under each section are the record. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
