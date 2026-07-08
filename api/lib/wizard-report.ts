@@ -239,6 +239,35 @@ const esc = (s: any) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&l
 const tableHtml = (headers: string[], rows: (string | number)[][]) =>
   `<table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
 
+/* ── Charts (inline SVG, no scripts — render cleanly in the browser AND when
+   printed to PDF). A performance gauge and a horizontal bar chart. ── */
+function svgGauge(score: number, label = "Performance"): string {
+  const s = Math.max(0, Math.min(100, Math.round(score)));
+  const color = s >= 90 ? "#16a34a" : s >= 50 ? "#d97706" : "#dc2626";
+  const r = 52; const circ = 2 * Math.PI * r; const off = circ * (1 - s / 100);
+  return `<svg viewBox="0 0 150 150" width="130" height="130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(label)} score ${s} out of 100">
+    <circle cx="75" cy="75" r="${r}" fill="none" stroke="#e5e7eb" stroke-width="13"/>
+    <circle cx="75" cy="75" r="${r}" fill="none" stroke="${color}" stroke-width="13" stroke-linecap="round" stroke-dasharray="${circ.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 75 75)"/>
+    <text x="75" y="72" text-anchor="middle" font-size="34" font-weight="700" fill="${color}">${s}</text>
+    <text x="75" y="94" text-anchor="middle" font-size="11" fill="#6b7280">/ 100</text>
+  </svg>`;
+}
+function svgBarChart(data: Array<{ label: string; value: number; color?: string }>, opts?: { unit?: string; labelWidth?: number }): string {
+  if (!data.length) return "";
+  const w = 560, rowH = 24, gap = 9, labelW = opts?.labelWidth ?? 190, valW = 46;
+  const barMax = w - labelW - valW; const max = Math.max(1, ...data.map(d => d.value));
+  const h = data.length * (rowH + gap) + 6;
+  const rows = data.map((d, i) => {
+    const y = i * (rowH + gap) + 4;
+    const bw = Math.max(2, Math.round((d.value / max) * barMax));
+    const color = d.color || "#6366f1";
+    return `<text x="0" y="${y + rowH / 2 + 4}" font-size="12.5" fill="#374151">${esc(d.label)}</text>`
+      + `<rect x="${labelW}" y="${y}" width="${bw}" height="${rowH}" rx="4" fill="${color}"/>`
+      + `<text x="${labelW + bw + 7}" y="${y + rowH / 2 + 4}" font-size="12.5" font-weight="700" fill="#374151">${d.value}${esc(opts?.unit || "")}</text>`;
+  }).join("");
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;height:auto" xmlns="http://www.w3.org/2000/svg">${rows}</svg>`;
+}
+
 function mdToHtml(md: string): string {
   const lines = String(md || "").split("\n");
   const out: string[] = []; let inUl = false, inTable = false; let tRows: string[][] = [];
@@ -332,9 +361,20 @@ function renderBodyHtml(o: any): string {
       const bp = Array.isArray(o.page_selection.flagged_boilerplate) ? o.page_selection.flagged_boilerplate : [];
       if (bp.length) P.push(`<p class="muted"><strong>Flagged as likely leftover theme/demo pages (recommend removing):</strong> ${bp.map((u: string) => esc(u)).join(", ")}.</p>`);
     }
-    if (o.performance) P.push(`<p><strong>Performance (homepage, mobile):</strong> score ${o.performance.performance_score}/100${o.performance.lcp ? `, LCP ${esc(o.performance.lcp)}` : ""}${o.performance.tbt ? `, TBT ${esc(o.performance.tbt)}` : ""}${o.performance.cls ? `, CLS ${esc(o.performance.cls)}` : ""}. <span class="muted">(single lab run — indicative, not a field average)</span></p>`);
-    const rows = Object.entries(o.issues).sort((a: any, b: any) => b[1].count - a[1].count).map(([k, v]: any) => [String(k).replace(/_/g, " "), v.count, (v.pages || []).slice(0, 3).join(", ")]);
-    if (rows.length) { P.push(`<h4>On-page and technical issues (site-wide)</h4>`); P.push(tableHtml(["Issue", "Pages affected", "Examples"], rows)); }
+    if (o.performance) {
+      const perf = o.performance;
+      const runsNote = perf.runs > 1 ? `median of ${perf.runs} lab runs${Array.isArray(perf.scores) ? ` (${perf.scores.join(", ")})` : ""}` : "single lab run — indicative";
+      const verdict = perf.performance_score >= 90 ? "Good." : perf.performance_score >= 50 ? "Needs work." : "Poor — treat as a priority fix.";
+      P.push(`<div style="display:flex;align-items:center;gap:18px;margin:8px 0 12px">${svgGauge(perf.performance_score, "Homepage speed")}<div><p style="margin:0"><strong>Homepage performance (mobile)</strong></p><p style="margin:5px 0 0">LCP ${esc(perf.lcp || "—")} &middot; TBT ${esc(perf.tbt || "—")} &middot; CLS ${esc(perf.cls ?? "—")}</p><p class="muted" style="margin:5px 0 0">${esc(runsNote)}. ${esc(verdict)}</p></div></div>`);
+    }
+    const issueEntries = Object.entries(o.issues).sort((a: any, b: any) => b[1].count - a[1].count);
+    if (issueEntries.length) {
+      P.push(`<h4>On-page and technical issues (site-wide)</h4>`);
+      const chartData = issueEntries.slice(0, 8).map(([k, v]: any) => ({ label: String(k).replace(/_/g, " "), value: v.count, color: v.count >= 20 ? "#dc2626" : v.count >= 5 ? "#d97706" : "#6366f1" }));
+      P.push(svgBarChart(chartData, { unit: " pages" }));
+      const rows = issueEntries.map(([k, v]: any) => [String(k).replace(/_/g, " "), v.count, (v.pages || []).slice(0, 3).join(", ")]);
+      P.push(tableHtml(["Issue", "Pages affected", "Examples"], rows));
+    }
     const sc = Object.entries(o.schema_coverage || {});
     if (sc.length) P.push(`<p class="muted"><strong>Schema found:</strong> ${sc.map(([t, n]: any) => `${esc(t)} (${n})`).join(", ")}.</p>`);
     if (o.broken_links?.length) P.push(`<p class="muted"><strong>Broken/unreachable URLs found:</strong> ${o.broken_links.slice(0, 10).map((u: string) => esc(u)).join("; ")}.</p>`);
@@ -593,7 +633,7 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     /* Continuation-safe with ample tokens: the richer senior synthesis over
        several data-heavy sections overflowed a single 4k call, truncating the
        JSON and silently falling back to raw tables. This lets it complete. */
-    const { text: raw } = await llmComplete({ system: DMS_SYSTEM, user: ctx, maxTokens: 8000, timeoutMs: 90000, label: "wizard-report-dms", maxSegments: 2 });
+    const { text: raw } = await llmComplete({ system: DMS_SYSTEM, user: ctx, maxTokens: 12000, timeoutMs: 110000, label: "wizard-report-dms", maxSegments: 2 });
     let parsed = parseJsonResponse<any>(raw);
     /* Salvage: if the strict parse missed, slice the outermost JSON object. */
     if (!parsed || !Array.isArray(parsed?.sections)) {

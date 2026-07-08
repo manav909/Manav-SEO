@@ -120,7 +120,7 @@ async function loadPsiKey(projectId: string): Promise<string> {
   try { const { data } = await db().from("project_integrations").select("api_key, status").eq("project_id", projectId).eq("provider", "pagespeed").maybeSingle(); const d = data as any; if (d?.status === "connected" && d?.api_key) return d.api_key; } catch { /* ignore */ }
   return (process.env.PAGESPEED_API_KEY || "").trim();
 }
-async function runPsi(url: string, key: string): Promise<any | null> {
+async function runPsiOnce(url: string, key: string): Promise<{ score: number; lcp_ms: number | null; tbt_ms: number | null; cls: number | null } | null> {
   try {
     const u = new URL("https://www.googleapis.com/pagespeedonline/v5/runPagespeed");
     u.searchParams.set("url", url); u.searchParams.set("strategy", "mobile"); u.searchParams.set("category", "performance");
@@ -129,8 +129,39 @@ async function runPsi(url: string, key: string): Promise<any | null> {
     if (!r.ok) return null;
     const j: any = await r.json();
     const lr = j.lighthouseResult; const a = lr?.audits || {};
-    return { performance_score: Math.round((lr?.categories?.performance?.score || 0) * 100), lcp: a["largest-contentful-paint"]?.displayValue || null, tbt: a["total-blocking-time"]?.displayValue || null, cls: a["cumulative-layout-shift"]?.displayValue || null };
+    if (!lr?.categories?.performance) return null;
+    return {
+      score: Math.round((lr.categories.performance.score || 0) * 100),
+      lcp_ms: a["largest-contentful-paint"]?.numericValue ?? null,
+      tbt_ms: a["total-blocking-time"]?.numericValue ?? null,
+      cls: a["cumulative-layout-shift"]?.numericValue ?? null,
+    };
   } catch { return null; }
+}
+function median(nums: number[]): number | null {
+  const v = nums.filter(n => typeof n === "number" && isFinite(n)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+/* A single Lighthouse lab run swings run-to-run (48, 31, 50). Run it several
+   times IN PARALLEL and take the median — a stable, defensible number, at
+   roughly the wall-clock cost of one run. */
+async function runPsi(url: string, key: string, runs = 3): Promise<any | null> {
+  const results = (await Promise.all(Array.from({ length: runs }, () => runPsiOnce(url, key)))).filter(Boolean) as Array<{ score: number; lcp_ms: number | null; tbt_ms: number | null; cls: number | null }>;
+  if (!results.length) return null;
+  const scoreMed = median(results.map(r => r.score));
+  const lcpMed = median(results.map(r => r.lcp_ms).filter((x): x is number => x != null));
+  const tbtMed = median(results.map(r => r.tbt_ms).filter((x): x is number => x != null));
+  const clsMed = median(results.map(r => r.cls).filter((x): x is number => x != null));
+  return {
+    performance_score: scoreMed != null ? Math.round(scoreMed) : 0,
+    lcp: lcpMed != null ? (lcpMed / 1000).toFixed(1) + " s" : null,
+    tbt: tbtMed != null ? Math.round(tbtMed) + " ms" : null,
+    cls: clsMed != null ? clsMed.toFixed(3) : null,
+    runs: results.length,
+    scores: results.map(r => r.score),
+  };
 }
 
 export interface SiteAuditReport {
@@ -228,7 +259,7 @@ function classifyUrl(url: string): { cls: PageClass; score: number; reason: stri
 
 export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
   const now = new Date().toISOString();
-  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 60, 150));
+  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
   const concurrency = Math.max(2, Math.min(opts.concurrency ?? 6, 10));
 
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
