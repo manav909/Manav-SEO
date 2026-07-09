@@ -477,6 +477,14 @@ function renderBodyHtml(o: any): string {
     return P.join("");
   }
 
+  /* A stage answered from the operator's uploaded data (verifiable, attributed). */
+  if (o.from_documents) {
+    if (Array.isArray(o.findings) && o.findings.length) P.push(`<ul>${o.findings.map((f: string) => `<li>${esc(f)}</li>`).join("")}</ul>`);
+    if (Array.isArray(o.data_points) && o.data_points.length) P.push(`<p><strong>Data points:</strong> ${o.data_points.map((d: string) => esc(d)).join("; ")}.</p>`);
+    if (Array.isArray(o.source_files) && o.source_files.length) P.push(`<p class="muted">From the supplied dataset (${o.source_files.map((s: string) => esc(s)).join(", ")}) — verify point by point against the file.</p>`);
+    return P.join("");
+  }
+
   /* Social-presence audit (OG/Twitter tags + social links + suggestions). */
   if (Array.isArray(o.suggestions) && o.open_graph) {
     if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);

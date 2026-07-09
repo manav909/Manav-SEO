@@ -376,10 +376,32 @@ export default function Wizard() {
     setResults(prev => ({ ...prev, document_analysis: { status: r.report.has_materials && r.report.requirement_findings?.length ? "completed" : "needs_input", ran_engine: "document-intelligence.ts", validation: "unvalidated", output: r.report, note: r.report.summary } }));
     /* Fold the client's document into the brief: re-compose the plan WITH the
        stored materials so the stages regenerate to reflect what the document adds. */
+    let activePlan = plan;
     if (r.report?.has_materials && chatText.trim()) {
       setMaterialsInfo("Folding the document into the brief and updating the stages…");
       const rp: any = await post("wizard_compose", { chatText: chatText.trim(), projectId });
-      if (rp?.success && rp?.plan) { setPlan(rp.plan); setMaterialsInfo(`Stages updated from your document${Array.isArray(rp.material_files) && rp.material_files.length ? ` (${rp.material_files.join(", ")})` : ""}.`); }
+      if (rp?.success && rp?.plan) { activePlan = rp.plan; setPlan(rp.plan); setMaterialsInfo(`Stages updated from your document${Array.isArray(rp.material_files) && rp.material_files.length ? ` (${rp.material_files.join(", ")})` : ""}.`); }
+    }
+    /* Satisfy stages your DATA covers: map each document finding to its stage so
+       a GSC-dependent stage your upload answers is marked "covered by your data"
+       instead of staying deferred. Verifiable — the source file is cited. */
+    const rf: any[] = Array.isArray(r.report?.requirement_findings) ? r.report.requirement_findings : [];
+    if (rf.length && activePlan?.stages?.length) {
+      const norm = (x: any) => String(x || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const byLabel = new Map((activePlan.stages || []).map((s: any) => [norm(s.label), s]));
+      setResults(prev => {
+        const next: Record<string, any> = { ...prev };
+        for (const f of rf) {
+          if (!(f?.findings?.length || f?.data_points?.length)) continue;
+          const stage: any = byLabel.get(norm(f.requirement));
+          if (stage && (!next[stage.id] || next[stage.id].status !== "completed" || next[stage.id].ran_engine === "document-intelligence.ts")) {
+            next[stage.id] = { status: "completed", ran_engine: "document-intelligence.ts", validation: "unvalidated",
+              output: { from_documents: true, requirement: f.requirement, findings: f.findings || [], data_points: f.data_points || [], source_files: f.source_files || [], summary: [...(f.findings || []), ...(f.data_points || [])].join(" ") },
+              note: `Covered by your uploaded data${(f.source_files || []).length ? ` (${f.source_files.join(", ")})` : ""} — verify against the source.` };
+          }
+        }
+        return next;
+      });
     }
     setAnalyzingDocs(false);
   };
@@ -647,7 +669,7 @@ export default function Wizard() {
                 const connectStage = isConnectStage(s);
                 /* Offer connect tools on a connect stage until it has completed. */
                 const showConnect = connectStage && (!res || res.status === "needs_connection");
-                const deferred = noGsc && isGscDependent(s);
+                const deferred = noGsc && isGscDependent(s) && !(res && res.status === "completed");
                 const gateOk = projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
