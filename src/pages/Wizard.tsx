@@ -289,19 +289,56 @@ export default function Wizard() {
       const zipUrl = "https://esm.sh/jszip@3.10.1";
       const JSZip: any = (await import(/* @vite-ignore */ zipUrl)).default;
       const zip = await JSZip.loadAsync(await f.arrayBuffer());
-      const names = Object.keys(zip.files).filter((n: string) => /ppt\/slides\/slide\d+\.xml$/.test(n)).sort();
-      let text = "";
-      for (const n of names) {
-        const xml: string = await zip.files[n].async("string");
-        text += Array.from(xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)).map((m: any) => m[1]).join(" ") + "\n";
+      const readTxt = async (n: string) => Array.from((await zip.files[n].async("string")).matchAll(/<a:t>([^<]*)<\/a:t>/g)).map((m: any) => m[1]).join(" ").replace(/\s+/g, " ").trim();
+      let out = "";
+      /* 1. Slide text. */
+      const slideNames = Object.keys(zip.files).filter((n: string) => /ppt\/slides\/slide\d+\.xml$/.test(n)).sort();
+      let slides = "";
+      for (const n of slideNames) { const t = await readTxt(n); if (t) slides += `[${n.split("/").pop()}] ${t}\n`; }
+      if (slides.trim()) out += `=== Slide text ===\n${slides}\n`;
+      /* 2. Speaker notes. */
+      const noteNames = Object.keys(zip.files).filter((n: string) => /ppt\/notesSlides\/notesSlide\d+\.xml$/.test(n)).sort();
+      let notes = "";
+      for (const n of noteNames) { const t = await readTxt(n); if (t) notes += `[${n.split("/").pop()}] ${t}\n`; }
+      if (notes.trim()) out += `=== Speaker notes ===\n${notes}\n`;
+      /* 3. OCR — read the text inside embedded images (screenshots of tables,
+         charts exported as PNGs, text baked into graphics). Real pixels to text. */
+      const imgNames = Object.keys(zip.files).filter((n: string) => /ppt\/media\/[^/]+\.(png|jpe?g|bmp|gif|webp)$/i.test(n)).sort().slice(0, 20);
+      if (imgNames.length) {
+        try {
+          setMaterialsInfo(`Reading text inside ${imgNames.length} image(s) (OCR)…`);
+          const tUrl = "https://esm.sh/tesseract.js@5.1.0";
+          const Tesseract: any = await import(/* @vite-ignore */ tUrl);
+          let ocr = ""; let done = 0;
+          for (const n of imgNames) {
+            try {
+              const blob = await zip.files[n].async("blob");
+              const url = URL.createObjectURL(blob);
+              const res = await Tesseract.recognize(url, "eng");
+              URL.revokeObjectURL(url);
+              const txt = String(res?.data?.text || "").replace(/\s+/g, " ").trim();
+              if (txt.length > 3) ocr += `[${n.split("/").pop()}] ${txt}\n`;
+            } catch { /* skip this image */ }
+            done++; setMaterialsInfo(`Reading text inside images (OCR)… ${done}/${imgNames.length}`);
+          }
+          if (ocr.trim()) out += `=== Text read from images (OCR — verify, may misread) ===\n${ocr}\n`;
+        } catch { /* OCR engine unavailable — slide text and notes still returned */ }
       }
-      return text.trim();
+      return out.trim();
+    };
+    const extractImage = async (f: File): Promise<string> => {
+      const tUrl = "https://esm.sh/tesseract.js@5.1.0";
+      const Tesseract: any = await import(/* @vite-ignore */ tUrl);
+      const url = URL.createObjectURL(f);
+      const res = await Tesseract.recognize(url, "eng");
+      URL.revokeObjectURL(url);
+      return String(res?.data?.text || "").replace(/\s+/g, " ").trim();
     };
 
     const arr = Array.from(fileList || []);
     const files: Array<{ filename: string; text: string }> = [];
     const skipped: string[] = [];
-    if (arr.some(f => /\.(pdf|docx|pptx)$/i.test(f.name))) setMaterialsInfo("Reading files…");
+    if (arr.some(f => /\.(pdf|docx|pptx|png|jpe?g|bmp|gif|webp)$/i.test(f.name))) setMaterialsInfo("Reading files…");
     for (const f of arr) {
       try {
         let text = "";
@@ -309,9 +346,10 @@ export default function Wizard() {
         else if (/\.pdf$/i.test(f.name)) text = await extractPdf(f);
         else if (/\.docx$/i.test(f.name)) text = await extractDocx(f);
         else if (/\.pptx$/i.test(f.name)) text = await extractPptx(f);
+        else if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(f.name)) { setMaterialsInfo(`Reading text from ${f.name} (OCR)…`); text = await extractImage(f); }
         else { skipped.push(`${f.name} (unsupported — paste its text)`); continue; }
-        if (text && text.trim().length > 5) files.push({ filename: f.name, text });
-        else skipped.push(`${f.name} (no extractable text${/\.pdf$/i.test(f.name) ? " — may be a scanned/image PDF; paste its text" : ""})`);
+        if (text && text.trim().length > 3) files.push({ filename: f.name, text });
+        else skipped.push(`${f.name} (no extractable text${/\.(pdf|png|jpe?g)$/i.test(f.name) ? " — may be blank or an image with no readable text" : ""})`);
       } catch { skipped.push(`${f.name} (could not read — paste its text)`); }
     }
     if (files.length) await ingestMaterials(files);
@@ -536,11 +574,11 @@ export default function Wizard() {
 
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
               <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Your materials &amp; client files (deepen the report with real data)</div>
-              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports — text, markdown, CSV, JSON, HTML, and now PDF, Word (.docx) and PowerPoint (.pptx). The report engine reads them and uses them — alongside the live crawl/SERP/PageSpeed data — to answer each brief point in depth, even without GSC. Scanned/image PDFs have no selectable text; paste their text instead.</p>
+              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports — text, markdown, CSV, JSON, HTML, PDF, Word (.docx), PowerPoint (.pptx) and images. PPTX and images are read with OCR (text inside screenshots, tables and charts) and PPTX speaker notes are included. The report engine uses all of it — alongside the live crawl/SERP/PageSpeed data — to answer each brief point, even without GSC.</p>
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
                   {ingestingMaterials ? "Ingesting…" : "Upload files"}
-                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx,.pptx" className="hidden"
+                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.bmp,.gif" className="hidden"
                     onChange={e => onMaterialFiles(e.target.files)} disabled={ingestingMaterials} />
                 </label>
                 {materialsInfo && <span className="text-[11px] text-muted-foreground">{materialsInfo}</span>}
