@@ -70,8 +70,13 @@ const canonKey = (u: string): string => {
     const x = new URL(withScheme(u));
     const host = x.hostname.replace(/^www\./i, "").toLowerCase();
     const path = x.pathname.replace(/\/+$/, "") || "/";
-    return `${host}${path}${x.search}`;
-  } catch { return String(u || "").replace(/\/$/, ""); }
+    /* Drop the query string and fragment for dedup: query-param variants of a
+       path (?utm=, ?ref=, ?srsltid=, sort/filter/pagination params) are the same
+       page for an SEO audit — keeping them treated the homepage as 17 pages. The
+       canonical page is the path; duplicate-via-query-params is itself a finding,
+       not 17 pages to crawl. */
+    return `${host}${path}`;
+  } catch { return String(u || "").replace(/[?#].*$/, "").replace(/\/$/, ""); }
 };
 const ASSET_RE = /\.(jpg|jpeg|png|gif|webp|svg|ico|css|js|mjs|pdf|zip|woff2?|ttf|eot|mp4|mp3|xml|json|rss|webmanifest)(\?|$)/i;
 const SKIP_PATH_RE = /\/(cart|checkout|account|login|logout|wp-admin|wp-json|cdn-cgi)(\/|$)/i;
@@ -368,12 +373,18 @@ export function buildAuditReport(r: {
   const loadedSelected = r.selected.filter(s => !brokenSet.has(canonKey(s.u)));
   const byClass: Record<string, number> = {};
   for (const s of loadedSelected) byClass[s.cls] = (byClass[s.cls] || 0) + 1;
+  const prioSeen = new Set<string>();
+  const prioritised = loadedSelected.filter(s => s.score >= 42)
+    .map(s => ({ url: s.u, why: s.reason, _p: pathOf(s.u) }))
+    .filter(x => { if (prioSeen.has(x._p)) return false; prioSeen.add(x._p); return true; })
+    .map(({ url, why }) => ({ url, why }))
+    .slice(0, 18);
   const page_selection = {
     total_candidates: r.candidatesCount,
     analysed: ok.length,
     analysed_urls: ok.map(p => p.url),
-    prioritised: loadedSelected.filter(s => s.score >= 42).map(s => ({ url: s.u, why: s.reason })).slice(0, 18),
-    flagged_boilerplate: r.allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
+    prioritised,
+    flagged_boilerplate: Array.from(new Set(r.allBoilerplate.map(s => pathOf(s.u)))).slice(0, 12),
     by_class: byClass,
     rationale: `From ${r.candidatesCount} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${r.allBoilerplate.length ? ` ${r.allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${r.allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
   };
