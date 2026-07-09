@@ -98,12 +98,15 @@ function readinessOf(capIds: string[], ymyl: boolean): { readiness: StageReadine
 
 const slug = (s: string, i: number) => (String(s || "stage").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "stage") + "_" + i;
 
-export async function composeDynamicPlan(brief: string): Promise<DynamicPlan> {
+export async function composeDynamicPlan(brief: string, materialsText?: string): Promise<DynamicPlan> {
+  const materialsBlock = materialsText && materialsText.trim()
+    ? `\n\nThe client ALSO sent supporting documents/materials. Treat these as PART OF THE BRIEF — they carry real context, priorities, data and requirements the chat may not spell out. Let the deliverables and their scope reflect what these documents reveal (add, refine or reprioritise deliverables accordingly):\n\n${materialsText.slice(0, 40000)}`
+    : "";
   const raw = await llm({
     system: COMPOSE_SYSTEM.replace("__REGISTRY__", registryForPrompt()),
-    user: `Client brief / conversation:\n\n${String(brief || "").slice(0, 24000)}`,
-    maxTokens: 3000,
-    timeoutMs: 60000,
+    user: `Client brief / conversation:\n\n${String(brief || "").slice(0, 24000)}${materialsBlock}`,
+    maxTokens: 3500,
+    timeoutMs: 70000,
     label: "wizard-compose",
   });
 

@@ -361,9 +361,16 @@ export default function Wizard() {
     const reqs = (plan?.stages || []).map((s: any) => s.label);
     setAnalyzingDocs(true); setError("");
     const r: any = await post("wizard_analyze_documents", { projectId, requirements: reqs, clientName: plan?.client_domain });
-    setAnalyzingDocs(false);
-    if (!r?.report) { setError(r?.error || "Document analysis failed."); return; }
+    if (!r?.report) { setAnalyzingDocs(false); setError(r?.error || "Document analysis failed."); return; }
     setResults(prev => ({ ...prev, document_analysis: { status: r.report.has_materials && r.report.requirement_findings?.length ? "completed" : "needs_input", ran_engine: "document-intelligence.ts", validation: "unvalidated", output: r.report, note: r.report.summary } }));
+    /* Fold the client's document into the brief: re-compose the plan WITH the
+       stored materials so the stages regenerate to reflect what the document adds. */
+    if (r.report?.has_materials && chatText.trim()) {
+      setMaterialsInfo("Folding the document into the brief and updating the stages…");
+      const rp: any = await post("wizard_compose", { chatText: chatText.trim(), projectId });
+      if (rp?.success && rp?.plan) { setPlan(rp.plan); setMaterialsInfo(`Stages updated from your document${Array.isArray(rp.material_files) && rp.material_files.length ? ` (${rp.material_files.join(", ")})` : ""}.`); }
+    }
+    setAnalyzingDocs(false);
   };
 
   const generateReport = async () => {

@@ -264,10 +264,19 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
   if (action === "wizard_compose") {
     const chatText = String(body?.chatText || body?.chat || body?.objective || "").trim();
     if (!chatText) return { success: false, error: "chatText (the client brief) is required." };
+    const projectId = String(body?.projectId || "").trim();
     try {
+      let materialsText = ""; let materialFiles: string[] = [];
+      if (projectId) {
+        try {
+          const { loadMaterials, materialsForPrompt } = await import("./client-materials.js");
+          const mats = await loadMaterials(projectId);
+          if (mats.length) { const mp = materialsForPrompt(mats, 40000); materialsText = mp.text; materialFiles = mp.filenames; }
+        } catch { /* materials optional */ }
+      }
       const { composeDynamicPlan } = await import("./wizard-compose.js");
-      const plan = await composeDynamicPlan(chatText);
-      return { success: true, plan };
+      const plan = await composeDynamicPlan(chatText, materialsText);
+      return { success: true, plan, used_materials: !!materialsText, material_files: materialFiles };
     } catch (e: any) {
       return { success: false, error: e?.message || "wizard composition failed" };
     }
