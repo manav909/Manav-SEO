@@ -477,6 +477,18 @@ function renderBodyHtml(o: any): string {
     return P.join("");
   }
 
+  /* Social-presence audit (OG/Twitter tags + social links + suggestions). */
+  if (Array.isArray(o.suggestions) && o.open_graph) {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    const ogRows = Object.entries(o.open_graph || {}).map(([k, v]: any) => [k, v ? "present" : "MISSING", v ? String(v).slice(0, 80) : ""]);
+    if (ogRows.length) { P.push(`<h4>Open Graph tags (how your links look when shared)</h4>`); P.push(tableHtml(["Tag", "Status", "Value"], ogRows)); }
+    if (Array.isArray(o.social_links) && o.social_links.length) P.push(`<p class="muted"><strong>Social profiles linked from the site:</strong> ${o.social_links.map((s: any) => esc(s.platform)).join(", ")}.</p>`);
+    else P.push(`<p class="muted">No social profile links were found on the site.</p>`);
+    if (o.suggestions.length) { P.push(`<h4>Prioritised suggestions</h4>`); P.push(tableHtml(["Priority", "Suggestion", "Why it matters"], o.suggestions.map((s: any) => [`P${s.priority}`, s.suggestion, s.why]))); }
+    if ((o.notes || []).length) P.push(`<p class="muted">${o.notes.map((n: string) => esc(n)).join(" ")}</p>`);
+    return P.join("");
+  }
+
   /* Knowledge Panel / entity-signal audit (works from a name, no website). */
   if (Array.isArray(o.action_plan) && o.wikidata) {
     if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);

@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting", "offsite_qa_drafting", "knowledge_panel_audit"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting", "offsite_qa_drafting", "knowledge_panel_audit", "social_presence_audit"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -211,6 +211,13 @@ export async function runWizardStage(opts: {
       const report = await auditEntity({ projectId, name: entityName, country: inputs.country, entityType: (inputs as any).entityType });
       if (!report.ok) return result("needs_input", "entity-panel-engine.ts", report, report.summary);
       return result("completed", "entity-panel-engine.ts", report, report.summary);
+    }
+
+    if (caps.includes("social_presence_audit")) {
+      const { auditSocialPresence } = await import("./social-presence-engine.js");
+      const report = await auditSocialPresence({ projectId, siteUrl: inputs.siteUrl, brand: (inputs as any).entityName || (inputs as any).name });
+      if (!report.ok) return result("needs_input", "social-presence-engine.ts", report, report.summary);
+      return result("completed", "social-presence-engine.ts", report, report.summary);
     }
 
     if (caps.includes("document_analysis")) {

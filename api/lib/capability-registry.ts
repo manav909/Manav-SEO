@@ -321,6 +321,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Works from the NAME — no website needed. Google alone decides what a panel displays; the plan strengthens signals but guarantees no result. Panel data needs a SerpAPI key; Wikidata is read from its public API. Every signal is checked live — nothing is invented. It does not itself create profiles or edit Wikidata; it audits and plans the work.",
     mode: "needs_input",
   },
+  social_presence_audit: {
+    id: "social_presence_audit",
+    label: "Social-presence audit (Open Graph / Twitter Card tags + social profile links)",
+    engine: "social-presence-engine.ts → auditSocialPresence",
+    inputs_required: ["A crawlable site URL (resolved from project data, or supplied)"],
+    output: "A read of the site's real social signals: which Open Graph and Twitter Card tags are present or missing (they control how shared links look), which social profiles the site links to, and a prioritised list of concrete fixes — starting with the share image (og:image) that most affects social click-through.",
+    limits: "Reads the homepage's actual markup — nothing about the brand's accounts is assumed or invented. It checks the SITE's social signals and outbound links; it does NOT log in to or audit the content, followers or activity inside each social account.",
+    mode: "auto",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
