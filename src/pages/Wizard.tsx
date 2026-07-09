@@ -264,12 +264,55 @@ export default function Wizard() {
   };
   const onMaterialFiles = async (fileList: FileList | null) => {
     const TEXT_EXT = /\.(txt|md|markdown|csv|tsv|json|html?|log|xml|yaml|yml)$/i;
+    /* Browser-side extraction for common binary docs — parsers loaded from CDN
+       only when needed (no bundle bloat). The extracted text then feeds the same
+       materials path, so no server-side file handling is required. */
+    const extractPdf = async (f: File): Promise<string> => {
+      const pdfUrl = "https://esm.sh/pdfjs-dist@4.0.379/build/pdf.min.mjs";
+      const pdfjs: any = await import(/* @vite-ignore */ pdfUrl);
+      try { pdfjs.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs"; } catch { /* ignore */ }
+      const pdf = await pdfjs.getDocument({ data: await f.arrayBuffer() }).promise;
+      let text = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const content = await (await pdf.getPage(i)).getTextContent();
+        text += content.items.map((it: any) => it.str || "").join(" ") + "\n";
+      }
+      return text.trim();
+    };
+    const extractDocx = async (f: File): Promise<string> => {
+      const mammothUrl = "https://esm.sh/mammoth@1.6.0";
+      const mammoth: any = await import(/* @vite-ignore */ mammothUrl);
+      const res = await mammoth.extractRawText({ arrayBuffer: await f.arrayBuffer() });
+      return String(res?.value || "").trim();
+    };
+    const extractPptx = async (f: File): Promise<string> => {
+      const zipUrl = "https://esm.sh/jszip@3.10.1";
+      const JSZip: any = (await import(/* @vite-ignore */ zipUrl)).default;
+      const zip = await JSZip.loadAsync(await f.arrayBuffer());
+      const names = Object.keys(zip.files).filter((n: string) => /ppt\/slides\/slide\d+\.xml$/.test(n)).sort();
+      let text = "";
+      for (const n of names) {
+        const xml: string = await zip.files[n].async("string");
+        text += Array.from(xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)).map((m: any) => m[1]).join(" ") + "\n";
+      }
+      return text.trim();
+    };
+
     const arr = Array.from(fileList || []);
     const files: Array<{ filename: string; text: string }> = [];
     const skipped: string[] = [];
+    if (arr.some(f => /\.(pdf|docx|pptx)$/i.test(f.name))) setMaterialsInfo("Reading files…");
     for (const f of arr) {
-      if (!TEXT_EXT.test(f.name)) { skipped.push(`${f.name} (not text — convert/paste its text)`); continue; }
-      try { files.push({ filename: f.name, text: await f.text() }); } catch { skipped.push(`${f.name} (unreadable)`); }
+      try {
+        let text = "";
+        if (TEXT_EXT.test(f.name)) text = await f.text();
+        else if (/\.pdf$/i.test(f.name)) text = await extractPdf(f);
+        else if (/\.docx$/i.test(f.name)) text = await extractDocx(f);
+        else if (/\.pptx$/i.test(f.name)) text = await extractPptx(f);
+        else { skipped.push(`${f.name} (unsupported — paste its text)`); continue; }
+        if (text && text.trim().length > 5) files.push({ filename: f.name, text });
+        else skipped.push(`${f.name} (no extractable text${/\.pdf$/i.test(f.name) ? " — may be a scanned/image PDF; paste its text" : ""})`);
+      } catch { skipped.push(`${f.name} (could not read — paste its text)`); }
     }
     if (files.length) await ingestMaterials(files);
     if (skipped.length && !files.length) setMaterialsInfo(`Skipped: ${skipped.join(", ")}`);
@@ -493,11 +536,11 @@ export default function Wizard() {
 
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
               <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Your materials &amp; client files (deepen the report with real data)</div>
-              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports (text, markdown, CSV, JSON, HTML). The report engine reads them and uses them — alongside the live crawl/SERP/PageSpeed data — to answer each brief point in depth, even without GSC. Non-text files (PDF/DOCX/images) need their text pasted for now.</p>
+              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports — text, markdown, CSV, JSON, HTML, and now PDF, Word (.docx) and PowerPoint (.pptx). The report engine reads them and uses them — alongside the live crawl/SERP/PageSpeed data — to answer each brief point in depth, even without GSC. Scanned/image PDFs have no selectable text; paste their text instead.</p>
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
                   {ingestingMaterials ? "Ingesting…" : "Upload files"}
-                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml" className="hidden"
+                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx,.pptx" className="hidden"
                     onChange={e => onMaterialFiles(e.target.files)} disabled={ingestingMaterials} />
                 </label>
                 {materialsInfo && <span className="text-[11px] text-muted-foreground">{materialsInfo}</span>}
