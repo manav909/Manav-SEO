@@ -72,6 +72,8 @@ export default function Wizard() {
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
   const [docScope, setDocScope] = useState<"smart" | "detailed" | "full">("smart");
   const [docSaved, setDocSaved] = useState("");
+  const [crawlJob, setCrawlJob] = useState<{ id: string; done: number; total: number; complete: boolean } | null>(null);
+  const [crawling, setCrawling] = useState(false);
   const [docEmphasis, setDocEmphasis] = useState("");
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
@@ -299,13 +301,23 @@ export default function Wizard() {
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
   };
 
+  const startOrContinueCrawl = async () => {
+    const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
+    if (!siteUrl) { setError("Add the client site URL first."); return; }
+    setCrawling(true); setError("");
+    const r: any = await post("wizard_crawl_batch", crawlJob ? { jobId: crawlJob.id, projectId } : { siteUrl, projectId, mode: docScope });
+    setCrawling(false);
+    if (!r?.success) { setError(r?.error || "Crawl failed."); return; }
+    setCrawlJob({ id: r.jobId, done: r.done, total: r.total, complete: !!r.complete });
+  };
+
   const generateClientDocument = async () => {
     const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
     if (!siteUrl) { setError("Add the client site URL above first — the document is built from a live crawl of it."); return; }
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Running the full site analysis and assembling the document — this crawls the site, audits schema and checks search visibility, so it takes a little longer…</body>');
     setGeneratingDoc(true); setError(""); setDocSaved("");
-    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, operatorEmphasis: docEmphasis.trim() || undefined, mode: docScope });
+    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, operatorEmphasis: docEmphasis.trim() || undefined, mode: docScope, jobId: (crawlJob && crawlJob.complete) ? crawlJob.id : undefined });
     setGeneratingDoc(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Document generation failed."); return; }
     if (r.saved) setDocSaved("Saved under this project — you can reopen it without re-running.");
@@ -680,12 +692,25 @@ export default function Wizard() {
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <span className="text-[11px] font-medium text-muted-foreground">Depth:</span>
                 <div className="inline-flex rounded-lg border border-border overflow-hidden text-sm">
-                  <button onClick={() => setDocScope("smart")} className={`px-4 py-1.5 ${docScope === "smart" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Smart</button>
-                  <button onClick={() => setDocScope("detailed")} className={`px-4 py-1.5 ${docScope === "detailed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Detailed</button>
-                  <button onClick={() => setDocScope("full")} className={`px-4 py-1.5 ${docScope === "full" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Full</button>
+                  <button onClick={() => { setDocScope("smart"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "smart" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Smart</button>
+                  <button onClick={() => { setDocScope("detailed"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "detailed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Detailed</button>
+                  <button onClick={() => { setDocScope("full"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "full" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Full</button>
                 </div>
                 <span className="text-[11px] text-muted-foreground">{docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
               </div>
+              {docScope !== "smart" && (
+                <div className="rounded-lg border border-border bg-background/50 p-3 mb-3">
+                  <p className="text-[11px] text-muted-foreground mb-2">{docScope === "full" ? "Full" : "Detailed"} depth crawls every page with full rendering, in batches you approve — so it reaches the whole set without timing out. Run it before generating; the report then uses the complete crawl.</p>
+                  {!crawlJob && <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Starting crawl…" : "Start batched crawl"}</button>}
+                  {crawlJob && !crawlJob.complete && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-foreground">Crawled {crawlJob.done} of {crawlJob.total} pages</span>
+                      <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Crawling…" : "Continue crawling"}</button>
+                    </div>
+                  )}
+                  {crawlJob && crawlJob.complete && <p className="text-[11px] text-emerald-500">Crawled all {crawlJob.done} pages — ready. Generate the document below and it will use this full crawl.</p>}
+                </div>
+              )}
               {docSaved && <p className="text-[11px] text-emerald-500 mb-2">{docSaved}</p>}
               <button onClick={generateClientDocument} disabled={generatingDoc}
                 className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">

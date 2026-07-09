@@ -373,11 +373,26 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     let crawledUrls: string[] = [];
     let homepageTopic = "";
 
-    /* 1. Comprehensive crawl-based audit — on-page, technical, schema coverage,
-       broken links, homepage performance. No integration required. */
+    /* 1. Comprehensive crawl-based audit. If a completed batched-crawl jobId is
+       supplied, assemble from the accumulated pages (full coverage); otherwise
+       run a single-pass crawl. */
+    const jobId = String(body?.jobId || "").trim();
     try {
-      const { crawlSite } = await import("./site-crawler.js");
-      const audit = await crawlSite({ projectId, siteUrl, maxPages: modeMax });
+      let audit: any = null;
+      if (jobId) {
+        const { db } = await import("./db.js");
+        const { data: job } = await db().from("crawl_jobs").select("*").eq("id", jobId).single();
+        if (job && job.status === "complete") {
+          const { buildAuditReport, homepagePerformance } = await import("./site-crawler.js");
+          const m = job.meta || {};
+          const performance = await homepagePerformance(projectId, m.start || siteUrl);
+          audit = buildAuditReport({ projectDomain: m.projectDomain || domain, pages: job.results || [], broken: job.broken || [], selected: m.selected || [], candidatesCount: m.candidatesCount || 0, allBoilerplate: m.allBoilerplate || [], sitemapCount: m.sitemapCount || 0, sitemapFiles: m.sitemapFiles || 0, renderNote: m.renderNote || "", performance, homeTitle: m.homeTitle || "", homeH1: m.homeH1 || "", target: job.target_count || 0 });
+        }
+      }
+      if (!audit) {
+        const { crawlSite } = await import("./site-crawler.js");
+        audit = await crawlSite({ projectId, siteUrl, maxPages: modeMax });
+      }
       if (audit && audit.pages_reachable > 0) {
         stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
         crawledUrls = Array.isArray(audit.page_selection?.analysed_urls) ? audit.page_selection.analysed_urls : [];
@@ -460,6 +475,53 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine), saved_id: savedId, saved: !!savedId, mode };
     } catch (e: any) {
       return { success: false, error: e?.message || "document assembly failed" };
+    }
+  }
+
+  /* Batched, resumable crawl — reaches high page counts (Detailed/Full) on
+     JavaScript-rendered sites by crawling a batch per invocation and saving
+     progress to a job record, continued with the operator's consent until the
+     whole selection is covered. Aggregation happens once, at report time, over
+     every accumulated page. */
+  if (action === "wizard_crawl_batch") {
+    const projectId = String(body?.projectId || "").trim();
+    const jobId = String(body?.jobId || "").trim();
+    const stripLinks = (p: any) => { const { links, ...rest } = p || {}; return rest; };
+    try {
+      const { resolveTargets, crawlUrls } = await import("./site-crawler.js");
+      const { db } = await import("./db.js");
+
+      if (!jobId) {
+        const siteUrl = String(body?.siteUrl || "").trim();
+        if (!siteUrl) return { success: false, error: "Supply the site URL to start a crawl." };
+        const mode = ["smart", "detailed", "full"].includes(String(body?.mode)) ? String(body?.mode) : "detailed";
+        const target = mode === "full" ? 400 : mode === "detailed" ? 100 : 25;
+        const r = await resolveTargets({ projectId, siteUrl, maxPages: target });
+        if (!r || !r.selected.length) return { success: false, error: "Could not resolve the site (unreachable or blocking crawlers)." };
+        const batchSize = r.useReader ? 20 : 60;
+        const first = r.selected.slice(0, batchSize);
+        const { pages, broken } = await crawlUrls(first, r.useReader, r.useReader ? 5 : 6, r.start, r.homeHtml);
+        const complete = first.length >= r.selected.length;
+        const id = `crawljob:${r.projectDomain}:${Date.now()}`;
+        const meta = { selected: r.selected, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote: r.renderNote, useReader: r.useReader, start: r.start, projectDomain: r.projectDomain, homeTitle: r.homeTitle, homeH1: r.homeH1 };
+        await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: r.selected.length, meta, results: pages.map(stripLinks), broken, cursor: first.length, status: complete ? "complete" : "running" });
+        return { success: true, jobId: id, done: first.length, total: r.selected.length, complete, use_reader: r.useReader };
+      }
+
+      const { data: job } = await db().from("crawl_jobs").select("*").eq("id", jobId).single();
+      if (!job) return { success: false, error: "Crawl job not found." };
+      if (job.status === "complete") return { success: true, jobId, done: job.cursor, total: job.target_count, complete: true };
+      const m = job.meta || {};
+      const selected = Array.isArray(m.selected) ? m.selected : [];
+      const batchSize = m.useReader ? 20 : 60;
+      const next = selected.slice(job.cursor, job.cursor + batchSize);
+      const { pages, broken } = next.length ? await crawlUrls(next, m.useReader, m.useReader ? 5 : 6, m.start, "") : { pages: [], broken: [] };
+      const newCursor = job.cursor + next.length;
+      const complete = newCursor >= selected.length;
+      await db().from("crawl_jobs").update({ results: [...(job.results || []), ...pages.map(stripLinks)], broken: [...(job.broken || []), ...broken], cursor: newCursor, status: complete ? "complete" : "running", updated_at: new Date().toISOString() }).eq("id", jobId);
+      return { success: true, jobId, done: newCursor, total: selected.length, complete };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "crawl batch failed" };
     }
   }
 

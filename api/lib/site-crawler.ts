@@ -274,51 +274,33 @@ function detectJsRendering(html: string): { js: boolean; platform: string } {
   return { js: false, platform: "" };
 }
 
-export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
-  const now = new Date().toISOString();
-  let maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
-  let concurrency = Math.max(2, Math.min(opts.concurrency ?? 6, 10));
+type Scored = { u: string; cls: PageClass; score: number; reason: string };
+export interface ResolveResult {
+  root: string; projectDomain: string; start: string;
+  selected: Scored[]; candidatesCount: number; allBoilerplate: Scored[];
+  useReader: boolean; renderNote: string;
+  sitemapCount: number; sitemapFiles: number;
+  homeHtml: string; homeTitle: string; homeH1: string;
+}
 
+/* Resolve the site's real URL set (sitemap + homepage links), detect JS
+   rendering, and score+select the highest-value pages up to `maxPages`. Shared
+   by the single-pass crawl and the batched crawl so selection is identical. */
+export async function resolveTargets(opts: { projectId: string; siteUrl?: string; maxPages?: number }): Promise<ResolveResult | null> {
+  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 400));
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
   if (!root) { const tu = await resolveTargetUrls(undefined, opts.projectId).catch(() => ({ urls: [] as string[], source: "" })); root = originOf((tu.urls || [])[0] || ""); }
+  if (!root) return null;
   const projectDomain = domainOf(root || opts.siteUrl || "");
-  const empty = (msg: string): SiteAuditReport => ({ project_domain: projectDomain, generated_at: now, pages_crawled: 0, pages_reachable: 0, crawl_capped: false, sitemap_url_count: 0, discovery: "none", issues: {}, schema_coverage: {}, broken_links: [], performance: null, summary: msg, limits: ["No crawlable site URL available."] });
-  if (!root) return empty("Could not resolve a site URL to crawl. Supply the site URL.");
-
-  /* Discover the site's real URL set from its sitemap FIRST (CMS-agnostic),
-     then crawl. The homepage is seeded first (it anchors link-discovery of any
-     orphan pages the sitemap omits, and the PageSpeed pass), followed by every
-     URL the sitemap declares. Falls back to pure link-crawling when no sitemap
-     is found. */
   const start = root.endsWith("/") ? root : root + "/";
   const sm = await discoverSitemapUrls(root, projectDomain, maxPages).catch(() => ({ urls: [] as string[], files: 0 }));
-  const sitemapCount = sm.urls.length;
-  const sitemapFiles = sm.files;
-  const visited = new Set<string>();
-  const pages: PageSig[] = [];
-  const broken: string[] = [];
-
-  /* SMART PAGE SELECTION (senior-DMS lens). Gather the real candidate set
-     (sitemap + the homepage's own links), score each by business importance,
-     and diagnose the highest-value pages first — homepage and money pages —
-     while keeping a few boilerplate/legal examples to flag. The selection and
-     its reasons are returned so the report can state WHICH pages and WHY. */
   let homeHtml = await fetchHtml(start).catch(() => "");
-  /* Detect JS-rendering; if found, render pages through the reader so the
-     metadata we read is what users and Google actually see. */
   const jsr = homeHtml ? detectJsRendering(homeHtml) : { js: false, platform: "" };
   let useReader = false; let renderNote = "";
   if (jsr.js) {
     const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
-    if (rendered.ok && rendered.html) {
-      useReader = true;
-      homeHtml = rendered.html;
-      maxPages = Math.min(maxPages, 25);
-      concurrency = Math.min(concurrency, 5);
-      renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages were fetched through a rendering proxy so the on-page metadata below reflects what users and Google actually see — a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript. Coverage is capped at ${maxPages} rendered pages because rendering is slower.`;
-    } else {
-      renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so the meta-description, title-length and H1 counts below are read from server HTML and are LIKELY OVER-REPORTED — the platform injects those fields via JavaScript that a raw crawl cannot see. Verify those specific counts against the rendered page; the schema, performance and search-visibility findings are unaffected.`;
-    }
+    if (rendered.ok && rendered.html) { useReader = true; homeHtml = rendered.html; renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages are fetched through a rendering proxy so the on-page metadata reflects what users and Google actually see — a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript.`; }
+    else { renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so meta-description, title-length and H1 counts are read from server HTML and are LIKELY OVER-REPORTED — the platform injects those fields via JavaScript a raw crawl cannot see. Verify those counts against the rendered page; schema, performance and search-visibility findings are unaffected.`; }
   }
   const homeSig = homeHtml ? extract(start, homeHtml, 200) : null;
   const candidates = new Map<string, string>();
@@ -326,11 +308,10 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   addCand(start);
   for (const u of sm.urls) addCand(u);
   if (homeSig) for (const link of homeSig.links) addCand(link);
-
-  const scored = Array.from(candidates.values()).map(u => ({ u, ...classifyUrl(u) }));
+  const scored: Scored[] = Array.from(candidates.values()).map(u => ({ u, ...classifyUrl(u) }));
   scored.sort((a, b) => b.score - a.score);
   const allBoilerplate = scored.filter(s => s.cls === "boilerplate_demo");
-  const selected: typeof scored = [];
+  const selected: Scored[] = [];
   let legalCount = 0, boilerCount = 0;
   for (const s of scored) {
     if (selected.length >= maxPages) break;
@@ -338,14 +319,20 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     if (s.cls === "boilerplate_demo") { if (boilerCount >= 4) continue; boilerCount++; }
     selected.push(s);
   }
+  return { root, projectDomain, start, selected, candidatesCount: candidates.size, allBoilerplate, useReader, renderNote, sitemapCount: sm.urls.length, sitemapFiles: sm.files, homeHtml, homeTitle: homeSig?.title || "", homeH1: homeSig?.h1 || "" };
+}
 
-  /* Crawl the selected set. On JS-rendered sites, render each page via the reader. */
+/* Crawl a specific set of pages (a batch or the full selection). Renders via the
+   reader when useReader. Returns raw page signatures — aggregation happens once,
+   over the accumulated set, so cross-page duplicate detection stays correct. */
+export async function crawlUrls(items: Scored[], useReader: boolean, concurrency: number, start: string, homeHtml: string): Promise<{ pages: PageSig[]; broken: string[] }> {
+  const pages: PageSig[] = []; const broken: string[] = []; const visited = new Set<string>();
   const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
     if (useReader) { const r = await fetchViaReader(u).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) return { html: r.html, ok: r.html.length > 50 }; }
     try { const html = await fetchHtml(u); return { html, ok: !!html && html.length > 50 }; } catch { return { html: "", ok: false }; }
   };
-  for (let i = 0; i < selected.length; i += concurrency) {
-    const batch = selected.slice(i, i + concurrency);
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
     const fetched = await Promise.all(batch.map(async s => {
       if (canonKey(s.u) === canonKey(start) && homeHtml) return { u: s.u, html: homeHtml, ok: homeHtml.length > 50 };
       const r = await fetchPage(s.u); return { u: s.u, html: r.html, ok: r.ok };
@@ -357,32 +344,38 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
       if (!f.ok) broken.push(f.u);
     }
   }
-  const crawlCapped = candidates.size > selected.length;
-  const ok = pages.filter(p => p.ok);
+  return { pages, broken };
+}
 
-  /* Selection rationale for the report — the "which pages and why" a senior states. */
+/* Build the full audit report from the accumulated crawled pages. Runs ONCE over
+   every page (single pass or all batches), so issue and duplicate counts are
+   correct across the entire crawl. */
+export function buildAuditReport(r: {
+  projectDomain: string; pages: PageSig[]; broken: string[];
+  selected: Scored[]; candidatesCount: number; allBoilerplate: Scored[];
+  sitemapCount: number; sitemapFiles: number; renderNote: string;
+  performance: any | null; homeTitle: string; homeH1: string; target: number;
+}): SiteAuditReport {
+  const now = new Date().toISOString();
+  const { pages, broken } = r;
+  const ok = pages.filter(p => p.ok);
+  const crawlCapped = r.candidatesCount > pages.length;
   const pathOf = (u: string) => { try { return new URL(u).pathname || u; } catch { return u; } };
-  /* Only pages that ACTUALLY LOADED may be listed as diagnosed — a broken page
-     must never appear as a "prioritised page we analysed" (that contradiction
-     is an instant credibility loss). */
   const brokenSet = new Set(broken.map(canonKey));
-  const loadedSelected = selected.filter(s => !brokenSet.has(canonKey(s.u)));
+  const loadedSelected = r.selected.filter(s => !brokenSet.has(canonKey(s.u)));
   const byClass: Record<string, number> = {};
   for (const s of loadedSelected) byClass[s.cls] = (byClass[s.cls] || 0) + 1;
   const page_selection = {
-    total_candidates: candidates.size,
+    total_candidates: r.candidatesCount,
     analysed: ok.length,
     analysed_urls: ok.map(p => p.url),
     prioritised: loadedSelected.filter(s => s.score >= 42).map(s => ({ url: s.u, why: s.reason })).slice(0, 18),
-    flagged_boilerplate: allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
+    flagged_boilerplate: r.allBoilerplate.map(s => pathOf(s.u)).slice(0, 12),
     by_class: byClass,
-    rationale: `From ${candidates.size} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${allBoilerplate.length ? ` ${allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
+    rationale: `From ${r.candidatesCount} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${r.allBoilerplate.length ? ` ${r.allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${r.allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
   };
-
-  /* Aggregate site-wide issues. */
   const issue: Record<string, { count: number; pages: string[] }> = {};
   const add = (key: string, url: string) => { (issue[key] ||= { count: 0, pages: [] }); issue[key].count++; if (issue[key].pages.length < 25) issue[key].pages.push(url); };
-
   const byTitle = new Map<string, string[]>(); const byMeta = new Map<string, string[]>();
   for (const p of ok) {
     if (!p.title) add("missing_title", p.url);
@@ -399,30 +392,48 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   }
   for (const [, urls] of byTitle) if (urls.length > 1) for (const u of urls) add("duplicate_title", u);
   for (const [, urls] of byMeta) if (urls.length > 1) for (const u of urls) add("duplicate_meta_description", u);
-
   const schema_coverage: Record<string, number> = {};
   for (const p of ok) for (const t of p.schema_types) schema_coverage[t] = (schema_coverage[t] || 0) + 1;
-
-  /* Best-effort performance on the homepage. */
-  const performance = await runPsi(start, await loadPsiKey(opts.projectId));
-
   const topIssues = Object.entries(issue).sort((a, b) => b[1].count - a[1].count).slice(0, 5).map(([k, v]) => `${v.count} ${k.replace(/_/g, " ")}`).join(", ");
-  const sitemapNote = sitemapCount > 0
-    ? ` Discovery used the sitemap: ${sitemapCount} URL(s) across ${sitemapFiles} sitemap file(s)${crawlCapped ? `, more than this pass audited` : ``}.`
+  const sitemapNote = r.sitemapCount > 0
+    ? ` Discovery used the sitemap: ${r.sitemapCount} URL(s) across ${r.sitemapFiles} sitemap file(s)${crawlCapped ? `, more than this crawl audited` : ``}.`
     : ` No sitemap was found, so discovery was by following internal links only.`;
   const summary = ok.length === 0
-    ? `Could not crawl any pages of ${projectDomain}. The site may block automated requests, or the URL may be wrong.`
-    : `Crawled ${ok.length} page(s) of ${projectDomain}${crawlCapped ? ` (capped at ${maxPages}; more remain)` : ` (full set within the cap)`}.${sitemapNote} Top issues: ${topIssues || "none of the tracked issues found"}.${performance ? ` Homepage performance score ${performance.performance_score}/100 (LCP ${performance.lcp}).` : ""}`;
-
+    ? `Could not crawl any pages of ${r.projectDomain}. The site may block automated requests, or the URL may be wrong.`
+    : `Crawled ${ok.length} page(s) of ${r.projectDomain}${crawlCapped ? ` (more pages remain)` : ` (full set covered)`}.${sitemapNote} Top issues: ${topIssues || "none of the tracked issues found"}.${r.performance ? ` Homepage performance score ${r.performance.performance_score}/100 (LCP ${r.performance.lcp}).` : ""}`;
   const limits = [
-    ...(renderNote ? [renderNote] : []),
-    sitemapCount > 0
-      ? `Discovery seeded from the sitemap (${sitemapCount} URL(s) across ${sitemapFiles} file(s)) plus internal links. The crawl is capped at ${maxPages} pages per pass; counts are over the ${ok.length} pages crawled${crawlCapped ? `. The sitemap declares more URLs than the cap — raise maxPages or use background crawling for full coverage` : ` (the full declared set fit within the cap)`}.`
-      : `No sitemap was found; discovery followed internal links from the homepage, capped at ${maxPages} pages per pass. JavaScript-rendered link grids (common on Wix/Shopify) can hide pages from a static crawler — adding or exposing a sitemap would surface them.`,
+    ...(r.renderNote ? [r.renderNote] : []),
+    r.sitemapCount > 0
+      ? `Discovery seeded from the sitemap (${r.sitemapCount} URL(s) across ${r.sitemapFiles} file(s)) plus internal links; ${ok.length} pages were crawled${crawlCapped ? ` — the sitemap declares more, use Detailed/Full mode or continue the batched crawl for complete coverage` : ` (the full declared set was covered)`}.`
+      : `No sitemap was found; discovery followed internal links from the homepage. JavaScript-rendered link grids can hide pages from a static crawler — adding or exposing a sitemap would surface them.`,
     `Broken-link detection covers internal links reached during the crawl, not an exhaustive link check.`,
-    `Performance is a lab PageSpeed run on the homepage (mobile)${performance && performance.runs > 1 ? ` — median of ${performance.runs} runs, not a real-user field average` : ""}${performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
+    `Performance is a lab PageSpeed run on the homepage (mobile)${r.performance && r.performance.runs > 1 ? ` — median of ${r.performance.runs} runs, not a real-user field average` : ""}${r.performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
+  return { project_domain: r.projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: r.sitemapCount, discovery: r.sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance: r.performance, page_selection, homepage_title: r.homeTitle, homepage_h1: r.homeH1, summary, limits };
+}
 
-  return { project_domain: projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: sitemapCount, discovery: sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance, page_selection, homepage_title: homeSig?.title || "", homepage_h1: homeSig?.h1 || "", summary, limits };
+/* Homepage PageSpeed for the batched-crawl report path (which assembles from a
+   saved job rather than a live crawlSite call). */
+export async function homepagePerformance(projectId: string, start: string): Promise<any | null> {
+  if (!start) return null;
+  return runPsi(start, await loadPsiKey(projectId)).catch(() => null);
+}
+
+export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
+  const now = new Date().toISOString();
+  const target = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
+  const projectDomain = domainOf((opts.siteUrl ? originOf(opts.siteUrl) : "") || opts.siteUrl || "");
+  const empty = (msg: string): SiteAuditReport => ({ project_domain: projectDomain, generated_at: now, pages_crawled: 0, pages_reachable: 0, crawl_capped: false, sitemap_url_count: 0, discovery: "none", issues: {}, schema_coverage: {}, broken_links: [], performance: null, summary: msg, limits: ["No crawlable site URL available."] });
+  const r = await resolveTargets({ projectId: opts.projectId, siteUrl: opts.siteUrl, maxPages: target });
+  if (!r) return empty("Could not resolve a site URL to crawl. Supply the site URL.");
+  /* Single pass: on JS-rendered sites cap this pass at 25 rendered pages (the
+     batched crawl reaches the rest); static sites crawl the full selection. */
+  const passLimit = r.useReader ? Math.min(25, r.selected.length) : r.selected.length;
+  const toCrawl = r.selected.slice(0, passLimit);
+  const concurrency = r.useReader ? 5 : Math.max(2, Math.min(opts.concurrency ?? 6, 10));
+  const { pages, broken } = await crawlUrls(toCrawl, r.useReader, concurrency, r.start, r.homeHtml);
+  const performance = await runPsi(r.start, await loadPsiKey(opts.projectId));
+  const renderNote = r.renderNote + (r.useReader && r.selected.length > passLimit ? ` This single pass covered ${passLimit} rendered pages; use the batched crawl to reach the full ${r.selected.length}.` : "");
+  return buildAuditReport({ projectDomain: r.projectDomain, pages, broken, selected: toCrawl, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote, performance, homeTitle: r.homeTitle, homeH1: r.homeH1, target });
 }
