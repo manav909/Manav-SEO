@@ -642,6 +642,7 @@ const DMS_SYSTEM = [
   ``,
   `SELL THE PLAN WITH DATA — this report exists to convert the lead, factually:`,
   `- COVER EVERY SERVICE IN THE BRIEF — leave none blank. For each service the prospect scoped, use the specific real data this analysis DID gather, even if that service's own engine did not run: the live SERP's "People Also Ask" questions are the opportunity map for the CONTENT, ARTICLE and OFF-SITE Q&A services (name the actual questions people search); the crawl's per-page issues (thin pages, weak or missing titles/H1s, specific URLs) are the targets for the PAGE-ENHANCEMENT service (name the actual pages); the FAQ detection and schema gaps are the FAQ and SCHEMA services. Where a service genuinely needs data this run did not gather — BACKLINKS need a Semrush/Ahrefs connection, KEYWORD REPORTING needs Search Console — say so in ONE honest line and note it unlocks the moment that source is connected. Every brief item gets either real data or one honest line. None is silently dropped — a half-answered brief loses the deal.`,
+  `- FOR A TECHNICAL-SEO BRIEF, the crawl and PageSpeed ALREADY MEASURED most of it — do NOT call these "awaiting data". H1 problems (missing/multiple/duplicate), meta title and description problems, missing image alt text, broken links and 4xx URLs, canonical issues, thin content, sitemap presence, and Core Web Vitals / page speed are all in the crawl and PageSpeed data with exact counts and specific pages. Cite the real numbers ("14 of your 75 pages have no H1", "23 images are missing alt text on your product pages") and treat these as ANALYSED and ready to fix. Only genuinely external items (backlinks, keyword volumes, Search Console impressions) are pending.`,
   `- Connect every finding to a service being sold: finding -> consequence for their business -> the specific service that fixes it. A gap you found is the proof that a service is needed. Example shape: "Your homepage FAQ has no schema, so you are invisible to AI answers on the exact questions investors ask — this is precisely what the AEO/schema service fixes."`,
   `- STAY IN THE SERVICE LANE. The services listed above define what is being sold. Build the sales case ONLY on findings those services address (content, schema/AEO, on-page, links, Q&A, and the like). A finding OUTSIDE the services being sold — most commonly site speed / performance / Core Web Vitals when the services are content and AEO — is reported HONESTLY in one line as an observation, noted as "a fix for your web/dev team, outside this engagement", and is NEVER the basis of the sales case, the headline, or a recommendation you are selling. Do not over-emphasise what you are not being paid to fix. Lead with what these services actually change.`,
   `- Handle the objection before it is raised, with data, not pressure. Anticipate the two or three things a sceptical buyer (or their own senior marketer) would push back on — "we have our own SEO team", "is this worth the spend", "can you really deliver at quality" — and answer each with a fact from the findings. Never beg; let the evidence do the convincing.`,
@@ -825,22 +826,20 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
 
   /* The data behind the analysis — every claim above traces to this. Kept as a
      clearly-labelled evidence section (charts + tables) so the numbers are
-     deterministic and verifiable, never something the narrative could invent. */
-  H.push(`<h2>The data behind this analysis</h2><p class="muted">Every figure in the analysis above comes from here — a live crawl, PageSpeed, and live search results. No Search Console or analytics data was used.</p>`);
+     deterministic and verifiable, never something the narrative could invent.
+     Internal methodology (aggregate sources list, coverage/needs-data table,
+     limitations, operator file names) is deliberately OMITTED — this document
+     goes to the client to win the work, not to expose the machinery or to
+     advertise what was not analysed. The per-section source line below is the
+     honest proof; that is all a client needs. */
+  H.push(`<h2>The data behind this analysis</h2><p class="muted">Every figure in the analysis above is measured, not estimated — from a live crawl of the site, a PageSpeed run, and live search results.</p>`);
   completed.forEach((s) => {
     H.push(`<h3>${esc(s.label)}</h3>`);
     H.push(renderBodyHtml(s.output));
     H.push(`<p class="src"><strong>Source:</strong> ${esc(sourceLine(s.ran_engine, s.output))}</p>`);
   });
 
-  H.push(`<h2>Sources and how to verify</h2><ul>`);
-  for (const src of collectSources(completed)) H.push(`<li>${esc(src)}</li>`);
-  if (dms.material_files.length) H.push(`<li>Operator-provided materials and client files: ${esc(dms.material_files.join(", "))}.</li>`);
-  H.push(`</ul>`);
-  H.push(renderCoverageHtml(opts, stages));
-  const limits = collectLimits(completed);
-  if (limits.length) { H.push(`<h2>Important notes and limitations</h2><ul>`); for (const l of limits) H.push(`<li>${esc(l)}</li>`); H.push(`</ul>`); }
-  H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. The written interpretation is the analyst's reading of the data shown; the supporting data and sources under each section are the record. To save as PDF, use your browser Print and choose "Save as PDF".</div>`);
+  H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. Every figure traces to the measured data shown under each section.</div>`);
   H.push(`</div></body></html>`);
   return { html: H.join(""), sections: completed.length, enriched: true };
 }
