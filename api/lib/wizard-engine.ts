@@ -381,6 +381,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const stages: any[] = [];
     let crawledUrls: string[] = [];
     let homepageTopic = "";
+    let jobSchemaPages: any[] = [];
 
     /* 1. Comprehensive crawl-based audit. If a completed batched-crawl jobId is
        supplied, assemble from the accumulated pages (full coverage); otherwise
@@ -396,6 +397,9 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
           const m = job.meta || {};
           const performance = await homepagePerformance(projectId, m.start || siteUrl);
           audit = buildAuditReport({ projectDomain: m.projectDomain || domain, pages: job.results || [], broken: job.broken || [], selected: m.selected || [], candidatesCount: m.candidatesCount || 0, allBoilerplate: m.allBoilerplate || [], sitemapCount: m.sitemapCount || 0, sitemapFiles: m.sitemapFiles || 0, renderNote: m.renderNote || "", performance, homeTitle: m.homeTitle || "", homeH1: m.homeH1 || "", target: job.target_count || 0 });
+          /* Schema was captured DURING this crawl (same pages) — reuse it so the
+             schema section covers all your crawled pages, no wasteful re-crawl. */
+          jobSchemaPages = (job.results || []).map((rr: any) => rr && rr._schema).filter(Boolean);
         }
       }
       if (!audit) {
@@ -409,12 +413,19 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       }
     } catch { /* proceed with whatever gathers */ }
 
-    /* 2. Structured-data audit + generation, ON THE SAME PAGES the crawl
-       analysed — so the report speaks about one coherent set, not two scopes. */
+    /* 2. Structured-data audit + generation. If the batched crawl already
+       captured schema for every page (same scope as the audit), aggregate that —
+       no re-crawl, one consistent page set. Otherwise run it on the crawled URLs. */
     try {
-      const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
-      const schema = await generateSchemaAndLlms({ projectId, siteUrl, pageUrls: crawledUrls.length ? crawledUrls : undefined, depth: "deep" });
-      if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
+      if (jobSchemaPages.length) {
+        const { assembleSchemaReport } = await import("./schema-llms-engine.js");
+        const schema = assembleSchemaReport(jobSchemaPages, siteUrl);
+        if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
+      } else {
+        const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
+        const schema = await generateSchemaAndLlms({ projectId, siteUrl, pageUrls: crawledUrls.length ? crawledUrls : undefined, depth: "deep" });
+        if (schema && schema.ok) stages.push({ label: "Structured data (schema) and llms.txt", ran_engine: "schema-llms-engine.ts", status: "completed", output: schema });
+      }
     } catch { /* proceed */ }
 
     /* 3. Market & competitive search research — REAL external intelligence via
@@ -509,11 +520,13 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         if (!r || !r.selected.length) return { success: false, error: "Could not resolve the site (unreachable or blocking crawlers)." };
         const batchSize = r.useReader ? 20 : 60;
         const first = r.selected.slice(0, batchSize);
-        const { pages, broken } = await crawlUrls(first, r.useReader, r.useReader ? 5 : 6, r.start, r.homeHtml);
+        const { pages, broken, schema } = await crawlUrls(first, r.useReader, r.useReader ? 5 : 6, r.start, r.homeHtml, true);
+        const schemaByUrl = new Map((schema || []).map((s: any) => [s.url, s]));
+        const results = pages.map((p: any) => { const item = stripLinks(p); const s = schemaByUrl.get(p.url); if (s) item._schema = s; return item; });
         const complete = first.length >= r.selected.length;
         const id = `crawljob:${r.projectDomain}:${Date.now()}`;
         const meta = { selected: r.selected, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote: r.renderNote, useReader: r.useReader, start: r.start, projectDomain: r.projectDomain, homeTitle: r.homeTitle, homeH1: r.homeH1 };
-        await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: r.selected.length, meta, results: pages.map(stripLinks), broken, cursor: first.length, status: complete ? "complete" : "running" });
+        await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: r.selected.length, meta, results, broken, cursor: first.length, status: complete ? "complete" : "running" });
         return { success: true, jobId: id, done: first.length, total: r.selected.length, complete, use_reader: r.useReader };
       }
 
@@ -524,10 +537,12 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       const selected = Array.isArray(m.selected) ? m.selected : [];
       const batchSize = m.useReader ? 20 : 60;
       const next = selected.slice(job.cursor, job.cursor + batchSize);
-      const { pages, broken } = next.length ? await crawlUrls(next, m.useReader, m.useReader ? 5 : 6, m.start, "") : { pages: [], broken: [] };
+      const { pages, broken, schema } = next.length ? await crawlUrls(next, m.useReader, m.useReader ? 5 : 6, m.start, "", true) : { pages: [], broken: [], schema: [] };
+      const schemaByUrl = new Map((schema || []).map((s: any) => [s.url, s]));
+      const newResults = pages.map((p: any) => { const item = stripLinks(p); const s = schemaByUrl.get(p.url); if (s) item._schema = s; return item; });
       const newCursor = job.cursor + next.length;
       const complete = newCursor >= selected.length;
-      await db().from("crawl_jobs").update({ results: [...(job.results || []), ...pages.map(stripLinks)], broken: [...(job.broken || []), ...broken], cursor: newCursor, status: complete ? "complete" : "running", updated_at: new Date().toISOString() }).eq("id", jobId);
+      await db().from("crawl_jobs").update({ results: [...(job.results || []), ...newResults], broken: [...(job.broken || []), ...broken], cursor: newCursor, status: complete ? "complete" : "running", updated_at: new Date().toISOString() }).eq("id", jobId);
       return { success: true, jobId, done: newCursor, total: selected.length, complete };
     } catch (e: any) {
       return { success: false, error: e?.message || "crawl batch failed" };

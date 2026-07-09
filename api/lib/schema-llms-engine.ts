@@ -184,7 +184,7 @@ function personFromPage(url: string, html: string): { name: string; jobTitle: st
   return { name, jobTitle };
 }
 
-function buildForPage(url: string, html: string, isHome: boolean): PageResult {
+export function buildForPage(url: string, html: string, isHome: boolean): PageResult {
   const title = titleOf(html);
   const description = metaName(html, "description");
   const canonical = canonicalOf(html) || url;
@@ -332,7 +332,21 @@ export async function generateSchemaAndLlms(opts: {
 
   const siteName = metaName(homeHtml, "og:site_name") || titleOf(homeHtml);
   const siteDesc = metaName(homeHtml, "description");
-  const llms_txt = buildLlmsTxt(siteName, siteDesc, pages);
+  return assembleSchemaReport(pages, origin || opts.siteUrl, siteName, siteDesc);
+}
+
+/* Aggregate per-page schema results into the report. Shared by the live
+   generator above AND the batched crawl (which captures buildForPage results
+   during the crawl, so schema uses the SAME pages as the audit — no re-crawl,
+   one consistent scope). */
+export function assembleSchemaReport(pages: PageResult[], site: string, siteName?: string, siteDesc?: string): {
+  ok: boolean; site: string; pages: PageResult[]; llms_txt: string;
+  summary: { crawled: number; blocked: number; schema_blocks: number; total_gaps: number };
+  note: string;
+} {
+  const name = siteName || pages[0]?.title || "";
+  const desc = siteDesc || pages[0]?.description || "";
+  const llms_txt = buildLlmsTxt(name, desc, pages);
   const schemaBlocks = pages.reduce((s, p) => s + p.generated.length, 0);
   const totalGaps = pages.reduce((s, p) => s + p.gaps.length, 0);
   const existingTotal = pages.reduce((s, p) => s + (p.existing_schema?.length || 0), 0);
@@ -340,16 +354,12 @@ export async function generateSchemaAndLlms(opts: {
   const existingPhrase = existingTotal === 0
     ? `The site currently has NO structured data (schema) on the crawled pages`
     : `The site currently has ${existingTotal} existing schema block(s) across the crawled pages`;
-
   return {
     ok: pages.some(p => p.fetched),
-    site: origin || opts.siteUrl,
+    site,
     pages,
     llms_txt,
-    summary: { crawled, blocked, schema_blocks: schemaBlocks, total_gaps: totalGaps, existing_blocks: existingTotal } as any,
-    /* Explicit existing-vs-generated so the report narrator cannot describe our
-       GENERATED markup as schema the site already has (which inverted the truth
-       on a site with zero existing schema). */
+    summary: { crawled, blocked: pages.filter(p => !p.fetched).length, schema_blocks: schemaBlocks, total_gaps: totalGaps, existing_blocks: existingTotal } as any,
     note: `${existingPhrase}. This engine GENERATED ${schemaBlocks} new JSON-LD block(s) across ${crawled} page(s) — every value grounded in the page's real content — ready to deploy into each page head. ${totalGaps} field(s) flagged to supply, never guessed. An llms.txt file was also generated for the site root.`,
   };
 }

@@ -325,8 +325,10 @@ export async function resolveTargets(opts: { projectId: string; siteUrl?: string
 /* Crawl a specific set of pages (a batch or the full selection). Renders via the
    reader when useReader. Returns raw page signatures — aggregation happens once,
    over the accumulated set, so cross-page duplicate detection stays correct. */
-export async function crawlUrls(items: Scored[], useReader: boolean, concurrency: number, start: string, homeHtml: string): Promise<{ pages: PageSig[]; broken: string[] }> {
-  const pages: PageSig[] = []; const broken: string[] = []; const visited = new Set<string>();
+export async function crawlUrls(items: Scored[], useReader: boolean, concurrency: number, start: string, homeHtml: string, captureSchema = false): Promise<{ pages: PageSig[]; broken: string[]; schema: any[] }> {
+  const pages: PageSig[] = []; const broken: string[] = []; const schema: any[] = []; const visited = new Set<string>();
+  let buildForPage: ((u: string, h: string, isHome: boolean) => any) | null = null;
+  if (captureSchema) { try { ({ buildForPage } = await import("./schema-llms-engine.js")); } catch { buildForPage = null; } }
   const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
     if (useReader) { const r = await fetchViaReader(u).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) return { html: r.html, ok: r.html.length > 50 }; }
     try { const html = await fetchHtml(u); return { html, ok: !!html && html.length > 50 }; } catch { return { html: "", ok: false }; }
@@ -342,9 +344,10 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
       const sig = extract(f.u, f.html, f.ok ? 200 : 0);
       pages.push(sig);
       if (!f.ok) broken.push(f.u);
+      else if (captureSchema && buildForPage && f.html) { try { schema.push(buildForPage(f.u, f.html, canonKey(f.u) === canonKey(start))); } catch { /* schema capture is best-effort */ } }
     }
   }
-  return { pages, broken };
+  return { pages, broken, schema };
 }
 
 /* Build the full audit report from the accumulated crawled pages. Runs ONCE over
