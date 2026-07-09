@@ -334,11 +334,21 @@ export default function Wizard() {
       URL.revokeObjectURL(url);
       return String(res?.data?.text || "").replace(/\s+/g, " ").trim();
     };
+    const extractXlsx = async (f: File): Promise<string> => {
+      const xlsxUrl = "https://esm.sh/xlsx@0.18.5";
+      const XLSX: any = await import(/* @vite-ignore */ xlsxUrl);
+      const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array" });
+      let out = "";
+      for (const name of (wb.SheetNames || [])) {
+        try { const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]); if (csv && csv.trim()) out += `=== Sheet: ${name} ===\n${csv.trim()}\n\n`; } catch { /* skip sheet */ }
+      }
+      return out.trim();
+    };
 
     const arr = Array.from(fileList || []);
     const files: Array<{ filename: string; text: string }> = [];
     const skipped: string[] = [];
-    if (arr.some(f => /\.(pdf|docx|pptx|png|jpe?g|bmp|gif|webp)$/i.test(f.name))) setMaterialsInfo("Reading files…");
+    if (arr.some(f => /\.(pdf|docx|pptx|xlsx?|png|jpe?g|bmp|gif|webp)$/i.test(f.name))) setMaterialsInfo("Reading files…");
     for (const f of arr) {
       try {
         let text = "";
@@ -346,6 +356,7 @@ export default function Wizard() {
         else if (/\.pdf$/i.test(f.name)) text = await extractPdf(f);
         else if (/\.docx$/i.test(f.name)) text = await extractDocx(f);
         else if (/\.pptx$/i.test(f.name)) text = await extractPptx(f);
+        else if (/\.xlsx?$/i.test(f.name)) { setMaterialsInfo(`Reading all sheets from ${f.name}…`); text = await extractXlsx(f); }
         else if (/\.(png|jpe?g|bmp|gif|webp)$/i.test(f.name)) { setMaterialsInfo(`Reading text from ${f.name} (OCR)…`); text = await extractImage(f); }
         else { skipped.push(`${f.name} (unsupported — paste its text)`); continue; }
         if (text && text.trim().length > 3) files.push({ filename: f.name, text });
@@ -584,11 +595,11 @@ export default function Wizard() {
 
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
               <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Your materials &amp; client files (deepen the report with real data)</div>
-              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports — text, markdown, CSV, JSON, HTML, PDF, Word (.docx), PowerPoint (.pptx) and images. PPTX and images are read with OCR (text inside screenshots, tables and charts) and PPTX speaker notes are included. The report engine uses all of it — alongside the live crawl/SERP/PageSpeed data — to answer each brief point, even without GSC.</p>
+              <p className="text-xs text-muted-foreground mb-3">Upload your own analysis, the client's files, or exports — text, markdown, CSV, Excel (.xlsx, every sheet), JSON, HTML, PDF, Word (.docx), PowerPoint (.pptx) and images. Excel workbooks are read sheet by sheet (so multi-tab data is kept in full, unlike a single-sheet CSV); PPTX and images are read with OCR. The report engine uses all of it — alongside the live crawl/SERP/PageSpeed data — to answer each brief point, even without GSC.</p>
               <div className="flex flex-wrap items-center gap-3 mb-3">
                 <label className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 cursor-pointer">
                   {ingestingMaterials ? "Ingesting…" : "Upload files"}
-                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx,.pptx,.png,.jpg,.jpeg,.webp,.bmp,.gif" className="hidden"
+                  <input type="file" multiple accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.log,.xml,.yaml,.yml,.pdf,.docx,.pptx,.xlsx,.xls,.png,.jpg,.jpeg,.webp,.bmp,.gif" className="hidden"
                     onChange={e => onMaterialFiles(e.target.files)} disabled={ingestingMaterials} />
                 </label>
                 {materialsInfo && <span className="text-[11px] text-muted-foreground">{materialsInfo}</span>}
