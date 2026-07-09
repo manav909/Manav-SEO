@@ -409,6 +409,9 @@ export default function Wizard() {
     setGeneratingDoc(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Document generation failed."); return; }
     if (r.saved) setDocSaved("Saved under this project — you can reopen it without re-running.");
+    const mf = Array.isArray(r.materials_found) ? r.materials_found : [];
+    if (mf.length) setDocSaved(prev => `${prev ? prev + " " : ""}Used your uploaded data: ${mf.map((m: any) => m.filename).join(", ")}.`);
+    else setDocSaved(prev => `${prev ? prev + " " : ""}Note: no uploaded materials were found under this project — if your CSV is not being used, it was likely uploaded under a different project. Upload it under this one and regenerate.`);
     renderToTab(r.html, tab, `${docMode}-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
   };
 

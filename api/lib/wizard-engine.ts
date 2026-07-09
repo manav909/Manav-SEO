@@ -376,6 +376,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
        detailed/full there takes the batched crawl (next capability). */
     const mode = ["smart", "detailed", "full"].includes(String(body?.mode)) ? String(body?.mode) : "smart";
     const modeMax = mode === "full" ? 300 : mode === "detailed" ? 100 : 25;
+    /* Surface exactly which operator materials this project has, so it is visible
+       whether an uploaded CSV/export actually reached the report (a silent miss
+       usually means it was uploaded under a different project). */
+    let materialsFound: Array<{ filename: string; chars: number }> = [];
+    if (projectId) { try { const { loadMaterials } = await import("./client-materials.js"); materialsFound = (await loadMaterials(projectId)).map((m: any) => ({ filename: m.filename, chars: m.chars || 0 })); } catch { materialsFound = []; } }
     let domain = ""; let brand = "";
     try { const u = new URL(/^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`); domain = u.hostname.replace(/^www\./, ""); brand = domain.split(".")[0]; } catch { domain = siteUrl; brand = siteUrl; }
     const stages: any[] = [];
@@ -492,7 +497,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
           }]);
         } catch { savedId = ""; }
       }
-      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine), saved_id: savedId, saved: !!savedId, mode };
+      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine), saved_id: savedId, saved: !!savedId, mode, materials_found: materialsFound };
     } catch (e: any) {
       return { success: false, error: e?.message || "document assembly failed" };
     }
