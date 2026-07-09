@@ -643,7 +643,7 @@ const DMS_SYSTEM = [
   `- Use ONLY the numbers, pages, and facts in the provided data and the operator's materials. Never invent metrics, pages, competitors, dates, or claims.`,
   `- NEVER cite a data source that was not used. If there is no Search Console / analytics data in the findings, do NOT mention Search Console as a source or basis — the analysis here is a live crawl, PageSpeed, and live search results. Claiming GSC you do not have destroys trust.`,
   `- Where a real figure would strengthen a point but is not in the data, say what is needed to get it (e.g. "connect Search Console to confirm which pages Google indexes") rather than inventing it.`,
-  `- The operator's provided materials are real source — use them to deepen sections and attribute to "your provided materials".`,
+  `- OPERATOR-PROVIDED DATA (uploaded CSVs, tool exports, notes) is a legitimate source — and it is exactly what FILLS the brief items the live engines cannot measure themselves: keyword volumes and rankings, backlinks and referring domains, Search Console clicks/impressions/positions. Use its real figures to answer those items instead of saying "needs data". BUT it is SUPPLIED by the operator, not measured by this platform: attribute every figure taken from it to "the supplied dataset" (name the file) so it can be verified point by point against that file, present it as supplied-and-verifiable, keep it visibly distinct from the live engine findings, and never extrapolate a single number beyond what the file actually states.`,
   `- If a section's data is genuinely thin, say so in one honest line; do not pad. Write in clear business English, no tool names, no jargon dumps, never salesy.`,
   ``,
   `WRITE LIKE A PERSON TALKING TO A PERSON — this is what earns trust and closes deals:`,
@@ -685,7 +685,14 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
   const briefs = completed.map((s, i) => dataBrief(s, i));
 
   let material_files: string[] = [];
-  if (opts.project_id) { try { material_files = (await loadMaterials(opts.project_id)).map(m => m.filename); } catch { /* non-fatal */ } }
+  let materialsText = "";
+  if (opts.project_id) {
+    try {
+      const mats = await loadMaterials(opts.project_id);
+      material_files = mats.map(m => m.filename);
+      if (mats.length) materialsText = materialsForPrompt(mats, 45000).text;
+    } catch { /* non-fatal */ }
+  }
 
   const ctx = [
     `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
@@ -696,6 +703,9 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     (opts.requirements && opts.requirements.length)
       ? `THE SERVICES/PLANS WE ARE SELLING (what the prospect scoped and is curious about) — every finding must connect to one of these and show why the service is worth buying:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
       : `No explicit brief was supplied; audit the site's health and opportunities.`,
+    materialsText
+      ? `YOUR PROVIDED DATA / FILES (${material_files.join(", ")}) — operator-supplied, and a LEGITIMATE source for this analysis, ESPECIALLY for the brief items the live engines cannot measure themselves (keyword volumes and rankings, backlinks/referring domains, Search Console clicks/impressions/positions). Use it to answer those items with real figures. BUT it is OPERATOR-PROVIDED, not something this platform independently measured: attribute every figure taken from it to "the supplied dataset" (name the file), so it can be verified point by point against that file, and present it as supplied-and-verifiable, never as an engine measurement. Do not extrapolate beyond what the data actually states.\n\n${materialsText}`
+      : "",
     `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement. Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
