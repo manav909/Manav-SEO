@@ -312,6 +312,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Questions are REAL search results (every one has a clickable URL to verify); none are invented — no key or no results returns nothing. Answers are DRAFTS: no fabricated facts (uses [ADD SOURCE] markers), genuine value not disguised ads. The engine NEVER posts: posting is manual and must disclose any commercial relationship, because undisclosed promotion breaks Reddit/Quora rules and is astroturfing.",
     mode: "needs_connection",
   },
+  knowledge_panel_audit: {
+    id: "knowledge_panel_audit",
+    label: "Knowledge Panel / entity-signal audit (works with no website)",
+    engine: "entity-panel-engine.ts → auditEntity",
+    inputs_required: ["The entity name (artist / person / brand)", "Target country", "A connected SerpAPI key (for live panel data)"],
+    output: "A live read of the entity's Google Knowledge Panel (whether one shows, what it contains, its source and surfaced profiles) and its Wikidata entity (present/missing key identity and music properties), then a prioritised action plan to strengthen the signals Google uses to build and enrich the panel — image, official/social links, authoritative music profiles (Spotify, Apple Music, MusicBrainz, Discogs, Genius), Wikidata properties, and a Wikipedia path.",
+    limits: "Works from the NAME — no website needed. Google alone decides what a panel displays; the plan strengthens signals but guarantees no result. Panel data needs a SerpAPI key; Wikidata is read from its public API. Every signal is checked live — nothing is invented. It does not itself create profiles or edit Wikidata; it audits and plans the work.",
+    mode: "needs_input",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */

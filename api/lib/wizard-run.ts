@@ -51,7 +51,7 @@ export interface WizardStageResult {
 
 /* Capability sets that determine routing + honesty flags. */
 const GEO_CAPS = new Set(["geo_citation_gap", "geo_content_template", "geo_displacement"]);
-const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting", "offsite_qa_drafting"]);
+const SESSION_NEW_CAPS = new Set(["site_wide_url_classification", "url_inventory_export", "gsc_csv_ingestion", "topical_authority_map", "competitor_benchmark", "cms_platform_advisory", "paid_organic_substitution", "document_analysis", "site_wide_audit", "semrush_intelligence", "schema_llms_generation", "backlink_prospecting", "aeo_article_drafting", "offsite_qa_drafting", "knowledge_panel_audit"]);
 const WORKSPACE_BACKED = new Set(["workspace_deep_analysis", "onpage_audit", "internal_link_graph", "geo_citation_gap", "geo_content_template", "geo_displacement"]);
 
 /* Pragmatic archetype → workspace goal mapping for workspace-backed stages.
@@ -202,6 +202,15 @@ export async function runWizardStage(opts: {
       const report = await draftOffsiteQa({ projectId, topic, clientContext: inputs.context, siteUrl: inputs.siteUrl, country: inputs.country, maxQuestions: (inputs as any).maxQuestions });
       if (!report.ok) return result("needs_connection", "offsite-qa-engine.ts", report, report.summary);
       return result("completed", "offsite-qa-engine.ts", report, report.summary);
+    }
+
+    if (caps.includes("knowledge_panel_audit")) {
+      const entityName = String((inputs as any).entityName || (inputs as any).name || inputs.topic || "").trim();
+      if (!entityName) return result("needs_input", "entity-panel-engine.ts", null, `Supply inputs.entityName (the artist/person/brand to audit) and inputs.country. No website is needed. Optionally inputs.entityType (musician | artist | author | founder | person | organization).`);
+      const { auditEntity } = await import("./entity-panel-engine.js");
+      const report = await auditEntity({ projectId, name: entityName, country: inputs.country, entityType: (inputs as any).entityType });
+      if (!report.ok) return result("needs_input", "entity-panel-engine.ts", report, report.summary);
+      return result("completed", "entity-panel-engine.ts", report, report.summary);
     }
 
     if (caps.includes("document_analysis")) {

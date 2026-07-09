@@ -477,6 +477,23 @@ function renderBodyHtml(o: any): string {
     return P.join("");
   }
 
+  /* Knowledge Panel / entity-signal audit (works from a name, no website). */
+  if (Array.isArray(o.action_plan) && o.wikidata) {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    if (o.panel) {
+      if (o.panel.present) {
+        P.push(`<h4>Your Knowledge Panel today</h4>`);
+        P.push(`<p>${esc(o.panel.title || o.name)}${o.panel.type ? ` — ${esc(o.panel.type)}` : ""}. ${o.panel.has_image ? "It has an image." : "It has no image."} ${(o.panel.profiles || []).length} linked profile(s)${o.panel.source ? `, sourced largely from ${esc(o.panel.source)}` : ""}.</p>`);
+        const attrs = Object.entries(o.panel.attributes || {});
+        if (attrs.length) P.push(tableHtml(["What Google shows", "Value"], attrs.slice(0, 10).map(([k, v]: any) => [String(k).replace(/_/g, " "), String(v).slice(0, 140)])));
+      } else P.push(`<p class="muted">No Knowledge Panel is currently shown for "${esc(o.name)}"${o.panel.error ? ` (${esc(o.panel.error)})` : ""} — establishing the authoritative signals below is the first job.</p>`);
+    }
+    if (o.wikidata) P.push(`<p class="muted"><strong>Wikidata:</strong> ${o.wikidata.found ? `entity ${esc(o.wikidata.id)} exists${(o.wikidata.missing_props || []).length ? `, missing ${esc((o.wikidata.missing_props || []).join(", "))}` : " and is well-populated"}` : "no entity found — the highest-leverage gap"}.</p>`);
+    if (o.action_plan.length) { P.push(`<h4>Prioritised action plan</h4>`); P.push(tableHtml(["Priority", "Action", "Why it matters"], o.action_plan.map((a: any) => [`P${a.priority}`, a.action, a.why]))); }
+    if ((o.notes || []).length) P.push(`<p class="muted">${o.notes.map((n: string) => esc(n)).join(" ")}</p>`);
+    return P.join("");
+  }
+
   /* Default — NEVER coerce an object into "[object Object]". Render only a
      string summary or note; otherwise state plainly that no formatted findings
      were produced. This guard is what prevents an engine whose `summary` is an

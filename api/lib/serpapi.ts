@@ -403,6 +403,38 @@ export async function fetchSerpFeatures(
    question is a real, clickable thread the operator can verify. Returns an empty
    list with a reason when there is no key or no results — never an invented
    question. Consumes one SerpAPI search credit. */
+/* Fetches Google's Knowledge Panel (knowledge_graph) for a NAME — works with no
+   website. Returns the real panel if Google shows one (title, type, description,
+   its source, attributes, and the profile links it surfaces), else present:false.
+   This is the ground truth for a Knowledge Panel enrichment audit. */
+export async function fetchKnowledgePanel(query: string, projectId: string, options: { country?: string } = {}): Promise<{ present: boolean; title?: string; type?: string; description?: string; source?: string; attributes?: Record<string, string>; profiles?: Array<{ name: string; link: string }>; has_image?: boolean; raw_keys?: string[]; error?: string }> {
+  const q = (query || "").trim();
+  if (!q) return { present: false, error: "no query supplied" };
+  if (!projectId) return { present: false, error: "no project" };
+  const apiKey = await lookupSerpApiKey(projectId);
+  if (!apiKey) return { present: false, error: "no SerpAPI key configured" };
+  const country = (options.country || "us").toLowerCase();
+  const url = new URL("https://serpapi.com/search");
+  url.searchParams.set("engine", "google");
+  url.searchParams.set("q", q);
+  url.searchParams.set("gl", country);
+  url.searchParams.set("hl", country === "it" ? "it" : country === "fr" ? "fr" : country === "de" ? "de" : country === "es" ? "es" : "en");
+  url.searchParams.set("api_key", apiKey);
+  try {
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!res.ok) return { present: false, error: `SerpAPI HTTP ${res.status}` };
+    const json = await res.json();
+    if (json?.error) return { present: false, error: String(json.error) };
+    const kg = json?.knowledge_graph;
+    if (!kg) return { present: false };
+    const SKIP = new Set(["title", "type", "description", "kgmid", "knowledge_graph_search_link", "serpapi_knowledge_graph_search_link", "thumbnail", "image", "header_images", "description_link", "description_source", "source"]);
+    const attributes: Record<string, string> = {};
+    for (const [k, v] of Object.entries(kg)) if (typeof v === "string" && !SKIP.has(k)) attributes[k] = v;
+    const profiles = Array.isArray(kg.profiles) ? kg.profiles.map((p: any) => ({ name: String(p?.name || ""), link: String(p?.link || "") })).filter((p: any) => p.link) : [];
+    return { present: true, title: kg.title, type: kg.type, description: kg.description, source: kg?.source?.name || kg?.description_source || undefined, attributes, profiles, has_image: !!(kg.thumbnail || kg.image || (Array.isArray(kg.header_images) && kg.header_images.length)), raw_keys: Object.keys(kg) };
+  } catch (e: any) { return { present: false, error: e?.message || "request failed" }; }
+}
+
 export async function findForumQuestions(
   topic: string,
   projectId: string,
