@@ -70,6 +70,8 @@ export default function Wizard() {
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
+  const [docScope, setDocScope] = useState<"smart" | "detailed" | "full">("smart");
+  const [docSaved, setDocSaved] = useState("");
   const [docEmphasis, setDocEmphasis] = useState("");
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
@@ -302,10 +304,11 @@ export default function Wizard() {
     if (!siteUrl) { setError("Add the client site URL above first — the document is built from a live crawl of it."); return; }
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Running the full site analysis and assembling the document — this crawls the site, audits schema and checks search visibility, so it takes a little longer…</body>');
-    setGeneratingDoc(true); setError("");
-    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, operatorEmphasis: docEmphasis.trim() || undefined });
+    setGeneratingDoc(true); setError(""); setDocSaved("");
+    const r: any = await post("wizard_client_document", { siteUrl, projectId, author: reportAuthor, clientDomain: plan?.client_domain, includeBranding, requirements: (plan?.stages || []).map((s: any) => s.label), artifactMode: docMode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, operatorEmphasis: docEmphasis.trim() || undefined, mode: docScope });
     setGeneratingDoc(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Document generation failed."); return; }
+    if (r.saved) setDocSaved("Saved under this project — you can reopen it without re-running.");
     renderToTab(r.html, tab, `${docMode}-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
   };
 
@@ -674,6 +677,16 @@ export default function Wizard() {
                 </div>
                 <span className="text-[11px] text-muted-foreground">{docMode === "proposal" ? "Scope, delivery method, quality standards and pricing basis — for a productized / reseller / retainer brief." : "Findings and recommendations — a diagnosis of the site."}</span>
               </div>
+              <div className="flex flex-wrap items-center gap-3 mb-3">
+                <span className="text-[11px] font-medium text-muted-foreground">Depth:</span>
+                <div className="inline-flex rounded-lg border border-border overflow-hidden text-sm">
+                  <button onClick={() => setDocScope("smart")} className={`px-4 py-1.5 ${docScope === "smart" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Smart</button>
+                  <button onClick={() => setDocScope("detailed")} className={`px-4 py-1.5 ${docScope === "detailed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Detailed</button>
+                  <button onClick={() => setDocScope("full")} className={`px-4 py-1.5 ${docScope === "full" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Full</button>
+                </div>
+                <span className="text-[11px] text-muted-foreground">{docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
+              </div>
+              {docSaved && <p className="text-[11px] text-emerald-500 mb-2">{docSaved}</p>}
               <button onClick={generateClientDocument} disabled={generatingDoc}
                 className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
                 {generatingDoc ? "Analysing the site & assembling…" : `Generate client ${docMode === "proposal" ? "proposal" : "audit"}`}

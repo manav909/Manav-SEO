@@ -361,6 +361,12 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const siteUrl = String(body?.siteUrl || "").trim();
     const projectId = String(body?.projectId || "").trim();
     if (!siteUrl) return { success: false, error: "Supply the site URL to build the document from." };
+    /* Audit modes: smart = the ~25 most business-critical pages; detailed = 100
+       most important pages; full = the whole sitemap. On JavaScript-rendered
+       sites the crawler renders each page and caps a single pass lower; reaching
+       detailed/full there takes the batched crawl (next capability). */
+    const mode = ["smart", "detailed", "full"].includes(String(body?.mode)) ? String(body?.mode) : "smart";
+    const modeMax = mode === "full" ? 300 : mode === "detailed" ? 100 : 25;
     let domain = ""; let brand = "";
     try { const u = new URL(/^https?:\/\//i.test(siteUrl) ? siteUrl : `https://${siteUrl}`); domain = u.hostname.replace(/^www\./, ""); brand = domain.split(".")[0]; } catch { domain = siteUrl; brand = siteUrl; }
     const stages: any[] = [];
@@ -371,7 +377,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
        broken links, homepage performance. No integration required. */
     try {
       const { crawlSite } = await import("./site-crawler.js");
-      const audit = await crawlSite({ projectId, siteUrl, maxPages: 100 });
+      const audit = await crawlSite({ projectId, siteUrl, maxPages: modeMax });
       if (audit && audit.pages_reachable > 0) {
         stages.push({ label: "Site-wide SEO and technical audit", ran_engine: "site-crawler.ts", status: "completed", output: audit });
         crawledUrls = Array.isArray(audit.page_selection?.analysed_urls) ? audit.page_selection.analysed_urls : [];
@@ -436,7 +442,22 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       };
       const html = await assembleClientReportHtmlEnriched(stages, o);
       const md = assembleClientReport(stages, o);
-      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine) };
+      /* Persist the report under the project so it is retrievable without
+         re-running the whole analysis. Best-effort — never blocks the response. */
+      let savedId = "";
+      if (projectId) {
+        try {
+          const { persistArtifacts } = await import("./artifacts.js");
+          savedId = `clientdoc:${domain}:${Date.now()}`;
+          await persistArtifacts([{
+            source_kind: "audit", source_id: savedId, artifact_kind: "audit_report",
+            title: `SEO & AEO ${o.artifact_mode === "proposal" ? "Proposal" : "Audit"} — ${domain}`,
+            target_url: siteUrl, body: html.html, body_format: "html", project_id: projectId,
+            metadata: { mode, artifact_mode: o.artifact_mode, sections: html.sections, ran: stages.map((s: any) => s.ran_engine), generated_at: new Date().toISOString() },
+          }]);
+        } catch { savedId = ""; }
+      }
+      return { success: html.sections > 0, html: html.html, markdown: md.markdown, sections: html.sections, enriched: html.enriched, ran: stages.map(s => s.ran_engine), saved_id: savedId, saved: !!savedId, mode };
     } catch (e: any) {
       return { success: false, error: e?.message || "document assembly failed" };
     }
