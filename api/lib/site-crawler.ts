@@ -25,7 +25,7 @@
    Multi-tenant: projectId (+ optional siteUrl) only.
 ════════════════════════════════════════════════════════════════ */
 
-import { fetchHtml } from "./workspace/shared.js";
+import { fetchHtml, fetchViaReader } from "./workspace/shared.js";
 import { resolveTargetUrls } from "./workspace/shared.js";
 import { db } from "./db.js";
 
@@ -259,10 +259,25 @@ function classifyUrl(url: string): { cls: PageClass; score: number; reason: stri
   return { cls: "other", score: 28, reason: "a standard content page" };
 }
 
+/* Detect JavaScript-rendered platforms (Squarespace, Wix, SPAs). On these the
+   server HTML is missing the meta descriptions, final titles and H1s that the
+   platform injects with JavaScript — so a raw-HTML crawl WILDLY over-reports
+   "missing meta description / long title / missing H1". The fix is to render the
+   page (via the reader) before reading its metadata. */
+function detectJsRendering(html: string): { js: boolean; platform: string } {
+  const h = html.toLowerCase();
+  if (/squarespace|static1\.squarespace|squarespace[_-]context/.test(h)) return { js: true, platform: "Squarespace" };
+  if (/wixstatic|_wixcssstates|wix\.com\/website|x-wix-/.test(h)) return { js: true, platform: "Wix" };
+  const bodyText = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const scriptCount = (html.match(/<script/gi) || []).length;
+  if (bodyText.length < 600 && scriptCount >= 3 && /<div[^>]+id=["'](root|app|__next|__nuxt|gatsby-focus-wrapper)["']/i.test(html)) return { js: true, platform: "JavaScript app" };
+  return { js: false, platform: "" };
+}
+
 export async function crawlSite(opts: { projectId: string; siteUrl?: string; maxPages?: number; concurrency?: number }): Promise<SiteAuditReport> {
   const now = new Date().toISOString();
-  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
-  const concurrency = Math.max(2, Math.min(opts.concurrency ?? 6, 10));
+  let maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
+  let concurrency = Math.max(2, Math.min(opts.concurrency ?? 6, 10));
 
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
   if (!root) { const tu = await resolveTargetUrls(undefined, opts.projectId).catch(() => ({ urls: [] as string[], source: "" })); root = originOf((tu.urls || [])[0] || ""); }
@@ -288,7 +303,23 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
      and diagnose the highest-value pages first — homepage and money pages —
      while keeping a few boilerplate/legal examples to flag. The selection and
      its reasons are returned so the report can state WHICH pages and WHY. */
-  const homeHtml = await fetchHtml(start).catch(() => "");
+  let homeHtml = await fetchHtml(start).catch(() => "");
+  /* Detect JS-rendering; if found, render pages through the reader so the
+     metadata we read is what users and Google actually see. */
+  const jsr = homeHtml ? detectJsRendering(homeHtml) : { js: false, platform: "" };
+  let useReader = false; let renderNote = "";
+  if (jsr.js) {
+    const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
+    if (rendered.ok && rendered.html) {
+      useReader = true;
+      homeHtml = rendered.html;
+      maxPages = Math.min(maxPages, 25);
+      concurrency = Math.min(concurrency, 5);
+      renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages were fetched through a rendering proxy so the on-page metadata below reflects what users and Google actually see — a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript. Coverage is capped at ${maxPages} rendered pages because rendering is slower.`;
+    } else {
+      renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so the meta-description, title-length and H1 counts below are read from server HTML and are LIKELY OVER-REPORTED — the platform injects those fields via JavaScript that a raw crawl cannot see. Verify those specific counts against the rendered page; the schema, performance and search-visibility findings are unaffected.`;
+    }
+  }
   const homeSig = homeHtml ? extract(start, homeHtml, 200) : null;
   const candidates = new Map<string, string>();
   const addCand = (u: string) => { const k = canonKey(u); if (k && !candidates.has(k)) candidates.set(k, u); };
@@ -308,12 +339,16 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     selected.push(s);
   }
 
-  /* Crawl the selected set in parallel batches (homepage html reused). */
+  /* Crawl the selected set. On JS-rendered sites, render each page via the reader. */
+  const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
+    if (useReader) { const r = await fetchViaReader(u).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) return { html: r.html, ok: r.html.length > 50 }; }
+    try { const html = await fetchHtml(u); return { html, ok: !!html && html.length > 50 }; } catch { return { html: "", ok: false }; }
+  };
   for (let i = 0; i < selected.length; i += concurrency) {
     const batch = selected.slice(i, i + concurrency);
     const fetched = await Promise.all(batch.map(async s => {
       if (canonKey(s.u) === canonKey(start) && homeHtml) return { u: s.u, html: homeHtml, ok: homeHtml.length > 50 };
-      try { const html = await fetchHtml(s.u); return { u: s.u, html, ok: !!html && html.length > 50 }; } catch { return { u: s.u, html: "", ok: false }; }
+      const r = await fetchPage(s.u); return { u: s.u, html: r.html, ok: r.ok };
     }));
     for (const f of fetched) {
       const key = canonKey(f.u); if (visited.has(key)) continue; visited.add(key);
@@ -380,11 +415,12 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
     : `Crawled ${ok.length} page(s) of ${projectDomain}${crawlCapped ? ` (capped at ${maxPages}; more remain)` : ` (full set within the cap)`}.${sitemapNote} Top issues: ${topIssues || "none of the tracked issues found"}.${performance ? ` Homepage performance score ${performance.performance_score}/100 (LCP ${performance.lcp}).` : ""}`;
 
   const limits = [
+    ...(renderNote ? [renderNote] : []),
     sitemapCount > 0
       ? `Discovery seeded from the sitemap (${sitemapCount} URL(s) across ${sitemapFiles} file(s)) plus internal links. The crawl is capped at ${maxPages} pages per pass; counts are over the ${ok.length} pages crawled${crawlCapped ? `. The sitemap declares more URLs than the cap — raise maxPages or use background crawling for full coverage` : ` (the full declared set fit within the cap)`}.`
       : `No sitemap was found; discovery followed internal links from the homepage, capped at ${maxPages} pages per pass. JavaScript-rendered link grids (common on Wix/Shopify) can hide pages from a static crawler — adding or exposing a sitemap would surface them.`,
     `Broken-link detection covers internal links reached during the crawl, not an exhaustive link check.`,
-    `Performance is a single best-effort PageSpeed run on the homepage (mobile)${performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
+    `Performance is a lab PageSpeed run on the homepage (mobile)${performance && performance.runs > 1 ? ` — median of ${performance.runs} runs, not a real-user field average` : ""}${performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
 

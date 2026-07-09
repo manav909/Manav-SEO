@@ -115,7 +115,7 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
    simply refuse our crawler's origin, without ever fabricating: if the reader
    also fails, the caller keeps the honest blocked result. Set JINA_API_KEY for
    higher throughput and reliability on multi-page crawls. */
-async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boolean; html: string }> {
+export async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boolean; html: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
