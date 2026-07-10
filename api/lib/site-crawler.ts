@@ -336,7 +336,15 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
   if (captureSchema) { try { ({ buildForPage } = await import("./schema-llms-engine.js")); } catch { buildForPage = null; } }
   const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
     if (useReader) { const r = await fetchViaReader(u).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) return { html: r.html, ok: r.html.length > 50 }; }
-    try { const html = await fetchHtml(u); return { html, ok: !!html && html.length > 50 }; } catch { return { html: "", ok: false }; }
+    try { const html = await fetchHtml(u); if (html && html.length > 50) return { html, ok: true }; } catch { /* fall through to rescue */ }
+    /* Rescue: a failed raw fetch is often rate-limiting or a WAF block on a fast
+       crawl (common on WooCommerce/Cloudflare stores), NOT a real 404. Retry once
+       through the rendering proxy, which uses a different path and usually gets
+       through, before ever calling the page unreachable — so live pages are not
+       falsely reported as broken. */
+    const rescue = await fetchViaReader(u).catch(() => ({ ok: false, html: "" }));
+    if (rescue.ok && rescue.html && rescue.html.length > 50) return { html: rescue.html, ok: true };
+    return { html: "", ok: false };
   };
   for (let i = 0; i < items.length; i += concurrency) {
     const batch = items.slice(i, i + concurrency);
