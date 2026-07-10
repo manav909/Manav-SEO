@@ -856,6 +856,76 @@ export function assembleProposalHtml(stages: ReportStageInput[], opts: ReportOpt
   return { html: H.join(""), sections: completed.length };
 }
 
+/* ── Enriched proposal ──────────────────────────────────────────────
+   An LLM-AUTHORED scope-and-proposal document — scope, delivery method,
+   quality standards and pricing basis — bespoke to the engagement. It is
+   deliberately NOT a diagnosis: it lists no site findings or issue counts
+   (that is the audit's job). Falls back to the deterministic template only
+   if the synthesis is unavailable. */
+const PROPOSAL_SYSTEM = [
+  `You are a senior SEO and AEO consultant writing a SCOPE AND PROPOSAL document for a prospect. This is NOT an audit and NOT a diagnosis — do NOT list the site's problems, findings, issue counts, or recommendations anywhere. That is a separate document. This one defines the ENGAGEMENT and justifies what it costs.`,
+  ``,
+  `Set out the following, in bespoke sections YOU design for THIS engagement (never a fixed generic template, never generic headings):`,
+  `- SCOPE OF WORK: exactly what is delivered and at what monthly volume — the services and their quantities — stated concretely, so the prospect knows precisely what they are buying.`,
+  `- DELIVERY METHOD: HOW each deliverable is actually produced — the process, the real data it is grounded in, the cadence, the review step. Let the prospect see the machine behind the output, so the price feels earned.`,
+  `- QUALITY STANDARDS: the bar each deliverable is held to, and, honestly, why it beats the cheap alternative competitors sell: content genuinely researched from live search data, not thin AI filler; links earned through real outreach, never bought or spun (which risk Google penalties for their clients); schema built from the page's real markup, never guessed; reporting where every figure states its source. This section justifies the investment.`,
+  `- PRICING BASIS: how the pricing is structured and what drives cost — scope and volume, the quality floor, and, for a reseller or agency, per-client tiering as they add clients. Explain the LOGIC so the figure is justified rather than arbitrary. Write "[confirm monthly figure]" where the actual number belongs — the operator sets it. Be honest that quality has a floor, and that on a fixed budget the honest lever is SCOPE (fewer items per cycle), never quality.`,
+  ``,
+  `Write person-to-person, first person, specific, no filler — the voice of a real senior consultant. Every sentence earns its place. Design bespoke, specific section headings for THIS engagement.`,
+  `Honesty: never promise rankings or guaranteed results; never claim a capability the scope does not include; where an item needs the client to connect a data source (Search Console, Semrush) for its reporting, state that plainly as part of delivery.`,
+  ``,
+  `Return ONLY valid JSON, no prose, no fences:`,
+  `{"title":"a specific proposal title for this engagement","understanding":"two to four sentences: what this engagement is and who it is for","sections":[{"heading":"a bespoke section heading","body":"markdown body"}],"next_steps":["...","..."]}`,
+].join("\n");
+
+async function seniorProposalPass(opts: ReportOptions): Promise<{ title?: string; understanding?: string; sections: DmsSection[]; next_steps: string[] } | null> {
+  let materialsText = "";
+  if (opts.project_id) { try { const mats = await loadMaterials(opts.project_id); if (mats.length) materialsText = materialsForPrompt(mats, 30000).text; } catch { /* optional */ } }
+  const reseller = opts.engagement_type === "reseller_productized";
+  const ctx = [
+    opts.operator_emphasis ? `╔═══ THE OPERATOR'S EXPLICIT STEER — obey it; it shapes the scope, emphasis and framing of this proposal ═══╗\n${opts.operator_emphasis}\n╚═══ end of the operator's steer ═══╝` : "",
+    `Client / prospect: ${opts.client_name || opts.client_domain || "the prospect"}.`,
+    reseller
+      ? `This is a RESELLER / PRODUCTIZED engagement: the prospect is an agency or reseller who will deliver this to THEIR clients. Frame the scope, delivery and pricing for repeatable multi-client delivery, with per-client tiering.`
+      : `This is a direct retainer engagement for one business.`,
+    opts.buyer_note ? `What they care about: ${opts.buyer_note}` : "",
+    (opts.requirements && opts.requirements.length)
+      ? `THE SERVICES / DELIVERABLES IN SCOPE — build the scope, delivery method and pricing basis around exactly these, at the volumes implied:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
+      : `Standard monthly SEO and AEO delivery scope.`,
+    materialsText ? `Operator-supplied context (pricing notes, prior scope, client details) — use where relevant; attribute any figure to the supplied dataset:\n${materialsText}` : "",
+    `Write the scope-and-proposal document now. Scope, delivery method, quality standards, pricing basis — and NO site findings or audit content.`,
+  ].filter(Boolean).join("\n");
+  const run = async () => {
+    const { text: raw } = await llmComplete({ system: PROPOSAL_SYSTEM, user: ctx, maxTokens: 9000, timeoutMs: 100000, label: "wizard-proposal", maxSegments: 2 });
+    let parsed = parseJsonResponse<any>(raw);
+    if (!parsed || !Array.isArray(parsed?.sections)) { const s = String(raw || ""); const a = s.indexOf("{"); const b = s.lastIndexOf("}"); if (a >= 0 && b > a) { try { parsed = JSON.parse(s.slice(a, b + 1)); } catch { /* keep null */ } } }
+    if (!parsed || !Array.isArray(parsed.sections)) return null;
+    const sections: DmsSection[] = parsed.sections.filter((s: any) => s && (s.heading || s.body)).map((s: any) => ({ heading: String(s.heading || "").trim(), body: String(s.body || "").trim() })).filter((s: DmsSection) => s.body.length > 0);
+    if (!sections.length) return null;
+    return { title: String(parsed.title || "").trim() || undefined, understanding: String(parsed.understanding || "").trim(), sections, next_steps: Array.isArray(parsed.next_steps) ? parsed.next_steps.map(String) : [] };
+  };
+  try { let r = await run(); if (!r) r = await run(); return r; } catch { return null; }
+}
+
+export async function assembleProposalHtmlEnriched(stages: ReportStageInput[], opts: ReportOptions = {}): Promise<{ html: string; sections: number; enriched: boolean }> {
+  const prop = await seniorProposalPass(opts);
+  if (!prop) { const base = assembleProposalHtml(stages, opts); return { ...base, enriched: false }; }
+  const author = (opts.author || "Manav S").trim();
+  const client = opts.client_name || opts.client_domain || "your engagement";
+  const named = client && client !== "your engagement";
+  const today = fmtDate(new Date().toISOString());
+  const title = prop.title || (opts.engagement_type === "reseller_productized" ? "Productized SEO & AEO Delivery — Scope & Proposal" : "SEO & AEO Delivery — Scope & Proposal");
+  const H: string[] = [];
+  H.push(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title><style>${REPORT_CSS}</style></head><body><div class="doc">`);
+  H.push(`<div class="lh"><h1>${esc(title)}</h1><div class="by">Prepared by ${esc(author)}${named ? ` · for ${esc(client)}` : ""}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
+  if (prop.understanding) H.push(`<h2>The engagement</h2>${mdToHtml(prop.understanding)}`);
+  for (const sec of prop.sections) { if (sec.heading) H.push(`<h2>${esc(sec.heading)}</h2>`); if (sec.body) H.push(mdToHtml(sec.body)); }
+  if (prop.next_steps.length) H.push(`<h2>Next steps</h2><ol>${prop.next_steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>`);
+  H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. This document defines the scope, delivery and pricing basis of the engagement.</div>`);
+  H.push(`</div></body></html>`);
+  return { html: H.join(""), sections: prop.sections.length, enriched: true };
+}
+
 /* Enriched report: senior-DMS interpretation woven around the grounded
    data tables. Falls back to the data-only report if the lens is
    unavailable, with an honest note. */
@@ -863,7 +933,7 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   /* Artifact routing: a productized/reseller/ongoing brief needs a scope
      proposal, not an audit of an example site. This is the "right document for
      the brief" decision the wizard now makes. */
-  if (opts.artifact_mode === "proposal") { const p = assembleProposalHtml(stages, opts); return { ...p, enriched: false }; }
+  if (opts.artifact_mode === "proposal") { return await assembleProposalHtmlEnriched(stages, opts); }
   const author = (opts.author || "Manav S").trim();
   const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
   const title = opts.report_title || `SEO and AEO Audit — ${client}`;
