@@ -928,10 +928,48 @@ export async function assembleProposalHtmlEnriched(stages: ReportStageInput[], o
   H.push(`<div class="lh"><h1>${esc(title)}</h1><div class="by">Prepared by ${esc(author)}${named ? ` · for ${esc(client)}` : ""}</div><div class="dt">${esc(today)}</div>${opts.include_branding ? `<div class="brand">Produced with SEO Season</div>` : ``}</div>`);
   if (prop.understanding) H.push(mdToHtml(prop.understanding));
   for (const sec of prop.sections) { if (sec.heading) H.push(`<h2>${esc(sec.heading)}</h2>`); if (sec.body) H.push(mdToHtml(sec.body)); }
+  H.push(renderServicesReference(opts.requirements));
   if (prop.next_steps.length) H.push(`<h2>Next steps</h2><ol>${prop.next_steps.map(s => `<li>${esc(s)}</li>`).join("")}</ol>`);
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. This document defines the scope, delivery and pricing basis of the engagement.</div>`);
   H.push(`</div></body></html>`);
   return { html: H.join(""), sections: prop.sections.length, enriched: true };
+}
+
+/* Plain-language definitions for the services a brief scopes, so the client can
+   see exactly what each named service is. Deterministic and honest — matched to
+   the requirements actually in the plan, defined in plain English. */
+const SERVICE_DEFINITIONS: Array<{ re: RegExp; term: string; def: string }> = [
+  { re: /technical (seo|audit)|site.?wide audit|crawl/i, term: "Technical SEO audit", def: "A full check of your site's technical health — how well search engines can crawl, read and index it: titles, headings, links, broken URLs, speed and structured data." },
+  { re: /schema|structured data|json.?ld/i, term: "Schema / structured data", def: "Code added to your pages that tells Google and AI engines exactly what each page is (a product, an article, a business, an FAQ), making you eligible for rich results and AI-answer citations." },
+  { re: /llms?\.txt/i, term: "llms.txt", def: "A file at your site root that tells AI crawlers (ChatGPT and the like) what your site covers and where your authoritative content is." },
+  { re: /aeo|answer.?engine|generative engine|geo\b|ai.?overview|ai visibility/i, term: "AEO / GEO (AI-answer optimisation)", def: "Optimising so your brand appears in AI-generated answers — Google's AI Overviews and LLM chatbots — which is increasingly where buyers get their answers before visiting any website." },
+  { re: /article|blog|content writing|copywriting/i, term: "Content / articles", def: "Articles written to directly answer the real questions your audience searches, structured so Google's AI and chatbots can quote them — researched from live search data, not thin AI filler." },
+  { re: /backlink|link build|referring domain|off.?site.*link/i, term: "Backlinks", def: "Links from other reputable websites to yours, earned through genuine outreach — a core signal Google uses to judge your authority. Never bought or spun, which risk penalties." },
+  { re: /off.?site q&?a|reddit|quora|forum/i, term: "Off-site Q&A", def: "Genuinely helpful answers posted where your audience already asks questions (Reddit, Quora), building presence and referral traffic, disclosed per each platform's rules." },
+  { re: /page enhanc|on.?page|text improvement|copy edit/i, term: "On-page enhancements", def: "Improvements to the text and structure of your existing pages — headlines, intros, closings, metadata — so they rank better and read better, without a full rebuild." },
+  { re: /faq/i, term: "FAQ optimisation", def: "Question-and-answer content on your pages, marked up so it can appear as rich results and be cited directly in AI answers." },
+  { re: /keyword report|rank tracking|position|impression|search console|gsc/i, term: "Keyword & rank reporting", def: "Tracking which search terms bring you traffic and where you rank over time, from Search Console or Semrush data — so progress is measured, not asserted." },
+  { re: /meta (title|description)|title tag|snippet/i, term: "Meta titles & descriptions", def: "The headline and summary shown for your pages in search results — effectively your organic ad copy, written around the terms your customers search." },
+  { re: /canonical|duplicate|redirect/i, term: "Canonical & duplicate fixes", def: "Tags and fixes that tell Google which version of a page to rank, so duplicate URLs stop splitting your ranking strength." },
+  { re: /core web vital|page ?speed|lighthouse|performance/i, term: "Core Web Vitals / speed", def: "How fast and stable your pages load on mobile — a Google ranking factor and a direct driver of whether visitors stay or bounce." },
+  { re: /shopping|merchant center|product feed/i, term: "Google Shopping readiness", def: "Getting your product data (Product schema, prices, availability, identifiers) feed-ready for a healthy Google Merchant Center / Shopping presence." },
+  { re: /knowledge panel|entity|wikidata/i, term: "Knowledge Panel / entity", def: "The information box Google shows for a brand or person, strengthened through entity signals (Wikidata, authoritative profiles) so it appears richer and more complete." },
+  { re: /social|open graph|instagram|facebook/i, term: "Social presence", def: "How your site is set up for social sharing (Open Graph tags controlling how links preview) and connected to your social profiles, strengthening brand signals." },
+  { re: /competit|market research|share of voice/i, term: "Competitive research", def: "Live analysis of who ranks and gets cited for your key terms and what they do differently, turning their position into your opportunity map." },
+];
+function renderServicesReference(requirements: string[] | undefined): string {
+  const reqs = (requirements || []).filter(Boolean);
+  if (!reqs.length) return "";
+  const rows: string[][] = [];
+  const seen = new Set<string>();
+  for (const r of reqs) {
+    const hit = SERVICE_DEFINITIONS.find(d => d.re.test(r));
+    if (hit && !seen.has(hit.term)) { seen.add(hit.term); rows.push([r, `<strong>${esc(hit.term)}.</strong> ${esc(hit.def)}`]); }
+    else if (!hit) rows.push([r, `A deliverable in this engagement, produced as described in the plan above.`]);
+  }
+  if (!rows.length) return "";
+  const body = rows.map(([svc, def]) => `<tr><td style="vertical-align:top">${esc(svc)}</td><td>${def}</td></tr>`).join("");
+  return `<h2>What each service means</h2><p class="muted">A plain-language reference for every service named above, so nothing is jargon.</p><table><thead><tr><th>As scoped</th><th>What it is</th></tr></thead><tbody>${body}</tbody></table>`;
 }
 
 /* Enriched report: senior-DMS interpretation woven around the grounded
@@ -964,6 +1002,7 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   }
 
   if (dms.bottom_line) H.push(`<h2>The bottom line</h2>${mdToHtml(dms.bottom_line)}`);
+  H.push(renderServicesReference(opts.requirements));
 
   /* The data behind the analysis — every claim above traces to this. Kept as a
      clearly-labelled evidence section (charts + tables) so the numbers are
