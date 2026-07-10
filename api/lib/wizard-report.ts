@@ -729,18 +729,19 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
   }
 
   const ctx = [
+    opts.operator_emphasis ? `╔═══ THE OPERATOR'S EXPLICIT STEER — THIS OVERRIDES DEFAULT FRAMING. Read it FIRST and let it shape the whole document: which finding you open with, how you structure the sections, what you emphasise, and the angle you take. The opening section MUST visibly reflect this steer. If it conflicts with a default instinct, the steer wins (as long as it stays within honest data). ═══╗\n${opts.operator_emphasis}\n╚═══ end of the operator's steer — obey it ═══╝` : "",
     `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
     `PURPOSE OF THIS REPORT: it backs a SALE. We are pitching the services below to this prospect and this report must, using ONLY honest data, make the factual case that they should buy — and answer their likely objections before they raise them.`,
     opts.engagement_type ? `Who we are convincing: ${opts.engagement_type === "reseller_productized" ? "a reseller/agency deciding whether to make us their production partner across their clients" : opts.engagement_type === "site_owner" ? "the business owner whose site this is" : "the prospect"}.` : "",
     opts.buyer_note ? `What they care about: ${opts.buyer_note}` : "",
-    opts.operator_emphasis ? `THE OPERATOR'S OWN STEER — treat this as a priority instruction for what to emphasise and how to frame the report:\n${opts.operator_emphasis}` : "",
     (opts.requirements && opts.requirements.length)
       ? `THE SERVICES/PLANS WE ARE SELLING (what the prospect scoped and is curious about) — every finding must connect to one of these and show why the service is worth buying:\n${opts.requirements.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
       : `No explicit brief was supplied; audit the site's health and opportunities.`,
     materialsText
       ? `YOUR PROVIDED DATA / FILES (${material_files.join(", ")}) — operator-supplied, and a LEGITIMATE source for this analysis, ESPECIALLY for the brief items the live engines cannot measure themselves (keyword volumes and rankings, backlinks/referring domains, Search Console clicks/impressions/positions). Use it to answer those items with real figures. BUT it is OPERATOR-PROVIDED, not something this platform independently measured: attribute every figure taken from it to "the supplied dataset" (name the file), so it can be verified point by point against that file, and present it as supplied-and-verifiable, never as an engine measurement. Do not extrapolate beyond what the data actually states.\n\n${materialsText}`
       : "",
-    `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement. Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
+    opts.operator_emphasis ? `Reminder before you write: the operator's steer at the top is a priority instruction — make sure the finished document unmistakably reflects it.` : "",
+    `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement (unless the operator's steer directs otherwise). Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
   const run = async (): Promise<(SeniorDmsResult & { material_files: string[] }) | null> => {
