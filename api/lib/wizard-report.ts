@@ -477,6 +477,19 @@ function renderBodyHtml(o: any): string {
     return P.join("");
   }
 
+  /* Google Shopping readiness / product-feed audit. */
+  if (Array.isArray(o.action_plan) && o.signals && typeof o.is_ecommerce === "boolean") {
+    if (typeof o.summary === "string") P.push(`<p>${esc(o.summary)}</p>`);
+    if (o.is_ecommerce && o.signals) {
+      const rows = Object.entries(o.signals).map(([k, v]: any) => [String(k).replace(/_/g, " "), v ? "present" : "MISSING"]);
+      P.push(`<h4>Product-data readiness for a Shopping feed${o.platform ? ` (${esc(o.platform)})` : ""}</h4>`);
+      P.push(tableHtml(["Signal", "Status"], rows));
+    }
+    if (o.action_plan.length) { P.push(`<h4>Prioritised readiness plan</h4>`); P.push(tableHtml(["Priority", "Action", "Why it matters"], o.action_plan.map((a: any) => [`P${a.priority}`, a.action, a.why]))); }
+    if ((o.notes || []).length) P.push(`<p class="muted">${o.notes.map((n: string) => esc(n)).join(" ")}</p>`);
+    return P.join("");
+  }
+
   /* A stage answered from the operator's uploaded data (verifiable, attributed). */
   if (o.from_documents) {
     if (Array.isArray(o.findings) && o.findings.length) P.push(`<ul>${o.findings.map((f: string) => `<li>${esc(f)}</li>`).join("")}</ul>`);

@@ -330,6 +330,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Reads the homepage's actual markup — nothing about the brand's accounts is assumed or invented. It checks the SITE's social signals and outbound links; it does NOT log in to or audit the content, followers or activity inside each social account.",
     mode: "auto",
   },
+  shopping_readiness_audit: {
+    id: "shopping_readiness_audit",
+    label: "Google Shopping readiness / product-feed audit",
+    engine: "shopping-readiness-engine.ts → auditShoppingReadiness",
+    inputs_required: ["A crawlable store URL (resolved from project data, or supplied)"],
+    output: "An audit of the store's product-data readiness for a Google Shopping feed: whether product pages carry Product/Offer schema, price, currency, availability, image, brand and identifiers (GTIN/MPN), plus the e-commerce platform, and a prioritised readiness plan (fix product data, set up the Merchant Center feed).",
+    limits: "This AUDITS on-site product-data readiness only. It does NOT create or manage Google Shopping campaigns, budgets, bids or feeds — that is execution work performed in the client's Google Ads / Merchant Center account by a human with account access. The engine never touches an ad account.",
+    mode: "auto",
+  },
 };
 
 /* ─── Helpers ─────────────────────────────────────────────────── */
