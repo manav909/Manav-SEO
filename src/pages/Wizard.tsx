@@ -832,7 +832,9 @@ export default function Wizard() {
                       <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Crawling…" : "Continue crawling"}</button>
                     </div>
                   )}
-                  {crawlJob && crawlJob.complete && <p className="text-[11px] text-emerald-500">Crawled all {crawlJob.done} pages — ready. Generate the document below and it will use this full crawl.</p>}
+                  {crawlJob && crawlJob.complete && (crawlJob.total <= 2
+                    ? <p className="text-[11px] text-amber-500">Only {crawlJob.done} page(s) were found — the sitemap was likely unreachable this run (rate-limiting or a WAF block, common on a repeat crawl). Wait a minute and click Start batched crawl again for full coverage.</p>
+                    : <p className="text-[11px] text-emerald-500">Crawled all {crawlJob.done} pages — ready. Generate the document below and it will use this full crawl.</p>)}
                 </div>
               )}
               {docSaved && <p className="text-[11px] text-emerald-500 mb-2">{docSaved}</p>}

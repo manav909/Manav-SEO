@@ -200,7 +200,8 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
 
   /* 1) robots.txt — every CMS that auto-generates sitemaps declares them here. */
   try {
-    const robots = await fetchHtml(origin + "/robots.txt");
+    let robots = await fetchHtml(origin + "/robots.txt");
+    if (!robots) { const r = await fetchViaReader(origin + "/robots.txt").catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) robots = r.html; }
     if (robots) for (const m of robots.matchAll(/^[ \t]*sitemap:[ \t]*(\S+)/gim)) { try { enqueue(new URL(m[1].trim(), origin).toString()); } catch { /* skip */ } }
   } catch { /* ignore */ }
   /* 2) conventional locations across platforms. */
@@ -215,7 +216,14 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
     const sm = toFetch.shift()!;
     let xml = "";
     try { xml = await fetchHtml(sm); } catch { xml = ""; }
-    if (!xml || !/<loc>/i.test(xml)) continue;       // missing, gzipped, or not a sitemap -> skip cleanly
+    /* Rescue: a blocked/rate-limited raw fetch of the sitemap returns empty and
+       would silently drop the whole site to just its homepage. Retry through the
+       reader, which bypasses WAF/rate-limiting — the <loc> tags survive. */
+    if (!xml || !/<loc>/i.test(xml)) {
+      const r = await fetchViaReader(sm).catch(() => ({ ok: false, html: "" }));
+      if (r.ok && r.html && /<loc>/i.test(r.html)) xml = r.html;
+    }
+    if (!xml || !/<loc>/i.test(xml)) continue;       // genuinely missing/not a sitemap -> skip cleanly
     filesParsed++;
     const locs = parseSitemapLocs(xml);
     if (isSitemapIndex(xml)) {
