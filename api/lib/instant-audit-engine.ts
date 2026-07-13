@@ -42,9 +42,16 @@ export interface InstantAuditOpts {
   salesContext?: string;
 }
 
+/* Severity is deliberately the SAME four values the previous engine emitted.
+   Every downstream consumer (generate_sales_pack, generate_context_suggestions,
+   generate_client_doc, suggest_sales_documents sevCounts, Intake.tsx SEV_COLOR,
+   BdePanel buildAuditHtml sevC) iterates issues as PROBLEMS. Introducing a fifth
+   "positive" value would leak strengths into pitches, client documents and the
+   on-screen problem list. Strengths are carried separately in AuditResult.strengths
+   and reflected in the narrative — never inside any issues array. */
 export interface AuditIssue {
   issue: string;
-  severity: "critical" | "high" | "medium" | "low" | "positive";
+  severity: "critical" | "high" | "medium" | "low";
   explanation: string;
   fix: string;
   algorithmNote: string | null;
@@ -75,6 +82,7 @@ export interface AuditResult {
   platform?: string;
   indexable?: boolean;
   businessSummary?: string;
+  strengths?: string[];
   signals?: Signals;
   error?: string;
 }
@@ -577,43 +585,29 @@ function scoreCategory(name: string, issues: AuditIssue[], s: Signals): number {
   return score;
 }
 
-/* ───────────────────────── positives (honest wins) ──────────────── */
+/* ───────────────────────── strengths (honest wins) ──────────────────
+   Returned as plain strings, NEVER as issue objects. They surface in
+   AuditResult.strengths and in the narrative, so no consumer that treats
+   the issues array as a problem list can misread a strength as a fault. */
 
-function positiveNotes(s: Signals): AuditIssue[] {
-  const wins: AuditIssue[] = [];
-  if (s.verificationTags.length) {
-    wins.push({
-      category: "Technical SEO",
-      issue: `Site is verified with ${s.verificationTags.join(" and ")}`,
-      severity: "positive",
-      explanation:
-        "Webmaster verification shows the site is actively managed and already known to search engines. This is the opposite of an invisible site.",
-      fix: "Keep using Search Console to monitor coverage, queries and Core Web Vitals.",
-      algorithmNote: null,
-    });
-  }
-  if (s.ogComplete && s.twitterComplete) {
-    wins.push({
-      category: "Content Quality",
-      issue: "Social sharing is fully configured (Open Graph and Twitter Card)",
-      severity: "positive",
-      explanation:
-        "Complete Open Graph and Twitter Card tags mean shared links render with a title, description and image, which lifts click-through from social and messaging.",
-      fix: "No action needed. Verify the share image is current when products change.",
-      algorithmNote: null,
-    });
-  }
-  if (s.imgTotal > 0 && s.altCoveragePct >= 80) {
-    wins.push({
-      category: "Content Quality",
-      issue: `Strong image alt-text coverage (${s.altCoveragePct}% of ${s.imgTotal} images)`,
-      severity: "positive",
-      explanation:
-        "Most images carry descriptive alt text, which supports Google Images visibility and accessibility.",
-      fix: "Maintain this standard on new uploads and include target keywords naturally.",
-      algorithmNote: null,
-    });
-  }
+function strengthNotes(s: Signals): string[] {
+  const wins: string[] = [];
+  if (s.verificationTags.length)
+    wins.push(
+      `Verified with ${s.verificationTags.join(" and ")} — the site is actively managed and already known to search engines.`
+    );
+  if (s.ogComplete && s.twitterComplete)
+    wins.push(
+      "Social sharing is fully configured (Open Graph and Twitter Card), so shared links render with a title, description and image."
+    );
+  if (s.imgTotal > 0 && s.altCoveragePct >= 80)
+    wins.push(
+      `Strong image alt-text coverage (${s.altCoveragePct}% of ${s.imgTotal} images), which supports Google Images visibility and accessibility.`
+    );
+  if (s.canonical && s.canonicalSelfReferential)
+    wins.push("A self-referential canonical tag is in place, consolidating ranking signals to the preferred URL.");
+  if (s.title && s.metaDescription && s.h1Count === 1)
+    wins.push("The three core on-page signals are present and well-formed: a single H1, a title tag and a meta description.");
   return wins;
 }
 
@@ -671,6 +665,7 @@ async function narrate(
   displayUrl: string,
   s: Signals,
   detIssues: AuditIssue[],
+  strengths: string[],
   ctxParts: string[],
   salesContext: string,
   algoData: any[]
@@ -726,6 +721,10 @@ async function narrate(
     verified,
     businessContext,
     "Deterministic findings already computed (do not restate as prose the presence/absence facts; instead write narrative and add genuinely NEW strategic opportunities grounded in the real industry):\n" + (detList || "none"),
+    strengths.length
+      ? "Verified STRENGTHS to acknowledge honestly in the executive summary and narratives (do NOT list these as problems):\n" +
+        strengths.map((w) => "- " + w).join("\n")
+      : "",
     algoData.length
       ? "Relevant algorithm updates you may cite if accurate: " +
         algoData.map((a: any) => `${a.topic}: ${(a.summary || "").slice(0, 80)}`).join("; ")
@@ -915,18 +914,20 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
   if (ca.urgency) ctxParts.push("Urgency: " + ca.urgency);
 
   const detIssues = deterministicIssues(s);
-  const wins = positiveNotes(s);
+  const strengths = strengthNotes(s);
 
-  const narrated = await narrate(host, s, detIssues, ctxParts, opts.salesContext || "", algoData);
+  const narrated = await narrate(host, s, detIssues, strengths, ctxParts, opts.salesContext || "", algoData);
 
-  /* assemble categories: deterministic facts are authoritative; LLM adds prose + strategy */
+  /* assemble categories: deterministic facts are authoritative; LLM adds prose + strategy.
+     STRENGTHS are NOT placed in any issues array — every consumer treats issues as
+     problems. They live in AuditResult.strengths and in the narrative instead. */
   const catNames = ["Technical SEO", "On-Page SEO", "Content Quality", "User Experience"];
   const strategic = narrated?.strategic || [];
-  const allIssues = [...detIssues, ...wins, ...strategic];
+  const allIssues = [...detIssues, ...strategic];
   const categories: AuditCategory[] = catNames.map((name) => {
     const issues = allIssues.filter((i) => (i.category || "Technical SEO") === name);
     /* User Experience has no deterministic facts here (needs a live perf run) — seed one honest note */
-    if (name === "User Experience" && !issues.some((i) => i.severity !== "positive")) {
+    if (name === "User Experience" && !issues.length) {
       issues.push({
         issue: "Core Web Vitals not measured in this instant pass",
         severity: "low",
@@ -937,7 +938,7 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
         category: "User Experience",
       });
     }
-    const scoreForCat = scoreCategory(name, issues.filter((i) => i.severity !== "positive"), s);
+    const scoreForCat = scoreCategory(name, issues, s);
     return {
       name,
       score: scoreForCat,
@@ -957,7 +958,7 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
     score: overall,
     executiveSummary:
       narrated?.executiveSummary ||
-      `${host} is a ${s.platform || "live"} site with ${detIssues.length} identified SEO ${detIssues.length === 1 ? "gap" : "gaps"} and clear strengths in ${wins.length ? "areas such as " + wins.map((w) => w.issue.split(" ")[0].toLowerCase()).slice(0, 2).join(" and ") : "several areas"}.`,
+      `${host} is a ${s.platform || "live"} site with ${detIssues.length} identified SEO ${detIssues.length === 1 ? "gap" : "gaps"}${strengths.length ? " alongside genuine strengths (" + strengths.length + " noted)" : ""}. ${s.indexable ? "It is indexable" : "It is currently set to noindex"} and ${s.verificationTags.length ? "already known to search engines" : "should be connected to Search Console"}.`,
     categories,
     issues: flat,
     quickWins: narrated?.quickWins?.length
@@ -972,6 +973,7 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
     platform: s.platform,
     indexable: s.indexable,
     businessSummary: s.businessSummary,
+    strengths,
     signals: s,
   };
 }
