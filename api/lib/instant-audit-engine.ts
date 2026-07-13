@@ -40,6 +40,11 @@ export interface InstantAuditOpts {
   forLead?: string;
   conversationAnalysis?: any;
   salesContext?: string;
+  /* deep-audit controls */
+  maxPages?: number; /* money pages to crawl beyond the homepage (default 6) */
+  keyword?: string; /* target keyword for the competitive read; if absent it is derived */
+  projectId?: string; /* required for the SERP competitive read */
+  enableCompetitive?: boolean; /* OFF by default — SERP calls cost money; flip on when a project + budget exist */
 }
 
 /* Severity is deliberately the SAME four values the previous engine emitted.
@@ -84,7 +89,88 @@ export interface AuditResult {
   businessSummary?: string;
   strengths?: string[];
   signals?: Signals;
+  /* deep-audit facets — each is a DISTINCT slice so a downstream doc can draw
+     its own value from the same audit rather than restating the others */
+  auditDepth?: "homepage" | "deep";
+  pagesAudited?: PageAudit[];
+  siteFindings?: SiteFinding[];
+  contentAssessment?: ContentAssessment;
+  businessProfile?: BusinessProfile;
+  competitive?: CompetitiveRead;
+  opportunities?: Opportunity[];
   error?: string;
+}
+
+/* ─────────────────── deep-audit facet interfaces ────────────────────
+   Kept separate and purpose-built. The audit doc reads categories +
+   findings + strengths; the pitch reads businessProfile + opportunities;
+   the action plan reads opportunities (sequenced by impact/effort); the
+   competitive brief reads competitive; the case study is matched against
+   businessProfile. No two docs need to restate the same facts. */
+
+export interface PageAudit {
+  url: string;
+  pageType: string; /* home | product | category | about | contact | blog | other */
+  status: number;
+  title: string;
+  titleLen: number;
+  metaDescription: string;
+  h1Count: number;
+  wordCount: number;
+  schemaTypes: string[];
+  hasProductSchema: boolean;
+  price: string; /* detected on-page price, or "" */
+  indexable: boolean;
+  canonical: string;
+  altCoveragePct: number;
+  imgTotal: number;
+}
+
+export interface SiteFinding {
+  kind: string;
+  severity: "critical" | "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  affectedUrls: string[];
+  fix: string;
+  category: string; /* one of the four audit category names */
+}
+
+export interface BusinessProfile {
+  industry: string;
+  offering: string;
+  products: { name: string; price: string; url: string }[];
+  priceRange: string;
+  positioning: string;
+  primaryKeywords: string[];
+  audience: string;
+}
+
+export interface ContentAssessment {
+  totalPagesAudited: number;
+  avgWordCount: number;
+  hasInformationalContent: boolean;
+  hasBlog: boolean;
+  hasFaq: boolean;
+  thinPages: string[];
+  gapSummary: string;
+}
+
+export interface CompetitiveRead {
+  ran: boolean;
+  keyword: string;
+  competitors: { domain: string; title: string; position: number }[];
+  clientAppears: boolean;
+  clientPosition: number | null;
+  note: string;
+}
+
+export interface Opportunity {
+  title: string;
+  impact: "high" | "medium" | "low";
+  effort: "low" | "medium" | "high";
+  detail: string;
+  category: string;
 }
 
 /* ────────────────────────────── signals ────────────────────────── */
@@ -668,7 +754,15 @@ async function narrate(
   strengths: string[],
   ctxParts: string[],
   salesContext: string,
-  algoData: any[]
+  algoData: any[],
+  deep: {
+    pages: PageAudit[];
+    findings: SiteFinding[];
+    content: ContentAssessment;
+    profile: BusinessProfile;
+    competitive: CompetitiveRead;
+    opportunities: Opportunity[];
+  }
 ): Promise<{
   executiveSummary: string;
   narratives: Record<string, string>;
@@ -701,6 +795,27 @@ async function narrate(
 
   const businessContext = "BUSINESS CONTEXT — derive the industry and keyword strategy ONLY from this:\n" + s.businessSummary;
 
+  const deepBlock = [
+    "DEEP AUDIT CONTEXT — this audit crawled the money pages, not just the homepage. Ground the narrative in these real facts:",
+    `- Pages audited: ${deep.pages.length} (${deep.pages.map((p) => p.pageType).join(", ") || "homepage only"})`,
+    deep.profile.products.length
+      ? `- Products found: ${deep.profile.products.map((p) => p.name + (p.price ? ` (${p.price})` : "")).slice(0, 6).join("; ")}`
+      : "",
+    deep.profile.priceRange ? `- Price range: ${deep.profile.priceRange} | Positioning: ${deep.profile.positioning}` : "",
+    `- Content depth: average ${deep.content.avgWordCount} words per page; informational content (guides/FAQ): ${deep.content.hasInformationalContent ? "yes" : "no"}. ${deep.content.gapSummary}`,
+    deep.findings.length
+      ? "- Site-level findings the homepage alone could not reveal:\n" + deep.findings.map((f) => `   [${f.severity}] ${f.title}`).join("\n")
+      : "- No cross-page structural problems detected.",
+    deep.competitive.ran && deep.competitive.competitors.length
+      ? `- Competitive SERP for "${deep.competitive.keyword}": top domains are ${deep.competitive.competitors.slice(0, 5).map((c) => c.domain).join(", ")}; this site ${deep.competitive.clientAppears ? `ranks at position ${deep.competitive.clientPosition}` : "does not appear in the top results"}.`
+      : "",
+    deep.opportunities.length
+      ? "- Ranked opportunities: " + deep.opportunities.slice(0, 5).map((o) => `${o.title} (impact ${o.impact}, effort ${o.effort})`).join("; ")
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
   const detList = detIssues
     .map((i) => `[${i.severity}] ${i.category}: ${i.issue}`)
     .join("\n");
@@ -720,6 +835,7 @@ async function narrate(
     salesContext ? "Sales brief (follow precisely): " + String(salesContext).slice(0, 600) : "",
     verified,
     businessContext,
+    deepBlock,
     "Deterministic findings already computed (do not restate as prose the presence/absence facts; instead write narrative and add genuinely NEW strategic opportunities grounded in the real industry):\n" + (detList || "none"),
     strengths.length
       ? "Verified STRENGTHS to acknowledge honestly in the executive summary and narratives (do NOT list these as problems):\n" +
@@ -792,6 +908,392 @@ async function resourceExists(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/* ═══════════════════════ DEEP-AUDIT LAYER (Stage 1) ═══════════════════════
+   Turns the homepage-hygiene snapshot into a Senior-DMS lead audit: crawls the
+   money pages, detects duplicate/canonical problems a single page cannot see,
+   checks Product schema where prices actually live, assesses content depth, and
+   builds distinct intelligence facets for the downstream sales documents. */
+
+function classifyPageType(url: string, title: string): string {
+  let p = "";
+  try {
+    p = new URL(url).pathname.toLowerCase();
+  } catch {
+    p = url.toLowerCase();
+  }
+  const t = (title || "").toLowerCase();
+  if (p === "/" || p === "" || p === "/home" || p === "/index" || p === "/index.html") return "home";
+  if (/\b(faq|faqs|questions)\b/.test(p)) return "faq";
+  if (/\b(blog|news|article|articles|guide|guides|resources|learn)\b/.test(p)) return "blog";
+  if (/\b(about|our-story|who-we-are|company)\b/.test(p)) return "about";
+  if (/\b(contact|contact-us|get-in-touch|quote)\b/.test(p)) return "contact";
+  if (/\b(shop|products|product-line|collections|store|catalog|catalogue|our-product)\b/.test(p)) return "category";
+  if (/\b(product|item|p\/|buy)\b/.test(p) || /\$|price|buy|order/.test(t)) return "product";
+  return "other";
+}
+
+function extractPrice(html: string): string {
+  const text = stripTags(html);
+  const matches = text.match(/\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})?/g) || [];
+  let best = 0;
+  let bestStr = "";
+  for (const m of matches) {
+    const n = Number(m.replace(/[^0-9.]/g, ""));
+    if (n > best && n < 1000000) {
+      best = n;
+      bestStr = m.replace(/\s/g, "");
+    }
+  }
+  return bestStr;
+}
+
+function normTitle(t: string): string {
+  return (t || "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function extractCandidateUrls(
+  homeHtml: string,
+  origin: string,
+  domain: string,
+  homeUrl: string,
+  maxPages: number
+): string[] {
+  const found: { url: string; type: string }[] = [];
+  const seen = new Set<string>();
+  const homePath = (() => {
+    try {
+      return new URL(homeUrl).pathname.replace(/\/+$/, "") || "/";
+    } catch {
+      return "/";
+    }
+  })();
+
+  for (const m of homeHtml.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    let href = m[1].trim();
+    if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("javascript:"))
+      continue;
+    if (/\.(pdf|jpg|jpeg|png|gif|svg|webp|zip|mp4|css|js)(\?|$)/i.test(href)) continue;
+    let abs = "";
+    try {
+      abs = new URL(href, origin).href.split("#")[0].replace(/\/+$/, "");
+    } catch {
+      continue;
+    }
+    let host = "";
+    let path = "/";
+    try {
+      const u = new URL(abs);
+      host = u.hostname.replace(/^www\./, "");
+      path = u.pathname.replace(/\/+$/, "") || "/";
+    } catch {
+      continue;
+    }
+    if (host !== domain) continue; /* internal only */
+    if (path === homePath || path === "/") continue; /* skip the homepage itself */
+    const key = path;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    found.push({ url: abs, type: classifyPageType(abs, stripTags(m[2])) });
+  }
+
+  /* always probe /home to catch the Wix root-vs-/home duplicate */
+  const homeVariant = origin.replace(/\/+$/, "") + "/home";
+  if (!seen.has("/home")) found.push({ url: homeVariant, type: "home" });
+
+  const priority: Record<string, number> = { product: 0, category: 1, home: 2, blog: 3, faq: 4, about: 5, contact: 6, other: 7 };
+  found.sort((a, b) => (priority[a.type] ?? 9) - (priority[b.type] ?? 9));
+  return found.slice(0, Math.max(1, maxPages)).map((f) => f.url);
+}
+
+async function auditOnePage(url: string): Promise<PageAudit | null> {
+  let page: { ok: boolean; status: number; html: string; finalUrl: string; xRobotsTag: string; blocked: boolean };
+  try {
+    page = await fetchPageRaw(url, 10000);
+  } catch {
+    return null;
+  }
+  if (!page.ok || !page.html) return null;
+
+  const rawHtml = page.html;
+  const { js } = detectPlatform(rawHtml, metaContent(rawHtml, "generator"));
+  let bodyHtml = rawHtml;
+  let via: Signals["fetchedVia"] = "raw";
+  if (js && stripTags(rawHtml).length < 500) {
+    try {
+      const reader = await fetchViaReader(page.finalUrl || url);
+      if (reader.ok && reader.html && stripTags(reader.html).length > stripTags(rawHtml).length) {
+        bodyHtml = reader.html;
+        via = "reader-augmented";
+      }
+    } catch {
+      /* keep raw */
+    }
+  }
+
+  const sig = buildSignals(rawHtml, bodyHtml, page.status, page.finalUrl || url, page.xRobotsTag, false, false, via);
+  const price = extractPrice(bodyHtml);
+  const pageType = classifyPageType(page.finalUrl || url, sig.title);
+  return {
+    url: page.finalUrl || url,
+    pageType: price && pageType !== "home" ? "product" : pageType,
+    status: page.status,
+    title: sig.title,
+    titleLen: sig.titleLen,
+    metaDescription: sig.metaDescription,
+    h1Count: sig.h1Count,
+    wordCount: sig.wordCount,
+    schemaTypes: sig.schemaTypes,
+    hasProductSchema: sig.schemaTypes.some((t) => ["Product", "Offer", "AggregateOffer"].includes(t)),
+    price,
+    indexable: sig.indexable,
+    canonical: sig.canonical,
+    altCoveragePct: sig.altCoveragePct,
+    imgTotal: sig.imgTotal,
+  };
+}
+
+function detectSiteFindings(homeSig: Signals, homeUrl: string, pages: PageAudit[]): SiteFinding[] {
+  const out: SiteFinding[] = [];
+  const homePathIsHome = pages.filter((p) => p.pageType === "home");
+
+  /* duplicate homepage — the Wix root-vs-/home problem a single-page audit misses */
+  for (const hp of homePathIsHome) {
+    if (normTitle(hp.title) && normTitle(hp.title) !== normTitle(homeSig.title) && normTitle(homeSig.title)) {
+      out.push({
+        kind: "duplicate_homepage",
+        severity: "high",
+        title: "Two homepage versions are live with conflicting titles",
+        detail: `The site serves both ${homeUrl} and ${hp.url} as homepages, and they carry different title tags ("${homeSig.title}" versus "${hp.title}"). Search engines may index both and split ranking signals between them.`,
+        affectedUrls: [homeUrl, hp.url],
+        fix: "Pick one canonical homepage, 301-redirect the other, and confirm a single self-referential canonical so all authority consolidates to one URL and one title.",
+        category: "Technical SEO",
+      });
+      break;
+    }
+  }
+
+  /* duplicate titles across pages */
+  const byTitle: Record<string, string[]> = {};
+  const withHome = [...pages];
+  for (const p of withHome) {
+    const t = normTitle(p.title);
+    if (!t) continue;
+    (byTitle[t] = byTitle[t] || []).push(p.url);
+  }
+  for (const [t, urls] of Object.entries(byTitle)) {
+    if (urls.length > 1) {
+      out.push({
+        kind: "duplicate_titles",
+        severity: "medium",
+        title: `${urls.length} pages share the same title tag`,
+        detail: `Duplicate title tags ("${t.slice(0, 80)}") make it hard for search engines to tell the pages apart and dilute keyword targeting.`,
+        affectedUrls: urls.slice(0, 6),
+        fix: "Give each page a unique, keyword-specific title that matches its content.",
+        category: "On-Page SEO",
+      });
+    }
+  }
+
+  /* Product schema missing on priced pages — the highest-ROI commerce gap */
+  const pricedNoSchema = pages.filter((p) => (p.price || p.pageType === "product") && !p.hasProductSchema);
+  if (pricedNoSchema.length) {
+    out.push({
+      kind: "missing_product_schema",
+      severity: "high",
+      title: `Product schema is missing on ${pricedNoSchema.length} priced product ${pricedNoSchema.length === 1 ? "page" : "pages"}`,
+      detail: `Product and Offer JSON-LD is absent on pages that carry real prices${pricedNoSchema[0]?.price ? ` (for example ${pricedNoSchema[0].price})` : ""}. Without it, Google cannot show price, availability or review stars in the result, which forfeits click-through on exactly the commercial searches that convert.`,
+      affectedUrls: pricedNoSchema.map((p) => p.url).slice(0, 6),
+      fix: "Add Product plus Offer schema (name, price, priceCurrency, availability) to each product page, and Organization or LocalBusiness schema on the homepage.",
+      category: "Technical SEO",
+    });
+  }
+
+  /* canonical missing on interior pages */
+  const noCanon = pages.filter((p) => p.pageType !== "home" && !p.canonical);
+  if (noCanon.length >= 2) {
+    out.push({
+      kind: "canonical_missing",
+      severity: "medium",
+      title: `${noCanon.length} interior pages have no canonical tag`,
+      detail: "Interior pages without a canonical are vulnerable to duplicate-URL variants splitting their ranking signal.",
+      affectedUrls: noCanon.map((p) => p.url).slice(0, 6),
+      fix: "Add a self-referential canonical link element to every page.",
+      category: "Technical SEO",
+    });
+  }
+
+  /* non-indexable interior pages */
+  const noindexed = pages.filter((p) => !p.indexable);
+  if (noindexed.length) {
+    out.push({
+      kind: "noindex_pages",
+      severity: "high",
+      title: `${noindexed.length} crawled ${noindexed.length === 1 ? "page is" : "pages are"} set to noindex`,
+      detail: "Pages carrying a noindex directive are excluded from search entirely and cannot rank.",
+      affectedUrls: noindexed.map((p) => p.url).slice(0, 6),
+      fix: "Remove the noindex directive from any page that should rank, then request re-indexing.",
+      category: "Technical SEO",
+    });
+  }
+
+  return out;
+}
+
+function assessContent(pages: PageAudit[]): ContentAssessment {
+  const total = pages.length;
+  const words = pages.map((p) => p.wordCount).filter((w) => w > 0);
+  const avg = words.length ? Math.round(words.reduce((a, b) => a + b, 0) / words.length) : 0;
+  const hasBlog = pages.some((p) => p.pageType === "blog");
+  const hasFaq = pages.some((p) => p.pageType === "faq");
+  const hasInformationalContent = hasBlog || hasFaq;
+  const thinPages = pages.filter((p) => p.pageType !== "contact" && p.wordCount > 0 && p.wordCount < 250).map((p) => p.url);
+  const gapSummary = hasInformationalContent
+    ? "The site carries some informational content, which supports top-of-funnel discovery."
+    : "The site is transactional-only: product and company pages but no informational content (buying guides, comparisons, FAQ) to capture buyers researching before they purchase. Competitors that publish this content typically own the top-of-funnel queries.";
+  return { totalPagesAudited: total, avgWordCount: avg, hasInformationalContent, hasBlog, hasFaq, thinPages, gapSummary };
+}
+
+function buildBusinessProfile(homeSig: Signals, pages: PageAudit[]): BusinessProfile {
+  const productPages = pages.filter((p) => p.pageType === "product" || p.price);
+  const products = productPages
+    .map((p) => ({ name: (p.title || "").split(/[|\u2013\u2014-]/)[0].trim().slice(0, 60), price: p.price, url: p.url }))
+    .filter((x) => x.name);
+  const prices = productPages
+    .map((p) => Number((p.price || "").replace(/[^0-9.]/g, "")))
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b);
+  const priceRange = prices.length
+    ? prices.length === 1
+      ? `$${prices[0].toLocaleString()}`
+      : `$${prices[0].toLocaleString()} to $${prices[prices.length - 1].toLocaleString()}`
+    : "";
+  const bs = homeSig.businessSummary.toLowerCase();
+  const positioningBits: string[] = [];
+  if (/manufactur|made in|american made|direct/.test(bs)) positioningBits.push("direct manufacturer");
+  if (/premium|professional|elite|top of the line|heavy duty/.test(bs)) positioningBits.push("quality-led");
+  if (/affordable|budget|value/.test(bs)) positioningBits.push("value-conscious");
+  return {
+    industry: homeSig.title || homeSig.topKeywords.slice(0, 3).join(" ") || "not identified",
+    offering: homeSig.metaDescription || homeSig.h1Text || "",
+    products: products.slice(0, 10),
+    priceRange,
+    positioning: positioningBits.join(", ") || "niche direct-to-buyer",
+    primaryKeywords: homeSig.topKeywords.slice(0, 8),
+    audience: /youth|club|team|school/.test(bs) ? "clubs, teams and organisations" : "direct buyers",
+  };
+}
+
+async function competitiveRead(
+  keyword: string,
+  projectId: string,
+  enable: boolean
+): Promise<CompetitiveRead> {
+  const base: CompetitiveRead = {
+    ran: false,
+    keyword: keyword || "",
+    competitors: [],
+    clientAppears: false,
+    clientPosition: null,
+    note:
+      "Competitive SERP analysis was not run in this pass (it is gated off by default because it consumes a paid SERP call and needs a project context). Enabling it shows exactly who ranks for the target keyword, where this site sits, and the gap to close.",
+  };
+  if (!enable || !keyword || !projectId) return base;
+  try {
+    const mod: any = await import("./serpapi.js");
+    const serp: any = await mod.fetchSerpFeatures(keyword, projectId, {});
+    if (!serp) return base;
+    const organic: any[] = serp.organic_results || serp.organic || serp.results || [];
+    const competitors = organic
+      .slice(0, 8)
+      .map((r: any, i: number) => ({
+        domain: (() => {
+          try {
+            return new URL(r.link || r.url || "").hostname.replace(/^www\./, "");
+          } catch {
+            return String(r.domain || "");
+          }
+        })(),
+        title: String(r.title || ""),
+        position: Number(r.position || i + 1),
+      }))
+      .filter((c: any) => c.domain);
+    return { ...base, ran: true, competitors, note: "Competitive SERP read completed." };
+  } catch {
+    return base;
+  }
+}
+
+function buildOpportunities(
+  findings: SiteFinding[],
+  content: ContentAssessment,
+  homeSig: Signals,
+  competitive: CompetitiveRead
+): Opportunity[] {
+  const ops: Opportunity[] = [];
+  if (findings.some((f) => f.kind === "missing_product_schema"))
+    ops.push({
+      title: "Add Product and Offer schema across the product range",
+      impact: "high",
+      effort: "low",
+      detail: "Unlocks price, availability and review rich results on the commercial queries that convert, lifting click-through with no content rewrite.",
+      category: "Technical SEO",
+    });
+  if (findings.some((f) => f.kind === "duplicate_homepage"))
+    ops.push({
+      title: "Consolidate the duplicate homepage into one canonical URL",
+      impact: "high",
+      effort: "low",
+      detail: "Merges split ranking signals from the two competing homepages onto a single strong page and one clear title.",
+      category: "Technical SEO",
+    });
+  if (!content.hasInformationalContent)
+    ops.push({
+      title: "Build buyer-intent content (guides, comparisons, FAQ)",
+      impact: "high",
+      effort: "medium",
+      detail: "Captures the top-of-funnel research queries that transactional-only sites forfeit to content-rich competitors, and feeds internal links to the product pages.",
+      category: "Content Quality",
+    });
+  if (!homeSig.schemaTypes.some((t) => ["Organization", "LocalBusiness"].includes(t)))
+    ops.push({
+      title: "Add Organization or LocalBusiness schema to the homepage",
+      impact: "medium",
+      effort: "low",
+      detail: "Helps Google understand the business entity and is a prerequisite for a knowledge panel and local visibility.",
+      category: "Technical SEO",
+    });
+  if (content.thinPages.length)
+    ops.push({
+      title: "Deepen thin pages with buyer-focused detail",
+      impact: "medium",
+      effort: "medium",
+      detail: `${content.thinPages.length} crawled ${content.thinPages.length === 1 ? "page has" : "pages have"} sparse copy that gives search engines little to rank.`,
+      category: "Content Quality",
+    });
+  if (competitive.ran && competitive.competitors.length && !competitive.clientAppears)
+    ops.push({
+      title: "Close the visibility gap on the core commercial keyword",
+      impact: "high",
+      effort: "medium",
+      detail: `The site does not appear in the top results for "${competitive.keyword}", where ${competitive.competitors.slice(0, 3).map((c) => c.domain).join(", ")} currently rank.`,
+      category: "On-Page SEO",
+    });
+  const impactRank: Record<string, number> = { high: 0, medium: 1, low: 2 };
+  const effortRank: Record<string, number> = { low: 0, medium: 1, high: 2 };
+  return ops.sort((a, b) => impactRank[a.impact] - impactRank[b.impact] || effortRank[a.effort] - effortRank[b.effort]);
+}
+
+function findingsToIssues(findings: SiteFinding[]): AuditIssue[] {
+  return findings.map((f) => ({
+    issue: f.title,
+    severity: f.severity,
+    explanation: f.detail,
+    fix: f.fix,
+    algorithmNote: null,
+    category: f.category,
+  }));
 }
 
 /* ──────────────────────────────── main ──────────────────────────── */
@@ -894,6 +1396,51 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
     fetchedVia
   );
 
+  const homeUrl = page.finalUrl || candidates[0];
+  let domain = "";
+  try {
+    domain = new URL(homeUrl).hostname.replace(/^www\./, "");
+  } catch {
+    domain = host.replace(/^www\./, "");
+  }
+
+  /* ── DEEP CRAWL: audit the money pages in parallel, bounded ── */
+  const maxPages = typeof opts.maxPages === "number" ? Math.max(0, Math.min(10, opts.maxPages)) : 6;
+  const homePageAudit: PageAudit = {
+    url: homeUrl,
+    pageType: "home",
+    status: page.status,
+    title: s.title,
+    titleLen: s.titleLen,
+    metaDescription: s.metaDescription,
+    h1Count: s.h1Count,
+    wordCount: s.wordCount,
+    schemaTypes: s.schemaTypes,
+    hasProductSchema: s.schemaTypes.some((t) => ["Product", "Offer", "AggregateOffer"].includes(t)),
+    price: extractPrice(bodyHtml),
+    indexable: s.indexable,
+    canonical: s.canonical,
+    altCoveragePct: s.altCoveragePct,
+    imgTotal: s.imgTotal,
+  };
+  let crawledPages: PageAudit[] = [];
+  if (maxPages > 0) {
+    const candidateUrls = extractCandidateUrls(rawHtml, origin, domain, homeUrl, maxPages);
+    const settled = await Promise.allSettled(candidateUrls.map((u) => auditOnePage(u)));
+    crawledPages = settled
+      .map((r) => (r.status === "fulfilled" ? r.value : null))
+      .filter((p): p is PageAudit => Boolean(p));
+  }
+  const pages: PageAudit[] = [homePageAudit, ...crawledPages];
+
+  /* ── site-level intelligence a single page cannot see ── */
+  const siteFindings = detectSiteFindings(s, homeUrl, pages);
+  const content = assessContent(pages);
+  const profile = buildBusinessProfile(s, pages);
+  const derivedKeyword = (opts.keyword || profile.primaryKeywords.slice(0, 2).join(" ") || "").trim();
+  const competitive = await competitiveRead(derivedKeyword, opts.projectId || "", Boolean(opts.enableCompetitive));
+  const opportunities = buildOpportunities(siteFindings, content, s, competitive);
+
   /* live context for algorithm highlights */
   let algoData: any[] = [];
   try {
@@ -913,10 +1460,39 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
   if (ca.main_need) ctxParts.push("Their main need: " + ca.main_need);
   if (ca.urgency) ctxParts.push("Urgency: " + ca.urgency);
 
-  const detIssues = deterministicIssues(s);
-  const strengths = strengthNotes(s);
+  /* problems = homepage-level deterministic + cross-page findings + content gap */
+  const detIssues = [...deterministicIssues(s), ...findingsToIssues(siteFindings)];
+  if (pages.length > 1 && !content.hasInformationalContent) {
+    detIssues.push({
+      issue: "No informational content to capture buyers researching before they purchase",
+      severity: "medium",
+      explanation: content.gapSummary,
+      fix: "Publish buyer-intent content — buying guides, product comparisons and an FAQ — and link it to the product pages.",
+      algorithmNote: "The Helpful Content system rewards genuinely useful, in-depth content.",
+      category: "Content Quality",
+    });
+  }
 
-  const narrated = await narrate(host, s, detIssues, strengths, ctxParts, opts.salesContext || "", algoData);
+  /* strengths (never placed in an issues array) — homepage + deep */
+  const strengths = [...strengthNotes(s)];
+  const richProductPages = pages.filter((p) => p.pageType === "product" && p.wordCount >= 200);
+  if (richProductPages.length >= 2)
+    strengths.push(
+      `Product pages carry detailed, specific copy (${richProductPages.length} pages with full specifications), which both search engines and buyers reward.`
+    );
+  if (profile.priceRange)
+    strengths.push(
+      `Pricing is transparent on-page (${profile.priceRange}), which builds buyer trust and enables Product schema rich results.`
+    );
+
+  const narrated = await narrate(host, s, detIssues, strengths, ctxParts, opts.salesContext || "", algoData, {
+    pages,
+    findings: siteFindings,
+    content,
+    profile,
+    competitive,
+    opportunities,
+  });
 
   /* assemble categories: deterministic facts are authoritative; LLM adds prose + strategy.
      STRENGTHS are NOT placed in any issues array — every consumer treats issues as
@@ -958,15 +1534,15 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
     score: overall,
     executiveSummary:
       narrated?.executiveSummary ||
-      `${host} is a ${s.platform || "live"} site with ${detIssues.length} identified SEO ${detIssues.length === 1 ? "gap" : "gaps"}${strengths.length ? " alongside genuine strengths (" + strengths.length + " noted)" : ""}. ${s.indexable ? "It is indexable" : "It is currently set to noindex"} and ${s.verificationTags.length ? "already known to search engines" : "should be connected to Search Console"}.`,
+      `${host} is a ${s.platform || "live"} site audited across ${pages.length} ${pages.length === 1 ? "page" : "pages"}, with ${detIssues.length} identified SEO ${detIssues.length === 1 ? "gap" : "gaps"}${strengths.length ? " alongside genuine strengths (" + strengths.length + " noted)" : ""}. ${s.indexable ? "It is indexable" : "It is currently set to noindex"} and ${s.verificationTags.length ? "already known to search engines" : "should be connected to Search Console"}.`,
     categories,
     issues: flat,
     quickWins: narrated?.quickWins?.length
       ? narrated.quickWins
-      : detIssues
-          .filter((i) => i.severity === "critical" || i.severity === "high")
+      : opportunities
+          .filter((o) => o.effort === "low")
           .slice(0, 3)
-          .map((i) => i.fix),
+          .map((o) => o.title),
     algorithmHighlights: algoData.map((a: any) => `${a.topic}: ${(a.summary || "").slice(0, 100)}`).slice(0, 2),
     showcase_message: narrated?.showcase_message || "",
     contextSummary: narrated?.contextSummary || "",
@@ -975,6 +1551,14 @@ export async function runInstantAudit(opts: InstantAuditOpts): Promise<AuditResu
     businessSummary: s.businessSummary,
     strengths,
     signals: s,
+    /* deep facets */
+    auditDepth: pages.length > 1 ? "deep" : "homepage",
+    pagesAudited: pages,
+    siteFindings,
+    contentAssessment: content,
+    businessProfile: profile,
+    competitive,
+    opportunities,
   };
 }
 
