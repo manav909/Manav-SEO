@@ -2,9 +2,19 @@
 
 ---
 
-## CURRENT DEPLOY STATE (verified 2026-06-09 against live main)
+## CURRENT DEPLOY STATE (verified 2026-07-13 against live main)
 
-**Main branch:** `04f3e23` — verified by re-clone. This single commit already merged the GEO bundle (12.20 + 12.21) AND the 12.21.3 guest-post work-reduction hotfix. The "staged but not deployed" queue from the 2026-06-05 session is OBSOLETE — everything in it shipped. API functions = 12 (confirmed).
+**Main branch:** `218b9bd` — verified by re-clone. API functions = 12 (confirmed, ceiling intact).
+
+**IMPORTANT — this header was a month stale until 2026-07-13.** The block below described state as of 2026-06-09 (builds 12.22-12.25 "deploy pending"). ALL of that shipped, and was then SUPERSEDED by the wizard brief-to-report pipeline push (SerpAPI research, batched resumable crawl with JS-render detection + rendering-proxy fallback via `fetchViaReader`, `canonKey` dedup fix, PDF/DOCX/PPTX+OCR/XLSX ingestion, rebuilt strategic proposal, and three capability engines: entity/knowledge-panel, social-presence, shopping-readiness). All confirmed present in main this session: `wizard-report.ts` (92KB), `serpapi.ts`, `site-crawler.ts`, `entity-panel-engine.ts`, `social-presence-engine.ts`, `shopping-readiness-engine.ts`. Treat the historical 12.22-12.25 section below as DONE.
+
+**Schema reality (verified 2026-07-13):** code references ~144 tables via `.from()`; only ~21 have committed DDL in the repo — the other ~123 live in the Supabase Dashboard only. The repo is NOT a source of truth for the schema. `crawl_jobs`, `client_report_attachments`, `synthesis_diagnostics` confirmed to EXIST live. `pillar_reports` and `seo_pillar_panels` confirmed to NOT exist live — see backlog.
+
+**BACKLOG — War Room pillar repoint (pending, do NOT build without go-ahead):** `season-war-room.ts` (readPillarReports/readPillarPanels lines 120-121,250-282), `season-war-room-extras.ts` (pillarRunsThis/Last ~340), `season-project-snapshot.ts:254`, `season-llm-precomputes.ts:359,391` all `.select()` from `pillar_reports` / `seo_pillar_panels`, which do NOT exist in the live DB. Reads are `try/catch`+data-only so they degrade to `[]` silently — no crash, but War Room / snapshot / precompute pillar signals are permanently empty. Fix is a REPOINT to `seo_campaign_reports` / `seo_campaign_panels` (different column shapes: `report_kind` not `kind`, `current_findings` not `findings`, `created_at` not `generated_at`), NOT a resurrection. Nothing writes to the old tables. Manav parked this 2026-07-13.
+
+---
+
+**HISTORICAL (2026-06-09) — retained for context; superseded per note above:** Main was `04f3e23` — merged the GEO bundle (12.20 + 12.21) AND the 12.21.3 guest-post work-reduction hotfix. The "staged but not deployed" queue from 2026-06-05 was OBSOLETE — everything shipped.
 
 | Build | What | Status |
 |---|---|---|
@@ -1337,6 +1347,15 @@ VERIFICATION OWED AFTER DEPLOY:
 ---
 
 ## OUTSTANDING / NEXT SESSION QUICK START
+
+### Build 12.33 — Lead Intake instant audit, rebuilt honest [BUILT 2026-07-13, deploy pending]
+**The bug:** `instant_audit_showcase` fetched the target through the Jina reader (r.jina.ai) FIRST. Reader mode returns cleaned body HTML with the entire `<head>` stripped — no title/meta/canonical, JSON-LD removed. The deterministic parser then read that head-less document, found every signal absent, and the "VERIFIED SIGNALS" block told the model everything was missing. Result on scrumsleds.com: 18/100 "invisible to Google" claiming zero title/meta/H1/canonical/schema — all of which are present in the raw SSR HTML. Because Jina "succeeded" (>500 chars body), the raw-fetch fallback (`if (!_fetched)`) never ran. Same raw-vs-rendered class as the site-crawler fix last session, but living in a separate older code path the fix never reached. Compounded by: LLM confabulation ("isSEO:false in Wix viewer model" — not in any signal), and industry misID (rugby scrum-sled manufacturer read as American-football, football keyword strategy recommended).
+- NEW `api/lib/instant-audit-engine.ts` → `runInstantAudit({url,forLead,conversationAnalysis,salesContext})`. Structural signals extracted ONLY from raw HTML via `fetchPageRaw` (preserves the head Wix/Squarespace/Shopify SSR). Reader used solely to top up body text on a genuine JS shell (thin raw body), never overriding a head signal. Status-aware: 401/403/429/5xx/WAF = "blocked", never "missing" or "404". Deterministic layer decides presence/absence + severity + score; LLM writes narrative + strategic opportunities ONLY, hard-grounded in the verified block, industry derived ONLY from a deterministic business-summary passed in. Enhanced (Senior-DMS depth, all measured): indexability verdict (robots meta + X-Robots-Tag + canonical sanity), full JSON-LD type inventory, heading outline, measured image alt-coverage %, OG/Twitter social readiness, viewport/lang, honest platform/generator, webmaster-verification detection (refutes "invisible"), robots.txt + sitemap.xml presence, honest positive notes.
+- EDIT `api/task-engine.ts` — the ~180-line inline `instant_audit_showcase` block replaced with a 9-line thin caller (`await import("./lib/instant-audit-engine.js")`), matching the file's dynamic-import convention. Output shape preserved exactly (score/categories/issues/quickWins/executiveSummary/algorithmHighlights/contextSummary) so Intake.tsx + downstream sales-pack/doc actions render unchanged; additive fields (signals, platform, indexable, businessSummary) ignored safely by current UI.
+- Verified: esbuild transpile + node --check green on engine and task-engine; tsc nodenext --strict ZERO errors in the new file (only the pre-existing tolerated serpapi.ts/shared.ts Postgrest noise in the import graph, none introduced); no template-literal contractions. Fixture test against scrumsleds.com's real markup reads title/meta/canonical/H1/OG/alt(100%)/Wix/GSC+Bing correctly. LIVE VALIDATION OWED: run the audit on scrumsleds.com in Lead Intake — expect ~85-90 with the real gap (no Product/Organization/LocalBusiness JSON-LD) and correct rugby industry, NOT 18/100 football.
+- No new api/*.ts, no migration, no layout. Frontend rendering enhancement (surfacing indexability/platform/alt-% as dedicated panels) is an optional follow-up, not built.
+
+
 
 ### Build 12.23a — Chat-driven wizard brain [BUILT 2026-06-09, deploy pending]
 The flagship feature Manav asked for: paste a client chat, the software classifies WHICH wizard archetype the engagement is and produces the full stage plan with honest per-stage readiness, using real platform capabilities behind the scenes. This turn ships the BRAIN (classify + plan); execution and UI are sequenced below.
