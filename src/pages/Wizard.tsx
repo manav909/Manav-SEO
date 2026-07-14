@@ -473,7 +473,7 @@ export default function Wizard() {
     const tab = window.open("", "_blank");
     if (tab) tab.document.write('<!doctype html><meta charset="utf-8"><body style="font-family:system-ui,sans-serif;padding:28px;color:#555">Generating report…</body>');
     setGeneratingReport(true); setError("");
-    const r: any = await post("wizard_report", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding, artifactMode: plan?.artifact_mode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note });
+    const r: any = await post("wizard_report", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding, artifactMode: plan?.artifact_mode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, keywords: keywords.split(",").map(k => k.trim()).filter(Boolean), competitors: competitors.split(",").map(c => c.trim()).filter(Boolean) });
     setGeneratingReport(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
@@ -489,7 +489,7 @@ export default function Wizard() {
     if (docRes && docRes.status === "completed") stagesIn.unshift({ label: "Analysis from your uploaded documents", ran_engine: docRes.ran_engine, status: "completed", output: docRes.output });
     if (stagesIn.length === 0) { setError("Run at least one stage (or analyse your documents) before generating documents."); return; }
     setGeneratingDocuments(true); setError(""); setDocuments([]);
-    const r: any = await post("wizard_report_areas", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding, artifactMode: plan?.artifact_mode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note });
+    const r: any = await post("wizard_report_areas", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding, artifactMode: plan?.artifact_mode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note, keywords: keywords.split(",").map(k => k.trim()).filter(Boolean), competitors: competitors.split(",").map(c => c.trim()).filter(Boolean) });
     setGeneratingDocuments(false);
     if (!r?.documents || !r.documents.length) { setError(r?.error || "Document generation failed."); return; }
     setDocuments(r.documents);

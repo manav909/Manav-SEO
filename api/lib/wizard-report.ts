@@ -48,6 +48,10 @@ export interface ReportOptions {
   target_is_example?: boolean; // the analysed site is a representative example, not the deliverable
   buyer_note?:      string;    // who is buying and what they optimise for
   operator_emphasis?: string;  // the operator's own context / what to emphasise, set before running
+  keywords?:        string[];   // target keywords in scope — named in findings where relevant
+  competitors?:     string[];   // competitor domains in scope — named where a finding is competitive
+  area_angle?:      string;     // per-document lens: governs this document's structure and voice so
+                                // multiple documents do not read the same
 }
 
 /* Completed sections, with duplicate sections (same engine + same summary)
@@ -706,6 +710,8 @@ const DMS_SYSTEM = [
   `- Write a bottom_line: three to five sentences that state, factually, what is broken today, what the engagement changes, and why moving now beats waiting — the honest close.`,
   ``,
   `DESIGN THE DOCUMENT FOR THIS BRIEF:`,
+  `- IF a "THIS DOCUMENT'S FOCUS AND SHAPE" lens is provided below, it GOVERNS this document's structure, section ordering, heading style and voice. Follow it so this document does NOT read like the others in the set — different shape, different rhythm, headings phrased in that lens. When several documents are produced for one client, each must feel distinct; a reader flipping through them should never feel deja-vu. Only fall back to the default shape below when no lens is given.`,
+  `- NAME THE SPECIFICS. Where target keywords are supplied, name the actual keyword when a finding turns on it ("your pages do not target 'feeding therapy for toddlers'"), not "your keywords" in the abstract. Where competitors are supplied, name the actual competitor when a finding is competitive ("culturekings.com ranks for this; you do not"), not "competitors" generically. Specificity is what makes it read as real analysis.`,
   `- Make the FIRST section a short, human opening (two to four sentences, first person): what you looked at across their site and the single biggest thing you found, stated bluntly. Its heading names that headline finding.`,
   `- Then ONE tight section per real, material finding — each following the five-step flow (checked -> found -> means -> matters -> the fix), each a few sentences, each with a specific heading that states the finding (never generic).`,
   `- Four to seven sections total, and ONLY what is real and material. Do NOT manufacture sections to look thorough — fewer, sharper sections close better than more, softer ones. If the data only supports three real findings, write three.`,
@@ -744,6 +750,9 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
       ? `YOUR PROVIDED DATA / FILES (${material_files.join(", ")}) — operator-supplied, and a LEGITIMATE source for this analysis, ESPECIALLY for the brief items the live engines cannot measure themselves (keyword volumes and rankings, backlinks/referring domains, Search Console clicks/impressions/positions). Use it to answer those items with real figures. BUT it is OPERATOR-PROVIDED, not something this platform independently measured: attribute every figure taken from it to "the supplied dataset" (name the file), so it can be verified point by point against that file, and present it as supplied-and-verifiable, never as an engine measurement. Do not extrapolate beyond what the data actually states.\n\n${materialsText}`
       : "",
     opts.operator_emphasis ? `Reminder before you write: the operator's steer at the top is a priority instruction — make sure the finished document unmistakably reflects it.` : "",
+    (opts.keywords && opts.keywords.length) ? `TARGET KEYWORDS IN SCOPE (name the specific keyword when a finding turns on it): ${opts.keywords.join(", ")}.` : "",
+    (opts.competitors && opts.competitors.length) ? `COMPETITORS IN SCOPE (name the specific competitor when a finding is competitive): ${opts.competitors.join(", ")}.` : "",
+    opts.area_angle ? `╔═══ THIS DOCUMENT'S FOCUS AND SHAPE — this lens GOVERNS the structure, ordering, headings and voice of THIS document so it reads distinctly from the others in the set: ═══╗\n${opts.area_angle}\n╚═══ shape this document to that lens ═══╝` : "",
     `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement (unless the operator's steer directs otherwise). Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
   ].join("\n");
@@ -1059,6 +1068,17 @@ function areaFor(stage: ReportStageInput): string {
   return "Additional Findings";
 }
 
+/* Each area gets a distinct lens so the documents do not read the same. This
+   governs structure, ordering, heading style and voice per document. */
+const AREA_ANGLE: Record<string, string> = {
+  "Technical SEO and Indexation": "Frame this as a prioritised technical remediation brief. Group findings by severity — blocking first, then high, then medium. Lead each with the exact count and the specific pages affected, then the precise fix. Diagnostic, engineer-to-operator voice. Headings name the technical problem itself, never a generic theme.",
+  "On-Page and Content": "Frame this as a content and on-page opportunity map. Organise around the target keywords: for each, what the site has today versus what a searcher expects, and the editorial move that closes the gap. Editorial, opportunity-led voice. Put the actual keyword in the heading where it drives the point.",
+  "Competitive and Gap Analysis": "Frame this as a head-to-head competitive intelligence brief. Name each competitor explicitly and show, concretely, where they outperform and the exact gap to close. Organise by competitor or by contested territory, not by generic issue type. Comparative, sharp, evidence-first.",
+  "AEO and Answer Engines": "Frame this as a forward-looking answer-engine readiness assessment. Organise around the real questions a buyer would ask an AI assistant and whether this brand would be surfaced in the answer. Strategic and forward-looking voice — the next frontier, not a repeat of the on-page audit.",
+  "Strategy, Conversion and Roadmap": "Frame this as a sequenced action roadmap. Organise strictly by time-to-impact: quick wins first, then compounding plays, each with its expected effect. Executive and decisive. Headings are moves ('Fix X to unlock Y'), not observations.",
+  "Additional Findings": "Frame this as a concise supplementary brief — a few sharp, distinct observations that did not belong in the other documents. Short and non-repetitive.",
+};
+
 export async function assembleAreaDocuments(
   stages: ReportStageInput[],
   opts: ReportOptions = {}
@@ -1096,7 +1116,8 @@ export async function assembleAreaDocuments(
      whole run comfortably inside the function budget. Promise.all preserves order. */
   const documents: AreaDocument[] = await Promise.all(
     finalGroups.map(async (g) => {
-      const areaOpts: ReportOptions = { ...opts, report_title: `${g.area} — ${client}` };
+      const baseArea = g.area.replace(/ \(part \d+\)$/, "");
+      const areaOpts: ReportOptions = { ...opts, report_title: `${g.area} — ${client}`, area_angle: AREA_ANGLE[baseArea] || AREA_ANGLE["Additional Findings"] };
       const doc = await assembleClientReportHtmlEnriched(g.stages, areaOpts);
       return { area: g.area, title: `${g.area} — ${client}`, html: doc.html, sections: doc.sections, enriched: doc.enriched };
     })
