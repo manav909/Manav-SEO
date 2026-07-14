@@ -972,16 +972,18 @@ const SERVICE_DEFINITIONS: Array<{ re: RegExp; term: string; def: string }> = [
 function renderServicesReference(requirements: string[] | undefined): string {
   const reqs = (requirements || []).filter(Boolean);
   if (!reqs.length) return "";
-  const rows: string[][] = [];
-  const seen = new Set<string>();
-  for (const r of reqs) {
+  /* One numbered row for EVERY scoped service, in the same order the document
+     numbers them, so a client can cross-reference "service 14" to its meaning.
+     Nothing is dropped: two services that share a definition each still appear,
+     because each is a distinct line item the client is paying for. */
+  const rows = reqs.map((r, i) => {
     const hit = SERVICE_DEFINITIONS.find(d => d.re.test(r));
-    if (hit && !seen.has(hit.term)) { seen.add(hit.term); rows.push([r, `<strong>${esc(hit.term)}.</strong> ${esc(hit.def)}`]); }
-    else if (!hit) rows.push([r, `A deliverable in this engagement, produced as described in the plan above.`]);
-  }
-  if (!rows.length) return "";
-  const body = rows.map(([svc, def]) => `<tr><td style="vertical-align:top">${esc(svc)}</td><td>${def}</td></tr>`).join("");
-  return `<h2>What each service means</h2><p class="muted">A plain-language reference for every service named above, so nothing is jargon.</p><table><thead><tr><th>As scoped</th><th>What it is</th></tr></thead><tbody>${body}</tbody></table>`;
+    const def = hit
+      ? `<strong>${esc(hit.term)}.</strong> ${esc(hit.def)}`
+      : `A deliverable in this engagement, produced as described in the plan above.`;
+    return `<tr><td style="vertical-align:top;white-space:nowrap;text-align:right"><strong>${i + 1}</strong></td><td style="vertical-align:top">${esc(r)}</td><td>${def}</td></tr>`;
+  }).join("");
+  return `<h2>What each service means</h2><p class="muted">A plain-language reference for every service named above, numbered to match the list so each one is easy to find — nothing is jargon, and every service is accounted for.</p><table><thead><tr><th style="width:2.5rem;text-align:right">#</th><th>As scoped</th><th>What it is</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 /* Enriched report: senior-DMS interpretation woven around the grounded
