@@ -73,6 +73,12 @@ export default function Wizard() {
   const [docScope, setDocScope] = useState<"smart" | "detailed" | "full">("smart");
   const [docSaved, setDocSaved] = useState("");
   const [crawlJob, setCrawlJob] = useState<{ id: string; done: number; total: number; complete: boolean } | null>(null);
+  /* Connect-once: GSC connection is resolved ONCE per project and shared across
+     every GSC-dependent stage, so a connected site is never re-prompted to
+     connect the same account stage after stage. */
+  const [gscConnected, setGscConnected] = useState(false);
+  const [gscHasData, setGscHasData]     = useState(false);
+  const [gscPulling, setGscPulling]     = useState<string>("");
   const [crawling, setCrawling] = useState(false);
   const [docEmphasis, setDocEmphasis] = useState("");
   const [generatingDoc, setGeneratingDoc] = useState(false);
@@ -128,6 +134,36 @@ export default function Wizard() {
     setClassifying(false);
   };
 
+  /* Resolve GSC connection ONCE per project. A connected project surfaces its
+     data and stops every stage from re-prompting an OAuth connect. */
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!projectId) { setGscConnected(false); setGscHasData(false); return; }
+      try {
+        const r: any = await post("gsc_status", { projectId });
+        if (cancelled) return;
+        setGscConnected(!!r?.connected);
+        setGscHasData(!!(r?.lastPullAt));
+      } catch {
+        if (!cancelled) { setGscConnected(false); setGscHasData(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  /* Already connected — pull (or refresh) the data ONCE; it serves every GSC
+     stage. This never re-runs OAuth for a site that is already connected. */
+  const pullGsc = async (s: any) => {
+    if (!projectId) { setError("No active project found."); return; }
+    setGscPulling(s?.id || "global"); setError("");
+    const pull: any = await post("gsc_pull", { projectId });
+    setGscPulling("");
+    if (!pull?.success) { setError(pull?.error || "Search Console data pull failed. Try again in a moment."); return; }
+    setGscHasData(true); setProjectConfirmed(true);
+    if (s) runStage(s);
+  };
+
   const runStage = async (s: any) => {
     if (!projectId) { setError("No active project found. Select a project, then run project-scoped stages."); return; }
     const caps = s.capability_ids || (s.capabilities || []).map((c: any) => c.id);
@@ -174,7 +210,7 @@ export default function Wizard() {
     const pull: any = await post("gsc_pull", { projectId });
     setGscBusy(""); setPickerStage(""); setGscSites([]);
     if (!pull?.success) { setError(pull?.error || "Property selected, but the data pull failed. Try the stage again in a moment."); return; }
-    setProjectConfirmed(true);
+    setGscConnected(true); setGscHasData(true); setProjectConfirmed(true);
     runStage(s);
   };
 
@@ -668,9 +704,10 @@ export default function Wizard() {
                 const st = res ? (STATUS[res.status] || { label: res.status, color: "#94a3b8" }) : null;
                 const connectStage = isConnectStage(s);
                 /* Offer connect tools on a connect stage until it has completed. */
-                const showConnect = connectStage && (!res || res.status === "needs_connection");
+                const showConnect = connectStage && !gscConnected && (!res || res.status === "needs_connection");
+                const showPull = connectStage && gscConnected && !gscHasData && !(res && res.status === "completed");
                 const deferred = noGsc && isGscDependent(s) && !(res && res.status === "completed");
-                const gateOk = projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
+                const gateOk = gscConnected || projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -728,6 +765,17 @@ export default function Wizard() {
                             )}
                           </div>
                         )}
+                      </div>
+                    )}
+
+                    {/* Connected already — one pull serves every GSC stage; never re-connect */}
+                    {showPull && (
+                      <div className="mt-3 pt-3 border-t border-border">
+                        <p className="text-xs text-muted-foreground mb-2">Search Console is connected for this project. Pull the data once — it powers this and every other Search Console stage. No need to reconnect.</p>
+                        <button onClick={() => pullGsc(s)} disabled={!!gscPulling}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
+                          {gscPulling ? "Pulling Search Console data…" : "Pull Search Console data"}
+                        </button>
                       </div>
                     )}
 
