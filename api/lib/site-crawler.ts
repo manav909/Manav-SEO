@@ -342,16 +342,45 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
   const pages: PageSig[] = []; const broken: string[] = []; const schema: any[] = []; const visited = new Set<string>();
   let buildForPage: ((u: string, h: string, isHome: boolean) => any) | null = null;
   if (captureSchema) { try { ({ buildForPage } = await import("./schema-llms-engine.js")); } catch { buildForPage = null; } }
+  /* Visible-text length after stripping scripts/styles/tags. */
+  const visibleTextLen = (html: string): number => {
+    const t = (html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return t.length;
+  };
+  /* Is the RAW HTML complete enough to audit WITHOUT rendering? We trust raw
+     ONLY when it already contains the exact signals the audit reports on — a
+     real <title>, a meta/OG description OR an <h1>, and genuine body content —
+     and it does not look like an empty SPA shell. This is the quality guard:
+     a server-rendered site (WordPress, Shopify SSR, most of the web) takes the
+     fast raw path, but any page that injects its content/title/meta/H1 via
+     JavaScript fails this check and is rendered through the proxy, so it is
+     never audited as a hollow shell (which would falsely report missing meta,
+     thin content, wrong word counts). Legitimately missing meta still qualifies
+     via the <h1>, so a real "missing meta" finding is preserved and fast. */
+  const rawIsAuditComplete = (html: string): boolean => {
+    if (!html || html.length < 200) return false;
+    // Empty SPA root (React/Next/Nuxt/Vue) with almost nothing inside -> needs render.
+    if (/<(?:div|main)[^>]+id=["'](?:root|app|__next|__nuxt|q-app)["'][^>]*>\s*<\/(?:div|main)>/i.test(html)) return false;
+    if (/id=["'](?:root|app|__next|__nuxt)["']/i.test(html) && visibleTextLen(html) < 500) return false;
+    const hasTitle = /<title[^>]*>\s*[^<\s][^<]{2,}<\/title>/i.test(html);
+    const hasMeta = /<meta[^>]+name=["']description["'][^>]+content=["'][^"']{3,}/i.test(html)
+      || /<meta[^>]+property=["']og:description["'][^>]+content=["'][^"']{3,}/i.test(html);
+    const hasH1 = /<h1[\s>]/i.test(html);
+    const richText = visibleTextLen(html) > 600;
+    return hasTitle && (hasMeta || hasH1) && richText;
+  };
   const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
-    if (useReader) { const r = await fetchViaReader(u).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) return { html: r.html, ok: r.html.length > 50 }; }
-    try { const html = await fetchHtml(u); if (html && html.length > 50) return { html, ok: true }; } catch { /* fall through to rescue */ }
-    /* Rescue: a failed raw fetch is often rate-limiting or a WAF block on a fast
-       crawl (common on WooCommerce/Cloudflare stores), NOT a real 404. Retry once
-       through the rendering proxy, which uses a different path and usually gets
-       through, before ever calling the page unreachable — so live pages are not
-       falsely reported as broken. */
-    const rescue = await fetchViaReader(u).catch(() => ({ ok: false, html: "" }));
-    if (rescue.ok && rescue.html && rescue.html.length > 50) return { html: rescue.html, ok: true };
+    /* Try a FAST raw fetch first. If it is already audit-complete (server-
+       rendered), use it — the difference is roughly 0.3s vs 3s per page. */
+    let raw = "";
+    try { raw = await fetchHtml(u); } catch { raw = ""; }
+    if (raw && rawIsAuditComplete(raw)) return { html: raw, ok: true };
+    /* Raw is missing, a JS shell, or lacks the signals we audit -> render it
+       through the proxy (this also rescues WAF/rate-limit blocks). */
+    const rendered = await fetchViaReader(u).catch(() => ({ ok: false, html: "" }));
+    if (rendered.ok && rendered.html && rendered.html.length > 50) return { html: rendered.html, ok: true };
+    /* Rendering also failed — keep whatever raw we have, else mark broken. */
+    if (raw && raw.length > 50) return { html: raw, ok: true };
     return { html: "", ok: false };
   };
   for (let i = 0; i < items.length; i += concurrency) {

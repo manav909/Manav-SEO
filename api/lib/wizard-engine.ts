@@ -540,7 +540,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         const target = mode === "advanced" ? 4000 : mode === "max" ? 1000 : mode === "full" ? 400 : mode === "detailed" ? 100 : 25;
         const r = await resolveTargets({ projectId, siteUrl, maxPages: target });
         if (!r || !r.selected.length) return { success: false, error: "Could not resolve the site (unreachable or blocking crawlers)." };
-        const batchSize = r.useReader ? 20 : 60;
+        const batchSize = r.useReader ? 40 : 60;
         const first = r.selected.slice(0, batchSize);
         const { pages, broken, schema } = await crawlUrls(first, r.useReader, r.useReader ? 5 : 6, r.start, r.homeHtml, true);
         const grown = expandFrontier(r.selected, pages, r.projectDomain, target); // spider: follow internal links
@@ -558,7 +558,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       if (job.status === "complete") return { success: true, jobId, done: job.cursor, total: job.target_count, complete: true };
       const m = job.meta || {};
       const selected = Array.isArray(m.selected) ? m.selected : [];
-      const batchSize = m.useReader ? 20 : 60;
+      const batchSize = m.useReader ? 40 : 60;
       const next = selected.slice(job.cursor, job.cursor + batchSize);
       const { pages, broken, schema } = next.length ? await crawlUrls(next, m.useReader, m.useReader ? 5 : 6, m.start, "", true) : { pages: [], broken: [], schema: [] };
       const schemaByUrl = new Map((schema || []).map((s: any) => [s.url, s]));
