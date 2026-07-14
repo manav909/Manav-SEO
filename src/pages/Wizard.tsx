@@ -14,7 +14,24 @@ const post = (a: string, b: any = {}) =>
   fetch("/api/task-engine", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: a, ...b }),
-  }).then(r => r.json()).catch(() => ({}));
+  })
+    .then(async (r) => {
+      /* Read once, then parse. On success this is identical to r.json(). On an
+         HTTP-level failure (a timeout returns a non-JSON gateway page, a crash
+         returns a 500) we surface the real reason instead of swallowing it to
+         an empty object — otherwise the UI can only say a generic "Stage failed". */
+      const txt = await r.text().catch(() => "");
+      try {
+        return JSON.parse(txt);
+      } catch {
+        return {
+          error: r.ok
+            ? "The server response could not be read — the stage likely timed out on a long-running engine. Re-run; if it persists, that engine needs bounding."
+            : `Server error ${r.status}${txt ? `: ${txt.slice(0, 300)}` : " — the stage may have timed out on a long external call."}`,
+        };
+      }
+    })
+    .catch((e: any) => ({ error: (e?.message || "Network request failed") + " — the stage likely timed out or the connection dropped." }));
 
 const READINESS: any = {
   ready:            { label: "Ready",            color: "#10b981" },
