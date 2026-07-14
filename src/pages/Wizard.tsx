@@ -78,6 +78,7 @@ export default function Wizard() {
      connect the same account stage after stage. */
   const [gscConnected, setGscConnected] = useState(false);
   const [gscHasData, setGscHasData]     = useState(false);
+  const [gscResource, setGscResource]   = useState("");
   const [gscPulling, setGscPulling]     = useState<string>("");
   const [crawling, setCrawling] = useState(false);
   const [docEmphasis, setDocEmphasis] = useState("");
@@ -139,14 +140,15 @@ export default function Wizard() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!projectId) { setGscConnected(false); setGscHasData(false); return; }
+      if (!projectId) { setGscConnected(false); setGscHasData(false); setGscResource(""); return; }
       try {
         const r: any = await post("gsc_status", { projectId });
         if (cancelled) return;
         setGscConnected(!!r?.connected);
         setGscHasData(!!(r?.lastPullAt));
+        setGscResource(r?.resourceId || r?.resourceLabel || "");
       } catch {
-        if (!cancelled) { setGscConnected(false); setGscHasData(false); }
+        if (!cancelled) { setGscConnected(false); setGscHasData(false); setGscResource(""); }
       }
     })();
     return () => { cancelled = true; };
@@ -210,7 +212,7 @@ export default function Wizard() {
     const pull: any = await post("gsc_pull", { projectId });
     setGscBusy(""); setPickerStage(""); setGscSites([]);
     if (!pull?.success) { setError(pull?.error || "Property selected, but the data pull failed. Try the stage again in a moment."); return; }
-    setGscConnected(true); setGscHasData(true); setProjectConfirmed(true);
+    setGscConnected(true); setGscHasData(true); setGscResource(siteUrl); setProjectConfirmed(true);
     runStage(s);
   };
 
@@ -704,10 +706,11 @@ export default function Wizard() {
                 const st = res ? (STATUS[res.status] || { label: res.status, color: "#94a3b8" }) : null;
                 const connectStage = isConnectStage(s);
                 /* Offer connect tools on a connect stage until it has completed. */
-                const showConnect = connectStage && !gscConnected && (!res || res.status === "needs_connection");
-                const showPull = connectStage && gscConnected && !gscHasData && !(res && res.status === "completed");
+                const gscReady = gscConnected && !!gscResource;
+                const showConnect = connectStage && !gscReady && (!res || res.status === "needs_connection");
+                const showManage = connectStage && gscReady;
                 const deferred = noGsc && isGscDependent(s) && !(res && res.status === "completed");
-                const gateOk = gscConnected || projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
+                const gateOk = gscReady || projectConfirmed || (noGsc && clientSiteUrl.trim().length > 3) || (!!plan.client_domain && !!projectUrl && cleanDomain(projectUrl) === cleanDomain(plan.client_domain));
                 return (
                   <div key={s.id} className="rounded-2xl border border-border bg-card p-5">
                     <div className="flex items-start justify-between gap-3">
@@ -768,14 +771,41 @@ export default function Wizard() {
                       </div>
                     )}
 
-                    {/* Connected already — one pull serves every GSC stage; never re-connect */}
-                    {showPull && (
+                    {/* Connected — status, one pull for every GSC stage, and a reconnect path so you are never locked out of changing the property */}
+                    {showManage && (
                       <div className="mt-3 pt-3 border-t border-border">
-                        <p className="text-xs text-muted-foreground mb-2">Search Console is connected for this project. Pull the data once — it powers this and every other Search Console stage. No need to reconnect.</p>
-                        <button onClick={() => pullGsc(s)} disabled={!!gscPulling}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
-                          {gscPulling ? "Pulling Search Console data…" : "Pull Search Console data"}
-                        </button>
+                        <p className="text-xs text-muted-foreground mb-2">Search Console is connected for this project{gscResource ? ` (${gscResource})` : ""}. {gscHasData ? "The data is loaded and powers every Search Console stage." : "Pull the data once — it powers this and every other Search Console stage."}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {!gscHasData && (
+                            <button onClick={() => pullGsc(s)} disabled={!!gscPulling}
+                              className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 disabled:opacity-50">
+                              {gscPulling ? "Pulling Search Console data…" : "Pull Search Console data"}
+                            </button>
+                          )}
+                          <button onClick={() => connectGsc(s)} disabled={connecting === s.id || !!gscBusy}
+                            className="text-xs px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:border-primary/40 disabled:opacity-50">
+                            {connecting === s.id ? "Opening…" : "Reconnect / change property"}
+                          </button>
+                        </div>
+                        {/* Property picker — shown after a reconnect lists the account's properties */}
+                        {pickerStage === s.id && (
+                          <div className="mt-3">
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">Pick the Search Console property for this project:</p>
+                            {gscBusy ? (
+                              <p className="text-xs text-primary">{gscBusy}</p>
+                            ) : (
+                              <div className="flex flex-col gap-1.5">
+                                {gscSites.map((site: any) => (
+                                  <button key={site.url} onClick={() => pickProperty(s, site.url)}
+                                    className="text-left text-xs px-3 py-2 rounded-lg border border-border bg-background hover:border-primary">
+                                    <span className="font-medium">{site.url}</span>
+                                    {site.perm && <span className="text-muted-foreground ml-2">({site.perm})</span>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
