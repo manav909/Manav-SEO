@@ -91,6 +91,7 @@ function sourceLine(ranEngine: string | null | undefined, output: any): string {
   if (/cms-advisor/.test(e)) return `A direct crawl of the website${Array.isArray(output?.pages_examined) && output.pages_examined.length ? ` (${output.pages_examined.length} pages examined)` : ""}${date ? `, ${date}` : ""}.`;
   if (/paid-organic/.test(e)) return `The client's own Google Ads search-terms export, cross-referenced with Google Search Console.`;
   if (/detectcannibalization/.test(e)) return `Google Search Console query and page data${dom ? ` for ${dom}` : ""}${date ? `, as of ${date}` : ""}.`;
+  if (/gsc-visibility|gscvisibility|gathergscvisibility/i.test(e)) return `Google Search Console impression, click, CTR and position data${dom ? ` for ${dom}` : ""}, cross-checked against a live crawl of the site's pages for indexation${date ? `, ${date}` : ""}.`;
   if (/url-classifier|url-inventory|topical-authority/.test(e)) return `Google Search Console${dom ? ` (property: ${dom})` : ""}${date ? `, data as of ${date}` : ""}.`;
   if (/geo|aioverview|workspace|client-report/.test(e)) return `Live search-results analysis${date ? `, ${date}` : ""}.`;
   return date ? `Live on-site analysis, ${date}. No Search Console data was used.` : `Live on-site analysis. No Search Console data was used.`;

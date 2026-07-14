@@ -299,13 +299,41 @@ export async function runWizardStage(opts: {
       return result("completed", "workspace pipeline", out, `${reports.length} analysis section(s) produced from live search-results analysis.${geoNote}`);
     }
 
-    /* ── GSC data presence check (connect_data / url_inventory) ── */
+    /* ── GSC review — run the REAL visibility + indexation engine ── */
     if (caps.includes("gsc_metrics_per_url") || caps.includes("gsc_query_page_pairs")) {
       const gsc = await loadGsc(projectId);
       const pages = Array.isArray(gsc.topPages) ? gsc.topPages.length : 0;
       const pairs = Array.isArray(gsc.queryPagePairs) ? gsc.queryPagePairs.length : 0;
       if (pages === 0 && pairs === 0) return result("needs_connection", "loadGsc", null, `No GSC data stored. Connect Search Console (OAuth) and pull, or ingest a GSC CSV export.`);
-      return result("completed", "loadGsc", { top_pages: pages, query_page_pairs: pairs }, `GSC data available: ${pages} top pages, ${pairs} query-page pairs.`);
+      /* Target URLs for the visibility + indexation diagnosis. Prefer the crawled
+         SITE pages (the supply side) so pages Google shows zero impressions for
+         surface as crawled-but-not-indexed candidates; fall back to GSC top pages. */
+      let targetUrls: string[] = [];
+      try {
+        const { data: cp } = await db().from("crawled_pages").select("url").eq("project_id", projectId).limit(300);
+        targetUrls = (cp || []).map((r: any) => r.url).filter(Boolean);
+      } catch { /* crawl not available for this project — fall back below */ }
+      if (targetUrls.length === 0) targetUrls = (gsc.topPages || []).map((p: any) => p.page || p.url).filter(Boolean);
+      /* The deep engine: visible vs invisible pages, real query-page pairs, near-
+         ranking (positions 4-20), this site's own CTR curve, and live per-URL
+         indexation checks — the actual crawled-but-not-indexed diagnosis, not counts. */
+      try {
+        const { gatherGscVisibility } = await import("./workspace/deep-steps/gsc-visibility.js");
+        const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
+        return result(
+          "completed",
+          "gsc-visibility engine (Search Console + live indexation crawl)",
+          {
+            reports: [{ step_key: "gsc_visibility", report_md }],
+            evidence,
+            summary: `Search Console analysed across ${evidence.target_count} pages: ${evidence.visible_count} visible in search, ${evidence.invisible_count} with zero impressions, ${evidence.near_ranking.length} near-ranking opportunities (positions 4-20), ${evidence.query_page_pairs.length} real query-page pairs.`,
+          },
+          `Search Console visibility and indexation diagnosis complete: ${evidence.visible_count} visible, ${evidence.invisible_count} invisible, ${evidence.near_ranking.length} near-ranking.`
+        );
+      } catch (e: any) {
+        /* Never fabricate — report honestly with the counts we do have. */
+        return result("completed", "loadGsc", { top_pages: pages, query_page_pairs: pairs }, `GSC data available: ${pages} top pages, ${pairs} query-page pairs. The deep visibility engine could not complete this pass (${e?.message || "error"}); re-run to retry.`);
+      }
     }
 
     /* Fallback — capabilities present but no executor mapped. */
