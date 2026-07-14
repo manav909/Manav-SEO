@@ -255,13 +255,24 @@ export async function runWizardStage(opts: {
       return result(cr?.success ? "completed" : "error", "client-report.ts", cr, cr?.success ? `Executive summary / roadmap generated from the workspace run.` : (cr?.error || `Client report failed.`), cr?.success ? undefined : cr?.error);
     }
 
-    /* ── Per-page deep audit (campaign-scoped) ── */
+    /* ── Per-page on-page audit ──
+       With a campaign set, run the DEEP single-page audit (keyword match, CrUX,
+       GA4). Without one (the usual wizard/prospect case), run the SITE-WIDE
+       on-page audit across ALL crawled pages via crawlSite — now backed by the
+       batched crawl — which is exactly "title/meta/H1 optimisation across all
+       pages". The stage WORKS either way instead of demanding a campaign. */
     if (caps.includes("technical_audit_deep") || caps.includes("title_meta_h1_reco")) {
-      if (!inputs.campaignId) {
-        return result("needs_input", "seo-technical-audit.ts", null, `The deep per-page audit is campaign-scoped. Provide inputs.campaignId (the target page's campaign). ${caps.includes("internal_link_graph") ? "Internal-link analysis for this stage runs via a workspace analysis stage." : ""}`);
+      if (inputs.campaignId) {
+        const audit = await runTechnicalAudit({ campaignId: inputs.campaignId, triggeredBy: "manual" });
+        return result(audit?.success ? "completed" : "error", "seo-technical-audit.ts", audit, audit?.success ? `Deep audit complete: ${audit.findings_count} findings on ${audit.audited_url}.` : (audit?.error || `Audit failed.`), audit?.success ? undefined : audit?.error);
       }
-      const audit = await runTechnicalAudit({ campaignId: inputs.campaignId, triggeredBy: "manual" });
-      return result(audit?.success ? "completed" : "error", "seo-technical-audit.ts", audit, audit?.success ? `Deep audit complete: ${audit.findings_count} findings on ${audit.audited_url}.` : (audit?.error || `Audit failed.`), audit?.success ? undefined : audit?.error);
+      const { crawlSite } = await import("./site-crawler.js");
+      const report = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+      if (report.pages_reachable === 0) return result("needs_input", "site-crawler.ts", report, `No crawled pages available. Batch-crawl the site first (or supply inputs.siteUrl), then re-run — this stage then audits titles, meta descriptions and H1s across every page.`);
+      const iss: any = report.issues || {};
+      const cnt = (k: string) => (iss[k]?.count || 0);
+      const note = `Site-wide on-page audit across ${report.pages_reachable} crawled pages. Titles: ${cnt("missing_title")} missing, ${cnt("duplicate_title")} duplicate, ${cnt("long_title") + cnt("short_title")} poor length. Meta descriptions: ${cnt("missing_meta_description")} missing, ${cnt("duplicate_meta_description")} duplicate. Headings: ${cnt("missing_h1")} pages with no H1, ${cnt("multiple_h1")} with multiple. Each gap is traced to the exact page from real crawled HTML.`;
+      return result("completed", "site-crawler.ts (site-wide on-page audit)", report, note);
     }
 
     /* ── Workspace-backed analysis (incl. GEO) ── */
