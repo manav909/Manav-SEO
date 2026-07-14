@@ -300,7 +300,7 @@ export interface ResolveResult {
    rendering, and score+select the highest-value pages up to `maxPages`. Shared
    by the single-pass crawl and the batched crawl so selection is identical. */
 export async function resolveTargets(opts: { projectId: string; siteUrl?: string; maxPages?: number }): Promise<ResolveResult | null> {
-  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 400));
+  const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 1000));
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
   if (!root) { const tu = await resolveTargetUrls(undefined, opts.projectId).catch(() => ({ urls: [] as string[], source: "" })); root = originOf((tu.urls || [])[0] || ""); }
   if (!root) return null;

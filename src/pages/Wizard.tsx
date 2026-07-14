@@ -89,7 +89,7 @@ export default function Wizard() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [generatingDocuments, setGeneratingDocuments] = useState(false);
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
-  const [docScope, setDocScope] = useState<"smart" | "detailed" | "full">("smart");
+  const [docScope, setDocScope] = useState<"smart" | "detailed" | "full" | "max">("smart");
   const [docSaved, setDocSaved] = useState("");
   const [crawlJob, setCrawlJob] = useState<{ id: string; done: number; total: number; complete: boolean } | null>(null);
   /* Connect-once: GSC connection is resolved ONCE per project and shared across
@@ -932,12 +932,13 @@ export default function Wizard() {
                   <button onClick={() => { setDocScope("smart"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "smart" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Smart</button>
                   <button onClick={() => { setDocScope("detailed"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "detailed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Detailed</button>
                   <button onClick={() => { setDocScope("full"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "full" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Full</button>
+                  <button onClick={() => { setDocScope("max"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "max" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Max</button>
                 </div>
-                <span className="text-[11px] text-muted-foreground">{docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
+                <span className="text-[11px] text-muted-foreground">{docScope === "max" ? "Up to 1000 pages — the deepest crawl, batch by batch." : docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
               </div>
               {docScope !== "smart" && (
                 <div className="rounded-lg border border-border bg-background/50 p-3 mb-3">
-                  <p className="text-[11px] text-muted-foreground mb-2">{docScope === "full" ? "Full" : "Detailed"} depth crawls every page with full rendering, in batches you approve — so it reaches the whole set without timing out. Run it before generating; the report then uses the complete crawl.</p>
+                  <p className="text-[11px] text-muted-foreground mb-2">{docScope === "max" ? "Maximum" : docScope === "full" ? "Full" : "Detailed"} depth crawls every page with full rendering, in batches you approve — so it reaches the whole set without timing out. Run it before generating; the report then uses the complete crawl.</p>
                   {!crawlJob && <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Starting crawl…" : "Start batched crawl"}</button>}
                   {crawlJob && !crawlJob.complete && (
                     <div className="flex items-center gap-3">
