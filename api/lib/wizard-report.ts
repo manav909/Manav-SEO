@@ -167,7 +167,7 @@ function renderBody(o: any): string[] {
   }
   // Generic / narrative
   if (o.summary) return [o.summary];
-  return ["_No formatted findings were produced for this section. If this stage needed input that was not supplied, add it and re-run._"];
+  return ["_This section is pending the data source it depends on. Once that source is connected, it produces its full diagnosis — nothing here is estimated in its absence._"];
 }
 
 function collectLimits(stages: ReportStageInput[]): string[] {
@@ -532,7 +532,7 @@ function renderBodyHtml(o: any): string {
      were produced. This guard is what prevents an engine whose `summary` is an
      object (rather than a string) from printing "[object Object]" to a client. */
   const summaryStr = typeof o.summary === "string" ? o.summary : (typeof o.note === "string" ? o.note : "");
-  return `<p>${esc(summaryStr || "No formatted findings were produced for this section. If this stage needed input (a topic, competitor domains, or a connected data source) that was not supplied, add it and re-run.")}</p>`;
+  return `<p>${esc(summaryStr || "This section is pending the data source it depends on. Once that source is connected, it produces its full diagnosis — nothing here is estimated in its absence.")}</p>`;
 }
 
 const REPORT_CSS = `
@@ -677,6 +677,7 @@ const DMS_SYSTEM = [
   `- NEVER cite a data source that was not used. If there is no Search Console / analytics data in the findings, do NOT mention Search Console as a source or basis — the analysis here is a live crawl, PageSpeed, and live search results. Claiming GSC you do not have destroys trust.`,
   `- "COULD NOT REACH" IS NOT "BROKEN". Pages the crawler could not fetch are NOT 404 errors, broken links, or dead pages — a fast crawl of an e-commerce store is often rate-limited or WAF-blocked, so a live product page fails to fetch. NEVER characterize unreachable pages as returning 404s, being broken, or being dead-ends. If you mention them at all, say exactly this: our crawler could not reach these pages on this pass (likely rate-limiting) and they should be verified — they are very probably live. Do NOT build a "broken products / 404" finding on them, and never make it a headline. Fabricating a 404 that is not real is the fastest way to be caught out and lose the deal.`,
   `- Where a real figure would strengthen a point but is not in the data, say what is needed to get it (e.g. "connect Search Console to confirm which pages Google indexes") rather than inventing it.`,
+  `- A DATA SOURCE THAT WAS NOT AVAILABLE (for example Search Console not connected) is a ONE-TO-TWO-LINE next-step note, not the body of the report. State plainly that it is pending and what it will unlock, then spend the report on what WAS actually measured (the live crawl, PageSpeed, live search). Never expand an unavailable source into paragraphs of hypothetical outcomes dressed as analysis, and never present what you "could" find as if you found it — that reads as padding and a client will see through it.`,
   `- OPERATOR-PROVIDED DATA (uploaded CSVs, tool exports, notes) is a legitimate source — and it is exactly what FILLS the brief items the live engines cannot measure themselves: keyword volumes and rankings, backlinks and referring domains, Search Console clicks/impressions/positions. Use its real figures to answer those items instead of saying "needs data". BUT it is SUPPLIED by the operator, not measured by this platform: attribute every figure taken from it to "the supplied dataset" (name the file) so it can be verified point by point against that file, present it as supplied-and-verifiable, keep it visibly distinct from the live engine findings, and never extrapolate a single number beyond what the file actually states.`,
   `- If a section's data is genuinely thin, say so in one honest line; do not pad. Write in clear business English, no tool names, no jargon dumps, never salesy.`,
   ``,
@@ -1012,7 +1013,7 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
      goes to the client to win the work, not to expose the machinery or to
      advertise what was not analysed. The per-section source line below is the
      honest proof; that is all a client needs. */
-  H.push(`<h2>The data behind this analysis</h2><p class="muted">Every figure in the analysis above is measured, not estimated — from a live crawl of the site, a PageSpeed run, and live search results.</p>`);
+  H.push(`<h2>The data behind this analysis</h2><p class="muted">Every figure shown in this report traces to the measured source noted beneath its section — a live crawl of the site, a PageSpeed run, and, where connected, Google Search Console and live search data. Any section still awaiting a data source is labelled as pending, never estimated.</p>`);
   completed.forEach((s) => {
     H.push(`<h3>${esc(s.label)}</h3>`);
     H.push(renderBodyHtml(s.output));
