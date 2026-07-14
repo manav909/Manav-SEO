@@ -50,6 +50,8 @@ export interface ReportOptions {
   operator_emphasis?: string;  // the operator's own context / what to emphasise, set before running
   keywords?:        string[];   // target keywords in scope — named in findings where relevant
   competitors?:     string[];   // competitor domains in scope — named where a finding is competitive
+  keyword_basis?:   string;     // when auto-derived: the real data the keywords are grounded in
+  competitor_basis?: string;    // when auto-derived: the real data the competitors are grounded in
   area_angle?:      string;     // per-document lens: governs this document's structure and voice so
                                 // multiple documents do not read the same
 }
@@ -752,6 +754,8 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     opts.operator_emphasis ? `Reminder before you write: the operator's steer at the top is a priority instruction — make sure the finished document unmistakably reflects it.` : "",
     (opts.keywords && opts.keywords.length) ? `TARGET KEYWORDS IN SCOPE (name the specific keyword when a finding turns on it): ${opts.keywords.join(", ")}.` : "",
     (opts.competitors && opts.competitors.length) ? `COMPETITORS IN SCOPE (name the specific competitor when a finding is competitive): ${opts.competitors.join(", ")}.` : "",
+    opts.keyword_basis ? `These target keywords were researched from ${opts.keyword_basis} — not arbitrary. Where it reads naturally, make that grounding visible (for example "your Search Console shows real demand for ...") so the client sees the keyword targeting is evidence-based.` : "",
+    opts.competitor_basis ? `These competitors were identified from ${opts.competitor_basis}. Reference that basis where relevant so the competitive analysis reads as researched, not assumed.` : "",
     opts.area_angle ? `╔═══ THIS DOCUMENT'S FOCUS AND SHAPE — this lens GOVERNS the structure, ordering, headings and voice of THIS document so it reads distinctly from the others in the set: ═══╗\n${opts.area_angle}\n╚═══ shape this document to that lens ═══╝` : "",
     `Write ONE coherent senior analysis that closes this sale factually. Lead with the single finding that most justifies the engagement (unless the operator's steer directs otherwise). Connect related findings into one diagnosis. Every point should move the prospect toward "yes" — with data, not pressure.`,
     JSON.stringify({ sections: briefs }).slice(0, 60000),
@@ -989,7 +993,88 @@ function renderServicesReference(requirements: string[] | undefined): string {
 /* Enriched report: senior-DMS interpretation woven around the grounded
    data tables. Falls back to the data-only report if the lens is
    unavailable, with an honest note. */
+/* ── Data-backed keyword + competitor derivation ──────────────────────────
+   When the operator did not supply keywords/competitors, a Senior DMS still
+   needs them — but researched from real signals, never invented. This mines
+   the strongest evidence the run already gathered (real Search Console queries
+   for keywords; real SERP-ranking domains for competitors; the site's own
+   pages for context) and makes ONE grounded LLM call to select and prioritise
+   them like a senior would. Every result carries a basis line stating what it
+   is grounded in, so the document can show the client they are researched. */
+export async function deriveKeywordsAndCompetitors(
+  stages: ReportStageInput[],
+  opts: ReportOptions
+): Promise<{ keywords: string[]; competitors: string[]; keyword_basis: string; competitor_basis: string }> {
+  const completed = completedStages(stages);
+  const clientDomain = opts.client_domain || deriveClient(stages) || "";
+  const gscQueries: string[] = [];
+  const serpDomains: string[] = [];
+  const siteBits: string[] = [];
+  for (const s of completed) {
+    const o: any = s.output || {};
+    const pairs = o?.evidence?.query_page_pairs || o?.query_page_pairs;
+    if (Array.isArray(pairs)) for (const p of pairs.slice(0, 50)) { if (p && p.query) gscQueries.push(String(p.query)); }
+    if (Array.isArray(o?.share_of_voice)) for (const x of o.share_of_voice) { if (x && x.domain && (!clientDomain || !String(x.domain).includes(clientDomain))) serpDomains.push(String(x.domain)); }
+    if (o?.homepage_title) siteBits.push(String(o.homepage_title));
+    if (o?.homepage_h1) siteBits.push(String(o.homepage_h1));
+    if (o?.businessSummary) siteBits.push(String(o.businessSummary).slice(0, 400));
+    if (typeof o?.summary === "string" && s.label) siteBits.push(`${s.label}: ${o.summary.slice(0, 180)}`);
+  }
+  const uniq = (a: string[]) => Array.from(new Set(a.map(x => x.trim()).filter(Boolean)));
+  const gsc = uniq(gscQueries).slice(0, 40);
+  const serp = uniq(serpDomains).slice(0, 8);
+  const site = uniq(siteBits).slice(0, 12);
+
+  const grounding = [
+    clientDomain ? `Client site: ${clientDomain}` : "",
+    site.length ? `The site's own pages and business, from the live crawl:\n${site.join("\n")}` : "",
+    gsc.length ? `REAL Google Search Console queries this site already earns impressions for (the strongest keyword signal there is):\n${gsc.join(", ")}` : "",
+    serp.length ? `REAL domains ranking in the live SERP for this space (the strongest competitor signal there is):\n${serp.join(", ")}` : "",
+  ].filter(Boolean).join("\n\n");
+
+  if (!grounding.trim()) return { keywords: [], competitors: [], keyword_basis: "", competitor_basis: "" };
+
+  const system = [
+    "You are a Senior Digital Marketing Specialist doing keyword research and competitor identification for a real client engagement.",
+    "Use ONLY the real data provided. Your job is to SELECT and PRIORITISE like a senior would — not to invent.",
+    "KEYWORDS: lead with the real Search Console queries where given, then add the obvious commercial variations the site's own services clearly support. Never invent high-volume keywords the data does not support.",
+    "COMPETITORS: use the real SERP-ranking domains where given. If none are given, you may name genuine, currently-operating competitors in this exact business category and region — but only real ones you are confident exist, and mark them as category-derived, to be confirmed with a live SERP pass.",
+    "Return ONLY JSON, no prose: {\"keywords\":[\"...\"],\"competitors\":[\"domain.com\"],\"keyword_basis\":\"one honest line on what the keywords are grounded in\",\"competitor_basis\":\"one honest line on what the competitors are grounded in\"}",
+    "8 to 15 keywords; 3 to 6 competitors as bare domains. Nothing invented beyond what the data or the genuine category supports.",
+  ].join("\n");
+
+  try {
+    const { text } = await llmComplete({ system, user: grounding, maxTokens: 1200, timeoutMs: 60000, label: "derive-keywords-competitors", maxSegments: 1 });
+    const parsed: any = parseJsonResponse(text) || {};
+    const keywords = Array.isArray(parsed.keywords) ? parsed.keywords.map((k: any) => String(k).trim()).filter(Boolean).slice(0, 15) : [];
+    const competitors = Array.isArray(parsed.competitors) ? parsed.competitors.map((c: any) => String(c).trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/^www\./, "")).filter(Boolean).slice(0, 6) : [];
+    return {
+      keywords,
+      competitors,
+      keyword_basis: String(parsed.keyword_basis || (gsc.length ? "your Search Console queries and your site's services" : "your site's own services and content")).slice(0, 200),
+      competitor_basis: String(parsed.competitor_basis || (serp.length ? "the domains ranking in the live SERP for your core terms" : "the genuine competitors in your category, to be confirmed with a live SERP pass")).slice(0, 200),
+    };
+  } catch {
+    /* Fallback: use the real data directly — never fabricate on failure. */
+    return {
+      keywords: gsc.slice(0, 12),
+      competitors: serp.slice(0, 5),
+      keyword_basis: gsc.length ? "your Search Console queries" : "",
+      competitor_basis: serp.length ? "the domains ranking in the live SERP" : "",
+    };
+  }
+}
+
 export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[], opts: ReportOptions = {}): Promise<{ html: string; sections: number; enriched: boolean }> {
+  /* Auto-fill keywords/competitors from real signals when the operator left them
+     blank — grounded, never invented — so a document never goes out generic. */
+  if ((!opts.keywords || !opts.keywords.length) || (!opts.competitors || !opts.competitors.length)) {
+    try {
+      const d = await deriveKeywordsAndCompetitors(stages, opts);
+      if ((!opts.keywords || !opts.keywords.length) && d.keywords.length) { opts = { ...opts, keywords: d.keywords, keyword_basis: d.keyword_basis }; }
+      if ((!opts.competitors || !opts.competitors.length) && d.competitors.length) { opts = { ...opts, competitors: d.competitors, competitor_basis: d.competitor_basis }; }
+    } catch { /* proceed without — never block the document */ }
+  }
   /* Artifact routing: a productized/reseller/ongoing brief needs a scope
      proposal, not an audit of an example site. This is the "right document for
      the brief" decision the wizard now makes. */
@@ -1087,6 +1172,16 @@ export async function assembleAreaDocuments(
 ): Promise<{ documents: AreaDocument[] }> {
   const completed = completedStages(stages);
   if (completed.length === 0) return { documents: [] };
+
+  /* Derive keywords/competitors ONCE for the whole set (not per area) when the
+     operator left them blank — grounded in real signals, never invented. */
+  if ((!opts.keywords || !opts.keywords.length) || (!opts.competitors || !opts.competitors.length)) {
+    try {
+      const d = await deriveKeywordsAndCompetitors(stages, opts);
+      if ((!opts.keywords || !opts.keywords.length) && d.keywords.length) opts = { ...opts, keywords: d.keywords, keyword_basis: d.keyword_basis };
+      if ((!opts.competitors || !opts.competitors.length) && d.competitors.length) opts = { ...opts, competitors: d.competitors, competitor_basis: d.competitor_basis };
+    } catch { /* proceed without — never block the documents */ }
+  }
 
   /* Group by theme, preserving first-seen order. */
   const order: string[] = [];
