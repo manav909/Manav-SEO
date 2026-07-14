@@ -681,6 +681,7 @@ const DMS_SYSTEM = [
   `- A DATA SOURCE THAT WAS NOT AVAILABLE (for example Search Console not connected) is a ONE-TO-TWO-LINE next-step note, not the body of the report. State plainly that it is pending and what it will unlock, then spend the report on what WAS actually measured (the live crawl, PageSpeed, live search). Never expand an unavailable source into paragraphs of hypothetical outcomes dressed as analysis, and never present what you "could" find as if you found it — that reads as padding and a client will see through it.`,
   `- OPERATOR-PROVIDED DATA (uploaded CSVs, tool exports, notes) is a legitimate source — and it is exactly what FILLS the brief items the live engines cannot measure themselves: keyword volumes and rankings, backlinks and referring domains, Search Console clicks/impressions/positions. Use its real figures to answer those items instead of saying "needs data". BUT it is SUPPLIED by the operator, not measured by this platform: attribute every figure taken from it to "the supplied dataset" (name the file) so it can be verified point by point against that file, present it as supplied-and-verifiable, keep it visibly distinct from the live engine findings, and never extrapolate a single number beyond what the file actually states.`,
   `- If a section's data is genuinely thin, say so in one honest line; do not pad. Write in clear business English, no tool names, no jargon dumps, never salesy.`,
+  `- TONE — ANALYSIS DONE, REMEDIATION NOT. Frame the entire document as YOUR analysis, diagnosis and plan — never as completed work. You genuinely DID the analytical work and should say so in the first person: "I reviewed your on-page audit and cross-referenced it against a live crawl of the site", "I examined your three competitors", "I analysed your Search Console data", "I mapped this against what I found on the site". That analytical effort is real and the reader must feel it. But you have NOT done the remediation, and you must NEVER imply you have: do not write that an audit "has been conducted" or "has been completed" as if the fix is finished, that issues "have been resolved", or that "the work has been done". Findings taken from the client's own uploaded reports are DATA you analysed, not tasks you performed — write "your uploaded audit flags X" or "my review of your data shows X", then give YOUR reading of it and what YOU would do next. Every issue ends with your diagnosis and the specific fix you propose, so the document reads as a senior practitioner presenting deep analysis and a plan to be engaged for — honest, expert, and clearly distinguishing what you have already analysed from what you are proposing to do.`,
   ``,
   `WRITE LIKE A PERSON TALKING TO A PERSON — this is what earns trust and closes deals:`,
   `- BE FULL EYES AND EARS — analytical responsibility. Do NOT assume the source or intent behind what the data shows. Schema, sitemaps, meta tags and canonicals on a site are USUALLY generated automatically by the CMS or an SEO plugin (WordPress with Yoast or RankMath, Shopify, Wix, Squarespace) — NOT hand-built by the client's team or a previous agency. Never credit "your team/agency implemented X" or infer strategy from mere presence. When you see a large, UNIFORM count (for example 1,000+ schema blocks that are the same handful of types on every page), name the likely mechanism plainly: "this is your CMS/SEO plugin auto-adding generic WebPage/Article/Breadcrumb markup to every page — its presence is not a sign of quality or a strategy." Then judge whether that automated output is COMPLETE and CORRECT for THIS specific business: a plugin adds broad schema but not the high-value types a medical site needs (MedicalProcedure, Physician, FAQPage) or a shop needs (Product, Offer, Review). Question QUALITY, not quantity — a high count can hide generic, incomplete, or wrong markup. The client must feel you see the whole picture — platform, plugins, theme, and automated behaviour — not that you counted blobs and drew a naive conclusion.`,
@@ -1024,4 +1025,81 @@ export async function assembleClientReportHtmlEnriched(stages: ReportStageInput[
   H.push(`<div class="foot">Prepared by ${esc(author)}. ${esc(today)}. Every figure traces to the measured data shown under each section.</div>`);
   H.push(`</div></body></html>`);
   return { html: H.join(""), sections: completed.length, enriched: true };
+}
+
+/* ═══════════════════════ MULTIPLE MEANINGFUL DOCUMENTS ═══════════════════════
+   The single all-stages senior pass fails on large runs: 17 stages plus the
+   uploaded materials exceed one bounded LLM call, the JSON truncates, and the
+   whole document falls back to a raw findings dump ("interpretation layer
+   unavailable"). Grouping the stages by theme and assembling ONE document PER
+   theme makes each senior pass small enough to succeed AND gives the operator
+   several deep, focused, client-ready documents — the "multiple meaningful
+   documents" deliverable. Reuses the proven enriched assembler per group, so a
+   focused group renders with full senior narration and no truncation. */
+
+export interface AreaDocument {
+  area: string;
+  title: string;
+  html: string;
+  sections: number;
+  enriched: boolean;
+}
+
+const REPORT_AREAS: { area: string; match: RegExp }[] = [
+  { area: "Technical SEO and Indexation", match: /\b(technical|404|not.?found|crawl|index|indexation|schema|structured data|canonical|site structure|url inventory|url structure|robots|sitemap|core web vitals|performance)\b/i },
+  { area: "On-Page and Content", match: /\b(meta|title|description|heading|h1|h2|on.?page|content|topical authority|readability|blog)\b/i },
+  { area: "Competitive and Gap Analysis", match: /\b(competitor|backlink|link gap|keyword gap|missing keyword|shared keyword|benchmark)\b/i },
+  { area: "AEO and Answer Engines", match: /\b(aeo|answer engine|ai crawler|ai search|ai.?generated|brand discoverability|geo)\b/i },
+  { area: "Strategy, Conversion and Roadmap", match: /\b(roadmap|conversion|paid|opportunity|strategy|search intent|product page|collection page)\b/i },
+];
+
+function areaFor(stage: ReportStageInput): string {
+  const hay = String(stage.label || "").toLowerCase();
+  for (const a of REPORT_AREAS) if (a.match.test(hay)) return a.area;
+  return "Additional Findings";
+}
+
+export async function assembleAreaDocuments(
+  stages: ReportStageInput[],
+  opts: ReportOptions = {}
+): Promise<{ documents: AreaDocument[] }> {
+  const completed = completedStages(stages);
+  if (completed.length === 0) return { documents: [] };
+
+  /* Group by theme, preserving first-seen order. */
+  const order: string[] = [];
+  const groups: Record<string, ReportStageInput[]> = {};
+  for (const s of completed) {
+    const a = areaFor(s);
+    if (!groups[a]) { groups[a] = []; order.push(a); }
+    groups[a].push(s);
+  }
+
+  /* Split any oversized group so no single senior pass exceeds a reliable size. */
+  const finalGroups: { area: string; stages: ReportStageInput[] }[] = [];
+  const CAP = 5;
+  for (const a of order) {
+    const gs = groups[a];
+    if (gs.length <= CAP) {
+      finalGroups.push({ area: a, stages: gs });
+    } else {
+      for (let i = 0; i < gs.length; i += CAP) {
+        const partNo = Math.floor(i / CAP) + 1;
+        finalGroups.push({ area: partNo > 1 ? `${a} (part ${partNo})` : a, stages: gs.slice(i, i + CAP) });
+      }
+    }
+  }
+
+  const client = opts.client_name || opts.client_domain || deriveClient(stages) || "the website";
+  /* Assemble the area documents in PARALLEL — each is an independent senior pass,
+     so total time stays close to a single call rather than the sum, keeping the
+     whole run comfortably inside the function budget. Promise.all preserves order. */
+  const documents: AreaDocument[] = await Promise.all(
+    finalGroups.map(async (g) => {
+      const areaOpts: ReportOptions = { ...opts, report_title: `${g.area} — ${client}` };
+      const doc = await assembleClientReportHtmlEnriched(g.stages, areaOpts);
+      return { area: g.area, title: `${g.area} — ${client}`, html: doc.html, sections: doc.sections, enriched: doc.enriched };
+    })
+  );
+  return { documents };
 }

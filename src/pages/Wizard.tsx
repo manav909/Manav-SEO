@@ -86,6 +86,8 @@ export default function Wizard() {
   const [reportAuthor, setReportAuthor] = useState("Manav S");
   const [includeBranding, setIncludeBranding] = useState(false);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [documents, setDocuments] = useState<any[]>([]);
+  const [generatingDocuments, setGeneratingDocuments] = useState(false);
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
   const [docScope, setDocScope] = useState<"smart" | "detailed" | "full">("smart");
   const [docSaved, setDocSaved] = useState("");
@@ -475,6 +477,22 @@ export default function Wizard() {
     setGeneratingReport(false);
     if (!r?.html) { if (tab && !tab.closed) tab.close(); setError(r?.error || "Report generation failed."); return; }
     renderToTab(r.html, tab, `audit-${(plan?.client_domain || "client").replace(/[^a-z0-9.-]+/gi, "_")}.html`);
+  };
+
+  /* Multiple meaningful, per-theme documents — each a deep, senior-written
+     document, reliable where a single all-stages report truncates. */
+  const generateDocuments = async () => {
+    const stagesIn = (plan?.stages || [])
+      .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
+      .filter(Boolean);
+    const docRes: any = results["document_analysis"];
+    if (docRes && docRes.status === "completed") stagesIn.unshift({ label: "Analysis from your uploaded documents", ran_engine: docRes.ran_engine, status: "completed", output: docRes.output });
+    if (stagesIn.length === 0) { setError("Run at least one stage (or analyse your documents) before generating documents."); return; }
+    setGeneratingDocuments(true); setError(""); setDocuments([]);
+    const r: any = await post("wizard_report_areas", { stages: stagesIn, projectId, requirements: (plan?.stages || []).map((s: any) => s.label), author: reportAuthor, clientName: plan?.client_domain, clientDomain: plan?.client_domain, includeBranding, artifactMode: plan?.artifact_mode, engagementType: plan?.engagement_type, targetIsExample: plan?.target_is_example, buyerNote: plan?.buyer_note });
+    setGeneratingDocuments(false);
+    if (!r?.documents || !r.documents.length) { setError(r?.error || "Document generation failed."); return; }
+    setDocuments(r.documents);
   };
 
   const startOrContinueCrawl = async () => {
@@ -959,6 +977,26 @@ export default function Wizard() {
                   className="px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 disabled:opacity-50">
                   {generatingReport ? "Assembling…" : "Open client report"}
                 </button>
+                <button onClick={generateDocuments} disabled={generatingDocuments}
+                  className="ml-2 px-6 py-2.5 rounded-xl border border-primary/40 text-primary text-sm font-semibold hover:bg-primary/10 disabled:opacity-50">
+                  {generatingDocuments ? "Writing deep documents…" : "Generate detailed documents (per area)"}
+                </button>
+                {documents.length > 0 && (
+                  <div className="mt-4 w-full">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Your documents ({documents.length}) — each a deep, senior-written analysis. Open and Save as PDF.</p>
+                    <div className="flex flex-col gap-1.5">
+                      {documents.map((d: any, i: number) => (
+                        <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-border bg-background">
+                          <span className="text-sm truncate">{d.title || d.area}{d.sections ? <span className="text-muted-foreground"> — {d.sections} section{d.sections === 1 ? "" : "s"}</span> : null}</span>
+                          <button onClick={() => { const tab = window.open("", "_blank"); renderToTab(d.html, tab, `${String(d.area || "document").replace(/[^a-z0-9.-]+/gi, "_")}.html`); }}
+                            className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 whitespace-nowrap">
+                            Open / Save PDF
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </>

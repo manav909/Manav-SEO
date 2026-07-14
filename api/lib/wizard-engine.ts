@@ -359,6 +359,23 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Multiple meaningful, per-theme documents. The single all-stages report
+     truncates on large runs; grouping stages by theme and assembling one
+     document per theme keeps each senior pass reliable and detailed, and gives
+     the operator several client-ready deep documents to present. */
+  if (action === "wizard_report_areas") {
+    const stages = Array.isArray(body?.stages) ? body.stages : [];
+    if (stages.length === 0) return { success: false, error: "No stage outputs supplied to report on." };
+    try {
+      const { assembleAreaDocuments } = await import("./wizard-report.js");
+      const o = { author: body?.author, client_name: body?.clientName, client_domain: body?.clientDomain, include_branding: Boolean(body?.includeBranding), project_id: String(body?.projectId || "").trim() || undefined, requirements: Array.isArray(body?.requirements) ? body.requirements.map(String) : undefined, artifact_mode: (body?.artifactMode === "proposal" ? "proposal" : body?.artifactMode === "audit" ? "audit" : undefined) as ("proposal" | "audit" | undefined), engagement_type: body?.engagementType ? String(body.engagementType) : undefined, target_is_example: typeof body?.targetIsExample === "boolean" ? body.targetIsExample : undefined, buyer_note: body?.buyerNote ? String(body.buyerNote) : undefined, operator_emphasis: body?.operatorEmphasis ? String(body.operatorEmphasis) : undefined };
+      const { documents } = await assembleAreaDocuments(stages, o);
+      return { success: documents.length > 0, documents };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "multi-document assembly failed" };
+    }
+  }
+
   /* Client document — the senior-DMS, no-integration path. From a site URL
      alone it runs the whole crawl-based analysis suite (comprehensive on-page +
      technical + schema audit, structured-data generation, and search/AI-answer
