@@ -305,14 +305,22 @@ export async function runWizardStage(opts: {
       const pages = Array.isArray(gsc.topPages) ? gsc.topPages.length : 0;
       const pairs = Array.isArray(gsc.queryPagePairs) ? gsc.queryPagePairs.length : 0;
       if (pages === 0 && pairs === 0) return result("needs_connection", "loadGsc", null, `No GSC data stored. Connect Search Console (OAuth) and pull, or ingest a GSC CSV export.`);
-      /* Target URLs for the visibility + indexation diagnosis. Prefer the crawled
-         SITE pages (the supply side) so pages Google shows zero impressions for
-         surface as crawled-but-not-indexed candidates; fall back to GSC top pages. */
+      /* Target URLs for the visibility + indexation diagnosis. Prefer the
+         batched crawl (the shared site-page source), then crawled_pages, then
+         GSC top pages — so pages Google shows zero impressions for surface as
+         crawled-but-not-indexed candidates. */
       let targetUrls: string[] = [];
       try {
-        const { data: cp } = await db().from("crawled_pages").select("url").eq("project_id", projectId).limit(300);
-        targetUrls = (cp || []).map((r: any) => r.url).filter(Boolean);
-      } catch { /* crawl not available for this project — fall back below */ }
+        const { data: jobs } = await db().from("crawl_jobs").select("results").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1);
+        const job = Array.isArray(jobs) ? jobs[0] : null;
+        if (job && Array.isArray((job as any).results)) targetUrls = (job as any).results.map((p: any) => p.url).filter(Boolean);
+      } catch { /* fall through */ }
+      if (targetUrls.length === 0) {
+        try {
+          const { data: cp } = await db().from("crawled_pages").select("url").eq("project_id", projectId).limit(300);
+          targetUrls = (cp || []).map((r: any) => r.url).filter(Boolean);
+        } catch { /* fall through */ }
+      }
       if (targetUrls.length === 0) targetUrls = (gsc.topPages || []).map((p: any) => p.page || p.url).filter(Boolean);
       /* The deep engine: visible vs invisible pages, real query-page pairs, near-
          ranking (positions 4-20), this site's own CTR curve, and live per-URL

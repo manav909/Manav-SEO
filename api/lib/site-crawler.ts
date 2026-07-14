@@ -455,6 +455,53 @@ export async function crawlSite(opts: { projectId: string; siteUrl?: string; max
   const target = Math.max(5, Math.min(opts.maxPages ?? 80, 200));
   const projectDomain = domainOf((opts.siteUrl ? originOf(opts.siteUrl) : "") || opts.siteUrl || "");
   const empty = (msg: string): SiteAuditReport => ({ project_domain: projectDomain, generated_at: now, pages_crawled: 0, pages_reachable: 0, crawl_capped: false, sitemap_url_count: 0, discovery: "none", issues: {}, schema_coverage: {}, broken_links: [], performance: null, summary: msg, limits: ["No crawlable site URL available."] });
+
+  /* ── GLOBAL BATCH CRAWL AS THE SHARED SOURCE ──
+     If a batched crawl has already run for this project, build the audit from
+     those already-crawled pages instead of paying to re-crawl. Crawl once,
+     reuse everywhere: every crawl-dependent stage reads the full batched set
+     (e.g. 79 pages) rather than a fresh 25-page single pass. The batch stores
+     pages in the exact PageSig shape buildAuditReport consumes. Fail-safe: any
+     problem falls through to the fresh crawl below, so nothing breaks. */
+  if (opts.projectId) {
+    try {
+      const { db } = await import("./db.js");
+      const wantDomain = opts.siteUrl ? domainOf(originOf(opts.siteUrl) || opts.siteUrl) : "";
+      const { data: jobs } = await db()
+        .from("crawl_jobs")
+        .select("results,broken,meta,site_url,status,updated_at")
+        .eq("project_id", opts.projectId)
+        .order("updated_at", { ascending: false })
+        .limit(5);
+      const list = Array.isArray(jobs) ? jobs : [];
+      const job = list.find((j: any) =>
+        Array.isArray(j.results) && j.results.length > 0 &&
+        (!wantDomain || !j.site_url || domainOf(originOf(j.site_url) || j.site_url) === wantDomain)
+      );
+      if (job) {
+        const m = job.meta || {};
+        const pages = job.results as PageSig[];
+        const performance = await runPsi(m.start || opts.siteUrl || "", await loadPsiKey(opts.projectId)).catch(() => null);
+        const renderNote = (m.renderNote || "") + ` Built from the batched site crawl already run for this project (${pages.length} pages), so no re-crawl was needed.`;
+        return buildAuditReport({
+          projectDomain: m.projectDomain || projectDomain,
+          pages,
+          broken: Array.isArray(job.broken) ? job.broken : [],
+          selected: Array.isArray(m.selected) ? m.selected : [],
+          candidatesCount: m.candidatesCount || pages.length,
+          allBoilerplate: Array.isArray(m.allBoilerplate) ? m.allBoilerplate : [],
+          sitemapCount: m.sitemapCount || 0,
+          sitemapFiles: m.sitemapFiles || 0,
+          renderNote,
+          performance,
+          homeTitle: m.homeTitle || "",
+          homeH1: m.homeH1 || "",
+          target: (Array.isArray(m.selected) ? m.selected.length : pages.length) || pages.length,
+        });
+      }
+    } catch { /* fall through to a fresh crawl */ }
+  }
+
   const r = await resolveTargets({ projectId: opts.projectId, siteUrl: opts.siteUrl, maxPages: target });
   if (!r) return empty("Could not resolve a site URL to crawl. Supply the site URL.");
   /* Single pass: on JS-rendered sites cap this pass at 25 rendered pages (the
