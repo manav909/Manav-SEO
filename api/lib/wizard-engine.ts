@@ -537,7 +537,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         const siteUrl = String(body?.siteUrl || "").trim();
         if (!siteUrl) return { success: false, error: "Supply the site URL to start a crawl." };
         const mode = ["smart", "detailed", "full"].includes(String(body?.mode)) ? String(body?.mode) : "detailed";
-        const target = mode === "max" ? 1000 : mode === "full" ? 400 : mode === "detailed" ? 100 : 25;
+        const target = mode === "advanced" ? 4000 : mode === "max" ? 1000 : mode === "full" ? 400 : mode === "detailed" ? 100 : 25;
         const r = await resolveTargets({ projectId, siteUrl, maxPages: target });
         if (!r || !r.selected.length) return { success: false, error: "Could not resolve the site (unreachable or blocking crawlers)." };
         const batchSize = r.useReader ? 20 : 60;

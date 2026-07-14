@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PortalNav from "@/components/PortalNav";
 import { useProject } from "@/contexts/ProjectContext";
 
@@ -89,7 +89,7 @@ export default function Wizard() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [generatingDocuments, setGeneratingDocuments] = useState(false);
   const [docMode, setDocMode] = useState<"audit" | "proposal">("audit");
-  const [docScope, setDocScope] = useState<"smart" | "detailed" | "full" | "max">("smart");
+  const [docScope, setDocScope] = useState<"smart" | "detailed" | "full" | "max" | "advanced">("smart");
   const [docSaved, setDocSaved] = useState("");
   const [crawlJob, setCrawlJob] = useState<{ id: string; done: number; total: number; complete: boolean } | null>(null);
   /* Connect-once: GSC connection is resolved ONCE per project and shared across
@@ -100,6 +100,8 @@ export default function Wizard() {
   const [gscResource, setGscResource]   = useState("");
   const [gscPulling, setGscPulling]     = useState<string>("");
   const [crawling, setCrawling] = useState(false);
+  const [autoCrawl, setAutoCrawl] = useState(false);
+  const stopAutoRef = useRef(false);
   const [docEmphasis, setDocEmphasis] = useState("");
   const [generatingDoc, setGeneratingDoc] = useState(false);
   const [ingestingMaterials, setIngestingMaterials] = useState(false);
@@ -498,12 +500,22 @@ export default function Wizard() {
   const startOrContinueCrawl = async () => {
     const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
     if (!siteUrl) { setError("Add the client site URL first."); return; }
+    stopAutoRef.current = false;
     setCrawling(true); setError("");
-    const r: any = await post("wizard_crawl_batch", crawlJob ? { jobId: crawlJob.id, projectId } : { siteUrl, projectId, mode: docScope });
+    let jobId = crawlJob?.id;
+    let complete = false;
+    do {
+      const r: any = await post("wizard_crawl_batch", jobId ? { jobId, projectId } : { siteUrl, projectId, mode: docScope });
+      if (!r?.success) { setError(r?.error || "Crawl failed."); setCrawling(false); return; }
+      jobId = r.jobId;
+      complete = !!r.complete;
+      setCrawlJob({ id: r.jobId, done: r.done, total: r.total, complete });
+      if (!autoCrawl || complete || stopAutoRef.current) break;
+      await new Promise((res) => setTimeout(res, 400)); // brief pause between batches so the UI can update
+    } while (!complete && !stopAutoRef.current);
     setCrawling(false);
-    if (!r?.success) { setError(r?.error || "Crawl failed."); return; }
-    setCrawlJob({ id: r.jobId, done: r.done, total: r.total, complete: !!r.complete });
   };
+  const stopAutoCrawl = () => { stopAutoRef.current = true; };
 
   const generateClientDocument = async () => {
     const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
@@ -933,17 +945,24 @@ export default function Wizard() {
                   <button onClick={() => { setDocScope("detailed"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "detailed" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Detailed</button>
                   <button onClick={() => { setDocScope("full"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "full" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Full</button>
                   <button onClick={() => { setDocScope("max"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "max" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Max</button>
+                  <button onClick={() => { setDocScope("advanced"); setCrawlJob(null); }} className={`px-4 py-1.5 ${docScope === "advanced" ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground"}`}>Advanced</button>
                 </div>
-                <span className="text-[11px] text-muted-foreground">{docScope === "max" ? "Up to 1000 pages — the deepest crawl, batch by batch." : docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
+                <span className="text-[11px] text-muted-foreground">{docScope === "advanced" ? "Up to 4000 pages — advanced deep crawl for large sites, batch by batch (use auto-run)." : docScope === "max" ? "Up to 1000 pages — the deepest crawl, batch by batch." : docScope === "full" ? "The whole sitemap — every declared page." : docScope === "detailed" ? "The 100 most important pages." : "The ~25 most business-critical pages."}</span>
               </div>
               {docScope !== "smart" && (
                 <div className="rounded-lg border border-border bg-background/50 p-3 mb-3">
-                  <p className="text-[11px] text-muted-foreground mb-2">{docScope === "max" ? "Maximum" : docScope === "full" ? "Full" : "Detailed"} depth crawls every page with full rendering, in batches you approve — so it reaches the whole set without timing out. Run it before generating; the report then uses the complete crawl.</p>
-                  {!crawlJob && <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Starting crawl…" : "Start batched crawl"}</button>}
+                  <p className="text-[11px] text-muted-foreground mb-2">{docScope === "advanced" ? "Advanced" : docScope === "max" ? "Maximum" : docScope === "full" ? "Full" : "Detailed"} depth crawls every page with full rendering, in batches — so it reaches the whole set without timing out. Run it before generating; the report then uses the complete crawl.</p>
+                  <label className="flex items-center gap-2 text-[11px] text-muted-foreground mb-2 cursor-pointer">
+                    <input type="checkbox" checked={autoCrawl} onChange={(e) => setAutoCrawl(e.target.checked)} className="accent-primary" />
+                    Auto-run every batch to completion (recommended for Max and Advanced — no clicking Continue each time)
+                  </label>
+                  {!crawlJob && <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-secondary text-secondary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? (autoCrawl ? "Auto-crawling…" : "Starting crawl…") : "Start batched crawl"}</button>}
                   {crawlJob && !crawlJob.complete && (
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-foreground">Crawled {crawlJob.done} of {crawlJob.total} pages</span>
-                      <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Crawling…" : "Continue crawling"}</button>
+                      {crawling && autoCrawl
+                        ? <button onClick={stopAutoCrawl} className="px-4 py-1.5 rounded-lg bg-red-500 text-white text-xs font-semibold">Stop</button>
+                        : <button onClick={startOrContinueCrawl} disabled={crawling} className="px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50">{crawling ? "Crawling…" : (autoCrawl ? "Resume auto-crawl" : "Continue crawling")}</button>}
                     </div>
                   )}
                   {crawlJob && crawlJob.complete && (crawlJob.total <= 2
