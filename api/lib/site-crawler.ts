@@ -371,6 +371,37 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
   return { pages, broken, schema };
 }
 
+/* ── Recursive-spider frontier growth ──────────────────────────────
+   Given the current selection and the pages just crawled, append any NEW
+   same-domain internal links (deduped, non-asset, non-utility) as fresh
+   candidates, up to the cap. This lets the crawl reach a programmatic site's
+   thousands of pages by FOLLOWING LINKS, not just what the sitemap or the
+   homepage exposed — so a site whose sitemap is missing or blocked still gets
+   crawled deeply. Honest and bounded: same-domain only, deduped by canonical
+   key, hard-capped at `cap`. Relative links resolve against the page they came
+   from. Returns the grown selection (unchanged if no new links were found). */
+export function expandFrontier(selected: Scored[], crawledPages: PageSig[], projectDomain: string, cap: number): Scored[] {
+  if (selected.length >= cap) return selected;
+  const known = new Set(selected.map(s => canonKey(s.u)));
+  const out = selected.slice();
+  for (const p of crawledPages) {
+    if (out.length >= cap) break;
+    const base = p.url;
+    for (const link of (p.links || [])) {
+      if (out.length >= cap) break;
+      let abs = "";
+      try { abs = new URL(link, base).toString().split("#")[0]; } catch { continue; }
+      const k = canonKey(abs);
+      if (!k || known.has(k)) continue;
+      if (domainOf(abs) !== projectDomain) continue;         // same registrable domain only
+      if (ASSET_RE.test(abs) || SKIP_PATH_RE.test(abs)) continue; // skip files, cart/login/admin
+      known.add(k);
+      out.push({ u: abs, ...classifyUrl(abs) });
+    }
+  }
+  return out;
+}
+
 /* Build the full audit report from the accumulated crawled pages. Runs ONCE over
    every page (single pass or all batches), so issue and duplicate counts are
    correct across the entire crawl. */
@@ -435,7 +466,7 @@ export function buildAuditReport(r: {
     ...(r.renderNote ? [r.renderNote] : []),
     r.sitemapCount > 0
       ? `Discovery seeded from the sitemap (${r.sitemapCount} URL(s) across ${r.sitemapFiles} file(s)) plus internal links; ${ok.length} pages were crawled${crawlCapped ? ` — the sitemap declares more, use Detailed/Full mode or continue the batched crawl for complete coverage` : ` (the full declared set was covered)`}.`
-      : `No sitemap was found; discovery followed internal links from the homepage. JavaScript-rendered link grids can hide pages from a static crawler — adding or exposing a sitemap would surface them.`,
+      : `No sitemap was found; discovery followed internal links recursively from page to page (a breadth-first spider), so pages linked deeper than the homepage are still reached. Use Max or Advanced depth to crawl more of them.`,
     `Broken-link detection covers internal links reached during the crawl, not an exhaustive link check.`,
     `Performance is a lab PageSpeed run on the homepage (mobile)${r.performance && r.performance.runs > 1 ? ` — median of ${r.performance.runs} runs, not a real-user field average` : ""}${r.performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
     `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,

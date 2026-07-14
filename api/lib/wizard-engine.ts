@@ -530,26 +530,27 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     const jobId = String(body?.jobId || "").trim();
     const stripLinks = (p: any) => { const { links, ...rest } = p || {}; return rest; };
     try {
-      const { resolveTargets, crawlUrls } = await import("./site-crawler.js");
+      const { resolveTargets, crawlUrls, expandFrontier } = await import("./site-crawler.js");
       const { db } = await import("./db.js");
 
       if (!jobId) {
         const siteUrl = String(body?.siteUrl || "").trim();
         if (!siteUrl) return { success: false, error: "Supply the site URL to start a crawl." };
-        const mode = ["smart", "detailed", "full"].includes(String(body?.mode)) ? String(body?.mode) : "detailed";
+        const mode = ["smart", "detailed", "full", "max", "advanced"].includes(String(body?.mode)) ? String(body?.mode) : "detailed";
         const target = mode === "advanced" ? 4000 : mode === "max" ? 1000 : mode === "full" ? 400 : mode === "detailed" ? 100 : 25;
         const r = await resolveTargets({ projectId, siteUrl, maxPages: target });
         if (!r || !r.selected.length) return { success: false, error: "Could not resolve the site (unreachable or blocking crawlers)." };
         const batchSize = r.useReader ? 20 : 60;
         const first = r.selected.slice(0, batchSize);
         const { pages, broken, schema } = await crawlUrls(first, r.useReader, r.useReader ? 5 : 6, r.start, r.homeHtml, true);
+        const grown = expandFrontier(r.selected, pages, r.projectDomain, target); // spider: follow internal links
         const schemaByUrl = new Map((schema || []).map((s: any) => [s.url, s]));
         const results = pages.map((p: any) => { const item = stripLinks(p); const s = schemaByUrl.get(p.url); if (s) item._schema = s; return item; });
-        const complete = first.length >= r.selected.length;
+        const complete = first.length >= grown.length;
         const id = `crawljob:${r.projectDomain}:${Date.now()}`;
-        const meta = { selected: r.selected, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote: r.renderNote, useReader: r.useReader, start: r.start, projectDomain: r.projectDomain, homeTitle: r.homeTitle, homeH1: r.homeH1 };
-        await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: r.selected.length, meta, results, broken, cursor: first.length, status: complete ? "complete" : "running" });
-        return { success: true, jobId: id, done: first.length, total: r.selected.length, complete, use_reader: r.useReader };
+        const meta = { selected: grown, cap: target, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote: r.renderNote, useReader: r.useReader, start: r.start, projectDomain: r.projectDomain, homeTitle: r.homeTitle, homeH1: r.homeH1 };
+        await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: grown.length, meta, results, broken, cursor: first.length, status: complete ? "complete" : "running" });
+        return { success: true, jobId: id, done: first.length, total: grown.length, complete, use_reader: r.useReader };
       }
 
       const { data: job } = await db().from("crawl_jobs").select("*").eq("id", jobId).single();
@@ -562,10 +563,12 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       const { pages, broken, schema } = next.length ? await crawlUrls(next, m.useReader, m.useReader ? 5 : 6, m.start, "", true) : { pages: [], broken: [], schema: [] };
       const schemaByUrl = new Map((schema || []).map((s: any) => [s.url, s]));
       const newResults = pages.map((p: any) => { const item = stripLinks(p); const s = schemaByUrl.get(p.url); if (s) item._schema = s; return item; });
+      const cap = typeof m.cap === "number" ? m.cap : selected.length;
+      const grown = pages.length ? expandFrontier(selected, pages, m.projectDomain, cap) : selected; // spider: follow internal links
       const newCursor = job.cursor + next.length;
-      const complete = newCursor >= selected.length;
-      await db().from("crawl_jobs").update({ results: [...(job.results || []), ...newResults], broken: [...(job.broken || []), ...broken], cursor: newCursor, status: complete ? "complete" : "running", updated_at: new Date().toISOString() }).eq("id", jobId);
-      return { success: true, jobId, done: newCursor, total: selected.length, complete };
+      const complete = newCursor >= grown.length;
+      await db().from("crawl_jobs").update({ results: [...(job.results || []), ...newResults], broken: [...(job.broken || []), ...broken], meta: { ...m, selected: grown }, target_count: grown.length, cursor: newCursor, status: complete ? "complete" : "running", updated_at: new Date().toISOString() }).eq("id", jobId);
+      return { success: true, jobId, done: newCursor, total: grown.length, complete };
     } catch (e: any) {
       return { success: false, error: e?.message || "crawl batch failed" };
     }
