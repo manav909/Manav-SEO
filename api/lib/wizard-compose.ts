@@ -141,6 +141,14 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       for (const m of INFORMED_BY) {
         if (m.re.test(t)) { const ids = m.ids.filter(id => getCapability(id)); if (ids.length) { validIds = ids; break; } }
       }
+      /* Human-activity deliverables (a call, meeting, walkthrough, demo,
+         consultation, onboarding or training session) are not a dead gap: the
+         platform cannot conduct the session, but it CAN prepare it — an agenda
+         and talking points grounded in the findings. Map these to the prep-brief
+         engine so they become a real, runnable deliverable instead of "no engine". */
+      if (validIds.length === 0 && /\b(call|meeting|walk-?through|demo|demonstration|consultation|kick-?off|onboard(?:ing)?|training session|discovery session|review session|catch-?up|check-?in|presentation|workshop)\b/i.test(t)) {
+        if (getCapability("meeting_prep_brief")) validIds = ["meeting_prep_brief"];
+      }
     }
     const { readiness, caps } = readinessOf(validIds, ymyl);
     /* A deliverable that maps to at least one REAL registry capability is NOT a
@@ -157,6 +165,8 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       const needed = String(d?.needed_engine || "").trim() || "a dedicated engine that does not exist yet";
       gaps.push({ stage: title, note: `No engine produces this — would need ${needed}.` });
       note = `Gap: the platform has no engine for this. Honest options — handle manually, build ${needed}, or scope it out of the order.`;
+    } else if (caps.some(c => c.id === "meeting_prep_brief")) {
+      note = `A client-facing session you run (a call, walkthrough or demo). The platform prepares it — run this stage for an agenda, the findings to walk through, talking points, questions and next steps. Conducting the call itself is a human deliverable.`;
     } else if (readiness === "manual_review") {
       manual_calls.push(title);
       note = `Human judgement call. The platform assists with data; a senior practitioner decides.`;

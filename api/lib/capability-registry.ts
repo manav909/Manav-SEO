@@ -252,6 +252,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Engagement data informs the call, but placement is a human judgement, not an automated output.",
     mode: "manual_dms",
   },
+  meeting_prep_brief: {
+    id: "meeting_prep_brief",
+    label: "Call / meeting preparation brief",
+    engine: "wizard-run meeting-prep generator (agenda + talking points grounded in the audit findings)",
+    inputs_required: ["The engagement's audit findings (crawl / GSC where available)"],
+    output: "A preparation brief for a client call, walkthrough or demonstration: an agenda, the key findings to present, plain-English talking points, the questions to ask, and the next steps to propose.",
+    limits: "The platform PREPARES the session (agenda and talking points from the real findings); it does not place or conduct the call. Running the call itself is a human deliverable.",
+    mode: "auto",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {

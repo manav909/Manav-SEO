@@ -355,6 +355,32 @@ export async function runWizardStage(opts: {
       }
     }
 
+    /* ── Human-activity deliverable: prepare the session (the platform preps, a person runs it) ── */
+    if (caps.includes("meeting_prep_brief")) {
+      let findings = "";
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+        if (rep && rep.pages_reachable > 0) {
+          const iss = rep.issues || {};
+          const top = Object.entries(iss).sort((a: any, b: any) => ((b[1] as any).count || 0) - ((a[1] as any).count || 0)).slice(0, 8);
+          findings = `Audited ${rep.pages_reachable} pages of ${rep.project_domain}. Top issues: ${top.map(([k, v]: any) => `${k.replace(/_/g, " ")} (${v.count})`).join("; ")}.${rep.performance?.score != null ? ` Homepage performance score ${rep.performance.score}.` : ""}`;
+        }
+      } catch { /* proceed without live findings */ }
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        const system = "You are a Senior Digital Marketing Specialist preparing to run a live walkthrough / demonstration call with a client and their project manager. Produce a tight, professional PREPARATION BRIEF the practitioner uses to run the call. Ground it in the findings provided; where a figure is not provided, speak to the theme without inventing numbers. Return well-structured markdown.";
+        const user = `Client site: ${inputs.siteUrl || "the client site"}.\n${findings || "No live audit findings were loaded for this pass; produce a strong standard SEO/AEO walkthrough agenda and talking points, and mark where live findings would slot in."}\nProduce these sections: 1) Call agenda (timed sections), 2) Key findings to walk through, 3) Talking points in plain English, 4) Questions to ask the client, 5) Recommended next steps to propose.`;
+        const { text } = await llmComplete({ system, user, maxTokens: 2000, timeoutMs: 60000, label: "meeting-prep-brief", maxSegments: 1 });
+        const body = String(text || "").trim();
+        if (!body) throw new Error("empty brief");
+        const report_md = `# Walkthrough call — preparation brief\n\n${body}\n\n_This brief prepares the session. Conducting the call is a human deliverable._`;
+        return result("completed", "meeting-prep generator (agenda + talking points from the findings)", { reports: [{ step_key: "meeting_prep", report_md }], summary: "Preparation brief for the client call: agenda, key findings to present, talking points, questions and next steps — grounded in the audit. Conducting the call itself is a human deliverable." }, "Walkthrough-call preparation brief generated: agenda, findings to present, talking points, questions and next steps. The call itself is run by a person.");
+      } catch (e: any) {
+        return result("manual", null, null, `This is a client-facing session you run. The platform could not generate the prep brief this pass (${e?.message || "error"}); re-run to retry, or run the call directly.`);
+      }
+    }
+
     /* Fallback — capabilities present but no executor mapped. */
     return result("manual", null, null, `No automated executor for this stage's capabilities (${caps.join(", ")}); handle manually or supply the required inputs.`);
   } catch (e: any) {
