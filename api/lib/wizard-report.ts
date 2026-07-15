@@ -656,6 +656,7 @@ function dataBrief(s: ReportStageInput, idx: number): any {
   const o = s.output || {};
   const id = `sec_${idx}`;
   const base: any = { id, label: s.label, summary: o.summary || "", limits: (o.limits || []).slice(0, 4) };
+  if (o.evidence && typeof o.evidence.visible_count === "number") base.gsc = { connected: true, visible_pages: o.evidence.visible_count, invisible_pages: o.evidence.invisible_count, pages_in_scope: o.evidence.target_count };
   if (o.by_classification && Array.isArray(o.urls)) base.url_classification = { total: o.total_urls, breakdown: o.by_classification, top_improve: o.urls.filter((u: any) => u.classification === "improve").slice(0, 6).map((u: any) => ({ url: u.url, issue: u.reason, priority: u.priority })) };
   else if (Array.isArray(o.clusters)) base.topical = { cluster_count: o.cluster_count, intents: o.intent_distribution, top_clusters: o.clusters.filter((c: any) => c.coverage === "partial" || c.coverage === "underserved").slice(0, 6).map((c: any) => ({ topic: c.label, intent: c.intent, coverage: c.coverage, impressions: c.total_impressions })) };
   else if (o.keyword_gap && Array.isArray(o.standings)) base.competitor = { biggest_gaps: (o.keyword_gap.biggest_gaps || []).slice(0, 6), content_gaps: (o.content_gaps || []).slice(0, 4).map((c: any) => ({ query: c.query, observations: c.observations })), backlink_gap_available: o.backlink_gap?.available };
@@ -739,7 +740,18 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
     } catch { /* non-fatal */ }
   }
 
+  /* Deterministic GSC-connected guard. If ANY stage carries real Search Console
+     evidence (visible/invisible counts), the narrative must NEVER claim GSC is
+     not connected — this makes it impossible for the document to contradict the
+     data it was handed (the "flying blind / never connected while GSC data is
+     present" bug). */
+  const gscEvidenceStage = stages.find((s: any) => { const e: any = s?.output?.evidence; return e && (typeof e.visible_count === "number" || typeof e.invisible_count === "number"); });
+  const gscGuard = gscEvidenceStage
+    ? (() => { const e: any = (gscEvidenceStage as any).output.evidence; return `GOOGLE SEARCH CONSOLE IS CONNECTED for this site, and its REAL data is in this report: ${e.visible_count} pages visible in search, ${e.invisible_count} with zero impressions, across ${e.target_count} pages in scope. You MUST present these real Search Console findings as measured fact. You must NEVER say Search Console is "not connected" or "never been connected", and never say the client is "flying blind" for lack of it — that is FALSE and forbidden when this data is present.`; })()
+    : "";
+
   const ctx = [
+    gscGuard,
     opts.operator_emphasis ? `╔═══ THE OPERATOR'S EXPLICIT STEER — THIS OVERRIDES DEFAULT FRAMING. Read it FIRST and let it shape the whole document: which finding you open with, how you structure the sections, what you emphasise, and the angle you take. The opening section MUST visibly reflect this steer. If it conflicts with a default instinct, the steer wins (as long as it stays within honest data). ═══╗\n${opts.operator_emphasis}\n╚═══ end of the operator's steer — obey it ═══╝` : "",
     `Client: ${opts.client_name || opts.client_domain || deriveClient(stages) || "the website"}.`,
     `PURPOSE OF THIS REPORT: it backs a SALE. We are pitching the services below to this prospect and this report must, using ONLY honest data, make the factual case that they should buy — and answer their likely objections before they raise them.`,
