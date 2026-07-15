@@ -78,7 +78,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const { data: profData, error: profErr } = await supabase
         .from('profiles').select('*').eq('id', currentUser.id).single();
-      let prof = profData;
+      let prof: any = profData;
 
       if (profErr) {
         if (profErr.code === 'PGRST116') {
@@ -91,10 +91,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             });
           } catch { /* ignore insert error */ }
         }
-        setProfile(null);
-        setClients([]);
-        setProjects([]);
-        return;
+        /* The user is AUTHENTICATED — Supabase Auth already controls who gets in,
+           and this app auto-approves every authenticated user. A missing profile
+           (just created), a transient read error, or an RLS hiccup must therefore
+           NEVER lock them out by leaving the profile null (which would flip
+           isApproved to false and hide the whole staff portal / BDE panels).
+           Fall back to a minimal approved profile so access is preserved; real
+           data is still governed by RLS on each table. */
+        prof = { id: currentUser.id, email: currentUser.email || '', approved: true };
       }
 
       // Auto-approve: Supabase Auth already controls access
