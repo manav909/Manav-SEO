@@ -746,9 +746,23 @@ async function seniorDmsPass(stages: ReportStageInput[], opts: ReportOptions): P
      data it was handed (the "flying blind / never connected while GSC data is
      present" bug). */
   const gscEvidenceStage = stages.find((s: any) => { const e: any = s?.output?.evidence; return e && (typeof e.visible_count === "number" || typeof e.invisible_count === "number"); });
-  const gscGuard = gscEvidenceStage
-    ? (() => { const e: any = (gscEvidenceStage as any).output.evidence; return `GOOGLE SEARCH CONSOLE IS CONNECTED for this site, and its REAL data is in this report: ${e.visible_count} pages visible in search, ${e.invisible_count} with zero impressions, across ${e.target_count} pages in scope. You MUST present these real Search Console findings as measured fact. You must NEVER say Search Console is "not connected" or "never been connected", and never say the client is "flying blind" for lack of it — that is FALSE and forbidden when this data is present.`; })()
-    : "";
+  let gscGuard = "";
+  if (gscEvidenceStage) {
+    const e: any = (gscEvidenceStage as any).output.evidence;
+    gscGuard = `GOOGLE SEARCH CONSOLE IS CONNECTED for this site, and its REAL data is in this report: ${e.visible_count} pages visible in search, ${e.invisible_count} with zero impressions, across ${e.target_count} pages in scope. You MUST present these real Search Console findings as measured fact. You must NEVER say Search Console is "not connected" or "never been connected", and never say the client is "flying blind" for lack of it — that is FALSE and forbidden when this data is present.`;
+  } else if (opts.project_id) {
+    /* No GSC data in THIS payload — but if GSC is connected for the project, a
+       stale/partial stage set must still never produce a "no GSC / flying blind"
+       claim. Check the project's real connection status directly. */
+    try {
+      const { db } = await import("./db.js");
+      const { data: integ } = await db().from("project_integrations").select("resource_id,provider").eq("project_id", opts.project_id).eq("provider", "gsc").limit(1);
+      const row: any = Array.isArray(integ) ? integ[0] : integ;
+      if (row && row.resource_id) {
+        gscGuard = `GOOGLE SEARCH CONSOLE IS CONNECTED for this project (a property is set). Its per-page diagnosis may not be in this particular document's sections, but you must NEVER say Search Console is "not connected", "never been connected", or that the client is "flying blind" for lack of it — that is FALSE. If its findings are not shown here, state briefly that the Search Console diagnosis is connected and available (run the Search Console stage to include it) — never present its absence as the client's failing.`;
+      }
+    } catch { /* proceed without the project-level check */ }
+  }
 
   const ctx = [
     gscGuard,
