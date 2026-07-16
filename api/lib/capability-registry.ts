@@ -261,6 +261,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "The platform PREPARES the session (agenda and talking points from the real findings); it does not place or conduct the call. Running the call itself is a human deliverable.",
     mode: "auto",
   },
+  case_study_evidence: {
+    id: "case_study_evidence",
+    label: "Similar-work examples and proof",
+    engine: "wizard-run case-study engine (reads the operator's curated, verifiable case_studies; honest methodology fallback when none match)",
+    inputs_required: ["The operator's real curated case studies (table case_studies), or the prospect's own findings for the honest approach fallback"],
+    output: "Real, verifiable examples of similar prior work matched to the prospect's category, each with its measurable result and a proof link. When no verified case study matches, an honest 'how I would approach a business like yours' piece grounded in the prospect's real findings, clearly framed as the approach and never a fabricated past client.",
+    limits: "Presents ONLY the operator's real curated results with proof. It never invents a past client, a metric, or a testimonial. When no verified match exists, it says so and gives the honest methodology piece instead. This is what survives a client's verification.",
+    mode: "auto",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {

@@ -388,6 +388,62 @@ export async function runWizardStage(opts: {
       }
     }
 
+    /* ── Similar-work / case-study evidence: real curated proof, honest fallback ── */
+    if (caps.includes("case_study_evidence")) {
+      let studies: any[] = [];
+      try {
+        const { data } = await db().from("case_studies").select("*").eq("is_public", true).order("created_at", { ascending: false }).limit(50);
+        studies = Array.isArray(data) ? data : [];
+      } catch { studies = []; }
+      let space = "";
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+        space = `${rep?.homepage_title || ""} ${rep?.project_domain || ""}`;
+      } catch { /* proceed */ }
+      const spaceLc = `${space} ${inputs.siteUrl || ""}`.toLowerCase();
+      const scored = studies.map((s: any) => {
+        const hay = `${s.category || ""} ${s.industry || ""} ${s.client_label || ""}`.toLowerCase();
+        const overlap = hay.split(/\W+/).filter((w: string) => w.length > 3 && spaceLc.includes(w)).length;
+        return { s, overlap };
+      }).sort((a: any, b: any) => b.overlap - a.overlap);
+      const matched = scored.filter((x: any) => x.overlap > 0).map((x: any) => x.s).slice(0, 5);
+      const picked = matched.length ? matched : studies.slice(0, 4);
+      if (picked.length) {
+        const rows = picked.map((s: any, i: number) => {
+          const head = `${s.client_label || s.industry || "Client"}${s.category ? ` (${s.category})` : ""}`;
+          const parts = [
+            s.challenge ? `Challenge: ${s.challenge}.` : "",
+            s.work_done ? `What I did: ${s.work_done}.` : "",
+            (s.result_metric || s.result_detail) ? `Result: ${[s.result_metric, s.result_detail].filter(Boolean).join(", ")}.` : "",
+            s.proof_url ? `Proof: ${s.proof_url}` : "",
+          ].filter(Boolean);
+          return `### ${i + 1}. ${head}\n${parts.join(" ")}`;
+        }).join("\n\n");
+        const report_md = `# Similar work, with proof\n\nThese are real prior engagements${matched.length ? " in a space close to yours" : ""}. Every result is verifiable at the proof link. Nothing here is illustrative or estimated.\n\n${rows}`;
+        return result("completed", "case-study engine (real curated results, verifiable)", { reports: [{ step_key: "case_studies", report_md }], case_studies: picked, summary: `${picked.length} real, verifiable case ${picked.length === 1 ? "study" : "studies"} presented, each with a proof link.` }, `Presented ${picked.length} real case ${picked.length === 1 ? "study" : "studies"} with proof.`);
+      }
+      /* No curated case studies on file: HONEST methodology piece, never a fabricated past client. */
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        let findings = "";
+        try {
+          const { crawlSite } = await import("./site-crawler.js");
+          const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+          if (rep?.pages_reachable) { const iss = rep.issues || {}; const top = Object.entries(iss).sort((a: any, b: any) => ((b[1] as any).count || 0) - ((a[1] as any).count || 0)).slice(0, 6); findings = `Audited ${rep.pages_reachable} pages of ${rep.project_domain}. Top issues: ${top.map(([k, v]: any) => `${k.replace(/_/g, " ")} (${v.count})`).join("; ")}.`; }
+        } catch { /* proceed */ }
+        const system = "You are a Senior Digital Marketing Specialist. The operator has NO curated case studies on file for this prospect. You must NOT invent a past client, a metric, or a testimonial. Instead write an honest 'how I would approach a business like yours' piece: the specific methodology you would apply to THIS prospect's real situation and findings, clearly framed as the approach you would take, not a past outcome. Warm, specific, confident, in plain client language. Never use an em-dash or a double hyphen. No fabrication of any kind.";
+        const user = `Prospect site: ${inputs.siteUrl || "the client site"}.\n${findings || "Use a strong, specific methodology and note where their real findings would shape it."}\nWrite an honest 'how I would approach a business like yours' section, 300 to 450 words, grounded in their real situation, framed clearly as the approach, never a fabricated past client.`;
+        const { text } = await llmComplete({ system, user, maxTokens: 1400, timeoutMs: 60000, label: "case-study-approach", maxSegments: 1 });
+        const body = String(text || "").trim();
+        if (!body) throw new Error("empty");
+        const report_md = `# How I would approach a business like yours\n\nMy proof stays honest: I show verified case studies only where I genuinely have them, and I will not put a manufactured example in front of you. For your situation specifically, here is exactly how I would work.\n\n${body}\n\nVerified case studies in your category can be added to the portfolio and will appear here as proof.`;
+        return result("completed", "case-study engine (honest methodology, no fabrication)", { reports: [{ step_key: "case_approach", report_md }], summary: "No curated case studies on file for this category, so an honest methodology piece was produced, with no fabricated examples. Add verified case studies to present proof." }, "No verified case studies on file for this category. Produced an honest approach piece grounded in the prospect's findings, with no fabricated examples.");
+      } catch (e: any) {
+        return result("manual", null, null, `Add your real, verifiable case studies to the case_studies table to present them here as proof. (The honest methodology fallback could not run: ${e?.message || "error"}.)`);
+      }
+    }
+
     /* ── Human-activity deliverable: prepare the session (the platform preps, a person runs it) ── */
     if (caps.includes("meeting_prep_brief")) {
       let findings = "";

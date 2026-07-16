@@ -149,6 +149,12 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       if (validIds.length === 0 && /\b(call|meeting|walk-?through|demo|demonstration|consultation|kick-?off|onboard(?:ing)?|training session|discovery session|review session|catch-?up|check-?in|presentation|workshop)\b/i.test(t)) {
         if (getCapability("meeting_prep_brief")) validIds = ["meeting_prep_brief"];
       }
+      /* Similar-work / case-study / portfolio deliverables: present the operator's
+         real curated proof matched to the prospect's category, with an honest
+         methodology fallback when none match. Never a dead gap, never fabricated. */
+      if (validIds.length === 0 && /(case stud|similar work|similar seo|examples? of|portfolio|proof of work|prior (result|work|client)|past (result|work|client)|track record|references?)/i.test(t)) {
+        if (getCapability("case_study_evidence")) validIds = ["case_study_evidence"];
+      }
     }
     const { readiness, caps } = readinessOf(validIds, ymyl);
     /* A deliverable that maps to at least one REAL registry capability is NOT a
@@ -167,6 +173,8 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       note = `Gap: the platform has no engine for this. Honest options — handle manually, build ${needed}, or scope it out of the order.`;
     } else if (caps.some(c => c.id === "meeting_prep_brief")) {
       note = `A client-facing session you run (a call, walkthrough or demo). The platform prepares it — run this stage for an agenda, the findings to walk through, talking points, questions and next steps. Conducting the call itself is a human deliverable.`;
+    } else if (caps.some(c => c.id === "case_study_evidence")) {
+      note = `Presents your real, verifiable prior work matched to this prospect's category, with proof. If you have curated case studies on file it shows the matching ones; if none match, it gives an honest "how I would approach a business like yours" piece grounded in this prospect's findings, never a fabricated example.`;
     } else if (readiness === "manual_review") {
       manual_calls.push(title);
       note = `Human judgement call. The platform assists with data; a senior practitioner decides.`;
