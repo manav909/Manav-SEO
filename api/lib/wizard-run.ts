@@ -457,6 +457,54 @@ export async function runWizardStage(opts: {
         const report_md = `# Similar work, with proof\n\nThese are real prior engagements${matched.length ? " in a space close to yours" : ""}. Every result is verifiable at the proof link. Nothing here is illustrative or estimated.\n\n${rows}`;
         return result("completed", "case-study engine (real curated results, verifiable)", { reports: [{ step_key: "case_studies", report_md }], case_studies: picked, summary: `${picked.length} real, verifiable case ${picked.length === 1 ? "study" : "studies"} presented, each with a proof link.` }, `Presented ${picked.length} real case ${picked.length === 1 ? "study" : "studies"} with proof.`);
       }
+      /* TIER 2: build real case studies from the operator's OWN past projects,
+         using the measured before-and-after already in the platform (audit health
+         score, then growth metrics), anonymised by industry, category-matched to
+         the prospect. Real numbers only, never invented. */
+      try {
+        const { data: cur } = await db().from("projects").select("industry").eq("id", projectId).maybeSingle();
+        const industry = String((cur as any)?.industry || "").toLowerCase();
+        const { data: others } = await db().from("projects").select("id,industry,name").neq("id", projectId).limit(40);
+        const realStudies: any[] = [];
+        for (const p of ((others as any[]) || []).slice(0, 15)) {
+          if (!p || !p.id) continue;
+          let result_line = ""; let finding = "";
+          try {
+            const { data: audits } = await db().from("audit_reports").select("overall_score,created_at,top_findings").eq("project_id", p.id).order("created_at", { ascending: true });
+            const scored = ((audits as any[]) || []).filter((a) => typeof a.overall_score === "number");
+            if (scored.length >= 2) {
+              const f = scored[0], l = scored[scored.length - 1];
+              const delta = l.overall_score - f.overall_score;
+              if (delta >= 8) {
+                const days = Math.max(1, Math.round((new Date(l.created_at).getTime() - new Date(f.created_at).getTime()) / 86400000));
+                result_line = `SEO health score improved from ${f.overall_score} to ${l.overall_score} (up ${delta} points) over about ${days} days`;
+                const tf = f.top_findings;
+                finding = Array.isArray(tf) ? String((tf[0] && (tf[0].title || tf[0])) || "") : "";
+              }
+            }
+          } catch { /* skip this project */ }
+          if (!result_line) {
+            try {
+              const { data: mets } = await db().from("metrics").select("overall_growth_score,pages_indexed,recorded_at").eq("project_id", p.id).order("recorded_at", { ascending: true });
+              const ms = ((mets as any[]) || []).filter((m) => typeof m.overall_growth_score === "number");
+              if (ms.length >= 2) {
+                const f = ms[0], l = ms[ms.length - 1];
+                const d = l.overall_growth_score - f.overall_growth_score;
+                if (d >= 8) result_line = `growth score improved from ${f.overall_growth_score} to ${l.overall_growth_score} (up ${d} points)${typeof l.pages_indexed === "number" && typeof f.pages_indexed === "number" && l.pages_indexed > f.pages_indexed ? `, with indexed pages rising from ${f.pages_indexed} to ${l.pages_indexed}` : ""}`;
+              }
+            } catch { /* skip */ }
+          }
+          if (result_line) realStudies.push({ industry: String(p.industry || ""), result_line, finding });
+        }
+        realStudies.sort((a, b) => (b.industry.toLowerCase() === industry ? 1 : 0) - (a.industry.toLowerCase() === industry ? 1 : 0));
+        const top = realStudies.slice(0, 4);
+        if (top.length) {
+          const rows = top.map((s, i) => `### ${i + 1}. A ${s.industry || "client"} engagement\n${s.finding ? `Starting challenge: ${s.finding}. ` : ""}Result: ${s.result_line}. These are real, measured figures from the engagement, anonymised.`).join("\n\n");
+          const report_md = `# Similar work, from real engagements\n\nThese are real prior engagements from my own client base, anonymised, with the measured before-and-after taken from the platform's own audit and metric history. Nothing here is illustrative or invented.\n\n${rows}`;
+          return result("completed", "case-study engine (real client history, anonymised, measured)", { reports: [{ step_key: "case_studies", report_md }], real_studies: top, summary: `${top.length} real case ${top.length === 1 ? "study" : "studies"} built from your own client history, anonymised, with measured before-and-after.` }, `Presented ${top.length} real case ${top.length === 1 ? "study" : "studies"} from your own client history, anonymised, with measured results.`);
+        }
+      } catch { /* fall through to the honest methodology piece */ }
+
       /* No curated case studies on file: HONEST methodology piece, never a fabricated past client. */
       try {
         const { llmComplete } = await import("./workspace/llm.js");
