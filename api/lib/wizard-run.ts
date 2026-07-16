@@ -388,6 +388,22 @@ export async function runWizardStage(opts: {
       }
     }
 
+    /* ── Ranking-drop analysis on Search Console (no Semrush) ── */
+    if (caps.includes("ranking_drop_analysis")) {
+      const gsc: any = await loadGsc(projectId);
+      const pairs: any[] = (gsc && gsc.queryPagePairs) || [];
+      if (!pairs.length) return result("needs_connection", "loadGsc", null, `Connect Search Console (OAuth) and pull, or ingest a GSC CSV, so the ranking-drop analysis has position and click data. No Semrush is needed for this.`);
+      const num = (x: any) => Number(x) || 0;
+      const page2 = pairs.filter((p) => num(p.position) > 10 && num(p.position) <= 20).sort((a, b) => num(b.impressions) - num(a.impressions)).slice(0, 15);
+      const zeroClick = pairs.filter((p) => num(p.impressions) >= 20 && num(p.clicks) === 0).sort((a, b) => num(b.impressions) - num(a.impressions)).slice(0, 15);
+      const { TOPIC_CATALOG } = await import("./algo-catalog.js");
+      const recent = (TOPIC_CATALOG as any[]).filter((t) => String(t.added) >= "2024-01").slice(0, 10);
+      const fmtRows = (arr: any[], label: string) => arr.length ? `\n\n## ${label}\n${arr.map((p) => `- "${p.query}" (position ${num(p.position).toFixed(1)}, ${num(p.impressions)} impressions, ${num(p.clicks)} clicks) on ${p.page}`).join("\n")}` : "";
+      const timeline = recent.map((t) => `- ${t.added}: ${t.label}`).join("\n");
+      const report_md = `# Keyword ranking drop analysis\n\nThis runs on your Search Console data and the Google update timeline. No Semrush is needed.${fmtRows(page2, "Now on page two (positions 11 to 20), where page-one visibility has been lost")}${fmtRows(zeroClick, "Seen but not clicked (high impressions, zero clicks), a relevance or intent gap")}\n\n## Google update timeline to line these against\nIf a drop clusters around one of these dates, that update is the likely cause. Confirm with Search Console's own date comparison per query.\n${timeline || "No recent updates on file."}\n\nWhat to do: for the page-two queries, the usual fix is on-page relevance and internal links to push them back to page one; for the high-impression zero-click queries, the title and intent match need work. Both are measurable in Search Console, so progress is provable.`;
+      return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], page2, zero_click: zeroClick, updates: recent, summary: `Ranking-drop analysis from Search Console: ${page2.length} queries now on page two, ${zeroClick.length} high-impression zero-click queries, lined up against ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking-drop analysis complete from Search Console: ${page2.length} page-two queries and ${zeroClick.length} zero-click queries, correlated with the Google update timeline. No Semrush required.`);
+    }
+
     /* ── Similar-work / case-study evidence: real curated proof, honest fallback ── */
     if (caps.includes("case_study_evidence")) {
       let studies: any[] = [];

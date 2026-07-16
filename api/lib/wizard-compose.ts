@@ -123,6 +123,15 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
     let validIds: string[] = (Array.isArray(d?.capability_ids) ? d.capability_ids : [])
       .map((x: any) => String(x))
       .filter((id: string) => Boolean(getCapability(id)));
+    /* Ranking-drop / lost-rankings analysis is a Search Console job, not a Semrush
+       one: GSC holds the position and click history, and the platform has the
+       update timeline and the indexation diagnosis. Route these deliverables to
+       the GSC-based engine and drop any Semrush hard-requirement, so the stage
+       runs on the data that is actually connected instead of blocking on a key
+       the operator will never have. */
+    if (/(ranking|keyword|position|visibilit).{0,30}(drop|declin|loss|lost|fell|fall|decreas|slid|sink)|(drop|declin|loss|lost|fell|fall|decreas|sink).{0,30}(ranking|keyword|position|visibilit)/i.test(title.toLowerCase()) && getCapability("ranking_drop_analysis")) {
+      validIds = ["ranking_drop_analysis"];
+    }
     /* Deterministic informing-capability fallback. Some deliverables are DELIVERY
        work that existing engines INFORM even though no single engine produces them
        end to end — e.g. on-page copy enhancements: the per-URL audit says what is

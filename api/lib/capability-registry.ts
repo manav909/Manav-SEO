@@ -270,6 +270,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Presents ONLY the operator's real curated results with proof. It never invents a past client, a metric, or a testimonial. When no verified match exists, it says so and gives the honest methodology piece instead. This is what survives a client's verification.",
     mode: "auto",
   },
+  ranking_drop_analysis: {
+    id: "ranking_drop_analysis",
+    label: "Keyword ranking drop analysis (GSC + update timeline)",
+    engine: "wizard-run ranking-drop engine (Search Console position/clicks + Google update timeline + indexation)",
+    inputs_required: ["GSC property connected (OAuth)"],
+    output: "The queries and pages that lost visibility (now on page two, high-impression zero-click queries, weak CTR for position), correlated with the recent Google update timeline and the indexation picture, so a drop can be tied to a likely cause.",
+    limits: "Runs on Search Console data, no Semrush needed. It shows the ranking-risk and lost-visibility picture from GSC and lines it up against the known Google update dates and your non-indexed pages. Semrush would add authority and backlink context, but it is not required for this analysis.",
+    mode: "needs_connection",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {
