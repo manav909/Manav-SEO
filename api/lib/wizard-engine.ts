@@ -535,39 +535,79 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     if (!projectId && !siteUrl) return { success: false, error: "No project or site to derive from." };
     const dom = (u: string) => { try { return new URL(u.startsWith("http") ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch { return ""; } };
     const clientDom = dom(siteUrl);
+    const brandRoot = (clientDom.split(".")[0] || "").toLowerCase();            // eztips
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");      // "ez tips" -> "eztips"
+    const brandNorm = norm(brandRoot);
+    /* Infrastructure / non-competitor domains that SERP scraping drags in. */
+    const JUNK_DOMAIN_RE = /(^|\.)(google|gstatic|googleusercontent|googleapis|facebook|instagram|youtube|youtu|twitter|x|linkedin|pinterest|reddit|wikipedia|wikimedia|fandom|amazon|ebay|apple|microsoft|bing|yahoo|duckduckgo|zendesk|freshdesk|intercom|helpscout|modrinth|github|gitlab|bitbucket|medium|quora|tumblr|blogspot|t|bit|tiktok|whatsapp|telegram|discord|trustpilot|glassdoor|indeed|crunchbase|yelp|tripadvisor|cloudflare|akamai|wixsite|shopify|myshopify)\.|^(static|cdn|assets|img|images|media|help|support|docs|status|mail|login|account|api|app|apps|play|store|blog\.google)\./i;
+    const isClientOwned = (d: string) => { const dn = norm(d.split(".")[0] || ""); return d === clientDom || (brandNorm.length >= 3 && (dn === brandNorm || dn.includes(brandNorm) || brandNorm.includes(dn))); };
     try {
       const { db } = await import("./db.js");
       let gscQueries: string[] = [];
       try { const { loadGsc } = await import("./workspace/shared.js"); const g: any = await loadGsc(projectId); gscQueries = ((g && g.queryPagePairs) || []).map((p: any) => p.query).filter(Boolean); } catch { /* no gsc */ }
       let titles: string[] = [];
-      try { const { data: jobs } = await db().from("crawl_jobs").select("meta,results").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1); const job: any = Array.isArray(jobs) ? jobs[0] : null; if (job) titles = [job.meta?.homeTitle, ...(Array.isArray(job.results) ? job.results.slice(0, 20).map((r: any) => r.title) : [])].filter(Boolean); } catch { /* no crawl */ }
+      let homeTitle = "";
+      try { const { data: jobs } = await db().from("crawl_jobs").select("meta,results").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1); const job: any = Array.isArray(jobs) ? jobs[0] : null; if (job) { homeTitle = job.meta?.homeTitle || ""; titles = [homeTitle, ...(Array.isArray(job.results) ? job.results.slice(0, 25).map((r: any) => r.title) : [])].filter(Boolean); } } catch { /* no crawl */ }
 
-      let keywords: string[] = Array.from(new Set(gscQueries)).slice(0, 12);
-      if (gscQueries.length || titles.length) {
-        try {
-          const { llmComplete } = await import("./workspace/llm.js");
-          const grounding = `Client: ${clientDom || siteUrl}.\n${gscQueries.length ? `Real Search Console queries this site earns impressions for: ${Array.from(new Set(gscQueries)).slice(0, 40).join(", ")}.` : ""}\n${titles.length ? `Page titles from the crawl: ${titles.slice(0, 15).join(" | ")}.` : ""}`;
-          const { text } = await llmComplete({ system: "You are a Senior SEO. From ONLY the real data provided, choose 8 to 12 target keywords this site should focus on. Lead with the real Search Console queries where present. Do not invent keywords the data does not support. Return ONLY a JSON array of strings.", user: grounding, maxTokens: 500, timeoutMs: 40000, label: "suggest-keywords", maxSegments: 1 });
-          const arr = parseJsonResponse<any>(text); if (Array.isArray(arr) && arr.length) keywords = arr.map(String).map(s => s.trim()).filter(Boolean).slice(0, 12);
-        } catch { /* keep gsc-derived keywords */ }
-      }
+      /* Pre-filter GSC queries: drop search operators and pure-brand/navigational
+         terms BEFORE the model sees them, so brand noise cannot leak through. */
+      const cleanQueries = Array.from(new Set(gscQueries)).filter((q) => {
+        const ql = q.toLowerCase();
+        if (/[:]|site:|inurl:|intitle:|filetype:/.test(ql)) return false;         // operators
+        const qn = norm(q);
+        if (brandNorm.length >= 3 && qn.includes(brandNorm)) return false;         // exact brand / navigational
+        if (/official (website|site)|log ?in|sign ?in|\.com\b|\.co\b|\.net\b|download app|customer care|contact number/.test(ql)) return false; // clear navigational markers
+        return true;
+      });
 
+      const { llmComplete } = await import("./workspace/llm.js");
+      const business = homeTitle || titles.slice(0, 3).join(" | ") || clientDom;
+      let keywords: string[] = [];
+      try {
+        const grounding = `Client site: ${clientDom}. Business (from the site): ${business}.\n${cleanQueries.length ? `Real non-brand Search Console queries: ${cleanQueries.slice(0, 40).join(", ")}.` : "No non-brand Search Console queries were available."}\n${titles.length ? `Page titles: ${titles.slice(0, 12).join(" | ")}.` : ""}`;
+        const sys = "You are a Senior SEO choosing TARGET keywords for a client. Return 8 to 12 commercial, non-brand target keywords this business should grow. STRICT EXCLUSIONS, never include any of these: the client's own brand name or its variations or domains; navigational queries (brand + official/website/login/app); search operators (site:, inurl:); any OTHER company's brand name; misspellings. Prefer the real non-brand Search Console queries where they are genuine commercial intent. Every keyword must be something a new customer who does not know this brand would search. Return ONLY a JSON array of strings.";
+        const { text } = await llmComplete({ system: sys, user: grounding, maxTokens: 500, timeoutMs: 40000, label: "suggest-keywords", maxSegments: 1 });
+        const arr = parseJsonResponse<any>(text);
+        if (Array.isArray(arr)) keywords = arr.map(String).map((s) => s.trim()).filter((s) => s && !norm(s).includes(brandNorm)).slice(0, 12);
+      } catch { keywords = cleanQueries.slice(0, 10); }
+
+      /* Competitors: SERP the COMMERCIAL keywords, drop junk + client-owned
+         deterministically, then a relevance-verification pass keeps only genuine
+         business competitors. This is the quality gate that was missing. */
       let competitors: string[] = [];
       if (keywords.length && projectId) {
         try {
           const { fetchSerpFeatures } = await import("./serpapi.js");
           const seen = new Set<string>();
-          for (const kw of keywords.slice(0, 2)) {
-            if (competitors.length >= 6) break;
+          const candidates: string[] = [];
+          for (const kw of keywords.slice(0, 3)) {
+            if (candidates.length >= 25) break;
             const serp: any = await fetchSerpFeatures(kw, projectId, {}).catch(() => null);
             const domains: string[] = (serp && (serp.top_100_domains || serp.top_10_domains)) || [];
-            for (const d of domains.slice(0, 15)) { const dd = dom(d); if (dd && dd !== clientDom && !seen.has(dd)) { seen.add(dd); competitors.push(dd); if (competitors.length >= 6) break; } }
+            for (const d of domains.slice(0, 15)) {
+              const dd = dom(d);
+              if (!dd || seen.has(dd)) continue;
+              if (isClientOwned(dd) || JUNK_DOMAIN_RE.test(dd)) continue;         // drop own brand + infra/platforms
+              seen.add(dd); candidates.push(dd);
+            }
           }
-          competitors = competitors.slice(0, 6);
+          if (candidates.length) {
+            /* Verification pass: keep only real competitors of THIS business. */
+            try {
+              const vsys = "You are a Senior SEO verifying a competitor list. Given the client's business and a list of domains that ranked for its keywords, return ONLY the domains that are GENUINE direct competitors: real businesses offering similar products or services to the same market. EXCLUDE the client's own domains, app stores, CDNs, support/helpdesk sites, marketplaces, wikis, forums, news aggregators, and anything not a direct competitor. Return ONLY a JSON array of the competitor domains (a subset of the input), bare domains, no invented ones.";
+              const vuser = `Client business: ${business} (${clientDom}). Candidate domains: ${candidates.join(", ")}.`;
+              const { text } = await llmComplete({ system: vsys, user: vuser, maxTokens: 300, timeoutMs: 40000, label: "verify-competitors", maxSegments: 1 });
+              const arr = parseJsonResponse<any>(text);
+              if (Array.isArray(arr)) competitors = arr.map((d: any) => dom(String(d))).filter((d: string) => d && candidates.includes(d) && !isClientOwned(d)).slice(0, 6);
+            } catch { competitors = candidates.slice(0, 6); }
+          }
         } catch { /* no serp */ }
       }
 
-      return { success: true, keywords, competitors, keyword_basis: gscQueries.length ? "your Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "the domains ranking for your keywords" : "" };
+      const note = (!keywords.length && !competitors.length)
+        ? "No usable Search Console or crawl data to derive from yet, or the results did not pass the quality checks. Connect Search Console or run a crawl, then suggest again."
+        : "";
+      return { success: true, keywords, competitors, keyword_basis: cleanQueries.length ? "your non-brand Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "domains ranking for your commercial keywords, verified as real competitors" : "", note };
     } catch (e: any) {
       return { success: false, error: e?.message || "suggestion failed" };
     }
