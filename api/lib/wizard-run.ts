@@ -1,7 +1,7 @@
 /* ════════════════════════════════════════════════════════════════
    api/lib/wizard-run.ts
 
-   BUILD 12.23b-4 — Wizard stage orchestration.
+   BUILD 12.23b-4, Wizard stage orchestration.
 
    Runs ONE wizard stage at a time via the real engine behind it, and
    returns its status + output. This is the per-stage execution layer for
@@ -13,7 +13,7 @@
       belongs to the UI layer (12.23c), which holds which stages are done.
       Each call executes one stage independently.
    2. PER-STAGE, human-in-the-loop. Stages are not auto-fired in a blind
-      batch. Each stage carries a `validation` flag — "established" for
+      batch. Each stage carries a `validation` flag, "established" for
       engines proven in production, "unvalidated" for the engines built
       this session (the URL classifier, the export, CSV ingestion) and
       the GEO analysis steps, which have not yet been field-validated.
@@ -80,7 +80,7 @@ export async function runWizardStage(opts: {
   const inputs = opts.inputs || {};
 
   /* Resolve the stage from either the dynamic capability list or a fixed
-     archetype lookup — both feed the same dispatch below. */
+     archetype lookup, both feed the same dispatch below. */
   let caps: string[];
   let stageLabel: string;
   let stageId = opts.stageId || "dynamic_stage";
@@ -108,19 +108,19 @@ export async function runWizardStage(opts: {
   try {
     /* All-manual stage → human judgement, no execution. */
     if (capModes.length > 0 && capModes.every(m => m === "manual_dms")) {
-      return result("manual", null, null, `Human judgement call (${caps.join(", ")}). The platform assists with data, but a senior practitioner decides — review the supporting evidence from earlier stages and record the decision.`);
+      return result("manual", null, null, `Human judgement call (${caps.join(", ")}). The platform assists with data, but a senior practitioner decides, review the supporting evidence from earlier stages and record the decision.`);
     }
 
     /* ── Direct, standalone engines (the session-built gap-engines) ── */
     if (caps.includes("site_wide_url_classification")) {
       const report = await classifyUrls({ projectId });
       if (report.total_urls === 0) return result("needs_connection", "url-classifier.ts", report, `No GSC page data stored. Connect Search Console and pull, or ingest a GSC CSV export, then re-run.`);
-      return result("completed", "url-classifier.ts", report, `Classified ${report.total_urls} URLs. Unvalidated engine — review the keep/improve/merge calls and treat redirect/pruning as candidates.`);
+      return result("completed", "url-classifier.ts", report, `Classified ${report.total_urls} URLs. Unvalidated engine, review the keep/improve/merge calls and treat redirect/pruning as candidates.`);
     }
 
     if (caps.includes("url_inventory_export")) {
       const file = await exportUrlInventory({ projectId });
-      if (!file.success) return result("needs_connection", "url-inventory-export.ts", file, file.error || `No data to export — connect or ingest GSC data first.`);
+      if (!file.success) return result("needs_connection", "url-inventory-export.ts", file, file.error || `No data to export, connect or ingest GSC data first.`);
       return result("completed", "url-inventory-export.ts", file, `Exported ${file.total_urls} URLs to ${file.filename}. Carries the classifier's honesty (redirect = candidate, pruning needs crawl + sitemap).`);
     }
 
@@ -141,7 +141,7 @@ export async function runWizardStage(opts: {
 
     if (caps.includes("competitor_benchmark")) {
       const comps = Array.isArray(inputs.competitors) ? inputs.competitors.map(String).filter(Boolean) : [];
-      if (comps.length === 0) return result("needs_input", "competitor-benchmark.ts", null, `Supply competitor domains (inputs.competitors) — this engine does not auto-pick competitors, by design.`);
+      if (comps.length === 0) return result("needs_input", "competitor-benchmark.ts", null, `Supply competitor domains (inputs.competitors), this engine does not auto-pick competitors, by design.`);
       const { benchmarkCompetitors } = await import("./competitor-benchmark.js");
       const report = await benchmarkCompetitors({ projectId, competitors: comps, keywords: inputs.targetKeywords, siteUrl: inputs.siteUrl });
       return result(report.queries_analyzed > 0 ? "completed" : "needs_connection", "competitor-benchmark.ts", report, report.summary);
@@ -172,17 +172,50 @@ export async function runWizardStage(opts: {
       if (!inputs.siteUrl) return result("needs_input", "schema-llms-engine.ts", null, `Supply inputs.siteUrl (the site to generate schema and llms.txt for). Optionally inputs.pageUrls to target specific pages, and inputs.depth (sample | standard | deep).`);
       const { generateSchemaAndLlms } = await import("./schema-llms-engine.js");
       const report = await generateSchemaAndLlms({ projectId, siteUrl: inputs.siteUrl, pageUrls: inputs.pageUrls, depth: inputs.depth });
-      if (!report.ok) return result("needs_connection", "schema-llms-engine.ts", report, `No pages could be fetched (all blocked or unreachable) — nothing was generated, so nothing is invented. ${report.summary.blocked} page(s) blocked. Verify site access or supply reachable page URLs.`);
+      if (!report.ok) return result("needs_connection", "schema-llms-engine.ts", report, `No pages could be fetched (all blocked or unreachable), nothing was generated, so nothing is invented. ${report.summary.blocked} page(s) blocked. Verify site access or supply reachable page URLs.`);
       return result("completed", "schema-llms-engine.ts", report, report.note);
     }
 
     if (caps.includes("backlink_prospecting")) {
       if (!inputs.siteUrl) return result("needs_input", "semrush-intel.ts", null, `Supply inputs.siteUrl (the client domain) and inputs.competitors (operator-supplied competitor domains). Optionally inputs.limit (prospects) and inputs.perDomainFetch (referring-domains pulled per domain).`);
-      if (!inputs.competitors || !inputs.competitors.length) return result("needs_input", "semrush-intel.ts", null, `Supply inputs.competitors — this engine does not auto-pick competitors, by design (auto-picked competitors produce irrelevant prospects).`);
+      if (!inputs.competitors || !inputs.competitors.length) return result("needs_input", "semrush-intel.ts", null, `Supply inputs.competitors, this engine does not auto-pick competitors, by design (auto-picked competitors produce irrelevant prospects).`);
       const { prospectBacklinks } = await import("./semrush-intel.js");
       const report = await prospectBacklinks({ projectId, clientDomain: inputs.siteUrl, competitors: inputs.competitors, limit: (inputs as any).limit, perDomainFetch: (inputs as any).perDomainFetch });
-      if (!report.ok) return result("needs_connection", "semrush-intel.ts", report, report.summary);
-      return result("completed", "semrush-intel.ts", report, report.summary);
+      if (report.ok) return result("completed", "semrush-intel.ts", report, report.summary);
+      /* No Semrush key: true referring-domain data is unavailable (a crawl or the
+         SERP can only see a site's OUTBOUND links, never who links INTO it). Fall
+         back to an HONEST alternative that uses SerpAPI, which is available: live
+         link-OPPORTUNITY prospecting. This surfaces real third-party pages ranking
+         in the niche that are realistic outreach targets. It is clearly labelled
+         as opportunity discovery, NOT competitor-backlink data, and every URL is
+         live and verifiable, never estimated. */
+      const kw = (Array.isArray((inputs as any).targetKeywords) && (inputs as any).targetKeywords[0]) || (Array.isArray((inputs as any).keywords) && (inputs as any).keywords[0]) || (inputs as any).keyword || "";
+      if (!kw || !projectId) return result("needs_connection", "semrush-intel.ts", report, report.summary + " Or supply a target keyword to run live SERP-based link-opportunity prospecting instead, which needs no Semrush key.");
+      try {
+        const { fetchSerpFeatures } = await import("./serpapi.js");
+        const dom = (u: string) => { try { return new URL(u.startsWith("http") ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+        const clientDom = dom(inputs.siteUrl);
+        const compDoms = new Set((inputs.competitors || []).map(dom));
+        const queries = [kw, `best ${kw}`, `${kw} directory`, `${kw} guide`];
+        const prospects = new Map<string, { domain: string; url: string; query: string }>();
+        for (const q of queries) {
+          if (prospects.size >= 40) break;
+          const serp: any = await fetchSerpFeatures(q, projectId, {}).catch(() => null);
+          const urls: string[] = (serp && (serp.top_100_urls || serp.top_10_urls)) || [];
+          for (const u of urls.slice(0, 25)) {
+            const d = dom(u);
+            if (!d || d === clientDom || compDoms.has(d)) continue;
+            if (!prospects.has(d)) prospects.set(d, { domain: d, url: u, query: q });
+          }
+        }
+        const list = Array.from(prospects.values()).slice(0, 40);
+        if (!list.length) return result("needs_connection", "serpapi.ts", report, "SERP-based prospecting found no third-party pages for this keyword. Add a Semrush or Ahrefs key for true referring-domain data.");
+        const rows = list.map((p, i) => `${i + 1}. ${p.domain} (ranks for "${p.query}"): ${p.url}`).join("\n");
+        const report_md = `# Link-opportunity prospects (live SERP)\n\nHonest scope: answering "who links to your competitors but not you" needs a backlink index such as Semrush or Ahrefs, because a crawl and the SERP cannot see inbound links. Without that, this is the next best honest source. These are real third-party pages ranking in your niche for "${kw}" and related searches, which are realistic outreach and link targets. Every one is a live, verifiable URL, not an estimate.\n\n${list.length} prospect ${list.length === 1 ? "domain" : "domains"} (your own site and the named competitors are excluded):\n\n${rows}\n\nNext step: qualify each by relevance and authority, then reach out. Connect Semrush or Ahrefs to also see which of these already link to your competitors.`;
+        return result("completed", "serpapi.ts (live SERP link-opportunity prospecting, no estimates)", { reports: [{ step_key: "serp_prospects", report_md }], prospects: list, summary: `Live SERP link-opportunity prospecting: ${list.length} real third-party pages in the "${kw}" niche as outreach targets. True competitor-backlink data still needs a Semrush or Ahrefs key.` }, `Found ${list.length} live link-opportunity prospects from the SERP for "${kw}". These are realistic outreach targets; true referring-domain data still needs a backlink index.`);
+      } catch (e: any) {
+        return result("needs_connection", "semrush-intel.ts", report, report.summary + ` (The SERP fallback could not run: ${e?.message || "error"}.)`);
+      }
     }
 
     if (caps.includes("aeo_article_drafting")) {
@@ -191,7 +224,7 @@ export async function runWizardStage(opts: {
       const aeoDepth = inputs.depth === "sample" ? "brief" : inputs.depth;
       const { draftAeoArticle } = await import("./aeo-article-engine.js");
       const report = await draftAeoArticle({ projectId, topic, siteUrl: inputs.siteUrl, clientContext: inputs.context, country: inputs.country, depth: aeoDepth });
-      if (!report.ok) return result("needs_input", "aeo-article-engine.ts", report, report.notes.join(" ") || `Could not draft — supply a topic.`);
+      if (!report.ok) return result("needs_input", "aeo-article-engine.ts", report, report.notes.join(" ") || `Could not draft, supply a topic.`);
       return result("completed", "aeo-article-engine.ts", report, `Drafted "${report.title}" (${report.faq.length} FAQ entr[y], ${report.grounded_on.length} SERP signal[s]). ${report.notes[0]}`);
     }
 
@@ -258,8 +291,8 @@ export async function runWizardStage(opts: {
     /* ── Per-page on-page audit ──
        With a campaign set, run the DEEP single-page audit (keyword match, CrUX,
        GA4). Without one (the usual wizard/prospect case), run the SITE-WIDE
-       on-page audit across ALL crawled pages via crawlSite — now backed by the
-       batched crawl — which is exactly "title/meta/H1 optimisation across all
+       on-page audit across ALL crawled pages via crawlSite, now backed by the
+       batched crawl, which is exactly "title/meta/H1 optimisation across all
        pages". The stage WORKS either way instead of demanding a campaign. */
     if (caps.includes("technical_audit_deep") || caps.includes("title_meta_h1_reco")) {
       if (inputs.campaignId) {
@@ -268,7 +301,7 @@ export async function runWizardStage(opts: {
       }
       const { crawlSite } = await import("./site-crawler.js");
       const report = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
-      if (report.pages_reachable === 0) return result("needs_input", "site-crawler.ts", report, `No crawled pages available. Batch-crawl the site first (or supply inputs.siteUrl), then re-run — this stage then audits titles, meta descriptions and H1s across every page.`);
+      if (report.pages_reachable === 0) return result("needs_input", "site-crawler.ts", report, `No crawled pages available. Batch-crawl the site first (or supply inputs.siteUrl), then re-run, this stage then audits titles, meta descriptions and H1s across every page.`);
       const iss: any = report.issues || {};
       const cnt = (k: string) => (iss[k]?.count || 0);
       const note = `Site-wide on-page audit across ${report.pages_reachable} crawled pages. Titles: ${cnt("missing_title")} missing, ${cnt("duplicate_title")} duplicate, ${cnt("long_title") + cnt("short_title")} poor length. Meta descriptions: ${cnt("missing_meta_description")} missing, ${cnt("duplicate_meta_description")} duplicate. Headings: ${cnt("missing_h1")} pages with no H1, ${cnt("multiple_h1")} with multiple. Each gap is traced to the exact page from real crawled HTML.`;
@@ -303,14 +336,14 @@ export async function runWizardStage(opts: {
           .map(r => ({ step_key: r.step_key, report_md: r.report_md }));
       } catch { /* non-fatal */ }
 
-      const geoNote = caps.some(c => GEO_CAPS.has(c)) ? ` These are AI-Overview / GEO findings, which are not yet field-validated — confirm against real SERPs before acting.` : ``;
+      const geoNote = caps.some(c => GEO_CAPS.has(c)) ? ` These are AI-Overview / GEO findings, which are not yet field-validated, confirm against real SERPs before acting.` : ``;
       const out = { run_id: created.run_id, project_domain: (created as any)?.project_domain || "", generated_at: new Date().toISOString(), results: ran?.results, reports };
       if (!ran?.success) return result("error", "workspace pipeline (wsCreateRun + wsRunDeepSteps)", out, ran?.error || `Deep steps failed.`, ran?.error);
-      if (reports.length === 0) return result("needs_input", "workspace pipeline", out, `The analysis ran but produced no findings for this section. For AI-Overview / GEO analysis this usually means no target keywords were supplied, or none trigger an AI Overview — add target keywords and re-run.${geoNote}`);
+      if (reports.length === 0) return result("needs_input", "workspace pipeline", out, `The analysis ran but produced no findings for this section. For AI-Overview / GEO analysis this usually means no target keywords were supplied, or none trigger an AI Overview, add target keywords and re-run.${geoNote}`);
       return result("completed", "workspace pipeline", out, `${reports.length} analysis section(s) produced from live search-results analysis.${geoNote}`);
     }
 
-    /* ── GSC review — run the REAL visibility + indexation engine ── */
+    /* ── GSC review, run the REAL visibility + indexation engine ── */
     if (caps.includes("gsc_metrics_per_url") || caps.includes("gsc_query_page_pairs")) {
       const gsc = await loadGsc(projectId);
       const pages = Array.isArray(gsc.topPages) ? gsc.topPages.length : 0;
@@ -318,7 +351,7 @@ export async function runWizardStage(opts: {
       if (pages === 0 && pairs === 0) return result("needs_connection", "loadGsc", null, `No GSC data stored. Connect Search Console (OAuth) and pull, or ingest a GSC CSV export.`);
       /* Target URLs for the visibility + indexation diagnosis. Prefer the
          batched crawl (the shared site-page source), then crawled_pages, then
-         GSC top pages — so pages Google shows zero impressions for surface as
+         GSC top pages, so pages Google shows zero impressions for surface as
          crawled-but-not-indexed candidates. */
       let targetUrls: string[] = [];
       try {
@@ -335,7 +368,7 @@ export async function runWizardStage(opts: {
       if (targetUrls.length === 0) targetUrls = (gsc.topPages || []).map((p: any) => p.page || p.url).filter(Boolean);
       /* The deep engine: visible vs invisible pages, real query-page pairs, near-
          ranking (positions 4-20), this site's own CTR curve, and live per-URL
-         indexation checks — the actual crawled-but-not-indexed diagnosis, not counts. */
+         indexation checks, the actual crawled-but-not-indexed diagnosis, not counts. */
       try {
         const { gatherGscVisibility } = await import("./workspace/deep-steps/gsc-visibility.js");
         const { evidence, report_md } = await gatherGscVisibility({ projectId, targetUrls });
@@ -350,7 +383,7 @@ export async function runWizardStage(opts: {
           `Search Console visibility and indexation diagnosis complete: ${evidence.visible_count} visible, ${evidence.invisible_count} invisible, ${evidence.near_ranking.length} near-ranking.`
         );
       } catch (e: any) {
-        /* Never fabricate — report honestly with the counts we do have. */
+        /* Never fabricate, report honestly with the counts we do have. */
         return result("completed", "loadGsc", { top_pages: pages, query_page_pairs: pairs }, `GSC data available: ${pages} top pages, ${pairs} query-page pairs. The deep visibility engine could not complete this pass (${e?.message || "error"}); re-run to retry.`);
       }
     }
@@ -374,14 +407,14 @@ export async function runWizardStage(opts: {
         const { text } = await llmComplete({ system, user, maxTokens: 2000, timeoutMs: 60000, label: "meeting-prep-brief", maxSegments: 1 });
         const body = String(text || "").trim();
         if (!body) throw new Error("empty brief");
-        const report_md = `# Walkthrough call — preparation brief\n\n${body}\n\n_This brief prepares the session. Conducting the call is a human deliverable._`;
-        return result("completed", "meeting-prep generator (agenda + talking points from the findings)", { reports: [{ step_key: "meeting_prep", report_md }], summary: "Preparation brief for the client call: agenda, key findings to present, talking points, questions and next steps — grounded in the audit. Conducting the call itself is a human deliverable." }, "Walkthrough-call preparation brief generated: agenda, findings to present, talking points, questions and next steps. The call itself is run by a person.");
+        const report_md = `# Walkthrough call, preparation brief\n\n${body}\n\n_This brief prepares the session. Conducting the call is a human deliverable._`;
+        return result("completed", "meeting-prep generator (agenda + talking points from the findings)", { reports: [{ step_key: "meeting_prep", report_md }], summary: "Preparation brief for the client call: agenda, key findings to present, talking points, questions and next steps, grounded in the audit. Conducting the call itself is a human deliverable." }, "Walkthrough-call preparation brief generated: agenda, findings to present, talking points, questions and next steps. The call itself is run by a person.");
       } catch (e: any) {
         return result("manual", null, null, `This is a client-facing session you run. The platform could not generate the prep brief this pass (${e?.message || "error"}); re-run to retry, or run the call directly.`);
       }
     }
 
-    /* Fallback — capabilities present but no executor mapped. */
+    /* Fallback, capabilities present but no executor mapped. */
     return result("manual", null, null, `No automated executor for this stage's capabilities (${caps.join(", ")}); handle manually or supply the required inputs.`);
   } catch (e: any) {
     return result("error", null, null, `Stage execution threw.`, e?.message || String(e));
