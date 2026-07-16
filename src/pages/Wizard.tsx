@@ -476,7 +476,7 @@ export default function Wizard() {
     if (!r?.success) { setError(r?.error || "Could not suggest targets."); return; }
     if (Array.isArray(r.keywords) && r.keywords.length) setKeywords(r.keywords.join(", "));
     if (Array.isArray(r.competitors) && r.competitors.length) setCompetitors(r.competitors.join(", "));
-    if ((!r.keywords || !r.keywords.length) && (!r.competitors || !r.competitors.length)) setError("No Search Console or crawl data yet to derive from. Connect Search Console or run a crawl first, then suggest again.");
+    if ((!r.keywords || !r.keywords.length) && (!r.competitors || !r.competitors.length)) setError(r.note || "Could not suggest targets from the available data.");
   };
 
   const generateReport = async () => {

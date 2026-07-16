@@ -544,7 +544,13 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     try {
       const { db } = await import("./db.js");
       let gscQueries: string[] = [];
-      try { const { loadGsc } = await import("./workspace/shared.js"); const g: any = await loadGsc(projectId); gscQueries = ((g && g.queryPagePairs) || []).map((p: any) => p.query).filter(Boolean); } catch { /* no gsc */ }
+      try {
+        const { loadGsc } = await import("./workspace/shared.js");
+        const g: any = await loadGsc(projectId);
+        const fromTop = ((g && g.topQueries) || []).map((q: any) => q && (q.query || (Array.isArray(q.keys) ? q.keys[0] : ""))).filter(Boolean);
+        const fromPairs = ((g && g.queryPagePairs) || []).map((p: any) => p && p.query).filter(Boolean);
+        gscQueries = Array.from(new Set([...fromTop, ...fromPairs]));
+      } catch { /* no gsc */ }
       let titles: string[] = [];
       let homeTitle = "";
       try { const { data: jobs } = await db().from("crawl_jobs").select("meta,results").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1); const job: any = Array.isArray(jobs) ? jobs[0] : null; if (job) { homeTitle = job.meta?.homeTitle || ""; titles = [homeTitle, ...(Array.isArray(job.results) ? job.results.slice(0, 25).map((r: any) => r.title) : [])].filter(Boolean); } } catch { /* no crawl */ }
@@ -570,6 +576,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         const arr = parseJsonResponse<any>(text);
         if (Array.isArray(arr)) keywords = arr.map(String).map((s) => s.trim()).filter((s) => s && !norm(s).includes(brandNorm)).slice(0, 12);
       } catch { keywords = cleanQueries.slice(0, 10); }
+      if (!keywords.length && cleanQueries.length) keywords = cleanQueries.slice(0, 10);   // never drop real GSC queries to zero
 
       /* Competitors: SERP the COMMERCIAL keywords, drop junk + client-owned
          deterministically, then a relevance-verification pass keeps only genuine
@@ -604,10 +611,14 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         } catch { /* no serp */ }
       }
 
+      const gscFound = gscQueries.length;
+      const crawlFound = titles.length;
       const note = (!keywords.length && !competitors.length)
-        ? "No usable Search Console or crawl data to derive from yet, or the results did not pass the quality checks. Connect Search Console or run a crawl, then suggest again."
+        ? (gscFound === 0 && crawlFound === 0
+            ? `Could not find Search Console or crawl data for this project (id ${projectId || "none"}). The crawl and GSC connection must be on the SAME project this wizard is running for. Confirm the selected project, then suggest again.`
+            : `Found ${gscFound} Search Console queries and ${crawlFound} crawled pages, but nothing cleared the quality checks this pass. Suggest again, or curate the fields directly.`)
         : "";
-      return { success: true, keywords, competitors, keyword_basis: cleanQueries.length ? "your non-brand Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "domains ranking for your commercial keywords, verified as real competitors" : "", note };
+      return { success: true, keywords, competitors, keyword_basis: cleanQueries.length ? "your non-brand Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "domains ranking for your commercial keywords, verified as real competitors" : "", note, gsc_queries_found: gscFound, crawl_pages_found: crawlFound };
     } catch (e: any) {
       return { success: false, error: e?.message || "suggestion failed" };
     }
