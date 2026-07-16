@@ -76,6 +76,7 @@ export default function Wizard() {
   const [keywords, setKeywords]       = useState("");
   const [competitors, setCompetitors] = useState("");
   const [suggesting, setSuggesting]   = useState(false);
+  const [targetAnalysis, setTargetAnalysis] = useState<any>(null);
   const [projectConfirmed, setProjectConfirmed] = useState(false);
   const [noGsc, setNoGsc]             = useState(false);
   const [clientSiteUrl, setClientSiteUrl] = useState("");
@@ -476,6 +477,7 @@ export default function Wizard() {
     if (!r?.success) { setError(r?.error || "Could not suggest targets."); return; }
     if (Array.isArray(r.keywords) && r.keywords.length) setKeywords(r.keywords.join(", "));
     if (Array.isArray(r.competitors) && r.competitors.length) setCompetitors(r.competitors.join(", "));
+    setTargetAnalysis((r.analysis_md || (r.keyword_details && r.keyword_details.length)) ? { analysis: r.analysis_md || "", keywords: r.keyword_details || [], competitors: r.competitor_details || [] } : null);
     if ((!r.keywords || !r.keywords.length) && (!r.competitors || !r.competitors.length)) setError(r.note || "Could not suggest targets from the available data.");
   };
 
@@ -688,6 +690,32 @@ export default function Wizard() {
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"
                 placeholder="competitor1.com, competitor2.com"
                 value={competitors} onChange={e => setCompetitors(e.target.value)} />
+              {targetAnalysis && (
+                <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+                  <div className="text-xs font-semibold text-primary mb-2 uppercase tracking-wider">Why these were chosen (research analysis)</div>
+                  {targetAnalysis.analysis && <p className="text-sm text-foreground/90 whitespace-pre-wrap mb-3">{targetAnalysis.analysis}</p>}
+                  {Array.isArray(targetAnalysis.keywords) && targetAnalysis.keywords.length > 0 && (
+                    <div className="mb-2">
+                      <div className="text-[11px] font-semibold text-muted-foreground mb-1">Keywords</div>
+                      <ul className="space-y-1">
+                        {targetAnalysis.keywords.map((k: any, i: number) => (
+                          <li key={i} className="text-xs"><span className="font-semibold">{k.term}</span>{k.intent ? <span className="text-muted-foreground"> ({k.intent})</span> : null}{k.reason ? <span className="text-foreground/80">: {k.reason}</span> : null}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {Array.isArray(targetAnalysis.competitors) && targetAnalysis.competitors.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-semibold text-muted-foreground mb-1">Competitors</div>
+                      <ul className="space-y-1">
+                        {targetAnalysis.competitors.map((c: any, i: number) => (
+                          <li key={i} className="text-xs"><span className="font-semibold">{c.domain}</span>{c.reason ? <span className="text-foreground/80">: {c.reason}</span> : null}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="text-xs font-semibold text-muted-foreground mt-3 mb-2 uppercase tracking-wider">Semrush API key (for authority, backlinks &amp; keyword data)</div>
               <div className="flex flex-wrap items-center gap-2">
                 <input type="password"

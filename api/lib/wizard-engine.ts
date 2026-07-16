@@ -568,48 +568,54 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
 
       const { llmComplete } = await import("./workspace/llm.js");
       const business = homeTitle || titles.slice(0, 3).join(" | ") || clientDom;
-      let keywords: string[] = [];
-      try {
-        const grounding = `Client site: ${clientDom}. Business (from the site): ${business}.\n${cleanQueries.length ? `Real non-brand Search Console queries: ${cleanQueries.slice(0, 40).join(", ")}.` : "No non-brand Search Console queries were available."}\n${titles.length ? `Page titles: ${titles.slice(0, 12).join(" | ")}.` : ""}`;
-        const sys = "You are a Senior SEO choosing TARGET keywords for a client. Return 8 to 12 commercial, non-brand target keywords this business should grow. STRICT EXCLUSIONS, never include any of these: the client's own brand name or its variations or domains; navigational queries (brand + official/website/login/app); search operators (site:, inurl:); any OTHER company's brand name; misspellings. Prefer the real non-brand Search Console queries where they are genuine commercial intent. Every keyword must be something a new customer who does not know this brand would search. Return ONLY a JSON array of strings.";
-        const { text } = await llmComplete({ system: sys, user: grounding, maxTokens: 500, timeoutMs: 40000, label: "suggest-keywords", maxSegments: 1 });
-        const arr = parseJsonResponse<any>(text);
-        if (Array.isArray(arr)) keywords = arr.map(String).map((s) => s.trim()).filter((s) => s && !norm(s).includes(brandNorm)).slice(0, 12);
-      } catch { keywords = cleanQueries.slice(0, 10); }
-      if (!keywords.length && cleanQueries.length) keywords = cleanQueries.slice(0, 10);   // never drop real GSC queries to zero
 
-      /* Competitors: SERP the COMMERCIAL keywords, drop junk + client-owned
-         deterministically, then a relevance-verification pass keeps only genuine
-         business competitors. This is the quality gate that was missing. */
-      let competitors: string[] = [];
-      if (keywords.length && projectId) {
+      /* Live SERP enrichment: the real search landscape for this space, so the
+         analysis is grounded in what people actually ask, who actually ranks,
+         and how AI Overviews behave here, not just the client's own data. */
+      const seeds = (cleanQueries.length ? cleanQueries : [business]).slice(0, 3);
+      const paa: string[] = []; const rankingDomains: string[] = []; const aiRefDomains: string[] = [];
+      let aiOverview = false;
+      if (projectId) {
         try {
           const { fetchSerpFeatures } = await import("./serpapi.js");
-          const seen = new Set<string>();
-          const candidates: string[] = [];
-          for (const kw of keywords.slice(0, 3)) {
-            if (candidates.length >= 25) break;
-            const serp: any = await fetchSerpFeatures(kw, projectId, {}).catch(() => null);
-            const domains: string[] = (serp && (serp.top_100_domains || serp.top_10_domains)) || [];
-            for (const d of domains.slice(0, 15)) {
-              const dd = dom(d);
-              if (!dd || seen.has(dd)) continue;
-              if (isClientOwned(dd) || JUNK_DOMAIN_RE.test(dd)) continue;         // drop own brand + infra/platforms
-              seen.add(dd); candidates.push(dd);
-            }
+          for (const kw of seeds) {
+            const s: any = await fetchSerpFeatures(kw, projectId, {}).catch(() => null);
+            if (!s) continue;
+            for (const q of (s.paa_questions || [])) paa.push(String(q));
+            for (const d of (s.top_10_domains || [])) { const dd = dom(d); if (dd && !isClientOwned(dd) && !JUNK_DOMAIN_RE.test(dd)) rankingDomains.push(dd); }
+            if (s.ai_overview) { aiOverview = true; for (const r of (s.ai_overview_references || [])) { const dd = dom(r.domain || ""); if (dd) aiRefDomains.push(dd); } }
           }
-          if (candidates.length) {
-            /* Verification pass: keep only real competitors of THIS business. */
-            try {
-              const vsys = "You are a Senior SEO verifying a competitor list. Given the client's business and a list of domains that ranked for its keywords, return ONLY the domains that are GENUINE direct competitors: real businesses offering similar products or services to the same market. EXCLUDE the client's own domains, app stores, CDNs, support/helpdesk sites, marketplaces, wikis, forums, news aggregators, and anything not a direct competitor. Return ONLY a JSON array of the competitor domains (a subset of the input), bare domains, no invented ones.";
-              const vuser = `Client business: ${business} (${clientDom}). Candidate domains: ${candidates.join(", ")}.`;
-              const { text } = await llmComplete({ system: vsys, user: vuser, maxTokens: 300, timeoutMs: 40000, label: "verify-competitors", maxSegments: 1 });
-              const arr = parseJsonResponse<any>(text);
-              if (Array.isArray(arr)) competitors = arr.map((d: any) => dom(String(d))).filter((d: string) => d && candidates.includes(d) && !isClientOwned(d)).slice(0, 6);
-            } catch { competitors = candidates.slice(0, 6); }
-          }
-        } catch { /* no serp */ }
+        } catch { /* serp unavailable */ }
       }
+      const paaU = Array.from(new Set(paa)).slice(0, 20);
+      const rankU = Array.from(new Set(rankingDomains)).slice(0, 20);
+      const aiU = Array.from(new Set(aiRefDomains)).filter((d) => !isClientOwned(d)).slice(0, 10);
+
+      /* Senior-DMS synthesis: keywords WITH intent and a grounded reason,
+         competitors WITH a reason, and a client-ready analysis of the landscape,
+         buying behaviour and AI scenario. Strictly grounded in the real data. */
+      let keywords: string[] = []; let competitors: string[] = [];
+      let keywordDetails: any[] = []; let competitorDetails: any[] = []; let analysisMd = "";
+      try {
+        const grounding = [
+          `Client site: ${clientDom}. Business (from the site): ${business}.`,
+          cleanQueries.length ? `Real non-brand Search Console queries this site already earns impressions for: ${cleanQueries.slice(0, 40).join(", ")}.` : "No non-brand Search Console queries were available.",
+          titles.length ? `Page titles from the crawl: ${titles.slice(0, 12).join(" | ")}.` : "",
+          paaU.length ? `Live People Also Ask questions in this space (real searcher questions): ${paaU.join(" | ")}.` : "",
+          rankU.length ? `Domains actually ranking for these terms in the live SERP: ${rankU.join(", ")}.` : "",
+          aiOverview ? `Google shows an AI Overview for this space; domains it cites: ${aiU.join(", ") || "none captured"}.` : `No AI Overview detected for the seed queries.`,
+        ].filter(Boolean).join("\n");
+        const sys = "You are a Senior Digital Marketing Specialist producing a keyword and competitor strategy for a client. Use ONLY the real data provided (Search Console queries, the site's business, live People Also Ask questions, the domains actually ranking, and the AI Overview picture). Think like a senior: search intent (commercial, transactional, informational, navigational), buying and searching behaviour, the trend in this space, and the AI-search (AEO) scenario. EXCLUDE from keywords the client's own brand and domains, navigational queries, search operators, and any other company's brand name. EXCLUDE from competitors CDNs, app stores, marketplaces, forums, wikis, and non-competitors. Return ONLY JSON: {\"keywords\":[{\"term\":\"...\",\"intent\":\"commercial|transactional|informational\",\"reason\":\"one grounded line: why this keyword for this business\"}],\"competitors\":[{\"domain\":\"...\",\"reason\":\"one line: why a genuine competitor\"}],\"analysis\":\"200 to 350 words, client-ready, no em-dashes: the search landscape and who owns it, the buying and searching behaviour, the AI Overview and AEO scenario for this space, and the reasoning behind these keyword and competitor choices\"}. 8 to 14 keywords, 4 to 8 competitors. Never invent anything the data does not support.";
+        const { text } = await llmComplete({ system: sys, user: grounding, maxTokens: 2000, timeoutMs: 70000, label: "suggest-research", maxSegments: 1 });
+        const parsed: any = parseJsonResponse<any>(text) || {};
+        keywordDetails = Array.isArray(parsed.keywords) ? parsed.keywords.filter((k: any) => k && k.term && !norm(String(k.term)).includes(brandNorm)).slice(0, 14) : [];
+        competitorDetails = Array.isArray(parsed.competitors) ? parsed.competitors.map((c: any) => ({ ...c, domain: dom(String(c.domain || "")) })).filter((c: any) => c.domain && !isClientOwned(c.domain) && !JUNK_DOMAIN_RE.test(c.domain)).slice(0, 8) : [];
+        keywords = keywordDetails.map((k: any) => String(k.term).trim()).filter(Boolean);
+        competitors = competitorDetails.map((c: any) => c.domain).filter(Boolean);
+        analysisMd = String(parsed.analysis || "").trim();
+      } catch { /* fall back to real data below */ }
+      if (!keywords.length && cleanQueries.length) keywords = cleanQueries.slice(0, 10);        // never drop real GSC queries to zero
+      if (!competitors.length && rankU.length) competitors = rankU.slice(0, 6);                  // fall back to real SERP domains
 
       const gscFound = gscQueries.length;
       const crawlFound = titles.length;
@@ -618,7 +624,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
             ? `Could not find Search Console or crawl data for this project (id ${projectId || "none"}). The crawl and GSC connection must be on the SAME project this wizard is running for. Confirm the selected project, then suggest again.`
             : `Found ${gscFound} Search Console queries and ${crawlFound} crawled pages, but nothing cleared the quality checks this pass. Suggest again, or curate the fields directly.`)
         : "";
-      return { success: true, keywords, competitors, keyword_basis: cleanQueries.length ? "your non-brand Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "domains ranking for your commercial keywords, verified as real competitors" : "", note, gsc_queries_found: gscFound, crawl_pages_found: crawlFound };
+      return { success: true, keywords, competitors, keyword_details: keywordDetails, competitor_details: competitorDetails, analysis_md: analysisMd, keyword_basis: cleanQueries.length ? "your Search Console queries plus the live SERP" : "your site content and the live SERP", competitor_basis: competitors.length ? "domains ranking in the live SERP for your terms, verified as real competitors" : "", note, gsc_queries_found: gscFound, crawl_pages_found: crawlFound };
     } catch (e: any) {
       return { success: false, error: e?.message || "suggestion failed" };
     }
