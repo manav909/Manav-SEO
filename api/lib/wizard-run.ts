@@ -391,17 +391,35 @@ export async function runWizardStage(opts: {
     /* ── Ranking-drop analysis on Search Console (no Semrush) ── */
     if (caps.includes("ranking_drop_analysis")) {
       const gsc: any = await loadGsc(projectId);
-      const pairs: any[] = (gsc && gsc.queryPagePairs) || [];
-      if (!pairs.length) return result("needs_connection", "loadGsc", null, `Connect Search Console (OAuth) and pull, or ingest a GSC CSV, so the ranking-drop analysis has position and click data. No Semrush is needed for this.`);
       const num = (x: any) => Number(x) || 0;
-      const page2 = pairs.filter((p) => num(p.position) > 10 && num(p.position) <= 20).sort((a, b) => num(b.impressions) - num(a.impressions)).slice(0, 15);
-      const zeroClick = pairs.filter((p) => num(p.impressions) >= 20 && num(p.clicks) === 0).sort((a, b) => num(b.impressions) - num(a.impressions)).slice(0, 15);
+      const fromTop = ((gsc && gsc.topQueries) || []).map((q: any) => ({ query: q.query || (Array.isArray(q.keys) ? q.keys[0] : ""), clicks: num(q.clicks), impressions: num(q.impressions), ctr: num(q.ctr), position: num(q.position), page: "" }));
+      const fromPairs = ((gsc && gsc.queryPagePairs) || []).map((p: any) => ({ query: p.query, clicks: num(p.clicks), impressions: num(p.impressions), ctr: num(p.ctr), position: num(p.position), page: p.page || "" }));
+      const byQ = new Map<string, any>();
+      for (const r of [...fromPairs, ...fromTop]) { if (r.query && !byQ.has(r.query)) byQ.set(r.query, r); }
+      const all = Array.from(byQ.values());
+      if (!all.length) return result("needs_connection", "loadGsc", null, `No Search Console query data was found for this project. Connect Search Console and pull, or ingest a GSC CSV, then re-run. No Semrush is needed.`);
+      const withImpr = all.filter((q) => q.impressions >= 5);
+      const byImpr = (arr: any[]) => arr.sort((a, b) => b.impressions - a.impressions);
+      const strikingP1 = byImpr(withImpr.filter((q) => q.position > 3 && q.position <= 10)).slice(0, 15);
+      const page2 = byImpr(withImpr.filter((q) => q.position > 10 && q.position <= 20)).slice(0, 15);
+      const deepVisible = byImpr(withImpr.filter((q) => q.position > 20)).slice(0, 15);
+      const lowCtr = byImpr(withImpr.filter((q) => q.position <= 10 && q.impressions >= 50 && q.ctr < 2)).slice(0, 10);
+      const zeroClick = byImpr(withImpr.filter((q) => q.impressions >= 20 && q.clicks === 0)).slice(0, 15);
       const { TOPIC_CATALOG } = await import("./algo-catalog.js");
       const recent = (TOPIC_CATALOG as any[]).filter((t) => String(t.added) >= "2024-01").slice(0, 10);
-      const fmtRows = (arr: any[], label: string) => arr.length ? `\n\n## ${label}\n${arr.map((p) => `- "${p.query}" (position ${num(p.position).toFixed(1)}, ${num(p.impressions)} impressions, ${num(p.clicks)} clicks) on ${p.page}`).join("\n")}` : "";
+      const fmt = (arr: any[], label: string) => arr.length ? `\n\n## ${label}\n${arr.map((p) => `- "${p.query}" (position ${p.position.toFixed(1)}, ${p.impressions} impressions, ${p.clicks} clicks, CTR ${p.ctr.toFixed(1)}%)${p.page ? ` on ${p.page}` : ""}`).join("\n")}` : "";
+      let narrative = "";
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        const dataSummary = `Total queries with impressions: ${withImpr.length}. Striking distance (positions 4 to 10): ${strikingP1.length}. Page two (11 to 20): ${page2.length}. Ranking beyond page two with impressions (over 20): ${deepVisible.length}. On page one but low CTR: ${lowCtr.length}. High-impression zero-click: ${zeroClick.length}. Recent Google updates: ${recent.map((r) => `${r.added} ${r.label}`).join("; ")}. Example at-risk queries: ${[...page2, ...deepVisible].slice(0, 10).map((q) => `"${q.query}" position ${q.position.toFixed(1)}`).join(", ") || "none"}.`;
+        const sys = "You are a Senior Digital Marketing Specialist writing the ranking analysis section of a client report. Use ONLY the numbers provided. Interpret lost and at-risk visibility: which queries slipped off page one, which sit in striking distance of it, which are seen but not clicked, and how this lines up with the recent Google update timeline. Give specific, provable next steps. If the profile is genuinely healthy or dominated by brand queries, say that honestly rather than inventing a problem. Warm, specific, client-ready. Never use an em-dash. 180 to 300 words.";
+        const { text } = await llmComplete({ system: sys, user: dataSummary, maxTokens: 900, timeoutMs: 60000, label: "ranking-drop-narrative", maxSegments: 1 });
+        narrative = String(text || "").trim();
+      } catch { /* fall back to the deterministic write-up */ }
       const timeline = recent.map((t) => `- ${t.added}: ${t.label}`).join("\n");
-      const report_md = `# Keyword ranking drop analysis\n\nThis runs on your Search Console data and the Google update timeline. No Semrush is needed.${fmtRows(page2, "Now on page two (positions 11 to 20), where page-one visibility has been lost")}${fmtRows(zeroClick, "Seen but not clicked (high impressions, zero clicks), a relevance or intent gap")}\n\n## Google update timeline to line these against\nIf a drop clusters around one of these dates, that update is the likely cause. Confirm with Search Console's own date comparison per query.\n${timeline || "No recent updates on file."}\n\nWhat to do: for the page-two queries, the usual fix is on-page relevance and internal links to push them back to page one; for the high-impression zero-click queries, the title and intent match need work. Both are measurable in Search Console, so progress is provable.`;
-      return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], page2, zero_click: zeroClick, updates: recent, summary: `Ranking-drop analysis from Search Console: ${page2.length} queries now on page two, ${zeroClick.length} high-impression zero-click queries, lined up against ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking-drop analysis complete from Search Console: ${page2.length} page-two queries and ${zeroClick.length} zero-click queries, correlated with the Google update timeline. No Semrush required.`);
+      const flagged = strikingP1.length + page2.length + deepVisible.length + lowCtr.length + zeroClick.length;
+      const report_md = `# Keyword ranking analysis\n\n${narrative || `Analysed ${withImpr.length} Search Console queries against the Google update timeline. No Semrush is needed.`}${fmt(page2, "Slipped to page two (positions 11 to 20)")}${fmt(strikingP1, "In striking distance of page one (positions 4 to 10)")}${fmt(deepVisible, "Seen but ranking beyond page two (position over 20)")}${fmt(lowCtr, "Ranking on page one but earning few clicks (low CTR)")}${fmt(zeroClick, "High impressions, zero clicks")}\n\n## Google update timeline\nIf a slip clusters around one of these dates, that update is the likely cause. Confirm with Search Console's own date comparison per query.\n${timeline || "No recent updates on file."}`;
+      return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], striking: strikingP1, page2, deep_visible: deepVisible, low_ctr: lowCtr, zero_click: zeroClick, updates: recent, queries_analysed: withImpr.length, summary: `Analysed ${withImpr.length} Search Console queries: ${page2.length} on page two, ${strikingP1.length} in striking distance, ${deepVisible.length} ranking past page two, ${lowCtr.length} low-CTR on page one, ${zeroClick.length} zero-click, correlated with ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking analysis from Search Console: ${withImpr.length} queries analysed, ${flagged} flagged for action, correlated with the Google update timeline. No Semrush required.`);
     }
 
     /* ── Similar-work / case-study evidence: real curated proof, honest fallback ── */
