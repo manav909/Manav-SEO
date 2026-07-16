@@ -481,6 +481,16 @@ export default function Wizard() {
     if ((!r.keywords || !r.keywords.length) && (!r.competitors || !r.competitors.length)) setError(r.note || "Could not suggest targets from the available data.");
   };
 
+  const openTargetReport = () => {
+    const a = targetAnalysis; if (!a) return;
+    const esc = (s: any) => String(s || "").replace(/[&<>]/g, (c: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
+    const kwRows = (a.keywords || []).map((k: any) => `<tr><td>${esc(k.term)}</td><td>${esc(k.intent || "")}</td><td>${esc(k.reason || "")}</td></tr>`).join("");
+    const compRows = (a.competitors || []).map((c: any) => `<tr><td>${esc(c.domain)}</td><td>${esc(c.reason || "")}</td></tr>`).join("");
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Keyword and Competitor Research</title><style>body{font:15px/1.65 -apple-system,system-ui,Segoe UI,sans-serif;color:#1a1a2e;max-width:860px;margin:40px auto;padding:0 22px}h1{font-size:24px;margin-bottom:4px}h2{font-size:18px;margin-top:30px;border-bottom:1px solid #ececf2;padding-bottom:7px}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:9px 11px;border-bottom:1px solid #ececf2;vertical-align:top;font-size:14px}th{color:#6b6b80;font-weight:600}td:first-child{font-weight:600;white-space:nowrap}.muted{color:#6b6b80}p{margin:10px 0}</style></head><body><h1>Keyword and Competitor Research</h1><p class="muted">Grounded in Search Console, a crawl of the site, and the live SERP.</p>${a.analysis ? `<p>${esc(a.analysis).replace(/\n/g, "<br>")}</p>` : ""}${kwRows ? `<h2>Target keywords</h2><table><thead><tr><th>Keyword</th><th>Intent</th><th>Why it was chosen</th></tr></thead><tbody>${kwRows}</tbody></table>` : ""}${compRows ? `<h2>Competitors</h2><table><thead><tr><th>Domain</th><th>Why it is a competitor</th></tr></thead><tbody>${compRows}</tbody></table>` : ""}<p class="muted" style="margin-top:26px">Prepared by Manav S.</p></body></html>`;
+    const tab = window.open("", "_blank");
+    renderToTab(html, tab, "keyword-competitor-research.html");
+  };
+
   const generateReport = async () => {
     const stagesIn = (plan?.stages || [])
       .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
@@ -691,29 +701,12 @@ export default function Wizard() {
                 placeholder="competitor1.com, competitor2.com"
                 value={competitors} onChange={e => setCompetitors(e.target.value)} />
               {targetAnalysis && (
-                <div className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
-                  <div className="text-xs font-semibold text-primary mb-2 uppercase tracking-wider">Why these were chosen (research analysis)</div>
-                  {targetAnalysis.analysis && <p className="text-sm text-foreground/90 whitespace-pre-wrap mb-3">{targetAnalysis.analysis}</p>}
-                  {Array.isArray(targetAnalysis.keywords) && targetAnalysis.keywords.length > 0 && (
-                    <div className="mb-2">
-                      <div className="text-[11px] font-semibold text-muted-foreground mb-1">Keywords</div>
-                      <ul className="space-y-1">
-                        {targetAnalysis.keywords.map((k: any, i: number) => (
-                          <li key={i} className="text-xs"><span className="font-semibold">{k.term}</span>{k.intent ? <span className="text-muted-foreground"> ({k.intent})</span> : null}{k.reason ? <span className="text-foreground/80">: {k.reason}</span> : null}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {Array.isArray(targetAnalysis.competitors) && targetAnalysis.competitors.length > 0 && (
-                    <div>
-                      <div className="text-[11px] font-semibold text-muted-foreground mb-1">Competitors</div>
-                      <ul className="space-y-1">
-                        {targetAnalysis.competitors.map((c: any, i: number) => (
-                          <li key={i} className="text-xs"><span className="font-semibold">{c.domain}</span>{c.reason ? <span className="text-foreground/80">: {c.reason}</span> : null}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                <div className="mt-4 flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl border border-primary/20 bg-primary/5">
+                  <span className="text-xs text-foreground/90">Keyword and competitor research ready ({(targetAnalysis.keywords || []).length} keywords, {(targetAnalysis.competitors || []).length} competitors), with the reasoning behind each choice.</span>
+                  <button onClick={openTargetReport}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20 whitespace-nowrap">
+                    Open report
+                  </button>
                 </div>
               )}
               <div className="text-xs font-semibold text-muted-foreground mt-3 mb-2 uppercase tracking-wider">Semrush API key (for authority, backlinks &amp; keyword data)</div>
