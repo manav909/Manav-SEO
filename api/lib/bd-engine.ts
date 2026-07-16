@@ -540,33 +540,7 @@ export async function handleBd(action: string, body: any): Promise<any> {
       db().from("brain_learnings").select("card_title,improvement,what_worked").order("applied_count", { ascending: false }).limit(8),
     ]);
     const algorithmKnowledge = algoR.status === "fulfilled" ? ((algoR.value.data as any[]) || []).map((a: any) => `${a.topic}: ${a.summary}${a.recommendations ? ` (Do: ${a.recommendations})` : ""}`).join("\n") : "";
-    const brainResults = brainR.status === "fulfilled" ? ((brainR.value.data as any[]) || []).map((b: any) => `${b.card_title}: ${b.improvement}${Array.isArray(b.what_worked) && b.what_worked.length ? `, what worked: ${b.what_worked.join(", ")}` : ""}`).join("\n") : "";
-    /* Real, verifiable proven results so a case-study document is built on true
-       anonymised numbers, never a fabricated client. Sources: curated bd_case_studies
-       matched to the prospect's industry, and the operator's own projects' measured
-       audit before-and-after (anonymised). This is what closes the fabrication gap. */
-    const prospectIndustry = String(strategy?.deal_facts?.industry || (deal as any)?.industry || "").toLowerCase();
-    let realResults = "";
-    try {
-      const rl: string[] = [];
-      const { data: csData } = await db().from("bd_case_studies").select("title,summary,results,industry").order("created_at", { ascending: false }).limit(20);
-      const cs = ((csData as any[]) || []);
-      const csRel = cs.filter((c) => prospectIndustry && String(c.industry || "").toLowerCase().includes(prospectIndustry)).concat(cs);
-      const seenCs = new Set<string>();
-      for (const c of csRel) { if (seenCs.has(c.title) || seenCs.size >= 4) continue; seenCs.add(c.title); if (c.results || c.summary) rl.push(`Curated real case study (${c.industry || "client"}): ${c.title}. ${c.results || c.summary}`); }
-      const { data: projs } = await db().from("projects").select("id,industry").limit(40);
-      const scored: any[] = [];
-      for (const p of ((projs as any[]) || []).slice(0, 12)) {
-        if (!p || !p.id) continue;
-        const { data: audits } = await db().from("audit_reports").select("overall_score,created_at").eq("project_id", p.id).order("created_at", { ascending: true });
-        const s = ((audits as any[]) || []).filter((a) => typeof a.overall_score === "number");
-        if (s.length >= 2) { const d = s[s.length - 1].overall_score - s[0].overall_score; if (d >= 8) { const days = Math.max(1, Math.round((new Date(s[s.length - 1].created_at).getTime() - new Date(s[0].created_at).getTime()) / 86400000)); scored.push({ industry: String(p.industry || ""), line: `a ${p.industry || "client"} engagement, audited SEO health improved from ${s[0].overall_score} to ${s[s.length - 1].overall_score} (up ${d} points) over about ${days} days` }); } }
-      }
-      scored.sort((a, b) => (b.industry.toLowerCase() === prospectIndustry ? 1 : 0) - (a.industry.toLowerCase() === prospectIndustry ? 1 : 0));
-      for (const s of scored.slice(0, 4)) rl.push(`Real measured result (anonymised, from my own client base): ${s.line}.`);
-      realResults = rl.join("\n");
-    } catch { /* proceed with brain results only */ }
-    const provenResults = [realResults, brainResults].filter(Boolean).join("\n");
+    const provenResults = brainR.status === "fulfilled" ? ((brainR.value.data as any[]) || []).map((b: any) => `${b.card_title}: ${b.improvement}${Array.isArray(b.what_worked) && b.what_worked.length ? ` — what worked: ${b.what_worked.join(", ")}` : ""}`).join("\n") : "";
     try {
       const { generateDoc } = await import("./bd-strategist.js");
       const r = await generateDoc({ docType, brandName: "Manav S", conversation: c.conversation, strategy, facts: c.facts, auditText, leadInfo: { url: siteUrl, name: (deal as any)?.client_name || "", industry: strategy?.deal_facts?.industry || "" }, language: String(body?.language || "US English"), currency: String(body?.currency || "USD"), algorithmKnowledge, provenResults });
