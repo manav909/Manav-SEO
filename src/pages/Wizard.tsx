@@ -75,6 +75,7 @@ export default function Wizard() {
   const [gscBusy, setGscBusy]         = useState<string>("");   // status during select+pull
   const [keywords, setKeywords]       = useState("");
   const [competitors, setCompetitors] = useState("");
+  const [suggesting, setSuggesting]   = useState(false);
   const [projectConfirmed, setProjectConfirmed] = useState(false);
   const [noGsc, setNoGsc]             = useState(false);
   const [clientSiteUrl, setClientSiteUrl] = useState("");
@@ -465,6 +466,19 @@ export default function Wizard() {
     setAnalyzingDocs(false);
   };
 
+  /* Fill keywords + competitors from the project's real data (GSC queries, crawl
+     titles, live SERP), so the operator curates instead of typing from scratch. */
+  const suggestTargets = async () => {
+    const siteUrl = (clientSiteUrl && clientSiteUrl.trim()) || (plan?.client_domain ? `https://${plan.client_domain}/` : "");
+    setSuggesting(true); setError("");
+    const r: any = await post("wizard_suggest_targets", { projectId, siteUrl, clientDomain: plan?.client_domain });
+    setSuggesting(false);
+    if (!r?.success) { setError(r?.error || "Could not suggest targets."); return; }
+    if (Array.isArray(r.keywords) && r.keywords.length) setKeywords(r.keywords.join(", "));
+    if (Array.isArray(r.competitors) && r.competitors.length) setCompetitors(r.competitors.join(", "));
+    if ((!r.keywords || !r.keywords.length) && (!r.competitors || !r.competitors.length)) setError("No Search Console or crawl data yet to derive from. Connect Search Console or run a crawl first, then suggest again.");
+  };
+
   const generateReport = async () => {
     const stagesIn = (plan?.stages || [])
       .map((s: any) => { const r = results[s.id]; return r && r.status === "completed" ? { label: s.label, ran_engine: r.ran_engine, status: r.status, output: r.output } : null; })
@@ -657,6 +671,13 @@ export default function Wizard() {
             </div>
 
             <div className="rounded-2xl border border-border bg-card p-5 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-semibold">Targets</div>
+                <button onClick={suggestTargets} disabled={suggesting}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-primary/40 text-primary font-semibold hover:bg-primary/10 disabled:opacity-50">
+                  {suggesting ? "Finding from your data…" : "Suggest from my data"}
+                </button>
+              </div>
               <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Target keywords (optional — for AI Overview stages)</div>
               <input
                 className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-sm outline-none focus:border-primary"

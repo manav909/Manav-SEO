@@ -525,6 +525,54 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
      progress to a job record, continued with the operator's consent until the
      whole selection is covered. Aggregation happens once, at report time, over
      every accumulated page. */
+  /* Suggest target keywords and competitors from the project's REAL data, so the
+     operator curates rather than types. Keywords come from Search Console queries
+     and the crawled titles; competitors come from who actually ranks for those
+     keywords in the live SERP. Honest and grounded, never invented. */
+  if (action === "wizard_suggest_targets") {
+    const projectId = String(body?.projectId || "").trim();
+    const siteUrl = String(body?.siteUrl || body?.clientDomain || "").trim();
+    if (!projectId && !siteUrl) return { success: false, error: "No project or site to derive from." };
+    const dom = (u: string) => { try { return new URL(u.startsWith("http") ? u : "https://" + u).hostname.replace(/^www\./, ""); } catch { return ""; } };
+    const clientDom = dom(siteUrl);
+    try {
+      const { db } = await import("./db.js");
+      let gscQueries: string[] = [];
+      try { const { loadGsc } = await import("./workspace/shared.js"); const g: any = await loadGsc(projectId); gscQueries = ((g && g.queryPagePairs) || []).map((p: any) => p.query).filter(Boolean); } catch { /* no gsc */ }
+      let titles: string[] = [];
+      try { const { data: jobs } = await db().from("crawl_jobs").select("meta,results").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1); const job: any = Array.isArray(jobs) ? jobs[0] : null; if (job) titles = [job.meta?.homeTitle, ...(Array.isArray(job.results) ? job.results.slice(0, 20).map((r: any) => r.title) : [])].filter(Boolean); } catch { /* no crawl */ }
+
+      let keywords: string[] = Array.from(new Set(gscQueries)).slice(0, 12);
+      if (gscQueries.length || titles.length) {
+        try {
+          const { llmComplete } = await import("./workspace/llm.js");
+          const grounding = `Client: ${clientDom || siteUrl}.\n${gscQueries.length ? `Real Search Console queries this site earns impressions for: ${Array.from(new Set(gscQueries)).slice(0, 40).join(", ")}.` : ""}\n${titles.length ? `Page titles from the crawl: ${titles.slice(0, 15).join(" | ")}.` : ""}`;
+          const { text } = await llmComplete({ system: "You are a Senior SEO. From ONLY the real data provided, choose 8 to 12 target keywords this site should focus on. Lead with the real Search Console queries where present. Do not invent keywords the data does not support. Return ONLY a JSON array of strings.", user: grounding, maxTokens: 500, timeoutMs: 40000, label: "suggest-keywords", maxSegments: 1 });
+          const arr = parseJsonResponse<any>(text); if (Array.isArray(arr) && arr.length) keywords = arr.map(String).map(s => s.trim()).filter(Boolean).slice(0, 12);
+        } catch { /* keep gsc-derived keywords */ }
+      }
+
+      let competitors: string[] = [];
+      if (keywords.length && projectId) {
+        try {
+          const { fetchSerpFeatures } = await import("./serpapi.js");
+          const seen = new Set<string>();
+          for (const kw of keywords.slice(0, 2)) {
+            if (competitors.length >= 6) break;
+            const serp: any = await fetchSerpFeatures(kw, projectId, {}).catch(() => null);
+            const domains: string[] = (serp && (serp.top_100_domains || serp.top_10_domains)) || [];
+            for (const d of domains.slice(0, 15)) { const dd = dom(d); if (dd && dd !== clientDom && !seen.has(dd)) { seen.add(dd); competitors.push(dd); if (competitors.length >= 6) break; } }
+          }
+          competitors = competitors.slice(0, 6);
+        } catch { /* no serp */ }
+      }
+
+      return { success: true, keywords, competitors, keyword_basis: gscQueries.length ? "your Search Console queries" : (titles.length ? "your site content" : ""), competitor_basis: competitors.length ? "the domains ranking for your keywords" : "" };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "suggestion failed" };
+    }
+  }
+
   if (action === "wizard_crawl_batch") {
     const projectId = String(body?.projectId || "").trim();
     const jobId = String(body?.jobId || "").trim();
