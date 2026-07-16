@@ -1,17 +1,17 @@
 /* ════════════════════════════════════════════════════════════════
    api/lib/competitor-benchmark.ts
 
-   BUILD 12.26 — Competitor organic benchmarking engine.
+   BUILD 12.26, Competitor organic benchmarking engine.
 
    Closes the competitor gap with a real, domain-vs-domain engine that
-   takes a CURATED competitor list (the operator supplies the domains —
+   takes a CURATED competitor list (the operator supplies the domains , 
    no auto-discovery, which is exactly what produced the irrelevant
    "lock brand + AI company" competitors in the bucketsquad delivery).
    For a query set drawn from the client's own GSC data (plus any
    operator keywords), it measures, against real SERPs and real pages:
 
    - KEYWORD-GAP: queries where a competitor outranks the client, or
-     ranks while the client is absent — computed from live SERP organic
+     ranks while the client is absent, computed from live SERP organic
      positions (SerpAPI top-100 domains in rank order).
    - CONTENT-GAP: for the worst gaps, fetch the competitor's ranking page
      and the client's page and compare real structure (word count,
@@ -20,17 +20,17 @@
      data source wired (the referring-domains provider returns empty), so
      this engine does NOT fabricate authority numbers. It states plainly
      that backlink-gap needs a real source (Ahrefs/Semrush export or API)
-     and leaves an extension point — never a guessed figure.
+     and leaves an extension point, never a guessed figure.
 
    Senior-DMS honesty: SERP positions are a point-in-time, location-
    dependent snapshot; the query set is capped for cost; unique-domain
    ranking is an approximation of position. All stated in limits.
 
-   Cost: SerpAPI per query + crawl per content-gap page — both capped.
+   Cost: SerpAPI per query + crawl per content-gap page, both capped.
    Multi-tenant: projectId + the supplied competitor domains only.
 ════════════════════════════════════════════════════════════════ */
 
-import { loadGsc, fetchHtml } from "./workspace/shared.js";
+import { loadGsc, fetchHtml, fetchViaReader } from "./workspace/shared.js";
 import { fetchSerpFeatures } from "./serpapi.js";
 import { extractPagePattern, type PagePattern } from "./geo-citation-gap.js";
 
@@ -108,7 +108,7 @@ export async function benchmarkCompetitors(opts: {
     backlink_gap: { available: false, note: "Not evaluated.", data: null }, summary: note, limits: [note],
   });
 
-  if (competitors.length === 0) return empty("Supply at least one competitor domain — this engine does not auto-pick competitors, by design (auto-selection is what produced irrelevant competitors before).");
+  if (competitors.length === 0) return empty("Supply at least one competitor domain, this engine does not auto-pick competitors, by design (auto-selection is what produced irrelevant competitors before).");
 
   /* Query set: operator keywords first, then top GSC queries by impressions. */
   const gscByQuery = new Map<string, number>();
@@ -175,25 +175,44 @@ export async function benchmarkCompetitors(opts: {
     const clientUrl = firstUrlForDomain(urls, projectDomain);
     if (!compUrl) continue;
 
-    const compHtml = await fetchHtml(compUrl).catch(() => null);
-    const compPat = extractPagePattern(compUrl, compHtml);
+    /* Read the page with a rendering fallback: a raw fetch of a JS-rendered or
+       WAF-blocked competitor page returns empty and would be mis-reported as
+       "0 words". Try raw first, and if that yields no text, render it. */
+    const readPattern = async (url: string): Promise<{ pat: PagePattern; read: boolean }> => {
+      let html = await fetchHtml(url).catch(() => null);
+      let pat = extractPagePattern(url, html);
+      if (!html || pat.total_word_count === 0) {
+        const r = await fetchViaReader(url).catch(() => ({ ok: false, html: "" }));
+        if (r.ok && r.html) { pat = extractPagePattern(url, r.html); html = r.html; }
+      }
+      return { pat, read: !!(html && pat.total_word_count > 0) };
+    };
+    const { pat: compPat, read: compRead } = await readPattern(compUrl);
     let clientPat: PagePattern | null = null;
-    if (clientUrl) { const ch = await fetchHtml(clientUrl).catch(() => null); clientPat = extractPagePattern(clientUrl, ch); }
+    if (clientUrl) { const { pat } = await readPattern(clientUrl); clientPat = pat; }
 
     const obs: string[] = [];
     if (clientPat) {
-      if (compPat.total_word_count > clientPat.total_word_count * 1.3) obs.push(`Competitor page is substantially deeper (${compPat.total_word_count} vs ${clientPat.total_word_count} words).`);
-      if (compPat.has_faq_schema && !clientPat.has_faq_schema) obs.push(`Competitor uses FAQ structure; client does not.`);
-      if (compPat.schema_types.length > clientPat.schema_types.length) obs.push(`Competitor has richer schema (${compPat.schema_types.join(", ") || "none"} vs ${clientPat.schema_types.join(", ") || "none"}).`);
-      if (compPat.has_qa_structure && !clientPat.has_qa_structure) obs.push(`Competitor answers in question-led sections; client does not.`);
-      if (obs.length === 0) obs.push(`Competitor ranks higher but page structure is similar — the gap may be authority or relevance, not on-page depth.`);
+      if (!compRead) {
+        obs.push(`The competitor's ranking page could not be read on this pass (likely JavaScript-rendered or rate-limited), so an on-page depth comparison is not shown here; verify it directly. It out-ranks your page for this query, which is the point to address.`);
+      } else {
+        if (compPat.total_word_count > clientPat.total_word_count * 1.3) obs.push(`Competitor page is substantially deeper (${compPat.total_word_count} vs ${clientPat.total_word_count} words).`);
+        if (compPat.has_faq_schema && !clientPat.has_faq_schema) obs.push(`Competitor uses FAQ structure; client does not.`);
+        if (compPat.schema_types.length > clientPat.schema_types.length) obs.push(`Competitor has richer schema (${compPat.schema_types.join(", ") || "none"} vs ${clientPat.schema_types.join(", ") || "none"}).`);
+        if (compPat.has_qa_structure && !clientPat.has_qa_structure) obs.push(`Competitor answers in question-led sections; client does not.`);
+        if (obs.length === 0) obs.push(`Competitor ranks higher but the page structure is similar, so the gap is more likely authority or relevance than on-page depth.`);
+      }
     } else {
-      obs.push(`Client has no page ranking for this query. Competitor page: ${compPat.total_word_count} words${compPat.schema_types.length ? `, schema: ${compPat.schema_types.join(", ")}` : ""}${compPat.has_qa_structure ? ", question-led structure" : ""}. A dedicated, intent-matched page is the gap.`);
+      if (!compRead) {
+        obs.push(`Client has no page ranking for this query. The competitor's ranking page could not be read on this pass (likely JavaScript-rendered or rate-limited), so its depth is not shown here; verify it directly. The gap is real either way: they rank for this query and you do not, so a dedicated, intent-matched page is the opportunity.`);
+      } else {
+        obs.push(`Client has no page ranking for this query. Competitor page: ${compPat.total_word_count} words${compPat.schema_types.length ? `, schema: ${compPat.schema_types.join(", ")}` : ""}${compPat.has_qa_structure ? ", question-led structure" : ""}. A dedicated, intent-matched page is the gap.`);
+      }
     }
 
     content_gaps.push({
       query: g.query, competitor: g.competitor, competitor_url: compUrl, client_url: clientUrl,
-      competitor_pattern: compHtml ? { total_word_count: compPat.total_word_count, schema_types: compPat.schema_types, has_faq_schema: compPat.has_faq_schema, has_qa_structure: compPat.has_qa_structure } : null,
+      competitor_pattern: compRead ? { total_word_count: compPat.total_word_count, schema_types: compPat.schema_types, has_faq_schema: compPat.has_faq_schema, has_qa_structure: compPat.has_qa_structure } : null,
       client_pattern: clientPat ? { total_word_count: clientPat.total_word_count, schema_types: clientPat.schema_types, has_faq_schema: clientPat.has_faq_schema, has_qa_structure: clientPat.has_qa_structure } : null,
       observations: obs,
     });
@@ -213,11 +232,11 @@ export async function benchmarkCompetitors(opts: {
   const summary = `Benchmarked ${standings.length} queries against ${competitors.length} curated competitor(s): client leads on ${leads}, a competitor leads on ${compLeads}, client is absent on ${absent}. ${content_gaps.length} content gaps examined on the worst-ranking queries. Backlink-gap requires a data source (not connected). Start with the biggest-impression queries where a competitor leads or the client is absent.`;
 
   const limits = [
-    "Competitors are operator-supplied (curated) — the engine does not auto-discover them, to avoid irrelevant matches.",
+    "Competitors are operator-supplied (curated), the engine does not auto-discover them, to avoid irrelevant matches.",
     "SERP positions are a point-in-time, location-dependent snapshot from SerpAPI; rank is among unique organic domains (an approximation of absolute position).",
     `Query set is capped at ${maxQueries} (highest-impression GSC queries plus any supplied keywords) and content-gap crawling at ${maxContentGaps}, to control cost.`,
     "Content-gap compares on-page structure only (depth, schema, question-led format); it does not by itself explain authority/backlink-driven ranking differences.",
-    "Backlink-gap is not computed — no backlink-profile data source is connected.",
+    "Backlink-gap is not computed, no backlink-profile data source is connected.",
   ];
 
   return {
