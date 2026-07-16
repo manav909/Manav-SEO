@@ -279,6 +279,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Runs on Search Console data, no Semrush needed. It shows the ranking-risk and lost-visibility picture from GSC and lines it up against the known Google update dates and your non-indexed pages. Semrush would add authority and backlink context, but it is not required for this analysis.",
     mode: "needs_connection",
   },
+  pilot_engagement_offer: {
+    id: "pilot_engagement_offer",
+    label: "Pilot engagement offer (proof-first client)",
+    engine: "wizard-run pilot-offer engine (scopes a low-risk first engagement from the prospect's own audit findings)",
+    inputs_required: ["A live crawl of the prospect's site (for the real quick-win to scope the pilot around)"],
+    output: "A low-risk first-engagement offer for a client who wants proof before committing: a small, specific scope drawn from the real findings on their own site, a success signal they can verify themselves in their own Search Console or analytics, a short timeline and a pilot price, and the path to the full engagement and a real named case study once it works.",
+    limits: "Everything is tied to what was really found on their site. It never promises a specific ranking or number, and never references a past client or result that does not exist. It wins the proof-first client by proving the work on their own site, honestly.",
+    mode: "auto",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {

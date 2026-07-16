@@ -422,6 +422,32 @@ export async function runWizardStage(opts: {
       return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], striking: strikingP1, page2, deep_visible: deepVisible, low_ctr: lowCtr, zero_click: zeroClick, updates: recent, queries_analysed: withImpr.length, summary: `Analysed ${withImpr.length} Search Console queries: ${page2.length} on page two, ${strikingP1.length} in striking distance, ${deepVisible.length} ranking past page two, ${lowCtr.length} low-CTR on page one, ${zeroClick.length} zero-click, correlated with ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking analysis from Search Console: ${withImpr.length} queries analysed, ${flagged} flagged for action, correlated with the Google update timeline. No Semrush required.`);
     }
 
+    /* ── Pilot engagement offer for a proof-first client (scoped from their own site) ── */
+    if (caps.includes("pilot_engagement_offer")) {
+      let findings = "";
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+        if (rep && rep.pages_reachable > 0) {
+          const iss = rep.issues || {};
+          const top = Object.entries(iss).sort((a: any, b: any) => ((b[1] as any).count || 0) - ((a[1] as any).count || 0)).slice(0, 8);
+          findings = `Audited ${rep.pages_reachable} pages of ${rep.project_domain}. Top issues: ${top.map(([k, v]: any) => `${k.replace(/_/g, " ")} (${v.count})`).join("; ")}.${rep.performance?.score != null ? ` Homepage performance ${rep.performance.score}.` : ""}`;
+        }
+      } catch { /* proceed without live findings */ }
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        const system = "You are a Senior Digital Marketing Specialist creating a PILOT engagement offer for a prospect who wants proof before committing to a full engagement. From the REAL audit findings, scope a deliberately small, low-risk first engagement of about two weeks on specific pages, so the client can start without a big bet. Cover: why starting small removes their risk; exactly what you will do (the specific pages and fixes taken from the real findings, nothing vague or invented); how they will know it worked (a success signal they verify THEMSELVES in their own Search Console or analytics, framed as what you will move and how they will see it in their own data, never a guaranteed number or ranking); a short timeline and a fair pilot price; and how a clear result rolls into the full engagement and, with their permission, becomes a real named case study. Honest throughout: tie everything to what was really found on their site, never promise a ranking, and never reference a past client or result that does not exist. Return well-structured markdown. Never use an em-dash.";
+        const user = `Prospect site: ${inputs.siteUrl || "the client site"}.\n${findings || "No live findings were loaded this pass; scope a sensible small pilot and note that a quick crawl of their site pins the exact pages to work on."}\nWrite the pilot engagement offer, grounded in their real findings.`;
+        const { text } = await llmComplete({ system, user, maxTokens: 1800, timeoutMs: 60000, label: "pilot-engagement-offer", maxSegments: 1 });
+        const body = String(text || "").trim();
+        if (!body) throw new Error("empty offer");
+        const report_md = `# Your low-risk first step\n\n${body}`;
+        return result("completed", "pilot-offer engine (scoped from the prospect's own findings, honest)", { reports: [{ step_key: "pilot_offer", report_md }], summary: "A low-risk pilot engagement scoped from the real quick-wins on the prospect's own site, with a client-verifiable success signal and a path to the full engagement. Wins the proof-first client without any past-work claims." }, "Pilot engagement offer scoped from the prospect's own site findings: a small, verifiable first step with a path to the full engagement, no past-work claims needed.");
+      } catch (e: any) {
+        return result("manual", null, null, `This is a proof-first client. Crawl their site first, then re-run to scope the pilot from the real quick-wins. (${e?.message || "error"}.)`);
+      }
+    }
+
     /* ── Similar-work / case-study evidence: real curated proof, honest fallback ── */
     if (caps.includes("case_study_evidence")) {
       let studies: any[] = [];

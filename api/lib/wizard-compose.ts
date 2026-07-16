@@ -164,6 +164,12 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       if (validIds.length === 0 && /(case stud|similar work|similar seo|examples? of|portfolio|proof of work|prior (result|work|client)|past (result|work|client)|track record|references?)/i.test(t)) {
         if (getCapability("case_study_evidence")) validIds = ["case_study_evidence"];
       }
+      /* Proof-first client wants a low-risk way to start: scope a pilot engagement
+         from their own site findings. Distinct from case studies (which show prior
+         work); this wins the client by proving it on their own site. */
+      if (validIds.length === 0 && /(pilot|trial (project|engagement|run)|starter (package|offer|engagement)|proof of concept|low[- ]?risk (start|first)|test (project|engagement)|small first (step|project|engagement)|start small|prove it on)/i.test(t)) {
+        if (getCapability("pilot_engagement_offer")) validIds = ["pilot_engagement_offer"];
+      }
     }
     const { readiness, caps } = readinessOf(validIds, ymyl);
     /* A deliverable that maps to at least one REAL registry capability is NOT a
@@ -184,6 +190,8 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       note = `A client-facing session you run (a call, walkthrough or demo). The platform prepares it — run this stage for an agenda, the findings to walk through, talking points, questions and next steps. Conducting the call itself is a human deliverable.`;
     } else if (caps.some(c => c.id === "case_study_evidence")) {
       note = `Presents your real, verifiable prior work matched to this prospect's category, with proof. If you have curated case studies on file it shows the matching ones; if none match, it gives an honest "how I would approach a business like yours" piece grounded in this prospect's findings, never a fabricated example.`;
+    } else if (caps.some(c => c.id === "pilot_engagement_offer")) {
+      note = `For a client who wants proof before committing. Run this stage to scope a small, low-risk first engagement from the real quick-wins on their own site, with a result they can verify themselves and a path to the full engagement. It proves the work on their site rather than relying on past examples.`;
     } else if (readiness === "manual_review") {
       manual_calls.push(title);
       note = `Human judgement call. The platform assists with data; a senior practitioner decides.`;
