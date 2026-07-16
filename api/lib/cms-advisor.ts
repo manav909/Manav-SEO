@@ -23,7 +23,7 @@
    Multi-tenant: projectId (site URL resolved from project data).
 ════════════════════════════════════════════════════════════════ */
 
-import { fetchHtml, resolveTargetUrls } from "./workspace/shared.js";
+import { fetchHtml, fetchViaReader, resolveTargetUrls } from "./workspace/shared.js";
 import { extractPagePattern } from "./geo-citation-gap.js";
 
 export type Platform =
@@ -239,7 +239,19 @@ export async function adviseCms(opts: { projectId: string; siteUrl?: string; max
   }
 
   /* Crawl homepage first, then sample internal pages. */
-  const homepageHtml = await fetchHtml(root).catch(() => "");
+  /* Fetch with a rendering fallback: a raw fetch of a JavaScript-rendered or
+     WAF-blocked store (Shopify, headless, Cloudflare) returns empty and would be
+     misread as "platform unknown, homepage could not be crawled". Render it so
+     the platform signature and on-page signals are actually seen. */
+  const fetchRich = async (url: string): Promise<string> => {
+    let html = await fetchHtml(url).catch(() => "");
+    if (!html || html.length < 500 || !/<\/html>/i.test(html)) {
+      const r = await fetchViaReader(url).catch(() => ({ ok: false, html: "" }));
+      if (r.ok && r.html && r.html.length > (html ? html.length : 0)) html = r.html;
+    }
+    return html;
+  };
+  const homepageHtml = await fetchRich(root);
   const homepage = extractSignals(root, homepageHtml);
   const productLikeUrl = pickProductLike(homepage.internal_links);
   const sampleUrls = Array.from(new Set([
@@ -249,7 +261,7 @@ export async function adviseCms(opts: { projectId: string; siteUrl?: string; max
   ].filter(Boolean))).slice(0, maxPages - 1);
 
   const pages: PageSignals[] = [homepage];
-  for (const u of sampleUrls) { const h = await fetchHtml(u).catch(() => ""); pages.push(extractSignals(u, h)); }
+  for (const u of sampleUrls) { const h = await fetchRich(u); pages.push(extractSignals(u, h)); }
 
   const det = detectPlatform(homepage);
   const productLike = pages.find(p => p.ok && productLikeUrl && p.url === productLikeUrl) || null;
