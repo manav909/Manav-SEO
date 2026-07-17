@@ -1,25 +1,25 @@
 /* ════════════════════════════════════════════════════════════════
    api/lib/site-crawler.ts
 
-   BUILD 12.32 — Full-site crawler & on-page/technical audit.
+   BUILD 12.32, Full-site crawler & on-page/technical audit.
 
    The honest "you had the tools, so do I" engine. Instead of a 5-page
    sample, it crawls the site breadth-first (following internal links,
    with concurrency) and aggregates the same site-wide on-page and
-   technical findings a Semrush on-page audit produces — missing /
+   technical findings a Semrush on-page audit produces, missing /
    duplicate / long / short titles and meta descriptions, missing or
    duplicate H1s, duplicate H1-and-title, missing image alt text, thin
    pages, missing canonicals, schema coverage by type, and broken links
-   found during the crawl — all from real fetched HTML. Plus a best-
+   found during the crawl, all from real fetched HTML. Plus a best-
    effort PageSpeed pass on the homepage for performance (LCP/TBT/CLS).
 
    Honest constraints:
    - One serverless invocation cannot crawl thousands of pages, so the
      crawl is capped (default 50, configurable). Counts are over the
      crawled set; the report states the cap. Full-site-at-scale needs
-     background crawling — a noted larger build, not faked here.
+     background crawling, a noted larger build, not faked here.
    - It does NOT produce domain authority, backlinks, or keyword-volume
-     data — those need an external source (Ahrefs/Semrush API or export),
+     data, those need an external source (Ahrefs/Semrush API or export),
      and this engine never invents them.
 
    Multi-tenant: projectId (+ optional siteUrl) only.
@@ -62,7 +62,7 @@ const canonicalHref = (html: string): string | null => {
 
 /* Canonical dedup key: the same logical page under http/https, with or without
    www, and with or without a trailing slash collapses to ONE key, so a
-   redirecting host variant (non-www -> www) is never crawled twice — which
+   redirecting host variant (non-www -> www) is never crawled twice, which
    protects the page-cap budget and stops a page being flagged as a duplicate
    of itself. */
 const canonKey = (u: string): string => {
@@ -72,7 +72,7 @@ const canonKey = (u: string): string => {
     const path = x.pathname.replace(/\/+$/, "") || "/";
     /* Drop the query string and fragment for dedup: query-param variants of a
        path (?utm=, ?ref=, ?srsltid=, sort/filter/pagination params) are the same
-       page for an SEO audit — keeping them treated the homepage as 17 pages. The
+       page for an SEO audit, keeping them treated the homepage as 17 pages. The
        canonical page is the path; duplicate-via-query-params is itself a finding,
        not 17 pages to crawl. */
     return `${host}${path}`;
@@ -150,7 +150,7 @@ function median(nums: number[]): number | null {
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
 }
 /* A single Lighthouse lab run swings run-to-run (48, 31, 50). Run it several
-   times IN PARALLEL and take the median — a stable, defensible number, at
+   times IN PARALLEL and take the median, a stable, defensible number, at
    roughly the wall-clock cost of one run. */
 async function runPsi(url: string, key: string, runs = 3): Promise<any | null> {
   const results = (await Promise.all(Array.from({ length: runs }, () => runPsiOnce(url, key)))).filter(Boolean) as Array<{ score: number; lcp_ms: number | null; tbt_ms: number | null; cls: number | null }>;
@@ -188,7 +188,7 @@ export interface SiteAuditReport {
    then the conventional locations used by Wix, WordPress core, Yoast/RankMath,
    Shopify, Squarespace and most platforms. Expands a sitemap INDEX into its
    child sitemaps (any depth, bounded) and returns every page URL on this
-   domain. The sitemap is self-canonicalising — its <loc> entries carry the
+   domain. The sitemap is self-canonicalising, its <loc> entries carry the
    site's preferred host (www / non-www), so we end up crawling exactly what
    the site itself declares. Returns an empty list cleanly when no sitemap
    exists (the caller then falls back to link discovery). */
@@ -198,7 +198,7 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
   const toFetch: string[] = [];
   const enqueue = (u: string) => { const k = u.replace(/\/+$/, ""); if (k && !tried.has(k)) { tried.add(k); toFetch.push(u); } };
 
-  /* 1) robots.txt — every CMS that auto-generates sitemaps declares them here. */
+  /* 1) robots.txt, every CMS that auto-generates sitemaps declares them here. */
   try {
     let robots = await fetchHtml(origin + "/robots.txt");
     if (!robots) { const r = await fetchViaReader(origin + "/robots.txt").catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) robots = r.html; }
@@ -216,12 +216,27 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
     const sm = toFetch.shift()!;
     let xml = "";
     try { xml = await fetchHtml(sm); } catch { xml = ""; }
-    /* Rescue: a blocked/rate-limited raw fetch of the sitemap returns empty and
-       would silently drop the whole site to just its homepage. Retry through the
-       reader, which bypasses WAF/rate-limiting — the <loc> tags survive. */
+    /* Rescue: a blocked, rate-limited, or GEO-BLOCKED raw fetch of the sitemap
+       returns empty and would silently drop the whole site to just its homepage.
+       Retry through the reader, which fetches from its OWN region (so a site
+       blocked in this country can still be reached) and bypasses WAF/rate limits.
+       The reader sometimes renders the XML and drops the <loc> tags, so if it
+       comes back without them, recover the page URLs directly from its output. */
     if (!xml || !/<loc>/i.test(xml)) {
       const r = await fetchViaReader(sm).catch(() => ({ ok: false, html: "" }));
-      if (r.ok && r.html && /<loc>/i.test(r.html)) xml = r.html;
+      if (r.ok && r.html) {
+        if (/<loc>/i.test(r.html)) {
+          xml = r.html;
+        } else {
+          const found = r.html.match(/https?:\/\/[^\s"'<>()]+/gi) || [];
+          let recovered = 0;
+          for (const u of found) {
+            let clean = ""; try { clean = new URL(u, origin).toString().split("#")[0]; } catch { continue; }
+            if (domainOf(clean) === projectDomain && !ASSET_RE.test(clean) && !SKIP_PATH_RE.test(clean)) { pages.add(clean); recovered++; }
+          }
+          if (recovered > 0) { filesParsed++; continue; }   // geo-blocked sitemap recovered via the reader's region
+        }
+      }
     }
     if (!xml || !/<loc>/i.test(xml)) continue;       // genuinely missing/not a sitemap -> skip cleanly
     filesParsed++;
@@ -240,41 +255,41 @@ async function discoverSitemapUrls(root: string, projectDomain: string, cap: num
 
 /* ── Senior-lens page selection ──────────────────────────────────────
    Score each candidate URL by how much it matters to the business, so the
-   crawl budget is spent on the pages a senior SEO would diagnose first — the
-   homepage and money pages — not whatever the sitemap happens to list first.
+   crawl budget is spent on the pages a senior SEO would diagnose first, the
+   homepage and money pages, not whatever the sitemap happens to list first.
    Also detects leftover theme/demo boilerplate, which is a real insight (it
    causes the duplicate-title/meta clusters and should be removed). */
 type PageClass = "homepage" | "commercial" | "content" | "other" | "utility" | "legal" | "boilerplate_demo";
 function classifyUrl(url: string): { cls: PageClass; score: number; reason: string } {
   let path = "/";
   try { path = (new URL(url).pathname || "/").toLowerCase().replace(/\/+$/, "") || "/"; } catch { /* keep default */ }
-  if (path === "/") return { cls: "homepage", score: 100, reason: "the homepage — the first impression and highest-traffic page" };
+  if (path === "/") return { cls: "homepage", score: 100, reason: "the homepage, the first impression and highest-traffic page" };
   const seg = path.slice(1);
-  /* leftover theme/demo/boilerplate pages a template shipped with — expanded to
+  /* leftover theme/demo/boilerplate pages a template shipped with, expanded to
      catch the common artefacts (blog-classic, grid-no-gap, service-det-ads,
      service-logo, services-2, client-01, element, column, etc.) */
   if (/(^|\/)(home-?page-?\d+|homepage-?\d+|elementor(-\d+)?|demo(-\d+)?|sample-?page|blog-?(grid|classic|standard|list|masonry|large|small)(-col)?(-\d+)?|masonry(-col)?(-\d+)?|grid(-no-gap|-\d+)?|portfolio-?grid|shortcodes?|typography|elements?(-demo)?|element|columns?|coming-?soon|service-det[a-z-]*|service-logo|services?-\d+)($|\/)/.test(seg)
     || /(^|\/)client\/client-?\d+/.test(seg)
     || (/-\d+$/.test(seg) && /(contact|about|home|service|blog|team|page)/.test(seg)))
-    return { cls: "boilerplate_demo", score: 4, reason: "looks like a leftover theme/demo page — a strong candidate for removal" };
+    return { cls: "boilerplate_demo", score: 4, reason: "looks like a leftover theme/demo page, a strong candidate for removal" };
   if (/(^|\/)(privacy|terms|disclaimer|cookies?|gdpr|legal|404|thank-?you|cart|checkout|my-?account|login|log-?in|register|wp-|feed|sitemap)($|\/|-)/.test(seg))
-    return { cls: "legal", score: 9, reason: "a legal or utility page — low commercial priority" };
+    return { cls: "legal", score: 9, reason: "a legal or utility page, low commercial priority" };
   if (/(^|\/)(page\/\d+|tag|tags|category|categories|author|archive)($|\/)/.test(seg))
     return { cls: "utility", score: 7, reason: "an archive or pagination page" };
   if (/(^|\/)(team-?members?|our-?team|people|staff|leadership)($|\/)/.test(seg))
-    return { cls: "content", score: 42, reason: "a team / bio page — supports expertise and trust signals (E-E-A-T)" };
+    return { cls: "content", score: 42, reason: "a team / bio page, supports expertise and trust signals (E-E-A-T)" };
   if (/(^|\/)(portfolio|case-?stud(y|ies)|projects?)($|\/)/.test(seg))
-    return { cls: "commercial", score: 55, reason: "a portfolio / case-study page — proof of work that supports conversions" };
+    return { cls: "commercial", score: 55, reason: "a portfolio / case-study page, proof of work that supports conversions" };
   if (/(^|\/)(services?|products?|solutions?|offerings?|pricing|plans?|about(-us)?|company|contact(-us)?|investments?|clients?|industries|sectors|acquisitions?|strategy|wealth)($|\/|-)/.test(seg))
-    return { cls: "commercial", score: 80, reason: "a primary commercial / high-intent page — where enquiries are won" };
+    return { cls: "commercial", score: 80, reason: "a primary commercial / high-intent page, where enquiries are won" };
   if (/(^|\/)(blog|news|insights?|articles?|resources?|guides?|learn|press)($|\/)/.test(seg))
-    return { cls: "content", score: 45, reason: "a content / thought-leadership page — authority and AEO surface" };
+    return { cls: "content", score: 45, reason: "a content / thought-leadership page, authority and AEO surface" };
   return { cls: "other", score: 28, reason: "a standard content page" };
 }
 
 /* Detect JavaScript-rendered platforms (Squarespace, Wix, SPAs). On these the
    server HTML is missing the meta descriptions, final titles and H1s that the
-   platform injects with JavaScript — so a raw-HTML crawl WILDLY over-reports
+   platform injects with JavaScript, so a raw-HTML crawl WILDLY over-reports
    "missing meta description / long title / missing H1". The fix is to render the
    page (via the reader) before reading its metadata. */
 function detectJsRendering(html: string): { js: boolean; platform: string } {
@@ -312,8 +327,8 @@ export async function resolveTargets(opts: { projectId: string; siteUrl?: string
   let useReader = false; let renderNote = "";
   if (jsr.js) {
     const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
-    if (rendered.ok && rendered.html) { useReader = true; homeHtml = rendered.html; renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages are fetched through a rendering proxy so the on-page metadata reflects what users and Google actually see — a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript.`; }
-    else { renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so meta-description, title-length and H1 counts are read from server HTML and are LIKELY OVER-REPORTED — the platform injects those fields via JavaScript a raw crawl cannot see. Verify those counts against the rendered page; schema, performance and search-visibility findings are unaffected.`; }
+    if (rendered.ok && rendered.html) { useReader = true; homeHtml = rendered.html; renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages are fetched through a rendering proxy so the on-page metadata reflects what users and Google actually see, a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript.`; }
+    else { renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so meta-description, title-length and H1 counts are read from server HTML and are LIKELY OVER-REPORTED, the platform injects those fields via JavaScript a raw crawl cannot see. Verify those counts against the rendered page; schema, performance and search-visibility findings are unaffected.`; }
   }
   const homeSig = homeHtml ? extract(start, homeHtml, 200) : null;
   const candidates = new Map<string, string>();
@@ -336,7 +351,7 @@ export async function resolveTargets(opts: { projectId: string; siteUrl?: string
 }
 
 /* Crawl a specific set of pages (a batch or the full selection). Renders via the
-   reader when useReader. Returns raw page signatures — aggregation happens once,
+   reader when useReader. Returns raw page signatures, aggregation happens once,
    over the accumulated set, so cross-page duplicate detection stays correct. */
 export async function crawlUrls(items: Scored[], useReader: boolean, concurrency: number, start: string, homeHtml: string, captureSchema = false): Promise<{ pages: PageSig[]; broken: string[]; schema: any[] }> {
   const pages: PageSig[] = []; const broken: string[] = []; const schema: any[] = []; const visited = new Set<string>();
@@ -348,8 +363,8 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
     return t.length;
   };
   /* Is the RAW HTML complete enough to audit WITHOUT rendering? We trust raw
-     ONLY when it already contains the exact signals the audit reports on — a
-     real <title>, a meta/OG description OR an <h1>, and genuine body content —
+     ONLY when it already contains the exact signals the audit reports on, a
+     real <title>, a meta/OG description OR an <h1>, and genuine body content , 
      and it does not look like an empty SPA shell. This is the quality guard:
      a server-rendered site (WordPress, Shopify SSR, most of the web) takes the
      fast raw path, but any page that injects its content/title/meta/H1 via
@@ -371,7 +386,7 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
   };
   const fetchPage = async (u: string): Promise<{ html: string; ok: boolean }> => {
     /* Try a FAST raw fetch first. If it is already audit-complete (server-
-       rendered), use it — the difference is roughly 0.3s vs 3s per page. */
+       rendered), use it, the difference is roughly 0.3s vs 3s per page. */
     let raw = "";
     try { raw = await fetchHtml(u); } catch { raw = ""; }
     if (raw && rawIsAuditComplete(raw)) return { html: raw, ok: true };
@@ -379,7 +394,7 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
        through the proxy (this also rescues WAF/rate-limit blocks). */
     const rendered = await fetchViaReader(u).catch(() => ({ ok: false, html: "" }));
     if (rendered.ok && rendered.html && rendered.html.length > 50) return { html: rendered.html, ok: true };
-    /* Rendering also failed — keep whatever raw we have, else mark broken. */
+    /* Rendering also failed, keep whatever raw we have, else mark broken. */
     if (raw && raw.length > 50) return { html: raw, ok: true };
     return { html: "", ok: false };
   };
@@ -405,7 +420,7 @@ export async function crawlUrls(items: Scored[], useReader: boolean, concurrency
    same-domain internal links (deduped, non-asset, non-utility) as fresh
    candidates, up to the cap. This lets the crawl reach a programmatic site's
    thousands of pages by FOLLOWING LINKS, not just what the sitemap or the
-   homepage exposed — so a site whose sitemap is missing or blocked still gets
+   homepage exposed, so a site whose sitemap is missing or blocked still gets
    crawled deeply. Honest and bounded: same-domain only, deduped by canonical
    key, hard-capped at `cap`. Relative links resolve against the page they came
    from. Returns the grown selection (unchanged if no new links were found). */
@@ -462,7 +477,7 @@ export function buildAuditReport(r: {
     prioritised,
     flagged_boilerplate: Array.from(new Set(r.allBoilerplate.map(s => pathOf(s.u)))).slice(0, 12),
     by_class: byClass,
-    rationale: `From ${r.candidatesCount} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content — because that is where visibility and credibility are won or lost.${r.allBoilerplate.length ? ` ${r.allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${r.allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal — they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
+    rationale: `From ${r.candidatesCount} discoverable page(s), the ${ok.length} highest-value pages that loaded were diagnosed first: the homepage, the primary commercial pages (services, about, contact and the like) and key content, because that is where visibility and credibility are won or lost.${r.allBoilerplate.length ? ` ${r.allBoilerplate.length} page(s) look like leftover theme/demo boilerplate (for example ${r.allBoilerplate.slice(0, 2).map(s => pathOf(s.u)).join(", ")}); these are flagged for removal, they dilute the site and are the usual cause of duplicate titles and meta descriptions.` : ""} Legal and utility pages were intentionally deprioritised.`,
   };
   const issue: Record<string, { count: number; pages: string[] }> = {};
   const add = (key: string, url: string) => { (issue[key] ||= { count: 0, pages: [] }); issue[key].count++; if (issue[key].pages.length < 25) issue[key].pages.push(url); };
@@ -494,11 +509,11 @@ export function buildAuditReport(r: {
   const limits = [
     ...(r.renderNote ? [r.renderNote] : []),
     r.sitemapCount > 0
-      ? `Discovery seeded from the sitemap (${r.sitemapCount} URL(s) across ${r.sitemapFiles} file(s)) plus internal links; ${ok.length} pages were crawled${crawlCapped ? ` — the sitemap declares more, use Detailed/Full mode or continue the batched crawl for complete coverage` : ` (the full declared set was covered)`}.`
+      ? `Discovery seeded from the sitemap (${r.sitemapCount} URL(s) across ${r.sitemapFiles} file(s)) plus internal links; ${ok.length} pages were crawled${crawlCapped ? `, the sitemap declares more, use Detailed/Full mode or continue the batched crawl for complete coverage` : ` (the full declared set was covered)`}.`
       : `No sitemap was found; discovery followed internal links recursively from page to page (a breadth-first spider), so pages linked deeper than the homepage are still reached. Use Max or Advanced depth to crawl more of them.`,
     `Broken-link detection covers internal links reached during the crawl, not an exhaustive link check.`,
-    `Performance is a lab PageSpeed run on the homepage (mobile)${r.performance && r.performance.runs > 1 ? ` — median of ${r.performance.runs} runs, not a real-user field average` : ""}${r.performance ? "" : " — unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
-    `This engine does NOT produce domain authority, backlinks, or keyword-volume data — those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
+    `Performance is a lab PageSpeed run on the homepage (mobile)${r.performance && r.performance.runs > 1 ? `, median of ${r.performance.runs} runs, not a real-user field average` : ""}${r.performance ? "" : ", unavailable this run (no PageSpeed key configured or the API did not respond)"}.`,
+    `This engine does NOT produce domain authority, backlinks, or keyword-volume data, those need an external source (Ahrefs/Semrush API or export) and are never estimated here.`,
   ];
   return { project_domain: r.projectDomain, generated_at: now, pages_crawled: pages.length, pages_reachable: ok.length, crawl_capped: crawlCapped, sitemap_url_count: r.sitemapCount, discovery: r.sitemapCount > 0 ? "sitemap+links" : "links", issues: issue, schema_coverage, broken_links: broken.slice(0, 25), performance: r.performance, page_selection, homepage_title: r.homeTitle, homepage_h1: r.homeH1, summary, limits };
 }
