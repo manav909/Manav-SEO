@@ -134,6 +134,17 @@ export default function Wizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan]);
 
+  /* If an existing project is the active one (picked from the nav dropdown, not
+     created here in the wizard) and no client URL is set yet, use that project's
+     own URL. Without this the crawl has no target from a dropdown-selected project
+     and returns a single page. The field stays editable so it can be corrected. */
+  useEffect(() => {
+    if (projectUrl && !clientSiteUrl.trim() && !(plan && plan.client_domain)) {
+      setClientSiteUrl(projectUrl.startsWith("http") ? projectUrl : `https://${projectUrl}/`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectUrl]);
+
   const createProjectForClient = async () => {
     if (!plan?.client_domain) { setError("No client domain detected in the brief to create a project from."); return; }
     setCreatingProject(true); setError("");
