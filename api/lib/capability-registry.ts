@@ -288,6 +288,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Everything is tied to what was really found on their site. It never promises a specific ranking or number, and never references a past client or result that does not exist. It wins the proof-first client by proving the work on their own site, honestly.",
     mode: "auto",
   },
+  martech_tool_advisory: {
+    id: "martech_tool_advisory",
+    label: "Martech / CRO tool advisory",
+    engine: "wizard-run martech engine (platform + business from the crawl, live SERP tool research and industry trends, GSC where connected)",
+    inputs_required: ["A live crawl of the site (platform + business signals); live SERP; GSC optional, not required"],
+    output: "Recommended third-party tools (abandoned-cart / email automation, on-site search, heatmaps and session recording, and any others the site actually needs) chosen for the client's platform and business type, each with the reason, what it fixes on their site, and a real, sourced industry example or trend. Covers the direct and the indirect issues, and works without Google Analytics.",
+    limits: "Tool names, cases and trends come from live SERP research with source links (data traces), never invented. Google Analytics is optional: if connected it sharpens the behavioural case, if not the recommendations still stand on the crawl, Search Console and the live research.",
+    mode: "auto",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {

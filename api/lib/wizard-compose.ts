@@ -170,6 +170,11 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       if (validIds.length === 0 && /(pilot|trial (project|engagement|run)|starter (package|offer|engagement)|proof of concept|low[- ]?risk (start|first)|test (project|engagement)|small first (step|project|engagement)|start small|prove it on)/i.test(t)) {
         if (getCapability("pilot_engagement_offer")) validIds = ["pilot_engagement_offer"];
       }
+      /* Third-party tool / martech / CRO advisory: recommend the tools the site
+         actually needs, chosen for its platform, with sourced industry cases. */
+      if (validIds.length === 0 && /(tool recommendation|martech|cro tool|abandoned cart|heatmap|session recording|site search|search bar|app recommendation|third.?party (tool|app)|tech stack|plugin recommendation|recommended (tool|app|plugin))/i.test(t)) {
+        if (getCapability("martech_tool_advisory")) validIds = ["martech_tool_advisory"];
+      }
     }
     const { readiness, caps } = readinessOf(validIds, ymyl);
     /* A deliverable that maps to at least one REAL registry capability is NOT a
@@ -192,6 +197,8 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       note = `Presents your real, verifiable prior work matched to this prospect's category, with proof. If you have curated case studies on file it shows the matching ones; if none match, it gives an honest "how I would approach a business like yours" piece grounded in this prospect's findings, never a fabricated example.`;
     } else if (caps.some(c => c.id === "pilot_engagement_offer")) {
       note = `For a client who wants proof before committing. Run this stage to scope a small, low-risk first engagement from the real quick-wins on their own site, with a result they can verify themselves and a path to the full engagement. It proves the work on their site rather than relying on past examples.`;
+    } else if (caps.some(c => c.id === "martech_tool_advisory")) {
+      note = `Recommends the third-party tools the site actually needs (abandoned cart, on-site search, heatmaps and more), chosen for the client's platform and business, each with what it fixes and a real sourced industry example from live research. Works without Google Analytics.`;
     } else if (readiness === "manual_review") {
       manual_calls.push(title);
       note = `Human judgement call. The platform assists with data; a senior practitioner decides.`;

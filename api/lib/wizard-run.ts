@@ -422,6 +422,59 @@ export async function runWizardStage(opts: {
       return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], striking: strikingP1, page2, deep_visible: deepVisible, low_ctr: lowCtr, zero_click: zeroClick, updates: recent, queries_analysed: withImpr.length, summary: `Analysed ${withImpr.length} Search Console queries: ${page2.length} on page two, ${strikingP1.length} in striking distance, ${deepVisible.length} ranking past page two, ${lowCtr.length} low-CTR on page one, ${zeroClick.length} zero-click, correlated with ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking analysis from Search Console: ${withImpr.length} queries analysed, ${flagged} flagged for action, correlated with the Google update timeline. No Semrush required.`);
     }
 
+    /* ── Martech / CRO tool advisory (platform + gaps + live sourced research) ── */
+    if (caps.includes("martech_tool_advisory")) {
+      let business = "", domain = "", pages = 0, platform = "unknown";
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+        business = rep?.homepage_title || ""; domain = rep?.project_domain || ""; pages = rep?.pages_reachable || 0;
+      } catch { /* proceed */ }
+      try {
+        const { adviseCms } = await import("./cms-advisor.js");
+        const cms: any = await adviseCms({ projectId, siteUrl: inputs.siteUrl });
+        if (cms?.detected_platform && cms.detected_platform !== "unknown") platform = cms.detected_platform;
+      } catch { /* platform stays unknown */ }
+      let gscNote = "";
+      try {
+        const { loadGsc } = await import("./workspace/shared.js");
+        const g: any = await loadGsc(projectId);
+        const qn = ((g && g.topQueries) || []).length; const pairs = ((g && g.queryPagePairs) || []).length;
+        if (qn || pairs) gscNote = `Search Console is connected (${qn} query terms). Question-style and product-finding queries in that set point to on-site search and guided-discovery needs.`;
+      } catch { /* GA/GSC optional */ }
+
+      const cats = ["abandoned cart recovery and email automation", "on-site search", "heatmaps and session recording", "reviews and social proof"];
+      const research: any[] = [];
+      try {
+        const { fetchSerpFeatures } = await import("./serpapi.js");
+        for (const cat of cats) {
+          const q = `best ${cat} tools ${platform !== "unknown" ? platform + " " : ""}2026`;
+          const s: any = await fetchSerpFeatures(q, projectId, {}).catch(() => null);
+          if (s) research.push({ cat, tools: (s.top_10_domains || []).slice(0, 8), questions: (s.paa_questions || []).slice(0, 5), sources: (s.top_100_urls || s.top_10_urls || []).slice(0, 6) });
+        }
+      } catch { /* research best-effort */ }
+
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        const grounding = [
+          `Client: ${domain || inputs.siteUrl || "the site"}. Business: ${business || "unknown from title"}. Platform: ${platform}. Pages crawled: ${pages}.`,
+          gscNote || "Google Analytics is not connected; do not rely on GA, build the case from the crawl, Search Console and the live research.",
+          research.length ? "Live SERP research (real tools and real source links per category):\n" + research.map((r) => `- ${r.cat}: tools appearing = ${(r.tools || []).join(", ") || "none captured"}; searcher questions = ${(r.questions || []).join(" | ") || "none"}; sources = ${(r.sources || []).join(", ") || "none"}`).join("\n") : "No live research loaded this pass.",
+        ].filter(Boolean).join("\n\n");
+        const system = "You are a Senior Digital Marketing Specialist advising a client on which third-party tools to add. Use ONLY the real data provided: the platform and business from the crawl, the live SERP research (real tool names and source links), and Search Console where given. For each relevant category (abandoned cart and email automation, on-site search, heatmaps and session recording, reviews and social proof, and any other the business clearly needs), recommend specific REAL tools that suit THIS platform and business, and for each give: what it fixes on their site, why it fits their platform, and a real, sourced industry example or trend drawn from the research with its source link as the data trace. Cover the direct needs and the indirect ones (for example, a failing on-site search quietly killing conversion, or no session recording hiding checkout drop-off). Never invent a tool, a statistic, a case, or a source; if the research did not surface a source for a claim, phrase it as general practice rather than citing a fake link. Google Analytics is optional: note where GA would sharpen the behavioural case, but make every recommendation stand without it. Return well-structured markdown: a short intro tying the tools to this specific site, one section per category with the recommended tool(s), what it fixes, platform fit and the sourced example, then a closing priority order. Never use an em-dash.";
+        const user = grounding + "\n\nWrite the tool recommendations now, each grounded in this site and sourced from the research.";
+        let body = "";
+        for (let attempt = 0; attempt < 2 && !body; attempt++) {
+          try { const { text } = await llmComplete({ system, user, maxTokens: 2600, timeoutMs: 90000, label: "martech-advisory", maxSegments: 2 }); body = String(text || "").trim(); } catch { /* retry once */ }
+        }
+        if (!body) throw new Error("empty advisory");
+        const report_md = `# Tool recommendations for ${domain || "your site"}\n\n${body}`;
+        return result("completed", "martech engine (crawl + live SERP research + Search Console where connected)", { reports: [{ step_key: "martech", report_md }], platform, categories: cats, research, summary: `Tool recommendations for a ${platform} ${business ? "(" + business + ") " : ""}site: abandoned cart and email, on-site search, heatmaps and session recording, reviews, each suited to the platform and backed by live sourced research. Google Analytics optional.` }, `Tool advisory built from the crawl and live SERP research across ${research.length} categories, platform ${platform}. Real tools, sourced trends, no Google Analytics required.`);
+      } catch (e: any) {
+        return result("manual", null, null, `Crawl the site so the tool advisory can read the platform and gaps, then re-run. (${e?.message || "error"}.)`);
+      }
+    }
+
     /* ── Pilot engagement offer for a proof-first client (scoped from their own site) ── */
     if (caps.includes("pilot_engagement_offer")) {
       let findings = "";
