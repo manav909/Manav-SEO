@@ -422,6 +422,74 @@ export async function runWizardStage(opts: {
       return result("completed", "ranking-drop engine (GSC position/clicks + Google update timeline, no Semrush)", { reports: [{ step_key: "ranking_drop", report_md }], striking: strikingP1, page2, deep_visible: deepVisible, low_ctr: lowCtr, zero_click: zeroClick, updates: recent, queries_analysed: withImpr.length, summary: `Analysed ${withImpr.length} Search Console queries: ${page2.length} on page two, ${strikingP1.length} in striking distance, ${deepVisible.length} ranking past page two, ${lowCtr.length} low-CTR on page one, ${zeroClick.length} zero-click, correlated with ${recent.length} recent Google updates. No Semrush needed.` }, `Ranking analysis from Search Console: ${withImpr.length} queries analysed, ${flagged} flagged for action, correlated with the Google update timeline. No Semrush required.`);
     }
 
+    /* ── Homepage UX / UI redesign brief with a rendered wireframe ── */
+    if (caps.includes("ux_redesign_advisory")) {
+      const esc = (s: any) => String(s || "").replace(/[&<>]/g, (c: string) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
+      const structOf = (html: string) => {
+        const grab = (re: RegExp) => Array.from(html.matchAll(re)).map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 12);
+        return {
+          h1: grab(/<h1[^>]*>([\s\S]*?)<\/h1>/gi),
+          h2: grab(/<h2[^>]*>([\s\S]*?)<\/h2>/gi),
+          ctas: Array.from(html.matchAll(/<(?:a|button)[^>]*(?:class|id)="[^"]*(?:btn|button|cta)[^"]*"[^>]*>([\s\S]*?)<\/(?:a|button)>/gi)).map((m) => m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 8),
+          images: (html.match(/<img/gi) || []).length,
+          forms: (html.match(/<form/gi) || []).length,
+        };
+      };
+      let business = "", domain = inputs.siteUrl || "";
+      try {
+        const { crawlSite } = await import("./site-crawler.js");
+        const rep: any = await crawlSite({ projectId, siteUrl: inputs.siteUrl });
+        business = rep?.homepage_title || ""; domain = rep?.project_domain || domain;
+      } catch { /* proceed */ }
+      let clientStruct: any = null;
+      try {
+        const { fetchHtml, fetchViaReader } = await import("./workspace/shared.js");
+        const url = String(inputs.siteUrl || domain).startsWith("http") ? String(inputs.siteUrl || domain) : "https://" + String(inputs.siteUrl || domain);
+        let html = await fetchHtml(url).catch(() => "");
+        if (!html || html.length < 500) { const r: any = await fetchViaReader(url).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) html = r.html; }
+        if (html) clientStruct = structOf(html);
+      } catch { /* current-state read optional */ }
+      let competitors: string[] = Array.isArray(inputs.competitors) ? inputs.competitors.filter(Boolean) : [];
+      if (!competitors.length) { try { const { data: proj } = await db().from("projects").select("competitors").eq("id", projectId).maybeSingle(); const c = (proj as any)?.competitors; if (Array.isArray(c)) competitors = c.filter(Boolean); else if (typeof c === "string") competitors = c.split(/[,\n]/).map((s: string) => s.trim()).filter(Boolean); } catch { /* optional */ } }
+      competitors = competitors.map((c) => String(c).replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")).slice(0, 3);
+      const compStructs: any[] = [];
+      try {
+        const { fetchHtml, fetchViaReader } = await import("./workspace/shared.js");
+        for (const c of competitors) {
+          let html = await fetchHtml("https://" + c).catch(() => "");
+          if (!html || html.length < 500) { const r: any = await fetchViaReader("https://" + c).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) html = r.html; }
+          if (html) compStructs.push({ domain: c, ...structOf(html) });
+        }
+      } catch { /* benchmarking optional */ }
+      try {
+        const { llmComplete } = await import("./workspace/llm.js");
+        const grounding = [
+          `Client: ${domain}. Business (homepage title): ${business}.`,
+          clientStruct ? `Current homepage structure (real): H1 = ${clientStruct.h1.join(" | ") || "none"}; section headings (H2) = ${clientStruct.h2.join(" | ") || "none"}; calls to action detected = ${clientStruct.ctas.join(", ") || "none"}; images = ${clientStruct.images}; forms = ${clientStruct.forms}.` : "The current homepage could not be read this pass; base the critique on the business and competitors and say the current-state read was limited.",
+          compStructs.length ? "Competitor homepage layouts (real, for benchmarking):\n" + compStructs.map((s) => `- ${s.domain}: H1 = ${s.h1.join(" | ") || "n/a"}; sections = ${s.h2.slice(0, 8).join(" | ") || "n/a"}; CTAs = ${s.ctas.join(", ") || "n/a"}`).join("\n") : "No competitor layouts available this pass.",
+        ].filter(Boolean).join("\n\n");
+        const system = "You are a Brand Head and Senior UX and UI designer producing a homepage redesign brief for a client. Use the REAL current homepage structure and the REAL competitor layouts provided. Think about conversion, brand, visual hierarchy, and how the customer's eye should travel down the page. Return ONLY JSON: {\"current_critique\":\"markdown, an honest critique of the current homepage for conversion and brand, grounded in its real structure\",\"sections\":[{\"name\":\"Hero\",\"purpose\":\"one line\",\"elements\":[\"headline\",\"subhead\",\"primary CTA\",\"hero visual\"],\"height\":110}],\"visual_direction\":\"markdown: colour, typography, imagery, tone, spacing\",\"eye_flow\":\"markdown: how the eye should travel down the page and why, tied to conversion\",\"priorities\":[\"the most important change first\",\"...\"]}. The sections array is the recommended top-to-bottom homepage layout, 8 to 12 sections, each with a short purpose and its key elements; set height between 60 and 130 by how tall the section should feel. Ground the critique and the layout in the real data and do not invent competitor features that are not in the data. Never use an em-dash.";
+        let parsed: any = {};
+        for (let attempt = 0; attempt < 2 && !parsed.sections; attempt++) {
+          try { const { text } = await llmComplete({ system, user: grounding + "\n\nProduce the redesign brief JSON now.", maxTokens: 2600, timeoutMs: 90000, label: "ux-redesign", maxSegments: 2 }); const m = String(text || "").match(/\{[\s\S]*\}/); parsed = m ? JSON.parse(m[0]) : {}; } catch { parsed = {}; }
+        }
+        const sections: any[] = Array.isArray(parsed.sections) ? parsed.sections.slice(0, 12) : [];
+        if (!sections.length) throw new Error("no layout produced");
+        let wireframe = "";
+        const W = 680, pad = 20, gap = 12; let y = pad + 34;
+        const boxes = sections.map((s) => { const h = Math.max(50, Math.min(130, Number(s.height) || 70)); const b = { name: String(s.name || "Section"), elements: Array.isArray(s.elements) ? s.elements : [], y, h }; y += h + gap; return b; });
+        const totalH = y + pad;
+        const rects = boxes.map((b, i) => `<rect x="${pad}" y="${b.y}" width="${W - 2 * pad}" height="${b.h}" rx="6" fill="${i === 0 ? "#eef2ff" : "#f3f4f6"}" stroke="#c7cbd1"/><text x="${pad + 14}" y="${b.y + 22}" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#1a1a2e">${esc(b.name)}</text><text x="${pad + 14}" y="${b.y + 40}" font-family="system-ui,sans-serif" font-size="11" fill="#6b7280">${esc((b.elements || []).join(" \u00b7 "))}</text>`).join("");
+        wireframe = `<svg viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%;height:auto;border:1px solid #e5e7eb;border-radius:10px;background:#fff"><text x="${pad}" y="${pad + 18}" font-family="system-ui,sans-serif" font-size="15" font-weight="800" fill="#1a1a2e">Recommended homepage wireframe: ${esc(business || domain)}</text>${rects}</svg>`;
+        const sectionDetail = sections.map((s, i) => `${i + 1}. ${s.name}: ${s.purpose || ""}${Array.isArray(s.elements) && s.elements.length ? ` (${s.elements.join(", ")})` : ""}`).join("\n");
+        const prios = Array.isArray(parsed.priorities) ? parsed.priorities.map((p: string, i: number) => `${i + 1}. ${p}`).join("\n") : "";
+        const report_md = `# Homepage UX and UI redesign brief: ${business || domain}\n\n## Where the current homepage stands\n${parsed.current_critique || "Current-state read was limited this pass."}\n\n## Recommended layout\n${wireframe}\n\n${sectionDetail}\n\n## Visual direction\n${parsed.visual_direction || ""}\n\n## How the eye should travel\n${parsed.eye_flow || ""}\n\n## Do these first\n${prios}`;
+        return result("completed", "UX engine (current structure + competitor layout benchmarking + conversion and brand principles)", { reports: [{ step_key: "ux_redesign", report_md }], sections, summary: `Homepage redesign brief for ${business || domain}: current-state critique, a ${sections.length}-section recommended layout drawn as a labelled wireframe, visual direction, eye-flow and priorities.` }, `Homepage UX and UI redesign brief with a ${sections.length}-section wireframe, grounded in the real current page${compStructs.length ? ` and ${compStructs.length} competitor layouts` : ""}.`);
+      } catch (e: any) {
+        return result("manual", null, null, `Crawl the homepage so the redesign brief can read its structure, then re-run. (${e?.message || "error"}.)`);
+      }
+    }
+
     /* ── Martech / CRO tool advisory (platform + gaps + live sourced research) ── */
     if (caps.includes("martech_tool_advisory")) {
       let business = "", domain = "", pages = 0, platform = "unknown";

@@ -297,6 +297,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Tool names, cases and trends come from live SERP research with source links (data traces), never invented. Google Analytics is optional: if connected it sharpens the behavioural case, if not the recommendations still stand on the crawl, Search Console and the live research.",
     mode: "auto",
   },
+  ux_redesign_advisory: {
+    id: "ux_redesign_advisory",
+    label: "Homepage UX / UI redesign brief (with wireframe)",
+    engine: "wizard-run UX engine (current homepage structure + competitor layout benchmarking + conversion and brand principles, renders a labelled wireframe)",
+    inputs_required: ["A live crawl of the homepage; competitors help the benchmarking but are optional"],
+    output: "A senior UX and brand redesign brief for the homepage: a critique of the current page for conversion and brand, a recommended section-by-section layout rendered as a labelled wireframe the client can see, the visual direction (colour, type, imagery, tone), the intended eye-flow and why, and a prioritised redesign action list. Figma-ready in structure.",
+    limits: "The current-state critique is grounded in the real homepage structure that was crawled, and the competitor patterns in their real live pages. It gives the layout, hierarchy and visual direction, not final pixel-perfect visuals; it is the brief and wireframe a designer or the client builds from.",
+    mode: "auto",
+  },
 
   /* ── Known gaps (explicit, never faked) ──────────────────────── */
   site_wide_url_classification: {
