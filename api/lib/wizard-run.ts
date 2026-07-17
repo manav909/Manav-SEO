@@ -443,9 +443,67 @@ export async function runWizardStage(opts: {
         if (qn || pairs) gscNote = `Search Console is connected (${qn} query terms). Question-style and product-finding queries in that set point to on-site search and guided-discovery needs.`;
       } catch { /* GA/GSC optional */ }
 
-      let industry = "";
-      try { const { data: proj } = await db().from("projects").select("industry").eq("id", projectId).maybeSingle(); industry = String((proj as any)?.industry || "").trim(); } catch { /* projects lookup optional */ }
+      let industry = ""; let competitors: string[] = Array.isArray(inputs.competitors) ? inputs.competitors.filter(Boolean) : [];
+      try {
+        const { data: proj } = await db().from("projects").select("industry,competitors,keywords").eq("id", projectId).maybeSingle();
+        industry = String((proj as any)?.industry || "").trim();
+        if (!competitors.length) { const c = (proj as any)?.competitors; if (Array.isArray(c)) competitors = c.filter(Boolean); else if (typeof c === "string") competitors = c.split(/[,\n]/).map((s: string) => s.trim()).filter(Boolean); }
+      } catch { /* projects lookup optional */ }
       if (!industry) industry = business;                 // fall back to the homepage title as the business descriptor
+      competitors = Array.from(new Set(competitors.map((c) => String(c).replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "")))).slice(0, 3);
+
+      /* Client search intent (weights which tool categories matter most). */
+      let keywords: string[] = [];
+      try {
+        const { loadGsc } = await import("./workspace/shared.js");
+        const g: any = await loadGsc(projectId);
+        keywords = [...((g && g.topQueries) || []).map((q: any) => q && (q.query || (Array.isArray(q.keys) ? q.keys[0] : ""))), ...((g && g.queryPagePairs) || []).map((p: any) => p && p.query)].filter(Boolean);
+      } catch { /* optional */ }
+      if (!keywords.length) { const ik = (Array.isArray(inputs.targetKeywords) ? inputs.targetKeywords : (Array.isArray((inputs as any).keywords) ? (inputs as any).keywords : [])); keywords = ik.filter(Boolean); }
+      keywords = Array.from(new Set(keywords)).slice(0, 25);
+
+      /* Competitor martech detection: crawl each competitor's live page and read
+         which real tools they load. This is verifiable evidence of what wins in
+         the space and exactly where the client is behind. */
+      const MARTECH_SIGS: Array<{ name: string; cat: string; re: RegExp }> = [
+        { name: "Klaviyo", cat: "abandoned cart / email", re: /klaviyo/i },
+        { name: "Omnisend", cat: "abandoned cart / email", re: /omnisend/i },
+        { name: "Mailchimp", cat: "abandoned cart / email", re: /mailchimp|list-manage/i },
+        { name: "Privy", cat: "abandoned cart / email", re: /privy\.com|privymktg/i },
+        { name: "Yotpo", cat: "reviews / social proof", re: /yotpo/i },
+        { name: "Judge.me", cat: "reviews / social proof", re: /judge\.me|judgeme/i },
+        { name: "Okendo", cat: "reviews / social proof", re: /okendo/i },
+        { name: "Stamped", cat: "reviews / social proof", re: /stamped\.io/i },
+        { name: "Loox", cat: "reviews / social proof", re: /loox\.io|loox app/i },
+        { name: "Algolia", cat: "on-site search", re: /algolia/i },
+        { name: "Searchspring", cat: "on-site search", re: /searchspring/i },
+        { name: "Klevu", cat: "on-site search", re: /klevu/i },
+        { name: "Doofinder", cat: "on-site search", re: /doofinder/i },
+        { name: "Hotjar", cat: "heatmaps / session recording", re: /hotjar/i },
+        { name: "Microsoft Clarity", cat: "heatmaps / session recording", re: /clarity\.ms/i },
+        { name: "Mouseflow", cat: "heatmaps / session recording", re: /mouseflow/i },
+        { name: "FullStory", cat: "heatmaps / session recording", re: /fullstory/i },
+        { name: "Crazy Egg", cat: "heatmaps / session recording", re: /crazyegg/i },
+        { name: "OptiMonk", cat: "popups / CRO", re: /optimonk/i },
+        { name: "Justuno", cat: "popups / CRO", re: /justuno/i },
+        { name: "Gorgias", cat: "support / chat", re: /gorgias/i },
+        { name: "Tidio", cat: "support / chat", re: /tidio/i },
+        { name: "Intercom", cat: "support / chat", re: /intercom/i },
+        { name: "Meta Pixel", cat: "ads / retargeting", re: /connect\.facebook\.net|fbevents/i },
+        { name: "Google Analytics", cat: "analytics", re: /google-analytics|gtag\/js|googletagmanager/i },
+      ];
+      const compStacks: Array<{ domain: string; tools: Array<{ name: string; cat: string }> }> = [];
+      try {
+        const { fetchHtml, fetchViaReader } = await import("./workspace/shared.js");
+        for (const c of competitors) {
+          const url = "https://" + c;
+          let html = await fetchHtml(url).catch(() => "");
+          if (!html || html.length < 500) { const r: any = await fetchViaReader(url).catch(() => ({ ok: false, html: "" })); if (r.ok && r.html) html = r.html; }
+          if (!html) continue;
+          const found = MARTECH_SIGS.filter((s) => s.re.test(html)).map((s) => ({ name: s.name, cat: s.cat }));
+          if (found.length) compStacks.push({ domain: c, tools: found });
+        }
+      } catch { /* competitor crawl best-effort */ }
 
       const cats = [
         { full: "abandoned cart recovery and email automation", short: "abandoned cart recovery" },
@@ -476,9 +534,11 @@ export async function runWizardStage(opts: {
         const grounding = [
           `Client: ${domain || inputs.siteUrl || "the site"}. Business: ${business || "unknown from title"}. Industry: ${industry || "unknown"}. Platform: ${platform}. Pages crawled: ${pages}.`,
           gscNote || "Google Analytics is not connected; do not rely on GA, build the case from the crawl, Search Console and the live research.",
-          research.length ? "Live SERP research (real tools and real source links per category):\n" + research.map((r) => `- ${r.cat}: tools appearing = ${(r.tools || []).join(", ") || "none captured"}; searcher questions = ${(r.questions || []).join(" | ") || "none"}; general sources = ${(r.sources || []).join(", ") || "none"}; INDUSTRY case-study sources = ${(r.cases || []).join(", ") || "none"}`).join("\n") : "No live research loaded this pass.",
+          keywords.length ? `The client's real search terms (intent signal, use them to weight which tool categories matter most): ${keywords.join(", ")}.` : "",
+          compStacks.length ? "Competitor martech detected on their LIVE sites (verifiable, read from the tools their pages actually load):\n" + compStacks.map((s) => `- ${s.domain}: ${s.tools.map((t) => `${t.name} (${t.cat})`).join(", ")}`).join("\n") : (competitors.length ? "Competitors were checked but no known martech signatures were detected on their pages this pass." : "No competitors on file to compare against."),
+          research.length ? "Live SERP research (real tools and real source links per category):\n" + research.map((r) => `- ${r.cat}: tools appearing = ${(r.tools || []).join(", ") || "none captured"}; searcher questions (PAA) = ${(r.questions || []).join(" | ") || "none"}; general sources = ${(r.sources || []).join(", ") || "none"}; INDUSTRY case-study sources = ${(r.cases || []).join(", ") || "none"}`).join("\n") : "No live research loaded this pass.",
         ].filter(Boolean).join("\n\n");
-        const system = "You are a Senior Digital Marketing Specialist advising a client on which third-party tools to add. Use ONLY the real data provided: the platform and business from the crawl, the live SERP research (real tool names and source links), and Search Console where given. For each relevant category (abandoned cart and email automation, on-site search, heatmaps and session recording, reviews and social proof, and any other the business clearly needs), recommend specific REAL tools that suit THIS platform and business, and for each give: what it fixes on their site, why it fits their platform, and a real, sourced industry example or trend drawn from the research with its source link as the data trace. PREFER the INDUSTRY case-study sources for the examples where they exist, since they are the most relevant and verifiable; fall back to the general sources otherwise. Cover the direct needs and the indirect ones (for example, a failing on-site search quietly killing conversion, or no session recording hiding checkout drop-off). Never invent a tool, a statistic, a case, or a source; if the research did not surface a source for a claim, phrase it as general practice rather than citing a fake link. Google Analytics is optional: note where GA would sharpen the behavioural case, but make every recommendation stand without it. Return well-structured markdown: a short intro tying the tools to this specific site, one section per category with the recommended tool(s), what it fixes, platform fit and the sourced example, then a closing priority order. Never use an em-dash.";
+        const system = "You are a Senior Digital Marketing Specialist advising a client on which third-party tools to add. Use ONLY the real data provided: the platform and business from the crawl, the live SERP research (real tool names and source links), and Search Console where given. For each relevant category (abandoned cart and email automation, on-site search, heatmaps and session recording, reviews and social proof, and any other the business clearly needs), recommend specific REAL tools that suit THIS platform and business, and for each give: what it fixes on their site, why it fits their platform, and a real, sourced industry example or trend drawn from the research with its source link as the data trace. PREFER the INDUSTRY case-study sources for the examples where they exist, since they are the most relevant and verifiable; fall back to the general sources otherwise. Cover the direct needs and the indirect ones (for example, a failing on-site search quietly killing conversion, or no session recording hiding checkout drop-off). Use the COMPETITOR MARTECH as your strongest evidence: where competitors run a tool category the client lacks, say so by name and treat it as a verifiable, high-priority gap (for example, two of your competitors run Klaviyo for cart recovery and you have none). Use the client's real SEARCH TERMS and the PAA questions to weight which categories matter most (product-finding queries and questions raise on-site search and guided discovery). Never invent a tool, a statistic, a case, or a source; if the research did not surface a source for a claim, phrase it as general practice rather than citing a fake link. Google Analytics is optional: note where GA would sharpen the behavioural case, but make every recommendation stand without it. Return well-structured markdown: a short intro tying the tools to this specific site, one section per category with the recommended tool(s), what it fixes, platform fit and the sourced example, then a closing priority order. Never use an em-dash.";
         const user = grounding + "\n\nWrite the tool recommendations now, each grounded in this site and sourced from the research.";
         let body = "";
         for (let attempt = 0; attempt < 2 && !body; attempt++) {
@@ -486,7 +546,7 @@ export async function runWizardStage(opts: {
         }
         if (!body) throw new Error("empty advisory");
         const report_md = `# Tool recommendations for ${domain || "your site"}\n\n${body}`;
-        return result("completed", "martech engine (crawl + live SERP research + Search Console where connected)", { reports: [{ step_key: "martech", report_md }], platform, categories: cats, research, summary: `Tool recommendations for a ${platform} ${business ? "(" + business + ") " : ""}site: abandoned cart and email, on-site search, heatmaps and session recording, reviews, each suited to the platform and backed by live sourced research. Google Analytics optional.` }, `Tool advisory built from the crawl and live SERP research across ${research.length} categories, platform ${platform}. Real tools, sourced trends, no Google Analytics required.`);
+        return result("completed", "martech engine (crawl + live SERP research + Search Console where connected)", { reports: [{ step_key: "martech", report_md }], platform, categories: cats, research, summary: `Tool recommendations for a ${platform} ${business ? "(" + business + ") " : ""}site: abandoned cart and email, on-site search, heatmaps and session recording, reviews, each suited to the platform, cross-referenced against competitor martech and the client search intent, backed by live sourced research. Google Analytics optional.` }, `Tool advisory built from the crawl and live SERP research across ${research.length} categories, platform ${platform}. Real tools, sourced trends, no Google Analytics required.`);
       } catch (e: any) {
         return result("manual", null, null, `Crawl the site so the tool advisory can read the platform and gaps, then re-run. (${e?.message || "error"}.)`);
       }
