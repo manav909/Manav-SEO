@@ -443,25 +443,42 @@ export async function runWizardStage(opts: {
         if (qn || pairs) gscNote = `Search Console is connected (${qn} query terms). Question-style and product-finding queries in that set point to on-site search and guided-discovery needs.`;
       } catch { /* GA/GSC optional */ }
 
-      const cats = ["abandoned cart recovery and email automation", "on-site search", "heatmaps and session recording", "reviews and social proof"];
+      let industry = "";
+      try { const { data: proj } = await db().from("projects").select("industry").eq("id", projectId).maybeSingle(); industry = String((proj as any)?.industry || "").trim(); } catch { /* projects lookup optional */ }
+      if (!industry) industry = business;                 // fall back to the homepage title as the business descriptor
+
+      const cats = [
+        { full: "abandoned cart recovery and email automation", short: "abandoned cart recovery" },
+        { full: "on-site search", short: "site search" },
+        { full: "heatmaps and session recording", short: "heatmaps" },
+        { full: "reviews and social proof", short: "customer reviews" },
+      ];
       const research: any[] = [];
       try {
         const { fetchSerpFeatures } = await import("./serpapi.js");
         for (const cat of cats) {
-          const q = `best ${cat} tools ${platform !== "unknown" ? platform + " " : ""}2026`;
-          const s: any = await fetchSerpFeatures(q, projectId, {}).catch(() => null);
-          if (s) research.push({ cat, tools: (s.top_10_domains || []).slice(0, 8), questions: (s.paa_questions || []).slice(0, 5), sources: (s.top_100_urls || s.top_10_urls || []).slice(0, 6) });
+          const entry: any = { cat: cat.full, tools: [], questions: [], sources: [], cases: [] };
+          const q1 = `best ${cat.full} tools ${platform !== "unknown" ? platform + " " : ""}2026`;
+          const s1: any = await fetchSerpFeatures(q1, projectId, {}).catch(() => null);
+          if (s1) { entry.tools = (s1.top_10_domains || []).slice(0, 8); entry.questions = (s1.paa_questions || []).slice(0, 5); entry.sources = (s1.top_100_urls || s1.top_10_urls || []).slice(0, 6); }
+          /* Second, industry-specific query for REAL case-study evidence and trends. */
+          if (industry) {
+            const q2 = `${industry} ${cat.short} case study results`;
+            const s2: any = await fetchSerpFeatures(q2, projectId, {}).catch(() => null);
+            if (s2) entry.cases = (s2.top_100_urls || s2.top_10_urls || []).slice(0, 6);
+          }
+          if (s1 || entry.cases.length) research.push(entry);
         }
       } catch { /* research best-effort */ }
 
       try {
         const { llmComplete } = await import("./workspace/llm.js");
         const grounding = [
-          `Client: ${domain || inputs.siteUrl || "the site"}. Business: ${business || "unknown from title"}. Platform: ${platform}. Pages crawled: ${pages}.`,
+          `Client: ${domain || inputs.siteUrl || "the site"}. Business: ${business || "unknown from title"}. Industry: ${industry || "unknown"}. Platform: ${platform}. Pages crawled: ${pages}.`,
           gscNote || "Google Analytics is not connected; do not rely on GA, build the case from the crawl, Search Console and the live research.",
-          research.length ? "Live SERP research (real tools and real source links per category):\n" + research.map((r) => `- ${r.cat}: tools appearing = ${(r.tools || []).join(", ") || "none captured"}; searcher questions = ${(r.questions || []).join(" | ") || "none"}; sources = ${(r.sources || []).join(", ") || "none"}`).join("\n") : "No live research loaded this pass.",
+          research.length ? "Live SERP research (real tools and real source links per category):\n" + research.map((r) => `- ${r.cat}: tools appearing = ${(r.tools || []).join(", ") || "none captured"}; searcher questions = ${(r.questions || []).join(" | ") || "none"}; general sources = ${(r.sources || []).join(", ") || "none"}; INDUSTRY case-study sources = ${(r.cases || []).join(", ") || "none"}`).join("\n") : "No live research loaded this pass.",
         ].filter(Boolean).join("\n\n");
-        const system = "You are a Senior Digital Marketing Specialist advising a client on which third-party tools to add. Use ONLY the real data provided: the platform and business from the crawl, the live SERP research (real tool names and source links), and Search Console where given. For each relevant category (abandoned cart and email automation, on-site search, heatmaps and session recording, reviews and social proof, and any other the business clearly needs), recommend specific REAL tools that suit THIS platform and business, and for each give: what it fixes on their site, why it fits their platform, and a real, sourced industry example or trend drawn from the research with its source link as the data trace. Cover the direct needs and the indirect ones (for example, a failing on-site search quietly killing conversion, or no session recording hiding checkout drop-off). Never invent a tool, a statistic, a case, or a source; if the research did not surface a source for a claim, phrase it as general practice rather than citing a fake link. Google Analytics is optional: note where GA would sharpen the behavioural case, but make every recommendation stand without it. Return well-structured markdown: a short intro tying the tools to this specific site, one section per category with the recommended tool(s), what it fixes, platform fit and the sourced example, then a closing priority order. Never use an em-dash.";
+        const system = "You are a Senior Digital Marketing Specialist advising a client on which third-party tools to add. Use ONLY the real data provided: the platform and business from the crawl, the live SERP research (real tool names and source links), and Search Console where given. For each relevant category (abandoned cart and email automation, on-site search, heatmaps and session recording, reviews and social proof, and any other the business clearly needs), recommend specific REAL tools that suit THIS platform and business, and for each give: what it fixes on their site, why it fits their platform, and a real, sourced industry example or trend drawn from the research with its source link as the data trace. PREFER the INDUSTRY case-study sources for the examples where they exist, since they are the most relevant and verifiable; fall back to the general sources otherwise. Cover the direct needs and the indirect ones (for example, a failing on-site search quietly killing conversion, or no session recording hiding checkout drop-off). Never invent a tool, a statistic, a case, or a source; if the research did not surface a source for a claim, phrase it as general practice rather than citing a fake link. Google Analytics is optional: note where GA would sharpen the behavioural case, but make every recommendation stand without it. Return well-structured markdown: a short intro tying the tools to this specific site, one section per category with the recommended tool(s), what it fixes, platform fit and the sourced example, then a closing priority order. Never use an em-dash.";
         const user = grounding + "\n\nWrite the tool recommendations now, each grounded in this site and sourced from the research.";
         let body = "";
         for (let attempt = 0; attempt < 2 && !body; attempt++) {
