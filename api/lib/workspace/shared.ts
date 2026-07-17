@@ -37,13 +37,13 @@ export async function withTimeout<T>(p: Promise<T>, label = "q", ms = 12000): Pr
 /* ─── live HTML fetch with hard kill ───────────────────────────── */
 /* A real browser UA. The old "SEOSeasonBot/1.0" identifier was being blocked or
    challenged by site WAFs (Cloudflare, hosting rules), which returned a 403 page
-   while Googlebot — whitelisted — saw the real page. Crawling as a normal browser
+   while Googlebot, whitelisted, saw the real page. Crawling as a normal browser
    gets the same page Google indexes, so on-page facts match reality. */
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 /* The full header set a real Chrome navigation sends. Many WAFs (Cloudflare
-   managed rules, hosting bot filters) do not block on User-Agent alone — they
+   managed rules, hosting bot filters) do not block on User-Agent alone, they
    check for the complete, self-consistent set of navigation headers. A request
    with only UA + Accept looks automated and gets a 403 challenge; this set
    passes the common header-completeness heuristics. Accept-Encoding is left to
@@ -91,6 +91,27 @@ function titleOf(html: string): string {
   return (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
 }
 
+/* Region proxy for GEO-BLOCKED sites. When a site is visible only in a specific
+   country, set CRAWL_PROXY_TEMPLATE to a proxy or scraping endpoint that fetches
+   from that region, with {url} where the target goes, for example
+   "https://api.scraperapi.com/?api_key=KEY&country_code=us&url={url}". When it is
+   not set this returns empty and nothing changes. This is the reliable fix for a
+   site the reader's region also cannot reach. */
+export async function fetchViaProxy(url: string, ms = 25000): Promise<string> {
+  const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
+  if (!tmpl || !tmpl.includes("{url}")) return "";
+  const proxied = tmpl.replace("{url}", encodeURIComponent(url));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const r = await fetch(proxied, { headers: BROWSER_HEADERS, redirect: "follow", signal: controller.signal });
+    if (!r.ok) return "";
+    const html = (await r.text()) || "";
+    if (looksBlocked(html, titleOf(html))) return "";
+    return html;
+  } catch { return ""; } finally { clearTimeout(timer); }
+}
+
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
@@ -99,17 +120,19 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
       headers: BROWSER_HEADERS,
       redirect: "follow", signal: controller.signal,
     });
-    /* never return a 4xx/5xx body so no caller parses an error or challenge page */
-    if (!r.ok) return "";
+    /* never return a 4xx/5xx body so no caller parses an error or challenge page.
+       If the origin is blocked (often geo-blocking), try the region proxy. */
+    if (!r.ok) return await fetchViaProxy(url);
     const html = (await r.text()) || "";
-    /* a 200 can still be a WAF interstitial — never hand that to a parser */
-    if (looksBlocked(html, titleOf(html))) return "";
+    /* a 200 can still be a WAF interstitial or a geo-block page, never hand that
+       to a parser; recover through the region proxy if one is configured. */
+    if (looksBlocked(html, titleOf(html))) return await fetchViaProxy(url);
     return html;
-  } catch { return ""; } finally { clearTimeout(timer); }
+  } catch { const p = await fetchViaProxy(url); return p; } finally { clearTimeout(timer); }
 }
 
 /* When a site WAF blocks our datacenter origin (a 401/403/429/5xx on a page that
-   real browsers and Googlebot load fine — confirmed by fetching the same URL from
+   real browsers and Googlebot load fine, confirmed by fetching the same URL from
    other infrastructure), retry through a reader proxy that fetches from its own
    IPs and returns the rendered HTML. This recovers pages that are healthy but
    simply refuse our crawler's origin, without ever fabricating: if the reader
@@ -125,7 +148,7 @@ export async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boo
     const r = await fetch("https://r.jina.ai/" + url, { headers, redirect: "follow", signal: controller.signal });
     if (!r.ok) return { ok: false, html: "" };
     const html = (await r.text()) || "";
-    /* the reader can itself hit a challenge or return an error shell — never
+    /* the reader can itself hit a challenge or return an error shell, never
        accept one, or we recover garbage in place of an honest blocked result */
     if (html.length < 200 || looksBlocked(html, titleOf(html))) return { ok: false, html: "" };
     return { ok: true, html };
@@ -134,7 +157,7 @@ export async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boo
 
 /* Status-aware fetch. Returns the body ONLY on a genuine 2xx response, plus the
    HTTP status, final URL, and any X-Robots-Tag header. This is what lets callers
-   tell a real page from a 403/challenge/error body — the distinction the audit
+   tell a real page from a 403/challenge/error body, the distinction the audit
    crawler previously lacked, which is why it reported a WAF block page's title,
    word count and robots meta as if they were the target page's. */
 export async function fetchPageRaw(url: string, ms = 12000): Promise<{
@@ -151,7 +174,7 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
     let ok = status >= 200 && status < 300;
     const xRobotsTag = r.headers.get("x-robots-tag") || "";
     const finalUrl = (r as any).url || url;
-    /* never read a 4xx/5xx body as page content — it is an error or challenge page */
+    /* never read a 4xx/5xx body as page content, it is an error or challenge page */
     let html = ok ? ((await r.text()) || "") : "";
     /* 401/403/429/5xx = access blocked or challenged, not a missing or noindex page */
     let blocked = status === 401 || status === 403 || status === 429 || status >= 500;
@@ -159,7 +182,7 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
        200). Detect it and treat as blocked, so its title / 7 words / noindex meta
        are never reported as the real page's facts. */
     if (ok && looksBlocked(html, titleOf(html))) { ok = false; blocked = true; html = ""; }
-    /* WAF blocked our origin — recover the real page via the reader proxy. Only on
+    /* WAF blocked our origin, recover the real page via the reader proxy. Only on
        blocked (never on a genuine 404), so a missing page stays missing. */
     if (blocked) {
       const reader = await fetchViaReader(url);
@@ -174,14 +197,14 @@ export async function fetchPageRaw(url: string, ms = 12000): Promise<{
 /** Fetch a URL and return verified on-page facts (status, indexability, title,
     h1, meta, word count, schema). Used for both target and competitor pages.
     On a non-2xx (blocked/challenged/error), returns loaded:false with the real
-    status and NO parsed facts — it never treats an error page's body as content. */
+    status and NO parsed facts, it never treats an error page's body as content. */
 export async function fetchPageFacts(url: string): Promise<{
   url: string; loaded: boolean; status_ok: boolean; status: number; blocked: boolean;
   title: string; title_len: number; h1: string; meta: string;
   word_count: number; noindex: boolean; canonical: string; schema: boolean;
 }> {
   const { ok, status, html, blocked, xRobotsTag } = await fetchPageRaw(url);
-  /* fetch failed / blocked / challenged — report it honestly. NEVER parse the
+  /* fetch failed / blocked / challenged, report it honestly. NEVER parse the
      error body for title/word-count/robots. Parsing a 403 block page is exactly
      what produced the bogus "403 + noindex + 11 words" reading on every page
      while Googlebot saw the real, indexed page. */
@@ -196,7 +219,7 @@ export async function fetchPageFacts(url: string): Promise<{
   const title = (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
   const h1 = (html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1]?.replace(/<[^>]+>/g, "").trim() || "";
   /* Order-independent: match the tag by its identifying attribute, then read the
-     value — so a Webflow/Magento tag with content= before name= (or href= before
+     value, so a Webflow/Magento tag with content= before name= (or href= before
      rel=) is not falsely reported as missing. This is the same fix applied in the
      site crawler after it produced bogus "missing meta/canonical sitewide". */
   let meta = "";
@@ -235,7 +258,7 @@ export interface GscData {
   topPages: any[];
   topQueries: any[];
   queryPagePairs: any[];   // {query, page, clicks, impressions, ctr, position}
-  /* Build 12.16 — GEO / AI surface attribution */
+  /* Build 12.16, GEO / AI surface attribution */
   aiOverviewSummary: any | null;     // { present, total_impressions, total_clicks, breakdown, ... } or null
   searchAppearance: any[];           // full searchAppearance breakdown (aiOverview, featuredSnippet, richResult, ...)
   discoverSummary: any | null;       // { clicks, impressions, window_days, ... } or null
@@ -293,7 +316,7 @@ export async function loadGsc(projectId: string): Promise<GscData> {
     forecasts in the site's actual behaviour instead of generic benchmarks. */
 export function siteCtrCurve(pairs: any[]): Record<number, { ctr: number; samples: number; impressions: number }> {
   // Impression-WEIGHTED CTR per position bucket: sum(clicks)/sum(impressions).
-  // A naive median is broken here — the long tail of 1-2 impression, 0-click
+  // A naive median is broken here, the long tail of 1-2 impression, 0-click
   // pairs drags the median to 0% even at position 1, which is nonsense and
   // poisons every forecast. Weighting by impressions gives the true CTR the
   // site actually earns at each position.
@@ -338,7 +361,7 @@ export async function resolveTargetUrls(campaignId: string | undefined, projectI
   const { topPages } = await loadGsc(projectId);
   const gscUrls = topPages.slice(0, 30).map((p: any) => p.page || p.url).filter(Boolean);
   if (gscUrls.length) return { urls: gscUrls, source: "GSC top pages" };
-  // 4. the project's own site URL (homepage) — lets a prospect project with no
+  // 4. the project's own site URL (homepage), lets a prospect project with no
   //    campaign and no GSC still be analysed against the real site the operator
   //    provided, instead of failing with "no target pages".
   try {
