@@ -127,7 +127,20 @@ async function waybackGet(url: string, ms: number): Promise<string> {
 /* per-domain memo: the winning strategy, or null once every route has failed */
 const PROXY_STRATEGY = new Map<string, ((u: string) => Promise<string>) | null>();
 
-export async function fetchViaProxy(url: string, ms = 8000): Promise<string> {
+/* Unreachable-domain memo. When a site cannot be reached by ANY route (raw,
+   region proxy, free proxies, archive, or the reader), every later fetch to that
+   domain would otherwise burn its full timeout and blow the function budget, the
+   cause of the 300s FUNCTION_INVOCATION_TIMEOUT on a geo-blocked crawl. After a
+   couple of full misses the domain is marked dead and all fetches to it return
+   immediately, so the crawl finishes fast and honestly instead of timing out. */
+const DOMAIN_MISS = new Map<string, number>();
+const DEAD_AFTER = 4;                                   // ~2 URLs (raw+reader each) before giving up
+function domainKey(url: string): string { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } }
+function isDead(url: string): boolean { const d = domainKey(url); return !!d && (DOMAIN_MISS.get(d) || 0) >= DEAD_AFTER; }
+function noteMiss(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, (DOMAIN_MISS.get(d) || 0) + 1); }
+function noteReach(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, 0); }
+
+export async function fetchViaProxy(url: string, ms = 6000): Promise<string> {
   let domain = ""; try { domain = new URL(url).hostname; } catch { return ""; }
   if (PROXY_STRATEGY.has(domain)) {
     const s = PROXY_STRATEGY.get(domain);
@@ -152,7 +165,8 @@ export async function fetchViaProxy(url: string, ms = 8000): Promise<string> {
   }
 }
 
-export async function fetchHtml(url: string, ms = 12000): Promise<string> {
+export async function fetchHtml(url: string, ms = 10000): Promise<string> {
+  if (isDead(url)) return "";                           // unreachable this crawl -> instant, no timeout burn
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -161,14 +175,14 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
       redirect: "follow", signal: controller.signal,
     });
     /* never return a 4xx/5xx body so no caller parses an error or challenge page.
-       If the origin is blocked (often geo-blocking), try the region proxy. */
-    if (!r.ok) return await fetchViaProxy(url);
+       If the origin is blocked (often geo-blocking), try the region/proxy chain. */
+    if (!r.ok) { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; }
     const html = (await r.text()) || "";
     /* a 200 can still be a WAF interstitial or a geo-block page, never hand that
-       to a parser; recover through the region proxy if one is configured. */
-    if (looksBlocked(html, titleOf(html))) return await fetchViaProxy(url);
-    return html;
-  } catch { const p = await fetchViaProxy(url); return p; } finally { clearTimeout(timer); }
+       to a parser; recover through the proxy chain if a route reaches it. */
+    if (looksBlocked(html, titleOf(html))) { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; }
+    noteReach(url); return html;
+  } catch { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; } finally { clearTimeout(timer); }
 }
 
 /* When a site WAF blocks our datacenter origin (a 401/403/429/5xx on a page that
@@ -178,21 +192,22 @@ export async function fetchHtml(url: string, ms = 12000): Promise<string> {
    simply refuse our crawler's origin, without ever fabricating: if the reader
    also fails, the caller keeps the honest blocked result. Set JINA_API_KEY for
    higher throughput and reliability on multi-page crawls. */
-export async function fetchViaReader(url: string, ms = 25000): Promise<{ ok: boolean; html: string }> {
+export async function fetchViaReader(url: string, ms = 12000): Promise<{ ok: boolean; html: string }> {
+  if (isDead(url)) return { ok: false, html: "" };      // unreachable this crawl -> instant
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const headers: Record<string, string> = { ...BROWSER_HEADERS, "X-Return-Format": "html", "X-Timeout": "20" };
+    const headers: Record<string, string> = { ...BROWSER_HEADERS, "X-Return-Format": "html", "X-Timeout": "10" };
     const key = process.env.JINA_API_KEY || process.env.JINA_KEY || "";
     if (key) headers["Authorization"] = "Bearer " + key;
     const r = await fetch("https://r.jina.ai/" + url, { headers, redirect: "follow", signal: controller.signal });
-    if (!r.ok) return { ok: false, html: "" };
+    if (!r.ok) { noteMiss(url); return { ok: false, html: "" }; }
     const html = (await r.text()) || "";
     /* the reader can itself hit a challenge or return an error shell, never
        accept one, or we recover garbage in place of an honest blocked result */
-    if (html.length < 200 || looksBlocked(html, titleOf(html))) return { ok: false, html: "" };
-    return { ok: true, html };
-  } catch { return { ok: false, html: "" }; } finally { clearTimeout(timer); }
+    if (html.length < 200 || looksBlocked(html, titleOf(html))) { noteMiss(url); return { ok: false, html: "" }; }
+    noteReach(url); return { ok: true, html };
+  } catch { noteMiss(url); return { ok: false, html: "" }; } finally { clearTimeout(timer); }
 }
 
 /* Status-aware fetch. Returns the body ONLY on a genuine 2xx response, plus the
