@@ -123,6 +123,13 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
     let validIds: string[] = (Array.isArray(d?.capability_ids) ? d.capability_ids : [])
       .map((x: any) => String(x))
       .filter((id: string) => Boolean(getCapability(id)));
+    /* This operator never has Semrush. Drop Semrush-only capabilities so no stage
+       blocks on a key that will never exist; the SERP/crawl engines cover the same
+       ground. A competitor stage left with nothing falls back to the SERP/crawl
+       benchmark, and other Semrush deliverables degrade to their honest fallback. */
+    const hadSemrush = validIds.includes("semrush_intelligence");
+    validIds = validIds.filter((id) => id !== "semrush_intelligence");
+    if (hadSemrush && !validIds.length && getCapability("competitor_benchmark")) validIds = ["competitor_benchmark"];
     /* Ranking-drop / lost-rankings analysis is a Search Console job, not a Semrush
        one: GSC holds the position and click history, and the platform has the
        update timeline and the indexation diagnosis. Route these deliverables to

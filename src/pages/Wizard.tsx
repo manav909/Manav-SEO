@@ -100,6 +100,7 @@ export default function Wizard() {
   const [gscConnected, setGscConnected] = useState(false);
   const [gscHasData, setGscHasData]     = useState(false);
   const [gscResource, setGscResource]   = useState("");
+  const [gscLastPull, setGscLastPull]   = useState("");
   const [gscPulling, setGscPulling]     = useState<string>("");
   const [crawling, setCrawling] = useState(false);
   const [autoCrawl, setAutoCrawl] = useState(false);
@@ -180,6 +181,7 @@ export default function Wizard() {
         if (cancelled) return;
         setGscConnected(!!r?.connected);
         setGscHasData(!!(r?.lastPullAt));
+        setGscLastPull(r?.lastPullAt || "");
         setGscResource(r?.resourceId || r?.resourceLabel || "");
       } catch {
         if (!cancelled) { setGscConnected(false); setGscHasData(false); setGscResource(""); }
@@ -874,7 +876,7 @@ export default function Wizard() {
                     {/* Connected — status, one pull for every GSC stage, and a reconnect path so you are never locked out of changing the property */}
                     {showManage && (
                       <div className="mt-3 pt-3 border-t border-border">
-                        <p className="text-xs text-muted-foreground mb-2">Search Console is connected for this project{gscResource ? ` (${gscResource})` : ""}. {gscHasData ? "The data is loaded and powers every Search Console stage." : "Pull the data once — it powers this and every other Search Console stage."}</p>
+                        <p className="text-xs text-muted-foreground mb-2">Search Console is connected for the active project ({projectName || "this project"}){gscResource ? `, property ${gscResource}` : ""}. {gscHasData ? `Data last pulled ${gscLastPull ? new Date(gscLastPull).toLocaleString() : "recently"}, and it powers every Search Console stage. If that property or date is not this client, switch to the client's project or pull again.` : "Pull the data once, it powers this and every other Search Console stage."}</p>
                         <div className="flex flex-wrap items-center gap-2">
                           {!gscHasData && (
                             <button onClick={() => pullGsc(s)} disabled={!!gscPulling}
