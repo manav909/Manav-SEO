@@ -91,15 +91,14 @@ function titleOf(html: string): string {
   return (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
 }
 
-/* Region / block bypass for GEO-BLOCKED sites. Tries several routes in order and
-   returns the first that actually reaches the page, so a site blocked in this
-   country is still crawlable with NO setup required:
+/* Region / block bypass for GEO-BLOCKED sites. The routes are RACED in parallel
+   with a short timeout, and the outcome is cached per domain, so a crawl never
+   stalls: the first route to return a real page wins, and once a domain is known
+   to work through one route (or to work through none) every later fetch uses that
+   answer instead of retrying the whole list. Routes:
      1. an operator-configured region proxy (CRAWL_PROXY_TEMPLATE with {url}) if set
-        (best: you pick the exact country), e.g.
-        "https://api.scraperapi.com/?api_key=KEY&country_code=us&url={url}"
      2. free public fetch proxies that egress from other regions
-     3. the Wayback Machine, which serves a real archived copy of the page from
-        anywhere (content may be slightly older; it is genuine, never fabricated)
+     3. the Wayback Machine, a real archived copy reachable from any region
    Returns empty only if every route fails, so callers keep their honest result. */
 async function proxyGet(u: string, ms: number): Promise<string> {
   const controller = new AbortController();
@@ -113,35 +112,44 @@ async function proxyGet(u: string, ms: number): Promise<string> {
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
-export async function fetchViaProxy(url: string, ms = 25000): Promise<string> {
-  const routes: Array<() => Promise<string>> = [];
+async function waybackGet(url: string, ms: number): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    const av = await fetch("https://archive.org/wayback/available?url=" + encodeURIComponent(url), { signal: controller.signal });
+    const j: any = await av.json().catch(() => null);
+    const snap: string = j?.archived_snapshots?.closest?.url || "";
+    if (!snap) return "";
+    return await proxyGet(snap.replace(/\/web\/(\d+)\//, "/web/$1id_/"), ms);
+  } catch { return ""; } finally { clearTimeout(timer); }
+}
 
-  const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
-  if (tmpl && tmpl.includes("{url}")) routes.push(() => proxyGet(tmpl.replace("{url}", encodeURIComponent(url)), ms));
+/* per-domain memo: the winning strategy, or null once every route has failed */
+const PROXY_STRATEGY = new Map<string, ((u: string) => Promise<string>) | null>();
 
-  routes.push(() => proxyGet("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), ms));
-  routes.push(() => proxyGet("https://corsproxy.io/?url=" + encodeURIComponent(url), ms));
-  routes.push(() => proxyGet("https://thingproxy.freeboard.io/fetch/" + url, ms));
-
-  /* Wayback Machine: a real archived copy, reachable from any region. The "id_"
-     variant returns the raw archived page without the archive toolbar. */
-  routes.push(async () => {
-    try {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), ms);
-      const av = await fetch("https://archive.org/wayback/available?url=" + encodeURIComponent(url), { signal: controller.signal }).finally(() => clearTimeout(t));
-      const j: any = await av.json().catch(() => null);
-      const snap: string = j?.archived_snapshots?.closest?.url || "";
-      if (snap) return await proxyGet(snap.replace(/\/web\/(\d+)\//, "/web/$1id_/"), ms);
-    } catch { /* archive miss */ }
-    return "";
-  });
-
-  for (const route of routes) {
-    const html = await route().catch(() => "");
-    if (html && html.length > 200) return html;
+export async function fetchViaProxy(url: string, ms = 8000): Promise<string> {
+  let domain = ""; try { domain = new URL(url).hostname; } catch { return ""; }
+  if (PROXY_STRATEGY.has(domain)) {
+    const s = PROXY_STRATEGY.get(domain);
+    return s ? await s(url).catch(() => "") : "";        // known good route, or known-dead -> skip fast
   }
-  return "";
+  const strategies: Array<(u: string) => Promise<string>> = [];
+  const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
+  if (tmpl && tmpl.includes("{url}")) strategies.push((u) => proxyGet(tmpl.replace("{url}", encodeURIComponent(u)), ms));
+  strategies.push((u) => proxyGet("https://api.allorigins.win/raw?url=" + encodeURIComponent(u), ms));
+  strategies.push((u) => proxyGet("https://corsproxy.io/?url=" + encodeURIComponent(u), ms));
+  strategies.push((u) => proxyGet("https://thingproxy.freeboard.io/fetch/" + u, ms));
+  strategies.push((u) => waybackGet(u, ms));
+
+  const raced = strategies.map((s) => s(url).then((h) => (h && h.length > 200) ? { s, h } : Promise.reject(new Error("miss"))));
+  try {
+    const winner = await Promise.any(raced);
+    PROXY_STRATEGY.set(domain, winner.s);              // reuse this route for the rest of the crawl
+    return winner.h;
+  } catch {
+    PROXY_STRATEGY.set(domain, null);                  // nothing reaches it -> skip the chain from now on
+    return "";
+  }
 }
 
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
