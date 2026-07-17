@@ -124,6 +124,32 @@ async function waybackGet(url: string, ms: number): Promise<string> {
   } catch { return ""; } finally { clearTimeout(timer); }
 }
 
+/* When a site is geo-blocked and its sitemap cannot be reached, ask the Wayback
+   Machine's CDX index which pages of the domain it has archived. This yields the
+   site's real page list from the archive (reachable from any region), which the
+   caller then fetches through the same routes. Content served this way is genuine
+   archived HTML, never fabricated; it can be slightly older than the live site. */
+export async function fetchWaybackUrls(rootUrl: string, cap = 500): Promise<string[]> {
+  let domain = ""; try { domain = new URL(rootUrl.startsWith("http") ? rootUrl : "https://" + rootUrl).hostname.replace(/^www\./, ""); } catch { return []; }
+  if (!domain) return [];
+  const api = `https://web.archive.org/cdx/search/cdx?url=${encodeURIComponent(domain)}/*&output=json&fl=original&collapse=urlkey&filter=statuscode:200&limit=${cap}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const r = await fetch(api, { signal: controller.signal });
+    if (!r.ok) return [];
+    const rows: any = await r.json().catch(() => null);
+    if (!Array.isArray(rows) || rows.length < 2) return [];
+    const out = new Set<string>();
+    for (const row of rows.slice(1)) {                  // row 0 is the header
+      const u = Array.isArray(row) ? row[0] : row;
+      if (typeof u !== "string") continue;
+      try { const url = new URL(u); if (url.hostname.replace(/^www\./, "") === domain) out.add(url.toString().split("#")[0]); } catch { /* skip */ }
+    }
+    return Array.from(out);
+  } catch { return []; } finally { clearTimeout(timer); }
+}
+
 /* per-domain memo: the winning strategy, or null once every route has failed */
 const PROXY_STRATEGY = new Map<string, ((u: string) => Promise<string>) | null>();
 
@@ -140,8 +166,8 @@ function isDead(url: string): boolean { const d = domainKey(url); return !!d && 
 function noteMiss(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, (DOMAIN_MISS.get(d) || 0) + 1); }
 function noteReach(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, 0); }
 
-export async function fetchViaProxy(url: string, ms = 6000): Promise<string> {
-  let domain = ""; try { domain = new URL(url).hostname; } catch { return ""; }
+export async function fetchViaProxy(url: string, ms = 12000): Promise<string> {
+  const domain = domainKey(url); if (!domain) return "";
   if (PROXY_STRATEGY.has(domain)) {
     const s = PROXY_STRATEGY.get(domain);
     return s ? await s(url).catch(() => "") : "";        // known good route, or known-dead -> skip fast
@@ -167,6 +193,10 @@ export async function fetchViaProxy(url: string, ms = 6000): Promise<string> {
 
 export async function fetchHtml(url: string, ms = 10000): Promise<string> {
   if (isDead(url)) return "";                           // unreachable this crawl -> instant, no timeout burn
+  /* If a proxy route is already the known way in for this domain (the raw origin
+     is blocked here), skip the raw fetch entirely and use it, so we do not waste
+     10s per page failing the raw request first. */
+  if (PROXY_STRATEGY.get(domainKey(url))) { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
