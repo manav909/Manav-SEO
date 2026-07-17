@@ -91,25 +91,57 @@ function titleOf(html: string): string {
   return (html.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1]?.trim() || "";
 }
 
-/* Region proxy for GEO-BLOCKED sites. When a site is visible only in a specific
-   country, set CRAWL_PROXY_TEMPLATE to a proxy or scraping endpoint that fetches
-   from that region, with {url} where the target goes, for example
-   "https://api.scraperapi.com/?api_key=KEY&country_code=us&url={url}". When it is
-   not set this returns empty and nothing changes. This is the reliable fix for a
-   site the reader's region also cannot reach. */
-export async function fetchViaProxy(url: string, ms = 25000): Promise<string> {
-  const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
-  if (!tmpl || !tmpl.includes("{url}")) return "";
-  const proxied = tmpl.replace("{url}", encodeURIComponent(url));
+/* Region / block bypass for GEO-BLOCKED sites. Tries several routes in order and
+   returns the first that actually reaches the page, so a site blocked in this
+   country is still crawlable with NO setup required:
+     1. an operator-configured region proxy (CRAWL_PROXY_TEMPLATE with {url}) if set
+        (best: you pick the exact country), e.g.
+        "https://api.scraperapi.com/?api_key=KEY&country_code=us&url={url}"
+     2. free public fetch proxies that egress from other regions
+     3. the Wayback Machine, which serves a real archived copy of the page from
+        anywhere (content may be slightly older; it is genuine, never fabricated)
+   Returns empty only if every route fails, so callers keep their honest result. */
+async function proxyGet(u: string, ms: number): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
-    const r = await fetch(proxied, { headers: BROWSER_HEADERS, redirect: "follow", signal: controller.signal });
+    const r = await fetch(u, { headers: BROWSER_HEADERS, redirect: "follow", signal: controller.signal });
     if (!r.ok) return "";
     const html = (await r.text()) || "";
     if (looksBlocked(html, titleOf(html))) return "";
     return html;
   } catch { return ""; } finally { clearTimeout(timer); }
+}
+
+export async function fetchViaProxy(url: string, ms = 25000): Promise<string> {
+  const routes: Array<() => Promise<string>> = [];
+
+  const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
+  if (tmpl && tmpl.includes("{url}")) routes.push(() => proxyGet(tmpl.replace("{url}", encodeURIComponent(url)), ms));
+
+  routes.push(() => proxyGet("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), ms));
+  routes.push(() => proxyGet("https://corsproxy.io/?url=" + encodeURIComponent(url), ms));
+  routes.push(() => proxyGet("https://thingproxy.freeboard.io/fetch/" + url, ms));
+
+  /* Wayback Machine: a real archived copy, reachable from any region. The "id_"
+     variant returns the raw archived page without the archive toolbar. */
+  routes.push(async () => {
+    try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), ms);
+      const av = await fetch("https://archive.org/wayback/available?url=" + encodeURIComponent(url), { signal: controller.signal }).finally(() => clearTimeout(t));
+      const j: any = await av.json().catch(() => null);
+      const snap: string = j?.archived_snapshots?.closest?.url || "";
+      if (snap) return await proxyGet(snap.replace(/\/web\/(\d+)\//, "/web/$1id_/"), ms);
+    } catch { /* archive miss */ }
+    return "";
+  });
+
+  for (const route of routes) {
+    const html = await route().catch(() => "");
+    if (html && html.length > 200) return html;
+  }
+  return "";
 }
 
 export async function fetchHtml(url: string, ms = 12000): Promise<string> {
