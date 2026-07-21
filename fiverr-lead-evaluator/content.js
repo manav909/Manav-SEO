@@ -124,6 +124,20 @@
   let syncedAt = 0, lastEvalLen = 0, lastEvalAt = 0, watching = false, autosaveTimer = null, suggestedTools = [], evalCached = false, evalErr = "", chatObs = null, boundHandle = "";
   let view = "chat", inbox = [], inboxMsg = "";
 
+  // The extension context is invalidated when the extension reloads or updates
+  // while this content script is still live on the page. After that every chrome.*
+  // call throws ("Extension context invalidated" / reading 'sendMessage' of
+  // undefined). alive() detects it; teardown() stops every timer and observer so
+  // the page is never spammed with errors once the context is gone.
+  function alive() { try { return !!(chrome && chrome.runtime && chrome.runtime.id); } catch (e) { return false; } }
+  let ssTimers = [], ssObservers = [];
+  function teardown() {
+    ssTimers.forEach((t) => { try { clearInterval(t); } catch (e) { /* ignore */ } try { clearTimeout(t); } catch (e) { /* ignore */ } });
+    ssTimers = [];
+    ssObservers.forEach((o) => { try { o.disconnect(); } catch (e) { /* ignore */ } });
+    ssObservers = [];
+  }
+
   // Every backend call goes through here so a loading state can NEVER hang forever.
   // In Manifest V3 the background service worker can be killed mid-request, or its fetch
   // can stall, in which case the sendMessage callback never fires and the spinner stays
@@ -134,6 +148,7 @@
     let done = false, timer = null;
     const finish = (resp) => { if (done) return; done = true; if (timer) clearTimeout(timer); try { cb(resp); } catch (e) { /* ignore */ } };
     timer = setTimeout(() => finish({ ok: false, timedOut: true, error: "This took too long. Tap to try again." }), timeoutMs || 160000);
+    if (!alive()) { finish({ ok: false, error: "The extension was reloaded. Refresh this Fiverr tab to reconnect." }); teardown(); return; }
     try {
       chrome.runtime.sendMessage({ type: "callEngine", action: action, body: body || {} }, (resp) => {
         const le = chrome.runtime.lastError; // read it so Chrome does not log an unchecked-error warning
@@ -695,10 +710,11 @@
   function watchChat() {
     try {
       if (chatObs) chatObs.disconnect(); // re-point the observer at the CURRENT conversation — it is a different DOM node after a client switch
-      chatObs = new MutationObserver(() => { clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => { autosave(); maybeAutoEval(); }, 3000); });
+      chatObs = new MutationObserver(() => { if (!alive()) { teardown(); return; } clearTimeout(autosaveTimer); autosaveTimer = setTimeout(() => { autosave(); maybeAutoEval(); }, 3000); });
       chatObs.observe(convEl(), { childList: true, subtree: true, characterData: true });
+      ssObservers.push(chatObs);
     } catch (e) { /* ignore */ }
-    if (!watching) { watching = true; setInterval(() => { autosave(); maybeAutoEval(); }, 25000); } // single backup timer for virtualized lists the observer can miss
+    if (!watching) { watching = true; const wid = setInterval(() => { if (!alive()) { teardown(); return; } autosave(); maybeAutoEval(); }, 25000); ssTimers.push(wid); } // single backup timer for virtualized lists the observer can miss
     renderSync();
   }
 
@@ -713,11 +729,13 @@
 
   function watchRoute() {
     boundHandle = clientHandle();
-    setInterval(() => {
+    const rid = setInterval(() => {
+      if (!alive()) { teardown(); return; }
       const h = clientHandle();
       if (h && h !== boundHandle) { boundHandle = h; if (open) rebindToClient(); } // live re-bind on lead switch — no reload, shows the cached verdict instantly then refreshes in the background
       else if (!h && boundHandle) { boundHandle = ""; }
     }, 800);
+    ssTimers.push(rid);
   }
   function mapTool(s) {
     s = String(s || "").toLowerCase();
