@@ -131,21 +131,29 @@ export function classifyTab(tabName: string, headers: string[]): string {
 /* Find the column that holds the page, and the column that holds the value the
    executive says they implemented. Workbooks are never uniform, so this reads the
    headers and falls back to reading the data itself. */
-export function detectColumns(rows: any[]): { urlKey: string; valueKey: string; itemKey: string } {
+export function detectColumns(rows: any[]): { urlKey: string; valueKey: string; itemKey: string; refKey: string } {
   const keys = rows.length ? Object.keys(rows[0]) : [];
   const find = (re: RegExp) => keys.find((k) => re.test(norm(k))) || "";
   let urlKey = find(/^url$|page url|landing page|\burl\b|\bpage\b|link|address|slug/);
   if (!urlKey) {
+    /* Distinct URLs, not raw count: a repeated reference link must not outrank
+       the real page list simply because its column is fuller. */
+    let best = ""; let bestScore = 0;
     for (const k of keys) {
-      const hit = rows.slice(0, 8).filter((r) => /^https?:\/\/|^www\.|\.[a-z]{2,}\//i.test(String(r[k] || ""))).length;
-      if (hit >= 2) { urlKey = k; break; }
+      const vals = rows.map((r) => String(r[k] || "").trim()).filter((v) => /^https?:\/\/|^www\./i.test(v));
+      const distinct = new Set(vals.map((v) => v.toLowerCase())).size;
+      if (distinct > bestScore) { bestScore = distinct; best = k; }
     }
+    if (bestScore >= 2) urlKey = best;
   }
   const valueKey =
     find(/new (title|meta|value|content|h1)|updated|implemented|optimi[sz]ed|revised|final|after/) ||
     find(/^title$|^meta|description|^h1$|value|content|anchor|text/) || "";
   const itemKey = find(/task|item|activity|work|deliverable|type|description of work/) || "";
-  return { urlKey, valueKey, itemKey };
+  /* The sheet's own identifier column, so a finding can name the row the way the
+     executive sees it rather than by position alone. */
+  const refKey = keys.find((k) => /^#$|^s\.?no\.?$|^sr\.?$|^id$|^row$|serial/i.test(norm(k))) || "";
+  return { urlKey, valueKey, itemKey, refKey };
 }
 
 /* The keywords a specific row should be judged against: one named in the row
@@ -300,6 +308,8 @@ export async function qaCreateReview(opts: {
 
 export async function qaCheckTab(opts: {
   reviewId: string; tabIndex: number; rowOffset?: number; rows: any[]; totalRows?: number;
+  columns?: { urlKey?: string; valueKey?: string; itemKey?: string; refKey?: string };
+  headerRows?: number;
 }) {
   const reviewId = String(opts.reviewId || "").trim();
   const tabIndex = Number(opts.tabIndex) || 0;
@@ -347,7 +357,30 @@ export async function qaCheckTab(opts: {
   }
 
   const slice = rows.slice(0, ROWS_PER_SLOT);
-  const { urlKey, valueKey, itemKey } = detectColumns(slice);
+  /* The column mapping is decided ONCE for the whole tab and passed in, never
+     re-derived per batch. Deriving it per batch let the value based fallback lock
+     onto a different column in different batches, which is how a row could be
+     checked against a URL that belongs somewhere else. */
+  const fixed = opts.columns || {};
+  const derived = detectColumns(slice);
+  const urlKey = String(fixed.urlKey || derived.urlKey || "");
+  const valueKey = String(fixed.valueKey || derived.valueKey || "");
+  const itemKey = String(fixed.itemKey || derived.itemKey || "");
+  const refKey = String(fixed.refKey || "");
+  const headerRows = Number(opts.headerRows) || 1;
+
+  /* The crawl is corroboration. If the whole site has been crawled and a claimed
+     URL is not among the pages that exist, that is a fact about the URL, not a
+     missing element on a page, and it must never be reported as unfinished work. */
+  const crawled = new Set<string>();
+  try {
+    const { data: jobs } = await db().from("crawl_jobs").select("results").eq("project_id", review.project_id).order("updated_at", { ascending: false }).limit(1);
+    const job: any = Array.isArray(jobs) ? jobs[0] : null;
+    for (const p of (Array.isArray(job?.results) ? job.results : [])) {
+      const u = String(p.url || "").replace(/\/$/, "").toLowerCase();
+      if (u) crawled.add(u);
+    }
+  } catch { /* corroboration only */ }
   const findings: any[] = [];
 
   for (let i = 0; i < slice.length; i++) {
@@ -355,7 +388,35 @@ export async function qaCheckTab(opts: {
     const rowIndex = offset + i;
     const url = String(urlKey ? r[urlKey] || "" : "").trim();
     const expected = String(valueKey ? r[valueKey] || "" : "").trim();
-    const item = String(itemKey ? r[itemKey] || "" : "").trim() || `${tab.tab_name} row ${rowIndex + 1}`;
+    const rowRef = String(refKey ? r[refKey] || "" : "").trim();
+    const sheetRow = rowIndex + 1 + headerRows;                 // the row number as seen in the sheet
+    const item = String(itemKey ? r[itemKey] || "" : "").trim() || `${tab.tab_name} sheet row ${sheetRow}${rowRef ? ` (ref ${rowRef})` : ""}`;
+
+    /* A row with no URL is not a failure, it is a row that cannot be checked. */
+    if (!url) {
+      findings.push({
+        review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
+        sheet_row: sheetRow, row_ref: rowRef || null, source_column: urlKey || null,
+        item, check_type: tab.tab_type, url: "", expected, observed: "",
+        status: "unverifiable", severity: "low", mistake_category: null, agenda_ref: agendaRef || null, round,
+        remark: `No page URL in this row${urlKey ? ` (column "${urlKey}" is empty)` : " and no URL column was found in this tab"}, so there is nothing to check it against.`,
+        resolved_round: null,
+      });
+      continue;
+    }
+
+    const crawlKey = (() => { try { return new URL(url.startsWith("http") ? url : "https://" + url).toString().replace(/\/$/, "").toLowerCase(); } catch { return url.toLowerCase(); } })();
+    if (crawled.size && !crawled.has(crawlKey)) {
+      findings.push({
+        review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
+        sheet_row: sheetRow, row_ref: rowRef || null, source_column: urlKey || null,
+        item, check_type: tab.tab_type, url, expected, observed: "",
+        status: "unverifiable", severity: "medium", mistake_category: "url_not_on_site", agenda_ref: agendaRef || null, round,
+        remark: `This URL was not found among the ${crawled.size} pages in the site crawl, so the claim could not be checked against a real page. Confirm the URL in the sheet is correct, or re-crawl if the page is new.`,
+        resolved_round: null,
+      });
+      continue;
+    }
 
     const check = await checkOne(
       { id: `${tabIndex}-${rowIndex}`, title: item, type: tab.tab_type, url, expected, keywords: rowKeywords(r, reviewKeywords), committed: true, claimed: true },
@@ -368,6 +429,7 @@ export async function qaCheckTab(opts: {
       : (pageStats.size ? " This page has no Search Console activity in the window." : "");
     findings.push({
       review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
+      sheet_row: sheetRow, row_ref: rowRef || null, source_column: urlKey || null,
       item, check_type: tab.tab_type, url: check.url || url, expected, observed: check.observed || "",
       status: check.status, severity: severityOf(check.status, agendaHigh),
       mistake_category: cat || null, agenda_ref: agendaRef || null, round,
@@ -414,7 +476,8 @@ export async function qaCheckTab(opts: {
     success: true, tab_name: tab.tab_name, tab_type: tab.tab_type,
     rows_checked: rowsChecked, row_count: totalRows, done,
     next_offset: done ? null : rowsChecked, tab_remark: tabRemark,
-    findings: findings.map((f) => ({ row_index: f.row_index, item: f.item, url: f.url, status: f.status, severity: f.severity, mistake_category: f.mistake_category, remark: f.remark, observed: f.observed })),
+    columns: { urlKey, valueKey, itemKey, refKey },
+    findings: findings.map((f) => ({ row_index: f.row_index, sheet_row: f.sheet_row, row_ref: f.row_ref, source_column: f.source_column, item: f.item, url: f.url, status: f.status, severity: f.severity, mistake_category: f.mistake_category, remark: f.remark, observed: f.observed, expected: f.expected })),
   };
 }
 

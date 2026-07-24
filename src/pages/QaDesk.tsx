@@ -42,7 +42,36 @@ const STATUS_TONE: Record<string, string> = {
 };
 const RING: Record<string, string> = { idle: "border-border", work: "border-sky-500/50", good: "border-emerald-500/40", warn: "border-amber-500/40", bad: "border-red-500/50" };
 
-type Sheet = { name: string; headers: string[]; rows: any[] };
+type Cols = { urlKey: string; valueKey: string; itemKey: string; refKey: string };
+type Sheet = { name: string; headers: string[]; rows: any[]; columns: Cols };
+
+/* The column mapping is decided once, from the WHOLE sheet, and then used for
+   every batch. Deciding it per batch let the fallback lock onto a different
+   column in different batches, which is how a row could be checked against a URL
+   belonging to another row. */
+function pickColumns(headers: string[], rows: any[]): Cols {
+  const n = (x: string) => String(x || "").toLowerCase().trim();
+  const find = (re: RegExp) => headers.find((h) => re.test(n(h))) || "";
+  let urlKey = find(/^url$|page url|landing page|\burl\b|\bpage\b|link|address|slug/);
+  if (!urlKey) {
+    /* Score by DISTINCT URLs, not by how many cells hold a URL. A real page list
+       carries many different pages; a reference or template column repeats the
+       same link on every row, and would otherwise win simply by being fuller. */
+    let best = ""; let bestScore = 0;
+    for (const h of headers) {
+      const vals = rows.map((r) => String(r[h] || "").trim()).filter((v) => /^https?:\/\/|^www\./i.test(v));
+      const distinct = new Set(vals.map((v) => v.toLowerCase())).size;
+      if (distinct > bestScore) { bestScore = distinct; best = h; }
+    }
+    if (bestScore >= Math.max(2, Math.floor(rows.length * 0.2))) urlKey = best;
+  }
+  return {
+    urlKey,
+    valueKey: find(/new (title|meta|value|content|h1)|updated|implemented|optimi[sz]ed|revised|final|after/) || find(/^title$|^meta|description|^h1$|value|content|anchor|text/) || "",
+    itemKey: find(/task|item|activity|work|deliverable|description of work/) || "",
+    refKey: find(/^#$|^s\.?no\.?$|^sr\.?$|^id$|^row$|serial/) || "",
+  };
+}
 
 function Stage({ n, title, hint, tone = "idle", children }: any) {
   return (
@@ -266,8 +295,11 @@ export default function QaDesk() {
       const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array" });
       const out: Sheet[] = [];
       for (const name of (wb.SheetNames || [])) {
-        try { const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "" }); out.push({ name, headers: rows.length ? Object.keys(rows[0]) : [], rows }); }
-        catch { /* skip an unreadable tab */ }
+        try {
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "" });
+          const headers = rows.length ? Object.keys(rows[0]) : [];
+          out.push({ name, headers, rows, columns: pickColumns(headers, rows) });
+        } catch { /* skip an unreadable tab */ }
       }
       setSheets(out); setFileName(f.name); setBusy("");
       log(`${out.length} tab(s) read, ${out.reduce((a, x) => a + x.rows.length, 0)} rows total`, "ok");
@@ -621,6 +653,11 @@ export default function QaDesk() {
                           <span className="text-xs font-medium truncate">{s.name}</span>
                           <span className="text-[10px] text-muted-foreground">{p ? `${p.checked}/${p.total}` : `${s.rows.length} rows`}</span>
                         </div>
+                        <div className="text-[10px] mt-0.5">
+                          {s.columns.urlKey
+                            ? <span className="text-muted-foreground">Pages read from column <span className="text-foreground/80">{s.columns.urlKey}</span>{s.columns.valueKey ? <>, values from <span className="text-foreground/80">{s.columns.valueKey}</span></> : null}</span>
+                            : <span className="text-amber-400">No page URL column found in this tab, its rows cannot be checked against live pages</span>}
+                        </div>
                         {p ? <div className="mt-1.5"><Bar pct={pct} tone={p.done ? "good" : "work"} /></div> : null}
                         {p?.remark ? <p className="text-[10px] text-muted-foreground mt-1">{p.remark}</p> : null}
                       </div>
@@ -661,8 +698,15 @@ export default function QaDesk() {
                         <div className="text-sm font-semibold">{f.item}</div>
                         <span className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${STATUS_TONE[f.status] || TONE.idle}`}>{f.status}{f.severity ? ` / ${f.severity}` : ""}</span>
                       </div>
-                      <div className="text-[11px] text-muted-foreground mt-0.5">{f.tab_name}{f.url ? ` | ${String(f.url).replace(/^https?:\/\//, "")}` : ""}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {f.tab_name}{f.sheet_row ? `, sheet row ${f.sheet_row}` : ""}{f.row_ref ? ` (ref ${f.row_ref})` : ""}{f.source_column ? `, URL from column "${f.source_column}"` : ""}
+                      </div>
+                      {f.url ? (
+                        <a href={f.url.startsWith("http") ? f.url : `https://${f.url}`} target="_blank" rel="noreferrer"
+                          className="text-[11px] text-primary hover:underline break-all">{String(f.url).replace(/^https?:\/\//, "")}</a>
+                      ) : null}
                       <div className="text-xs text-foreground/85 mt-1">{f.remark}</div>
+                      {f.expected ? <div className="text-[11px] text-muted-foreground mt-1">Sheet says: {String(f.expected).slice(0, 160)}</div> : null}
                     </div>
                   ))}
                 </div>

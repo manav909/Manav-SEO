@@ -808,6 +808,8 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         rowOffset: Number(body?.rowOffset) || 0,
         rows: Array.isArray(body?.rows) ? body.rows : [],
         totalRows: Number(body?.totalRows) || 0,
+        columns: body?.columns && typeof body.columns === "object" ? body.columns : undefined,
+        headerRows: Number(body?.headerRows) || 1,
       });
     } catch (e: any) { return { success: false, error: e?.message || "tab check failed" }; }
   }
