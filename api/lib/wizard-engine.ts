@@ -769,6 +769,29 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     }
   }
 
+  /* Work report verification: sales commitments against the completion documents
+     against what is actually live on the site right now. Search Console optional. */
+  if (action === "wizard_verify_report") {
+    const siteUrl = String(body?.siteUrl || "").trim();
+    if (!siteUrl) return { success: false, error: "A client site URL is required so the claims can be checked against the live pages." };
+    const mailText = String(body?.mailText || "").trim();
+    const completionText = String(body?.completionText || "").trim();
+    if (!mailText && !completionText) return { success: false, error: "Provide the commitment mail, the completion documents, or both. There is nothing to verify without at least one." };
+    try {
+      const { verifyWorkReport } = await import("./report-verify.js");
+      const result = await verifyWorkReport({
+        projectId: String(body?.projectId || "").trim(),
+        siteUrl,
+        clientContext: String(body?.clientContext || ""),
+        mailText,
+        completionText,
+      });
+      return { success: true, ...result };
+    } catch (e: any) {
+      return { success: false, error: e?.message || "verification failed" };
+    }
+  }
+
   /* Build 12.28 — ingest a Google Ads search-terms export for paid-vs-organic analysis. */
   if (action === "wizard_ingest_ads_csv") {
     const projectId = String(body?.projectId || "").trim();

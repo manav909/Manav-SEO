@@ -40,6 +40,7 @@ import ClientReportView from "./pages/ClientReportView";
 import PMModule       from "./pages/PMModule";
 import Workspace      from "./pages/Workspace";
 import Wizard         from "./pages/Wizard";
+import ReportCheck    from "./pages/ReportCheck";
 import Deals          from "./pages/Deals";
 import Hod            from "./pages/Hod";
 import Vault          from "./pages/Vault";
@@ -171,6 +172,7 @@ const AppRoutes = () => {
           <Route path="/content-hub" element={<ContentHub />} />
           <Route path="/intake" element={<Intake />} />
           <Route path="/wizard" element={<B name="wizard"><Wizard /></B>} />
+          <Route path="/report-check" element={<B name="report-check"><ReportCheck /></B>} />
           <Route path="/deals" element={<B name="deals"><Deals /></B>} />
           <Route path="/hod" element={<B name="hod"><Hod /></B>} />
           <Route path="/vault" element={<B name="vault"><Vault /></B>} />
