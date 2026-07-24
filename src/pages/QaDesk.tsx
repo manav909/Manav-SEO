@@ -43,7 +43,7 @@ const STATUS_TONE: Record<string, string> = {
 const RING: Record<string, string> = { idle: "border-border", work: "border-sky-500/50", good: "border-emerald-500/40", warn: "border-amber-500/40", bad: "border-red-500/50" };
 
 type Cols = { urlKey: string; valueKey: string; itemKey: string; refKey: string };
-type Sheet = { name: string; headers: string[]; rows: any[]; headerRows: number; columns: Cols };
+type Sheet = { name: string; headers: string[]; rows: any[]; headerRows: number; columns: Cols; mapping?: any };
 
 /* The column mapping is decided once, from the WHOLE sheet, and then used for
    every batch. Deciding it per batch let the fallback lock onto a different
@@ -134,6 +134,7 @@ export default function QaDesk() {
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [fileName, setFileName] = useState("");
+  const [mapping, setMapping] = useState(false);
   const [reviewId, setReviewId] = useState("");
   const [agenda, setAgenda] = useState<any[]>([]);
   const [progress, setProgress] = useState<Record<number, { checked: number; total: number; done: boolean; remark: string }>>({});
@@ -364,6 +365,21 @@ export default function QaDesk() {
       }
       setSheets(out); setFileName(f.name); setBusy("");
       log(`${out.length} tab(s) read, ${out.reduce((a, x) => a + x.rows.length, 0)} rows total`, "ok");
+
+      /* Read every tab and work out what it records, then show that reading so it
+         can be corrected before anything is judged. */
+      setMapping(true); setBusy("Reading what each tab records...");
+      const mr: any = await post("wizard_qa_map_tabs", {
+        siteUrl: siteUrl.trim(),
+        tabs: out.map((sh) => ({ name: sh.name, headers: sh.headers, rowCount: sh.rows.length, sample: sh.rows.slice(0, 3) })),
+      });
+      setMapping(false); setBusy("");
+      if (mr?.success) {
+        const byName = new Map<string, any>((mr.mappings || []).map((m: any) => [m.name, m]));
+        setSheets(out.map((sh) => ({ ...sh, mapping: byName.get(sh.name) || null })));
+        const weak = (mr.mappings || []).filter((m: any) => m.confidence === "low").length;
+        log(`Interpreted ${(mr.mappings || []).length} tab(s)${weak ? `, ${weak} needing a look` : ""}`, weak ? "warn" : "ok");
+      } else log("Could not interpret the tabs, falling back to column names", "warn");
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
   };
 
@@ -752,15 +768,32 @@ export default function QaDesk() {
                           <span className="text-xs font-medium truncate">{s.name}</span>
                           <span className="text-[10px] text-muted-foreground">{p ? `${p.checked}/${p.total}` : `${s.rows.length} rows`}</span>
                         </div>
-                        <div className="text-[10px] mt-0.5">
-                          {s.columns.urlKey
-                            ? <span className="text-muted-foreground">
-                                Checks column <span className="text-foreground/80">{s.columns.urlKey}</span> against the live pages
-                                {s.columns.valueKey ? <>, comparing what is live to <span className="text-foreground/80">{s.columns.valueKey}</span></> : ", presence only, no value column found"}
-                                {s.headerRows > 1 ? <span className="text-sky-400"> (headers found on row {s.headerRows})</span> : null}
-                              </span>
-                            : <span className="text-amber-400">No page URL column in this tab, so its {s.rows.length} row(s) will be recorded as unverifiable rather than judged. Rename the column holding the page addresses to Page URL if it should be checked.</span>}
-                        </div>
+                        {s.mapping ? (
+                          <div className="text-[10px] mt-1 space-y-1">
+                            <div className={s.mapping.confidence === "low" ? "text-amber-400" : "text-muted-foreground"}>
+                              {s.mapping.what_it_verifies || "No description available."}
+                              {s.mapping.confidence === "low" ? " (low confidence, please check the columns below)" : ""}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-muted-foreground">Page from</span>
+                              <select value={s.mapping.url_column || ""} onChange={(e) => setSheets((prev) => prev.map((x, xi) => xi === i ? { ...x, mapping: { ...x.mapping, url_column: e.target.value, scope: e.target.value ? "page" : "site" } } : x))}
+                                className="bg-muted/40 border border-border rounded px-1.5 py-0.5 text-[10px]">
+                                <option value="">site level, no page column</option>
+                                {s.headers.map((h, hi) => <option key={hi} value={h}>{h}</option>)}
+                              </select>
+                              <span className="text-muted-foreground">compared to</span>
+                              <select value={s.mapping.expected_column || ""} onChange={(e) => setSheets((prev) => prev.map((x, xi) => xi === i ? { ...x, mapping: { ...x.mapping, expected_column: e.target.value } } : x))}
+                                className="bg-muted/40 border border-border rounded px-1.5 py-0.5 text-[10px]">
+                                <option value="">presence only</option>
+                                {s.headers.map((h, hi) => <option key={hi} value={h}>{h}</option>)}
+                              </select>
+                              {s.mapping.previous_column ? <span className="text-muted-foreground">old value in {s.mapping.previous_column}</span> : null}
+                              {s.headerRows > 1 ? <span className="text-sky-400">headers on row {s.headerRows}</span> : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] mt-0.5 text-muted-foreground">{mapping ? "Reading this tab..." : "Not interpreted yet."}</div>
+                        )}
                         {p ? <div className="mt-1.5"><Bar pct={pct} tone={p.done ? "good" : "work"} /></div> : null}
                         {p?.remark ? <p className="text-[10px] text-muted-foreground mt-1">{p.remark}</p> : null}
                       </div>

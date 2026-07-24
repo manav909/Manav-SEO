@@ -780,6 +780,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     catch (e: any) { return { success: false, error: e?.message || "could not read the context" }; }
   }
 
+  if (action === "wizard_qa_map_tabs") {
+    try { const { qaMapTabs } = await import("./qa-engine.js"); return await qaMapTabs({ siteUrl: String(body?.siteUrl || ""), tabs: Array.isArray(body?.tabs) ? body.tabs : [] }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not read the tabs" }; }
+  }
+
   if (action === "wizard_qa_create") {
     try {
       const { qaCreateReview } = await import("./qa-engine.js");
@@ -810,6 +815,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         rows: Array.isArray(body?.rows) ? body.rows : [],
         totalRows: Number(body?.totalRows) || 0,
         columns: body?.columns && typeof body.columns === "object" ? body.columns : undefined,
+        mapping: body?.mapping && typeof body.mapping === "object" ? body.mapping : undefined,
         headerRows: Number(body?.headerRows) || 1,
       });
     } catch (e: any) { return { success: false, error: e?.message || "tab check failed" }; }

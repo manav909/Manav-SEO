@@ -23,8 +23,10 @@
 
 import { db } from "./db.js";
 import { checkOne } from "./report-verify.js";
-import { loadGsc } from "./workspace/shared.js";
+import { loadGsc, fetchHtml } from "./workspace/shared.js";
 import { llmComplete } from "./workspace/llm.js";
+
+type CheckStatusLite = "verified" | "failed" | "partial" | "unverifiable";
 
 const ROWS_PER_SLOT = 25;                 // bounded slice: comfortably inside the function budget
 const norm = (s: any) => String(s || "").toLowerCase().trim();
@@ -232,6 +234,162 @@ function remarkOf(status: string, expected: string, observed: string, evidence: 
   return `Live but needs work. Observed: ${observed || "nothing usable"}.${q}`;
 }
 
+/* A site level item is a fact about the site, so it is checked against the site.
+   Where the fact is genuinely not observable from a page fetch, that is said
+   plainly instead of being silently passed or silently failed. */
+async function siteLevelCheck(type: string, siteUrl: string, expected: string): Promise<{ status: CheckStatusLite; observed: string; remark: string; url: string }> {
+  const origin = (() => { try { return new URL(siteUrl.startsWith("http") ? siteUrl : "https://" + siteUrl).origin; } catch { return ""; } })();
+  if (!origin) return { status: "unverifiable", observed: "", remark: "No site URL to check this against.", url: "" };
+
+  if (/robots/i.test(type)) {
+    const u = `${origin}/robots.txt`;
+    const body = await fetchHtml(u).catch(() => "");
+    if (!body) return { status: "failed", observed: "", remark: `No robots.txt was returned at ${u}.`, url: u };
+    const disallowAll = /disallow:\s*\/\s*$/im.test(body) && !/allow:/im.test(body);
+    const sitemapLine = (body.match(/sitemap:\s*(\S+)/i) || [])[1] || "";
+    return {
+      status: disallowAll ? "failed" : "verified",
+      observed: `${body.trim().split(/\n/).length} line(s)${sitemapLine ? `, sitemap declared` : ", no sitemap declared"}`,
+      remark: disallowAll
+        ? `robots.txt is live but blocks the whole site with Disallow: /.`
+        : `robots.txt is live at ${u}${sitemapLine ? ` and declares the sitemap at ${sitemapLine}` : `, though it declares no sitemap`}.`,
+      url: u,
+    };
+  }
+
+  if (/sitemap/i.test(type)) {
+    const candidates = [`${origin}/sitemap_index.xml`, `${origin}/sitemap.xml`, `${origin}/sitemap-index.xml`];
+    for (const u of candidates) {
+      const body = await fetchHtml(u).catch(() => "");
+      if (body && /<(urlset|sitemapindex)/i.test(body)) {
+        const count = (body.match(/<loc>/gi) || []).length;
+        return { status: "verified", observed: `${count} entries`, remark: `An XML sitemap is live at ${u} carrying ${count} entr${count === 1 ? "y" : "ies"}.`, url: u };
+      }
+    }
+    return { status: "failed", observed: "", remark: `No XML sitemap was found at the usual locations under ${origin}.`, url: `${origin}/sitemap.xml` };
+  }
+
+  const u = `${origin}/`;
+  const html = await fetchHtml(u).catch(() => "");
+  if (!html) return { status: "unverifiable", observed: "", remark: `The site did not respond, so this site level item could not be checked.`, url: u };
+  return {
+    status: "unverifiable", observed: "",
+    remark: `This is a site level item rather than per page work${expected ? ` (recorded as: ${expected.slice(0, 90)})` : ""}. It is not observable from a page fetch, so confirm it directly and record the evidence.`,
+    url: u,
+  };
+}
+
+/* ---- Reading a tab the way a practitioner would ----------------------------- */
+
+/* Workbooks are not standardised. Column names, layout and even what a tab is
+   FOR differ from one agency sheet to the next, so guessing from regular
+   expressions over column names produces confident nonsense. Instead the headers
+   and a few real rows of each tab are read and interpreted, and then every part
+   of that interpretation is checked against the actual data before it is used.
+   The model proposes, the data disposes: a column it names must genuinely exist
+   and genuinely hold what it claims, or it is rejected. */
+export interface TabMapping {
+  check_type: string;          // title | meta_description | h1 | canonical | schema | indexing | image_alt | internal_link | content | redirect | keyword | offpage | robots | sitemap | site_other | other
+  scope: "page" | "site";      // per page work, or one site level item
+  url_column: string;
+  expected_column: string;     // the value that SHOULD now be live
+  previous_column: string;     // the value it replaced, used to detect no change
+  keyword_column: string;
+  ref_column: string;
+  what_it_verifies: string;    // plain sentence shown to the reviewer
+  confidence: "high" | "medium" | "low";
+  source: "read" | "fallback";
+}
+
+const looksUrl = (v: any) => /^https?:\/\/|^www\.|^\/[a-z0-9]/i.test(String(v || "").trim());
+
+/* Validate an interpretation against the rows themselves. */
+function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
+  const has = (c: any) => Boolean(c) && headers.includes(String(c));
+  const colHasUrls = (c: string) => {
+    const vals = rows.map((r) => String(r[c] || "").trim()).filter(Boolean);
+    if (!vals.length) return false;
+    return vals.filter(looksUrl).length >= Math.max(1, Math.floor(vals.length * 0.5));
+  };
+  const OLD = /previous|old|existing|current|before|original|was\b/i;
+
+  let url_column = has(m?.url_column) && colHasUrls(String(m.url_column)) ? String(m.url_column) : "";
+  if (!url_column) {
+    /* Fall back to the column with the most DISTINCT urls, which is the real page
+       list rather than a reference link repeated on every row. */
+    let best = ""; let bestScore = 0;
+    for (const h of headers) {
+      const vals = rows.map((r) => String(r[h] || "").trim()).filter(looksUrl);
+      const distinct = new Set(vals.map((v) => v.toLowerCase())).size;
+      if (distinct > bestScore) { bestScore = distinct; best = h; }
+    }
+    if (bestScore >= 1) url_column = best;
+  }
+  let expected_column = has(m?.expected_column) && !OLD.test(String(m.expected_column)) ? String(m.expected_column) : "";
+  const previous_column = has(m?.previous_column) ? String(m.previous_column) : (headers.find((h) => OLD.test(h)) || "");
+  if (expected_column && expected_column === previous_column) expected_column = "";
+  /* When the proposed value column is rejected, recover the real one rather than
+     dropping to a presence only check: the strongest candidate is a header that
+     reads as the NEW state, then any content bearing column that is not the old
+     value and is not the page column. */
+  if (!expected_column) {
+    const NEWISH = /new|updated|revised|final|optimi[sz]ed|implemented|suggested|recommended|after|proposed/i;
+    const usable = headers.filter((h) => h !== url_column && h !== previous_column && !OLD.test(h));
+    const values = (h: string) => rows.map((r) => String(r[h] || "").trim()).filter(Boolean);
+    const notLinks = (h: string) => { const v = values(h); return v.length > 0 && !v.every(looksUrl); };
+    /* A header that says NEW is trusted on its own: an H1 or a title is often
+       short, and a length test would wrongly reject it. Otherwise prefer a column
+       that carries real copy rather than a status flag. */
+    const isCopy = (h: string) => {
+      const v = values(h);
+      if (!v.length || v.every(looksUrl)) return false;
+      const avg = v.reduce((a, x) => a + x.length, 0) / v.length;
+      return avg >= 12 && !/^(done|updated|complete|completed|yes|no|pending|na|n\/a|ok)$/i.test(v[0]);
+    };
+    expected_column = usable.find((h) => NEWISH.test(h) && notLinks(h)) || usable.find(isCopy) || "";
+  }
+
+  const scope: "page" | "site" = m?.scope === "site" ? "site" : (url_column ? "page" : "site");
+  return {
+    check_type: String(m?.check_type || "other"),
+    scope,
+    url_column, expected_column, previous_column,
+    keyword_column: has(m?.keyword_column) ? String(m.keyword_column) : "",
+    ref_column: has(m?.ref_column) ? String(m.ref_column) : "",
+    what_it_verifies: String(m?.what_it_verifies || ""),
+    confidence: (m?.confidence === "high" || m?.confidence === "low") ? m.confidence : "medium",
+    source: m ? "read" : "fallback",
+  };
+}
+
+/* Interpret every tab in one pass. */
+export async function qaMapTabs(opts: { siteUrl?: string; tabs: Array<{ name: string; headers: string[]; sample: any[]; rowCount: number }> }) {
+  const tabs = Array.isArray(opts.tabs) ? opts.tabs : [];
+  if (!tabs.length) return { success: false, error: "No tabs supplied." };
+  let parsed: any = {};
+  try {
+    const sys = "You are a Senior Digital Marketing Specialist reading an SEO delivery workbook before reviewing it. For EACH tab you are given the tab name, its column headers and a few real rows. Work out what work that tab records and how to verify it. Return ONLY JSON: {\"tabs\":[{\"name\":\"exact tab name\",\"check_type\":\"title|meta_description|h1|canonical|schema|indexing|image_alt|internal_link|content|redirect|keyword|offpage|robots|sitemap|site_other|other\",\"scope\":\"page or site\",\"url_column\":\"the header whose cells hold the page address to check, empty if none\",\"expected_column\":\"the header holding the value that SHOULD NOW BE LIVE after the work, never the old value\",\"previous_column\":\"the header holding the value it replaced, if any\",\"keyword_column\":\"the header holding a target keyword, if any\",\"ref_column\":\"the header holding the sheet's own row number or id, if any\",\"what_it_verifies\":\"one plain sentence a reviewer would understand\",\"confidence\":\"high|medium|low\"}]}. Use scope site for one off site level items such as robots.txt, the XML sitemap, sitemap submission, a mobile friendly check or social profiles, where there is no per page list. Use the EXACT header strings given. Leave a field empty rather than guessing. Never invent a column that is not in the headers.";
+    const user = tabs.map((t) => [
+      `TAB: ${t.name} (${t.rowCount} rows)`,
+      `HEADERS: ${t.headers.join(" | ")}`,
+      `SAMPLE ROWS: ${JSON.stringify((t.sample || []).slice(0, 3)).slice(0, 1200)}`,
+    ].join("\n")).join("\n\n");
+    const { text } = await llmComplete({ system: sys, user, maxTokens: 3000, timeoutMs: 90000, label: "qa-map-tabs", maxSegments: 2 });
+    const m = String(text || "").match(/\{[\s\S]*\}/);
+    parsed = m ? JSON.parse(m[0]) : {};
+  } catch { parsed = {}; }
+
+  const byName = new Map<string, any>();
+  for (const t of (Array.isArray(parsed.tabs) ? parsed.tabs : [])) byName.set(String(t.name || ""), t);
+
+  const mappings = tabs.map((t) => {
+    const proposed = byName.get(t.name) || null;
+    const v = validateMapping(proposed, t.headers || [], t.sample || []);
+    return { name: t.name, ...v, source: proposed ? "read" : "fallback" };
+  });
+  return { success: true, mappings };
+}
+
 /* ---- The client record ------------------------------------------------------ */
 
 /* Everything that belongs to the client rather than to one review is kept
@@ -410,6 +568,7 @@ export async function qaCheckTab(opts: {
   reviewId: string; tabIndex: number; rowOffset?: number; rows: any[]; totalRows?: number;
   columns?: { urlKey?: string; valueKey?: string; itemKey?: string; refKey?: string };
   headerRows?: number;
+  mapping?: any;
 }) {
   const reviewId = String(opts.reviewId || "").trim();
   const tabIndex = Number(opts.tabIndex) || 0;
@@ -461,12 +620,20 @@ export async function qaCheckTab(opts: {
      re-derived per batch. Deriving it per batch let the value based fallback lock
      onto a different column in different batches, which is how a row could be
      checked against a URL that belongs somewhere else. */
+  const map = opts.mapping || {};
   const fixed = opts.columns || {};
   const derived = detectColumns(slice);
-  const urlKey = String(fixed.urlKey || derived.urlKey || "");
-  const valueKey = String(fixed.valueKey || derived.valueKey || "");
+  const urlKey = String(map.url_column || fixed.urlKey || derived.urlKey || "");
+  const valueKey = String(map.expected_column || fixed.valueKey || derived.valueKey || "");
   const itemKey = String(fixed.itemKey || derived.itemKey || "");
-  const refKey = String(fixed.refKey || "");
+  const refKey = String(map.ref_column || fixed.refKey || "");
+  const prevKey = String(map.previous_column || "");
+  const kwKey = String(map.keyword_column || "");
+  /* The tab's own interpretation decides what is being checked, not its title.
+     A tab called "Header Optimization" may hold H1 work, and a tab called
+     "Index" may hold nothing checkable at all. */
+  const checkType = String(map.check_type || tab.tab_type || "other");
+  const isSiteScope = String(map.scope || "") === "site";
   const headerRows = Number(opts.headerRows) || 1;
 
   /* The crawl is corroboration. If the whole site has been crawled and a claimed
@@ -491,6 +658,21 @@ export async function qaCheckTab(opts: {
     const rowRef = String(refKey ? r[refKey] || "" : "").trim();
     const sheetRow = rowIndex + 1 + headerRows;                 // the row number as seen in the sheet
     const item = String(itemKey ? r[itemKey] || "" : "").trim() || `${tab.tab_name} sheet row ${sheetRow}${rowRef ? ` (ref ${rowRef})` : ""}`;
+
+    /* Site level items are one off facts about the site, not per page work, so
+       they are checked against the site itself rather than discarded. */
+    if (isSiteScope && !url) {
+      const siteChecked = await siteLevelCheck(checkType, review.site_url, expected);
+      findings.push({
+        review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
+        sheet_row: sheetRow, row_ref: rowRef || null, source_column: null,
+        item, check_type: checkType, url: siteChecked.url, expected, observed: siteChecked.observed,
+        status: siteChecked.status, severity: siteChecked.status === "failed" ? "high" : siteChecked.status === "partial" ? "medium" : "low",
+        mistake_category: siteChecked.status === "verified" ? null : "site_level", agenda_ref: agendaRef || null, round,
+        remark: siteChecked.remark, resolved_round: siteChecked.status === "verified" ? round : null,
+      });
+      continue;
+    }
 
     /* A row with no URL is not a failure, it is a row that cannot be checked. */
     if (!url) {
@@ -519,10 +701,18 @@ export async function qaCheckTab(opts: {
     }
 
     const check = await checkOne(
-      { id: `${tabIndex}-${rowIndex}`, title: item, type: tab.tab_type, url, expected, keywords: rowKeywords(r, reviewKeywords), committed: true, claimed: true },
+      { id: `${tabIndex}-${rowIndex}`, title: item, type: checkType, url, expected, keywords: (kwKey && String(r[kwKey] || "").trim()) ? String(r[kwKey]).split(/[,;|]/).map((x: string) => x.trim()).filter(Boolean).slice(0, 5) : rowKeywords(r, reviewKeywords), committed: true, claimed: true },
       review.site_url,
     );
-    const cat = mistakeCategory(check.status, tab.tab_type, check.quality || []);
+    let cat = mistakeCategory(check.status, checkType, check.quality || []);
+    /* If the live page still shows exactly what the sheet records as the PREVIOUS
+       value, the work was not applied, whatever the row's status column says. */
+    const prevVal = prevKey ? String(r[prevKey] || "").trim() : "";
+    let stillOld = "";
+    if (prevVal && check.observed && norm(check.observed) === norm(prevVal)) {
+      stillOld = ` The live page still shows the previous value recorded in "${prevKey}", so this change was not applied.`;
+      if (check.status === "verified" || check.status === "partial") { check.status = "failed"; cat = "not_implemented"; }
+    }
     const stat = pageStats.get(String(check.url || url).replace(/\/$/, ""));
     const gscNote = stat
       ? ` Search Console for this page over the window: ${stat.clicks} clicks, ${stat.impressions} impressions, average position ${stat.position.toFixed(1)}.`
@@ -533,7 +723,7 @@ export async function qaCheckTab(opts: {
       item, check_type: tab.tab_type, url: check.url || url, expected, observed: check.observed || "",
       status: check.status, severity: severityOf(check.status, agendaHigh),
       mistake_category: cat || null, agenda_ref: agendaRef || null, round,
-      remark: remarkOf(check.status, expected, check.observed || "", check.evidence, check.quality || []) + gscNote,
+      remark: remarkOf(check.status, expected, check.observed || "", check.evidence, check.quality || []) + stillOld + gscNote,
       resolved_round: check.status === "verified" ? round : null,
     });
   }
@@ -543,6 +733,7 @@ export async function qaCheckTab(opts: {
   const rowsChecked = offset + slice.length;
   const done = rowsChecked >= totalRows;
   await db().from("qa_tabs").update({
+    mapping: opts.mapping || {},
     rows_checked: rowsChecked, row_count: totalRows,
     status: done ? "done" : "checking",
     checked_at: done ? new Date().toISOString() : null,
