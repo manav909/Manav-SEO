@@ -72,6 +72,8 @@ export default function QaDesk() {
   const [projectLabel, setProjectLabel] = useState(navProjectName);
   const [gsc, setGsc] = useState<any>(null);
   const [setupBusy, setSetupBusy] = useState("");
+  const [gscSites, setGscSites] = useState<any[]>([]);
+  const [gscPulling, setGscPulling] = useState(false);
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [fileName, setFileName] = useState("");
@@ -132,20 +134,69 @@ export default function QaDesk() {
     refreshGsc(r.projectId);
   };
 
+  /* The connection is four steps, not one: authorise, then list the properties
+     on that Google account, then bind one to this project, then pull its data.
+     Stopping after the popup leaves it connected but unusable, which is why the
+     button used to come back unchanged. */
+  const loadGscProperties = async (pid: string) => {
+    setSetupBusy("Loading the Search Console properties...");
+    const r: any = await post("gsc_list_properties", { projectId: pid });
+    setSetupBusy("");
+    const sites = (r?.sites || []).filter(Boolean);
+    setGscSites(sites);
+    log(sites.length ? `${sites.length} Search Console property(ies) found` : "No properties on this Google account", sites.length ? "ok" : "warn");
+    if (!sites.length && r?.error) setError(r.error);
+  };
+
   const connectGsc = async () => {
-    if (!projectId) { setError("Select or create the project for this site first."); return; }
-    setError(""); setSetupBusy("Opening Google..."); log("Starting the Search Console connection");
+    if (!projectId) { setError("Create or select the project for this site first."); return; }
+    setError(""); setSetupBusy("Opening Google...");
     const r: any = await post("gsc_oauth_start", { projectId });
     setSetupBusy("");
     if (!r?.url) { setError(r?.error || "Could not start the Search Console connection."); return; }
+    log("Waiting for the Google authorisation window");
     window.open(r.url, "gsc_oauth", "width=520,height=640");
-    const onMsg = (e: MessageEvent) => {
-      if ((e.data || {}).type !== "gsc_connected") return;
+
+    let settled = false;
+    const finish = async () => {
+      if (settled) return; settled = true;
       window.removeEventListener("message", onMsg);
-      log("Search Console connected", "ok");
-      refreshGsc(projectId);
+      log("Authorised, reading the account", "ok");
+      const st: any = await post("gsc_status", { projectId });
+      setGsc(st);
+      if (st?.connected && !st?.resourceId) await loadGscProperties(projectId);
     };
+    const onMsg = (e: MessageEvent) => { if ((e.data || {}).type === "gsc_connected") finish(); };
     window.addEventListener("message", onMsg);
+    /* The popup can be closed by hand, or the message can be missed, so poll the
+       real status as well rather than waiting forever on an event. */
+    let tries = 0;
+    const poll = setInterval(async () => {
+      if (settled || tries++ > 40) { clearInterval(poll); return; }
+      const st: any = await post("gsc_status", { projectId });
+      if (st?.connected) { clearInterval(poll); finish(); }
+    }, 3000);
+  };
+
+  const chooseProperty = async (site: any) => {
+    const siteUrl2 = String(site?.siteUrl || site?.url || site || "");
+    if (!siteUrl2) return;
+    setSetupBusy(`Binding ${siteUrl2}...`);
+    log(`Selecting property ${siteUrl2}`);
+    const r: any = await post("gsc_select_property", { projectId, siteUrl: siteUrl2, label: siteUrl2 });
+    if (!r?.success) { setSetupBusy(""); setError(r?.error || "Could not select that property."); log("Property selection failed", "err"); return; }
+    setGscSites([]);
+    await pullGsc();
+  };
+
+  const pullGsc = async () => {
+    setGscPulling(true); setSetupBusy("Pulling Search Console data...");
+    log("Pulling Search Console data");
+    const r: any = await post("gsc_pull", { projectId, days: 28, source: "manual" });
+    setGscPulling(false); setSetupBusy("");
+    if (!r?.success) { setError(r?.error || "The pull did not complete."); log("Search Console pull failed", "warn"); }
+    else log("Search Console data pulled", "ok");
+    await refreshGsc(projectId);
   };
 
   const readContext = async () => {
@@ -311,7 +362,9 @@ export default function QaDesk() {
   const t = summary?.totals || {};
   const totalRows = sheets.reduce((a, s) => a + s.rows.length, 0);
   const checkedRows = Object.values(progress).reduce((a: number, p: any) => a + (p?.checked || 0), 0);
-  const gscOn = Boolean(gsc?.lastPullAt) && !mismatch;
+  const gscConnected = Boolean(gsc?.connected) && !mismatch;
+  const gscBound = gscConnected && Boolean(gsc?.resourceId);
+  const gscOn = gscBound && Boolean(gsc?.lastPullAt);
   const step1done = Boolean(siteUrl.trim() && (clientContext.trim() || mailText.trim()));
   const step2done = Boolean(projectId) && !mismatch;
   const step3done = sheets.length > 0;
@@ -372,19 +425,40 @@ export default function QaDesk() {
                   ) : <span className={`text-[11px] px-2 py-0.5 rounded-full border ${PILL.verified}`}>matched</span>}
                 </div>
 
-                <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2.5">
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold">Search Console</div>
-                    <div className="text-[11px] text-muted-foreground truncate">
-                      {mismatch
-                        ? "Left out while the project does not match, because that data belongs to another client."
-                        : gscOn ? `Connected${gsc?.resourceId ? ` to ${gsc.resourceId}` : ""}, last pulled ${gsc?.lastPullAt ? new Date(gsc.lastPullAt).toLocaleDateString() : "recently"}.`
-                        : "Not connected. Optional: the live page checks do not need it."}
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold">Search Console</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {mismatch
+                          ? "Left out while the project does not match, because that data belongs to another client."
+                          : gscOn ? `${gsc?.resourceLabel || gsc?.resourceId}, last pulled ${gsc?.lastPullAt ? new Date(gsc.lastPullAt).toLocaleDateString() : "recently"}.`
+                          : gscBound ? `${gsc?.resourceLabel || gsc?.resourceId} is bound. Pull the data to use it.`
+                          : gscConnected ? "Authorised. Choose which property belongs to this site."
+                          : "Not connected. Optional: the live page checks do not need it."}
+                      </div>
                     </div>
+                    {mismatch ? null
+                      : gscOn ? <span className={`text-[11px] px-2 py-0.5 rounded-full border ${PILL.verified}`}>ready</span>
+                      : gscBound ? <button onClick={pullGsc} disabled={gscPulling} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap disabled:opacity-50">{gscPulling ? "Pulling..." : "Pull data"}</button>
+                      : gscConnected ? <button onClick={() => loadGscProperties(projectId)} className="text-xs px-3 py-1.5 rounded-lg border border-border whitespace-nowrap">Choose property</button>
+                      : <button onClick={connectGsc} disabled={!projectId} className="text-xs px-3 py-1.5 rounded-lg border border-border whitespace-nowrap disabled:opacity-50">Connect</button>}
                   </div>
-                  {!gscOn ? (
-                    <button onClick={connectGsc} disabled={!projectId} className="text-xs px-3 py-1.5 rounded-lg border border-border whitespace-nowrap disabled:opacity-50">Connect</button>
-                  ) : <span className={`text-[11px] px-2 py-0.5 rounded-full border ${PILL.verified}`}>connected</span>}
+                  {gscSites.length ? (
+                    <div className="mt-2 space-y-1">
+                      <div className="text-[10px] text-muted-foreground">Properties on this Google account. Pick the one for {siteDomain || "this site"}.</div>
+                      {gscSites.map((st: any, i: number) => {
+                        const u = String(st?.siteUrl || st?.url || st || "");
+                        const suggested = siteDomain && u.toLowerCase().includes(siteDomain);
+                        return (
+                          <button key={i} onClick={() => chooseProperty(st)}
+                            className={`w-full text-left text-[11px] px-2 py-1.5 rounded-lg border hover:bg-muted/40 ${suggested ? "border-primary/40 text-primary" : "border-border"}`}>
+                            {u}{suggested ? " (matches this site)" : ""}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
                 </div>
 
                 {mismatch ? (
