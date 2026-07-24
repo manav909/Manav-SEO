@@ -163,8 +163,9 @@ function qualityOf(type: string, observed: string, html: string, keywords: strin
   return out;
 }
 
-/* Check one claim against the live page. */
-async function checkOne(c: any, siteUrl: string): Promise<ClaimCheck> {
+/* Check one claim against the live page. Exported so the QA desk reuses exactly
+   this logic rather than keeping a second, drifting copy of it. */
+export async function checkOne(c: any, siteUrl: string): Promise<ClaimCheck> {
   const url = absolute(String(c.url || ""), siteUrl);
   const base: ClaimCheck = {
     id: String(c.id || ""), title: String(c.title || ""), type: String(c.type || "other"),

@@ -771,6 +771,68 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
 
   /* Work report verification: sales commitments against the completion documents
      against what is actually live on the site right now. Search Console optional. */
+  /* QA Desk: persistent, agenda driven quality assurance over delivery workbooks.
+     Each call handles one bounded slice of one tab, so a large workbook spreads
+     across many calls and no single call can time out. */
+  if (action === "wizard_qa_create") {
+    try {
+      const { qaCreateReview } = await import("./qa-engine.js");
+      return await qaCreateReview({
+        projectId: String(body?.projectId || "").trim() || undefined,
+        siteUrl: String(body?.siteUrl || "").trim(),
+        clientName: String(body?.clientName || "").trim() || undefined,
+        executiveName: String(body?.executiveName || "").trim() || undefined,
+        title: String(body?.title || "").trim() || undefined,
+        clientContext: String(body?.clientContext || ""),
+        mailText: String(body?.mailText || ""),
+        tabs: Array.isArray(body?.tabs) ? body.tabs : [],
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "could not create the review" }; }
+  }
+
+  if (action === "wizard_qa_check_tab") {
+    try {
+      const { qaCheckTab } = await import("./qa-engine.js");
+      return await qaCheckTab({
+        reviewId: String(body?.reviewId || ""),
+        tabIndex: Number(body?.tabIndex) || 0,
+        rowOffset: Number(body?.rowOffset) || 0,
+        rows: Array.isArray(body?.rows) ? body.rows : [],
+        totalRows: Number(body?.totalRows) || 0,
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "tab check failed" }; }
+  }
+
+  if (action === "wizard_qa_finalize") {
+    try { const { qaFinalize } = await import("./qa-engine.js"); return await qaFinalize({ reviewId: String(body?.reviewId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not finalise" }; }
+  }
+
+  if (action === "wizard_qa_recheck") {
+    try { const { qaRecheck } = await import("./qa-engine.js"); return await qaRecheck({ reviewId: String(body?.reviewId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not open a recheck round" }; }
+  }
+
+  if (action === "wizard_qa_recheck_items") {
+    try { const { qaRecheckItems } = await import("./qa-engine.js"); return await qaRecheckItems({ reviewId: String(body?.reviewId || ""), items: Array.isArray(body?.items) ? body.items : [] }); }
+    catch (e: any) { return { success: false, error: e?.message || "recheck failed" }; }
+  }
+
+  if (action === "wizard_qa_worklist") {
+    try { const { qaWorklist } = await import("./qa-engine.js"); return await qaWorklist({ day: String(body?.day || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not load the work list" }; }
+  }
+
+  if (action === "wizard_qa_profile") {
+    try { const { qaExecutiveProfile } = await import("./qa-engine.js"); return await qaExecutiveProfile({ executiveName: String(body?.executiveName || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not load the profile" }; }
+  }
+
+  if (action === "wizard_qa_load") {
+    try { const { qaLoadReview } = await import("./qa-engine.js"); return await qaLoadReview({ reviewId: String(body?.reviewId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not load the review" }; }
+  }
+
   if (action === "wizard_verify_report") {
     const siteUrl = String(body?.siteUrl || "").trim();
     if (!siteUrl) return { success: false, error: "A client site URL is required so the claims can be checked against the live pages." };
