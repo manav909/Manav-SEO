@@ -148,6 +148,30 @@ export function detectColumns(rows: any[]): { urlKey: string; valueKey: string; 
   return { urlKey, valueKey, itemKey };
 }
 
+/* The keywords a specific row should be judged against: one named in the row
+   itself wins, otherwise the account keywords that plausibly relate to the page,
+   otherwise the account keywords. Judging every page against all 60 keywords
+   would produce noise, so the page path is used to narrow them. */
+export function rowKeywords(row: any, accountKeywords: string[]): string[] {
+  const keys = Object.keys(row || {});
+  const kwKey = keys.find((k) => /keyword|target term|query|focus/i.test(k));
+  if (kwKey) {
+    const raw = String(row[kwKey] || "").trim();
+    if (raw) return raw.split(/[,;|]/).map((x) => x.trim()).filter(Boolean).slice(0, 5);
+  }
+  if (!accountKeywords.length) return [];
+  const urlKey = keys.find((k) => /url|page|link/i.test(k));
+  const slug = String(urlKey ? row[urlKey] || "" : "").toLowerCase().replace(/[^a-z0-9]+/g, " ");
+  if (slug) {
+    const fitted = accountKeywords.filter((k) => {
+      const parts = String(k).toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      return parts.length > 0 && parts.some((w) => slug.includes(w));
+    });
+    if (fitted.length) return fitted.slice(0, 5);
+  }
+  return accountKeywords.slice(0, 3);
+}
+
 /* Category of mistake, which is what makes an executive profile meaningful. */
 function mistakeCategory(status: string, type: string, quality: string[]): string {
   if (status === "verified") return "";
@@ -184,7 +208,7 @@ function remarkOf(status: string, expected: string, observed: string, evidence: 
 
 export async function qaCreateReview(opts: {
   projectId?: string; siteUrl: string; clientId?: string; clientName?: string;
-  executiveName?: string; bdeName?: string;
+  executiveName?: string; bdeName?: string; keywords?: string[]; competitors?: string[];
   title?: string; clientContext?: string; mailText?: string;
   tabs: Array<{ name: string; headers: string[]; rowCount: number }>;
 }) {
@@ -192,6 +216,32 @@ export async function qaCreateReview(opts: {
   if (!siteUrl) return { success: false, error: "A client site URL is required." };
   const tabs = Array.isArray(opts.tabs) ? opts.tabs : [];
   if (!tabs.length) return { success: false, error: "No sheet tabs were supplied." };
+
+  /* The keywords this client is actually trying to rank for, from every real
+     source: what the conversation and mail named, what Search Console already
+     shows, and what the project carries. Rows are judged against these, which is
+     what makes a quality check specific to the account instead of generic. */
+  const kw = new Set<string>();
+  for (const k of (opts.keywords || [])) { const v = String(k).trim(); if (v) kw.add(v); }
+  const comp = new Set<string>();
+  for (const c of (opts.competitors || [])) { const v = String(c).trim(); if (v) comp.add(v); }
+  if (opts.projectId) {
+    try {
+      const { data: proj } = await db().from("projects").select("keywords,competitors").eq("id", opts.projectId).maybeSingle();
+      const pk = (proj as any)?.keywords; const pc = (proj as any)?.competitors;
+      if (Array.isArray(pk)) for (const k of pk) { const v = String(k).trim(); if (v) kw.add(v); }
+      if (Array.isArray(pc)) for (const c of pc) { const v = String(c).trim(); if (v) comp.add(v); }
+    } catch { /* project keywords are a bonus, never required */ }
+    try {
+      const g: any = await loadGsc(opts.projectId);
+      for (const q of ((g && g.topQueries) || []).slice(0, 40)) {
+        const v = String(q.query || (Array.isArray(q.keys) ? q.keys[0] : "")).trim();
+        if (v) kw.add(v);
+      }
+    } catch { /* Search Console stays optional */ }
+  }
+  const targetKeywords = Array.from(kw).slice(0, 60);
+  const competitorList = Array.from(comp).slice(0, 20);
 
   /* The agenda is the difference between a senior pass and a random one. */
   let agenda: any[] = [];
@@ -202,6 +252,8 @@ export async function qaCreateReview(opts: {
       opts.clientContext ? `Client background, chat and call:\n${String(opts.clientContext).slice(0, 10000)}` : "No client background supplied.",
       opts.mailText ? `Commitment mail to the project manager:\n${String(opts.mailText).slice(0, 10000)}` : "No commitment mail supplied.",
       `Workbook tabs being reviewed: ${tabs.map((t) => t.name).join(", ")}.`,
+      targetKeywords.length ? `Target keywords for this account: ${targetKeywords.slice(0, 30).join(", ")}.` : "",
+      competitorList.length ? `Competitors named: ${competitorList.join(", ")}.` : "",
     ].join("\n\n");
     const { text } = await llmComplete({ system: sys, user, maxTokens: 1400, timeoutMs: 60000, label: "qa-agenda", maxSegments: 1 });
     const m = String(text || "").match(/\{[\s\S]*\}/);
@@ -224,6 +276,8 @@ export async function qaCreateReview(opts: {
     agenda,
     client_context: opts.clientContext || null,
     mail_text: opts.mailText || null,
+    target_keywords: targetKeywords,
+    competitors: competitorList,
     submitted_at: new Date().toISOString(),
   }).select().single();
   if (error || !rev) return { success: false, error: error?.message || "Could not create the review." };
@@ -239,7 +293,7 @@ export async function qaCreateReview(opts: {
      whether it is in play for this round or why it is not. */
   const gsc = await qaGscContext(String(opts.projectId || ""), siteUrl);
 
-  return { success: true, review: rev, agenda, tabs: savedTabs || tabRows, rows_per_slot: ROWS_PER_SLOT, gsc };
+  return { success: true, review: rev, agenda, tabs: savedTabs || tabRows, rows_per_slot: ROWS_PER_SLOT, gsc, target_keywords: targetKeywords, competitors: competitorList };
 }
 
 /* ---- 2. Check one bounded slice of one tab (its own slot) ------------------- */
@@ -267,6 +321,30 @@ export async function qaCheckTab(opts: {
   const onAgenda = agenda.filter((a) => Array.isArray(a.applies_to) && a.applies_to.includes(tab.tab_type));
   const agendaRef = onAgenda.length ? String(onAgenda[0].id || "") : "";
   const agendaHigh = onAgenda.some((a) => norm(a.weight) === "high");
+  /* Keywords reach the check, so the "keyword missing from the title" and
+     "missing from the H1" rules can actually fire. They were previously passed an
+     empty array, which made those quality rules unreachable. */
+  const reviewKeywords: string[] = Array.isArray(review.target_keywords) ? review.target_keywords.map(String) : [];
+
+  /* Search Console per page, so a row can be judged on outcome as well as on
+     presence. A page that is live and correct but has earned nothing in 28 days
+     is not a failure, and is never marked as one, but a reviewer needs to see it
+     rather than sign off on a technically present change. */
+  const pageStats = new Map<string, { clicks: number; impressions: number; position: number }>();
+  if (review.project_id) {
+    try {
+      const g: any = await loadGsc(String(review.project_id));
+      for (const p of ((g && g.queryPagePairs) || [])) {
+        const u = String(p.page || "").replace(/\/$/, "");
+        if (!u) continue;
+        const cur = pageStats.get(u) || { clicks: 0, impressions: 0, position: 0 };
+        cur.clicks += Number(p.clicks) || 0;
+        cur.impressions += Number(p.impressions) || 0;
+        cur.position = cur.position || Number(p.position) || 0;
+        pageStats.set(u, cur);
+      }
+    } catch { /* Search Console stays optional */ }
+  }
 
   const slice = rows.slice(0, ROWS_PER_SLOT);
   const { urlKey, valueKey, itemKey } = detectColumns(slice);
@@ -280,16 +358,20 @@ export async function qaCheckTab(opts: {
     const item = String(itemKey ? r[itemKey] || "" : "").trim() || `${tab.tab_name} row ${rowIndex + 1}`;
 
     const check = await checkOne(
-      { id: `${tabIndex}-${rowIndex}`, title: item, type: tab.tab_type, url, expected, keywords: [], committed: true, claimed: true },
+      { id: `${tabIndex}-${rowIndex}`, title: item, type: tab.tab_type, url, expected, keywords: rowKeywords(r, reviewKeywords), committed: true, claimed: true },
       review.site_url,
     );
     const cat = mistakeCategory(check.status, tab.tab_type, check.quality || []);
+    const stat = pageStats.get(String(check.url || url).replace(/\/$/, ""));
+    const gscNote = stat
+      ? ` Search Console for this page over the window: ${stat.clicks} clicks, ${stat.impressions} impressions, average position ${stat.position.toFixed(1)}.`
+      : (pageStats.size ? " This page has no Search Console activity in the window." : "");
     findings.push({
       review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
       item, check_type: tab.tab_type, url: check.url || url, expected, observed: check.observed || "",
       status: check.status, severity: severityOf(check.status, agendaHigh),
       mistake_category: cat || null, agenda_ref: agendaRef || null, round,
-      remark: remarkOf(check.status, expected, check.observed || "", check.evidence, check.quality || []),
+      remark: remarkOf(check.status, expected, check.observed || "", check.evidence, check.quality || []) + gscNote,
       resolved_round: check.status === "verified" ? round : null,
     });
   }
@@ -313,8 +395,14 @@ export async function qaCheckTab(opts: {
       const list: any[] = (all as any[]) || [];
       const bad = list.filter((f) => f.status !== "verified");
       if (bad.length) {
-        const sys = "You are a Senior Digital Marketing Specialist writing the reviewer remark for one tab of a delivery workbook. State plainly what is wrong, the pattern behind it if there is one, and what the executive must do. Two to four sentences. Never use an em-dash.";
-        const user = `Tab: ${tab.tab_name} (${tab.tab_type}). ${list.length} rows checked, ${bad.length} not clean. Examples: ${bad.slice(0, 8).map((f) => `${f.item}: ${f.status}, ${f.mistake_category || "issue"}`).join("; ")}.`;
+        const sys = "You are a Senior Digital Marketing Specialist writing the reviewer remark for one tab of a delivery workbook. State plainly what is wrong, the pattern behind it if there is one, and what the executive must do. Judge it against what THIS client cares about, which is given to you, not against generic best practice. Separate work that was not done from work that was done below standard. Two to four sentences. Never use an em-dash.";
+        const user = [
+          `Tab: ${tab.tab_name} (${tab.tab_type}). ${list.length} rows checked, ${bad.length} not clean.`,
+          onAgenda.length ? `What matters on this account for this kind of work: ${onAgenda.map((a: any) => `${a.focus} (${a.why})`).join("; ")}.` : "",
+          reviewKeywords.length ? `Target keywords: ${reviewKeywords.slice(0, 15).join(", ")}.` : "",
+          `Not done: ${bad.filter((f: any) => f.status === "failed").length}. Done below standard: ${bad.filter((f: any) => f.status === "partial").length}.`,
+          `Examples: ${bad.slice(0, 8).map((f: any) => `${f.item}: ${f.status}, ${f.mistake_category || "issue"}`).join("; ")}.`,
+        ].filter(Boolean).join("\n");
         const { text } = await llmComplete({ system: sys, user, maxTokens: 300, timeoutMs: 40000, label: "qa-tab-remark", maxSegments: 1 });
         tabRemark = String(text || "").trim();
       } else tabRemark = "Every row in this tab is confirmed live and within standard.";

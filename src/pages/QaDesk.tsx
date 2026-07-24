@@ -285,6 +285,7 @@ export default function QaDesk() {
     const created: any = await post("wizard_qa_create", {
       projectId, siteUrl: siteUrl.trim(), clientId, clientName,
       executiveName: dmeName, bdeName, clientContext, mailText,
+      keywords: extracted?.keywords || [], competitors: extracted?.competitor_sites || [],
       tabs: sheets.map((s) => ({ name: s.name, headers: s.headers, rowCount: s.rows.length })),
     });
     if (!created?.success) { setRunning(false); setBusy(""); setError(created?.error || "Could not start the review."); return; }
@@ -522,6 +523,8 @@ export default function QaDesk() {
                   {extracted.persona ? <p className="text-xs text-foreground/90">{extracted.persona}</p> : null}
                   {(extracted.priorities || []).length ? <p className="text-[11px] mt-1"><span className="text-muted-foreground">Priorities: </span>{extracted.priorities.join("; ")}</p> : null}
                   {(extracted.pain_points || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Pain points: </span>{extracted.pain_points.join("; ")}</p> : null}
+                  {(extracted.keywords || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Keywords to judge against: </span>{extracted.keywords.join(", ")}</p> : null}
+                  {(extracted.competitor_sites || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Competitors: </span>{extracted.competitor_sites.join(", ")}</p> : null}
                 </div>
               ) : null}
             </Stage>

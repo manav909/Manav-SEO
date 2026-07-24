@@ -789,6 +789,8 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         clientName: String(body?.clientName || "").trim() || undefined,
         executiveName: String(body?.executiveName || "").trim() || undefined,
         bdeName: String(body?.bdeName || "").trim() || undefined,
+        keywords: Array.isArray(body?.keywords) ? body.keywords : [],
+        competitors: Array.isArray(body?.competitors) ? body.competitors : [],
         title: String(body?.title || "").trim() || undefined,
         clientContext: String(body?.clientContext || ""),
         mailText: String(body?.mailText || ""),
