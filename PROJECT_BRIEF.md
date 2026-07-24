@@ -2024,3 +2024,16 @@ Manav: after connecting GSC and returning to the page, the Connect button was st
 (3) ROBUSTNESS: the popup can be closed by hand or its postMessage missed, so as well as listening for the gsc_connected message the page now POLLS gsc_status every 3 seconds for up to two minutes and proceeds as soon as the account reports connected. Every step is logged to the activity feed.
 Verified: esbuild green; all five gsc actions confirmed present in pm-gsc.ts and called with the exact parameter names the backend expects (gsc_select_property takes projectId + siteUrl + label, gsc_pull takes projectId + days + source); zero em-dashes.
 LIVE VALIDATION OWED: connect, confirm the property list appears, pick the property for the site, confirm it pulls and the panel shows ready with the property name.
+
+### Build 12.88 — QA Desk rebuilt in real reviewer order, evidence first, full colour system [BUILT 2026-07-13, deploy pending]
+Manav: the flow was wrong for an actual QA. A reviewer needs the crawl and GSC IN HAND before judging any claimed row, and the UI had no colour language. He is right: the crawl was step 4 (last), so rows were judged blind and the site was only read afterwards.
+REORDERED to how a reviewer actually works (complete file rewrite, not a patch):
+  1 Brief       what was promised (mail) and what the client judges work by (chat/calls) -> sets the agenda
+  2 EVIDENCE    project + Search Console + WHOLE SITE CRAWL, gathered BEFORE any row is judged
+  3 Submitted   the executive's workbook, every tab read
+  4 Review      each claimed row checked against the evidence, then the site wide audit
+  5 Verdict     remarks, the three documents, reviewed workbook download, recheck round
+The crawl moved from last to Evidence, so by the time the workbook is reviewed the real pages are already loaded. Step 4 warns in amber when the crawl has not been run yet, rather than silently reviewing blind. The site audit now runs inside the review using the crawl job captured in step 2.
+EVIDENCE BAR: three always visible chips under the header (Project, Search Console, Site crawl) that colour by real state, so what is in hand is never a question.
+COLOUR SYSTEM (was monochrome): a single TONE map drives everything. Slate idle, sky working, emerald clean, amber needs work, red blocking. Each stage header ring and number badge takes its stage state; progress bars colour by state (sky while running, emerald when complete); finding cards take a red or amber border by severity; verdict counters are colour chips; the activity feed colour codes ok/warn/error; the header gate pill is emerald when cleared and red when held.
+Verified: esbuild green on QaDesk and App; stage order confirmed Brief, Evidence, Submitted work, Review, Verdict; crawl confirmed inside stage 2; all 16 actions still wired (the 8 QA actions, project create, the 5 GSC actions, the batch crawl, and the site audit); zero em-dashes; api function count still 12.

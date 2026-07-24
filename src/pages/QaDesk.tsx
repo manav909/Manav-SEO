@@ -4,11 +4,17 @@ import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/contexts/AuthContext";
 
 /* QA Desk.
-   The checkpoint between finished work and the client. Everything a round needs
-   lives on this one page: the client record read from the chat and calls, the
-   project and Search Console setup for the site being checked, the workbook, the
-   run itself, and the verdict that holds the client summary back until the
-   delivery is genuinely clean. All platform calls go through /api/task-engine. */
+
+   Built in the order a reviewer actually works:
+     1 Brief      what was promised, and what this client judges work by
+     2 Evidence   the project, Search Console and a full crawl, IN HAND before
+                  a single claimed row is judged
+     3 Submitted  the executive's workbook
+     4 Review     every row checked against the evidence, tab by tab
+     5 Verdict    remarks, documents, and the gate that holds the client summary
+
+   Colour carries state everywhere: slate is idle, sky is working, emerald is
+   clean, amber needs work, red is blocking. All calls go to /api/task-engine. */
 
 const post = (a: string, b: any = {}) =>
   fetch("/api/task-engine", {
@@ -23,28 +29,29 @@ const post = (a: string, b: any = {}) =>
 const SLOT = 25;
 const dom = (u: string) => { try { const s = String(u || "").trim(); return s ? new URL(s.startsWith("http") ? s : "https://" + s).hostname.replace(/^www\./, "").toLowerCase() : ""; } catch { return ""; } };
 
-const PILL: Record<string, string> = {
-  verified: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
-  partial: "text-amber-400 border-amber-500/40 bg-amber-500/10",
-  failed: "text-red-400 border-red-500/40 bg-red-500/10",
-  unverifiable: "text-muted-foreground border-border bg-muted/30",
-  passed: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
-  awaiting_fix: "text-amber-400 border-amber-500/40 bg-amber-500/10",
-  rechecking: "text-sky-400 border-sky-500/40 bg-sky-500/10",
-  checking: "text-sky-400 border-sky-500/40 bg-sky-500/10",
-  queued: "text-muted-foreground border-border bg-muted/30",
+const TONE: Record<string, string> = {
+  idle: "text-muted-foreground border-border bg-muted/20",
+  work: "text-sky-400 border-sky-500/40 bg-sky-500/10",
+  good: "text-emerald-400 border-emerald-500/40 bg-emerald-500/10",
+  warn: "text-amber-400 border-amber-500/40 bg-amber-500/10",
+  bad: "text-red-400 border-red-500/40 bg-red-500/10",
 };
+const STATUS_TONE: Record<string, string> = {
+  verified: TONE.good, partial: TONE.warn, failed: TONE.bad, unverifiable: TONE.idle,
+  passed: TONE.good, awaiting_fix: TONE.warn, rechecking: TONE.work, checking: TONE.work, queued: TONE.idle,
+};
+const RING: Record<string, string> = { idle: "border-border", work: "border-sky-500/50", good: "border-emerald-500/40", warn: "border-amber-500/40", bad: "border-red-500/50" };
 
 type Sheet = { name: string; headers: string[]; rows: any[] };
 
-function Step({ n, title, hint, done, children }: any) {
+function Stage({ n, title, hint, tone = "idle", children }: any) {
   return (
-    <section className="rounded-2xl border border-border bg-card/40 overflow-hidden">
-      <header className="flex items-center gap-3 px-5 py-3 border-b border-border/70">
-        <span className={`w-6 h-6 shrink-0 rounded-full grid place-items-center text-[11px] font-bold border ${done ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10" : "border-border text-muted-foreground"}`}>
-          {done ? "\u2713" : n}
+    <section className={`rounded-2xl border bg-card/40 overflow-hidden ${RING[tone] || RING.idle}`}>
+      <header className="flex items-center gap-3 px-5 py-3 border-b border-border/60">
+        <span className={`w-7 h-7 shrink-0 rounded-full grid place-items-center text-[11px] font-bold border ${TONE[tone]}`}>
+          {tone === "good" ? "\u2713" : n}
         </span>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold leading-tight">{title}</h2>
           {hint ? <p className="text-[11px] text-muted-foreground leading-tight">{hint}</p> : null}
         </div>
@@ -52,6 +59,11 @@ function Step({ n, title, hint, done, children }: any) {
       <div className="p-5">{children}</div>
     </section>
   );
+}
+
+function Bar({ pct, tone = "work" }: { pct: number; tone?: string }) {
+  const fill = tone === "good" ? "bg-emerald-500" : tone === "warn" ? "bg-amber-500" : tone === "bad" ? "bg-red-500" : "bg-sky-500";
+  return <div className="h-1.5 rounded-full bg-muted overflow-hidden"><div className={`h-full ${fill} transition-all`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>;
 }
 
 export default function QaDesk() {
@@ -71,9 +83,14 @@ export default function QaDesk() {
   const [projectId, setProjectId] = useState(navProjectId);
   const [projectLabel, setProjectLabel] = useState(navProjectName);
   const [gsc, setGsc] = useState<any>(null);
-  const [setupBusy, setSetupBusy] = useState("");
   const [gscSites, setGscSites] = useState<any[]>([]);
   const [gscPulling, setGscPulling] = useState(false);
+  const [setupBusy, setSetupBusy] = useState("");
+
+  const [crawl, setCrawl] = useState<any>(null);
+  const [crawlJobId, setCrawlJobId] = useState("");
+  const [crawling, setCrawling] = useState(false);
+  const [siteAudit, setSiteAudit] = useState<any>(null);
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [fileName, setFileName] = useState("");
@@ -83,121 +100,32 @@ export default function QaDesk() {
   const [findings, setFindings] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [running, setRunning] = useState(false);
-  const [crawlFirst, setCrawlFirst] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [activity, setActivity] = useState<Array<{ t: string; msg: string; kind: string }>>([]);
-  const [crawl, setCrawl] = useState<any>(null);
-  const [crawling, setCrawling] = useState(false);
-  const [siteAudit, setSiteAudit] = useState<any>(null);
   const [worklist, setWorklist] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
 
   const siteDomain = dom(siteUrl);
   const projDomain = dom(navProjectUrl);
-  const usingNavProject = projectId === navProjectId;
-  const mismatch = Boolean(siteDomain && projDomain && siteDomain !== projDomain && usingNavProject);
+  const mismatch = Boolean(siteDomain && projDomain && siteDomain !== projDomain && projectId === navProjectId);
+  const gscConnected = Boolean(gsc?.connected) && !mismatch;
+  const gscBound = gscConnected && Boolean(gsc?.resourceId);
+  const gscReady = gscBound && Boolean(gsc?.lastPullAt);
+  const crawlReady = Boolean(crawl?.complete);
+
+  const log = (msg: string, kind = "run") => setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
 
   useEffect(() => {
     if (navProjectUrl && !siteUrl.trim()) setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`);
     loadWorklist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navProjectUrl]);
-
   useEffect(() => { if (projectId) refreshGsc(projectId); }, [projectId]);
-
-  const log = (msg: string, kind: string = "run") =>
-    setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
 
   const loadWorklist = async () => { const r: any = await post("wizard_qa_worklist", {}); if (r?.success) setWorklist(r); };
   const loadProfiles = async () => { const r: any = await post("wizard_qa_profile", { executiveName: "" }); if (r?.success) setProfiles(r.executives || []); };
-
-  const refreshGsc = async (pid: string) => {
-    const r: any = await post("gsc_status", { projectId: pid });
-    setGsc(r?.success === false ? null : r);
-  };
-
-  /* Setup happens here so nobody has to leave the page. */
-  const createProjectForSite = async () => {
-    if (!siteDomain) { setError("Enter the client site first."); return; }
-    setError(""); setSetupBusy("Creating the project..."); log(`Creating a project for ${siteDomain}`);
-    const r: any = await post("wizard_create_project", {
-      name: clientName.trim() || siteDomain,
-      domain: siteUrl.trim(),
-      userId: auth?.user?.id || "",
-    });
-    setSetupBusy("");
-    if (!r?.success || !r?.projectId) { setError(r?.error || "Could not create the project."); return; }
-    setProjectId(r.projectId);
-    setProjectLabel(clientName.trim() || siteDomain);
-    log(`Project created and bound to this review`, "ok");
-    refreshGsc(r.projectId);
-  };
-
-  /* The connection is four steps, not one: authorise, then list the properties
-     on that Google account, then bind one to this project, then pull its data.
-     Stopping after the popup leaves it connected but unusable, which is why the
-     button used to come back unchanged. */
-  const loadGscProperties = async (pid: string) => {
-    setSetupBusy("Loading the Search Console properties...");
-    const r: any = await post("gsc_list_properties", { projectId: pid });
-    setSetupBusy("");
-    const sites = (r?.sites || []).filter(Boolean);
-    setGscSites(sites);
-    log(sites.length ? `${sites.length} Search Console property(ies) found` : "No properties on this Google account", sites.length ? "ok" : "warn");
-    if (!sites.length && r?.error) setError(r.error);
-  };
-
-  const connectGsc = async () => {
-    if (!projectId) { setError("Create or select the project for this site first."); return; }
-    setError(""); setSetupBusy("Opening Google...");
-    const r: any = await post("gsc_oauth_start", { projectId });
-    setSetupBusy("");
-    if (!r?.url) { setError(r?.error || "Could not start the Search Console connection."); return; }
-    log("Waiting for the Google authorisation window");
-    window.open(r.url, "gsc_oauth", "width=520,height=640");
-
-    let settled = false;
-    const finish = async () => {
-      if (settled) return; settled = true;
-      window.removeEventListener("message", onMsg);
-      log("Authorised, reading the account", "ok");
-      const st: any = await post("gsc_status", { projectId });
-      setGsc(st);
-      if (st?.connected && !st?.resourceId) await loadGscProperties(projectId);
-    };
-    const onMsg = (e: MessageEvent) => { if ((e.data || {}).type === "gsc_connected") finish(); };
-    window.addEventListener("message", onMsg);
-    /* The popup can be closed by hand, or the message can be missed, so poll the
-       real status as well rather than waiting forever on an event. */
-    let tries = 0;
-    const poll = setInterval(async () => {
-      if (settled || tries++ > 40) { clearInterval(poll); return; }
-      const st: any = await post("gsc_status", { projectId });
-      if (st?.connected) { clearInterval(poll); finish(); }
-    }, 3000);
-  };
-
-  const chooseProperty = async (site: any) => {
-    const siteUrl2 = String(site?.siteUrl || site?.url || site || "");
-    if (!siteUrl2) return;
-    setSetupBusy(`Binding ${siteUrl2}...`);
-    log(`Selecting property ${siteUrl2}`);
-    const r: any = await post("gsc_select_property", { projectId, siteUrl: siteUrl2, label: siteUrl2 });
-    if (!r?.success) { setSetupBusy(""); setError(r?.error || "Could not select that property."); log("Property selection failed", "err"); return; }
-    setGscSites([]);
-    await pullGsc();
-  };
-
-  const pullGsc = async () => {
-    setGscPulling(true); setSetupBusy("Pulling Search Console data...");
-    log("Pulling Search Console data");
-    const r: any = await post("gsc_pull", { projectId, days: 28, source: "manual" });
-    setGscPulling(false); setSetupBusy("");
-    if (!r?.success) { setError(r?.error || "The pull did not complete."); log("Search Console pull failed", "warn"); }
-    else log("Search Console data pulled", "ok");
-    await refreshGsc(projectId);
-  };
+  const refreshGsc = async (pid: string) => { const r: any = await post("gsc_status", { projectId: pid }); setGsc(r?.success === false ? null : r); };
 
   const readContext = async () => {
     if (!clientContext.trim() && !mailText.trim()) { setError("Paste the client chat, call notes or the mail first."); return; }
@@ -212,6 +140,92 @@ export default function QaDesk() {
     log(`Record filled: ${r.client_name || "client"}${r.site_url ? `, ${r.site_url}` : ""}`, "ok");
   };
 
+  const createProjectForSite = async () => {
+    if (!siteDomain) { setError("Enter the client site first."); return; }
+    setError(""); setSetupBusy("Creating the project..."); log(`Creating a project for ${siteDomain}`);
+    const r: any = await post("wizard_create_project", { name: clientName.trim() || siteDomain, domain: siteUrl.trim(), userId: auth?.user?.id || "" });
+    setSetupBusy("");
+    if (!r?.success || !r?.projectId) { setError(r?.error || "Could not create the project."); return; }
+    setProjectId(r.projectId); setProjectLabel(clientName.trim() || siteDomain);
+    log("Project created and bound to this review", "ok");
+    refreshGsc(r.projectId);
+  };
+
+  const loadGscProperties = async (pid: string) => {
+    setSetupBusy("Loading the Search Console properties...");
+    const r: any = await post("gsc_list_properties", { projectId: pid });
+    setSetupBusy("");
+    const sites = (r?.sites || []).filter(Boolean);
+    setGscSites(sites);
+    log(sites.length ? `${sites.length} Search Console property(ies) found` : "No properties on this Google account", sites.length ? "ok" : "warn");
+    if (!sites.length && r?.error) setError(r.error);
+  };
+
+  const connectGsc = async () => {
+    if (!projectId) { setError("Create or select the project for this site first."); return; }
+    setError(""); setSetupBusy("Opening Google..."); 
+    const r: any = await post("gsc_oauth_start", { projectId });
+    setSetupBusy("");
+    if (!r?.url) { setError(r?.error || "Could not start the Search Console connection."); return; }
+    log("Waiting for the Google authorisation window");
+    window.open(r.url, "gsc_oauth", "width=520,height=640");
+    let settled = false;
+    const finish = async () => {
+      if (settled) return; settled = true;
+      window.removeEventListener("message", onMsg);
+      log("Authorised, reading the account", "ok");
+      const st: any = await post("gsc_status", { projectId });
+      setGsc(st);
+      if (st?.connected && !st?.resourceId) await loadGscProperties(projectId);
+    };
+    const onMsg = (e: MessageEvent) => { if ((e.data || {}).type === "gsc_connected") finish(); };
+    window.addEventListener("message", onMsg);
+    let tries = 0;
+    const poll = setInterval(async () => {
+      if (settled || tries++ > 40) { clearInterval(poll); return; }
+      const st: any = await post("gsc_status", { projectId });
+      if (st?.connected) { clearInterval(poll); finish(); }
+    }, 3000);
+  };
+
+  const chooseProperty = async (site: any) => {
+    const u = String(site?.siteUrl || site?.url || site || "");
+    if (!u) return;
+    setSetupBusy(`Binding ${u}...`); log(`Selecting property ${u}`);
+    const r: any = await post("gsc_select_property", { projectId, siteUrl: u, label: u });
+    if (!r?.success) { setSetupBusy(""); setError(r?.error || "Could not select that property."); log("Property selection failed", "err"); return; }
+    setGscSites([]); await pullGsc();
+  };
+
+  const pullGsc = async () => {
+    setGscPulling(true); setSetupBusy("Pulling Search Console data..."); log("Pulling Search Console data");
+    const r: any = await post("gsc_pull", { projectId, days: 28, source: "manual" });
+    setGscPulling(false); setSetupBusy("");
+    if (!r?.success) { setError(r?.error || "The pull did not complete."); log("Search Console pull failed", "warn"); }
+    else log("Search Console data pulled", "ok");
+    await refreshGsc(projectId);
+  };
+
+  /* Evidence: the whole site, crawled in batches, before any row is judged. */
+  const runCrawl = async () => {
+    if (!siteUrl.trim()) { setError("Enter the client site first."); return ""; }
+    setCrawling(true); setError(""); log(`Starting the full site crawl of ${siteDomain}`);
+    let jobId = ""; let guard = 0;
+    try {
+      while (guard++ < 400) {
+        const r: any = await post("wizard_crawl_batch", jobId ? { projectId, jobId } : { projectId, siteUrl: siteUrl.trim(), mode: "advanced" });
+        if (!r?.success) { setError(r?.error || "The crawl could not run."); log(`Crawl stopped: ${r?.error || "failed"}`, "err"); break; }
+        jobId = r.jobId || jobId;
+        setCrawl({ jobId, done: r.done, total: r.total, complete: r.complete });
+        log(`Crawled ${r.done} of ${r.total} pages`, r.complete ? "ok" : "run");
+        if (r.complete) break;
+      }
+    } catch (e: any) { setError(String(e?.message || e)); log("Crawl error", "err"); }
+    setCrawling(false);
+    if (jobId) setCrawlJobId(jobId);
+    return jobId;
+  };
+
   const onWorkbook = async (fileList: FileList | null) => {
     const f = (fileList || [])[0];
     if (!f) return;
@@ -221,66 +235,29 @@ export default function QaDesk() {
       const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array" });
       const out: Sheet[] = [];
       for (const name of (wb.SheetNames || [])) {
-        try {
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "" });
-          out.push({ name, headers: rows.length ? Object.keys(rows[0]) : [], rows });
-        } catch { /* skip an unreadable tab */ }
+        try { const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "" }); out.push({ name, headers: rows.length ? Object.keys(rows[0]) : [], rows }); }
+        catch { /* skip an unreadable tab */ }
       }
       setSheets(out); setFileName(f.name); setBusy("");
       log(`${out.length} tab(s) read, ${out.reduce((a, x) => a + x.rows.length, 0)} rows total`, "ok");
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
   };
 
-  /* Full site batch crawl. Runs batch after batch with the count visible, then
-     audits every crawled page so the gate covers the site, not just the rows. */
-  const runCrawl = async (rid?: string) => {
-    if (!siteUrl.trim()) { setError("Enter the client site first."); return null; }
-    setCrawling(true); setError("");
-    log(`Starting the full site crawl of ${siteDomain}`);
-    let jobId = ""; let guard = 0;
-    try {
-      while (guard++ < 400) {
-        const r: any = await post("wizard_crawl_batch", jobId
-          ? { projectId, jobId }
-          : { projectId, siteUrl: siteUrl.trim(), mode: "advanced" });
-        if (!r?.success) { setError(r.error || "The crawl could not run."); log(`Crawl stopped: ${r?.error || "failed"}`, "err"); break; }
-        jobId = r.jobId || jobId;
-        setCrawl({ jobId, done: r.done, total: r.total, complete: r.complete });
-        log(`Crawled ${r.done} of ${r.total} pages`, r.complete ? "ok" : "run");
-        if (r.complete) break;
-      }
-    } catch (e: any) { setError(String(e?.message || e)); log("Crawl error", "err"); }
-    setCrawling(false);
-    const useRid = rid || reviewId;
-    if (jobId && useRid) {
-      log("Auditing every crawled page for site wide issues");
-      const a: any = await post("wizard_qa_site_audit", { reviewId: useRid, jobId });
-      if (a?.success) { setSiteAudit(a); log(a.summary, a.blocking ? "warn" : "ok"); }
-      else log(`Site audit did not run: ${a?.error || "unknown"}`, "warn");
-    }
-    return jobId;
-  };
-
   const startReview = async () => {
     setError(""); setFindings([]); setSummary(null); setProgress({});
     if (!siteUrl.trim()) { setError("Enter the client site."); return; }
     if (!sheets.length) { setError("Upload the delivery workbook."); return; }
-    setRunning(true); setBusy("Setting the agenda for this account..."); log("Setting the QA agenda from the client record");
+    setRunning(true); setBusy("Setting the agenda..."); log("Setting the QA agenda from the client record");
     const created: any = await post("wizard_qa_create", {
       projectId, siteUrl: siteUrl.trim(), clientName, executiveName: execName, clientContext, mailText,
       tabs: sheets.map((s) => ({ name: s.name, headers: s.headers, rowCount: s.rows.length })),
     });
     if (!created?.success) { setRunning(false); setBusy(""); setError(created?.error || "Could not start the review."); return; }
-    setReviewId(created.review.id); setAgenda(created.agenda || []);
+    const rid = created.review.id;
+    setReviewId(rid); setAgenda(created.agenda || []);
     log(`Agenda set with ${(created.agenda || []).length} focus point(s)`, "ok");
     if (created.gsc?.note) log(created.gsc.note, created.gsc.usable ? "ok" : "warn");
-    await runAllTabs(created.review.id);
-    if (crawlFirst) await runCrawl(created.review.id);
-    const fin2: any = await post("wizard_qa_finalize", { reviewId: created.review.id });
-    if (fin2?.success) { setSummary(fin2); log(fin2.verdict, fin2.ready_to_submit ? "ok" : "warn"); }
-  };
 
-  const runAllTabs = async (rid: string) => {
     const collected: any[] = [];
     for (let ti = 0; ti < sheets.length; ti++) {
       const sheet = sheets[ti];
@@ -288,11 +265,8 @@ export default function QaDesk() {
       let offset = 0;
       while (true) {
         setBusy(`${sheet.name}: rows ${offset + 1} to ${Math.min(offset + SLOT, sheet.rows.length)} of ${sheet.rows.length}`);
-        const r: any = await post("wizard_qa_check_tab", {
-          reviewId: rid, tabIndex: ti, rowOffset: offset,
-          rows: sheet.rows.slice(offset, offset + SLOT), totalRows: sheet.rows.length,
-        });
-        if (!r?.success) { setError(`${sheet.name}: ${r?.error || "check failed"}`); break; }
+        const r: any = await post("wizard_qa_check_tab", { reviewId: rid, tabIndex: ti, rowOffset: offset, rows: sheet.rows.slice(offset, offset + SLOT), totalRows: sheet.rows.length });
+        if (!r?.success) { setError(`${sheet.name}: ${r?.error || "check failed"}`); log(`${sheet.name} failed: ${r?.error || ""}`, "err"); break; }
         for (const f of (r.findings || [])) collected.push({ ...f, tab_name: sheet.name, tab_index: ti });
         setFindings([...collected]);
         setProgress((p) => ({ ...p, [ti]: { checked: r.rows_checked, total: r.row_count, done: r.done, remark: r.tab_remark || "" } }));
@@ -302,8 +276,16 @@ export default function QaDesk() {
         offset = r.next_offset;
       }
     }
-    log("Reconciling the workbook against the commitment mail");
+
+    if (crawlJobId) {
+      setBusy("Auditing every crawled page...");
+      log("Auditing every crawled page for site wide issues");
+      const a: any = await post("wizard_qa_site_audit", { reviewId: rid, jobId: crawlJobId });
+      if (a?.success) { setSiteAudit(a); log(a.summary, a.blocking ? "warn" : "ok"); }
+    }
+
     setBusy("Reconciling against the commitments...");
+    log("Reconciling the workbook against the commitment mail");
     const fin: any = await post("wizard_qa_finalize", { reviewId: rid });
     setSummary(fin?.success ? fin : null);
     if (fin?.success) log(fin.verdict, fin.ready_to_submit ? "ok" : "warn");
@@ -315,7 +297,7 @@ export default function QaDesk() {
     const r: any = await post("wizard_qa_recheck", { reviewId });
     if (!r?.success) { setError(r?.error || "Could not open a recheck round."); return; }
     setSummary(null); setFindings([]); setProgress({}); setError("");
-    setBusy(`Round ${r.round} open. Upload the corrected workbook and run again.`);
+    log(`Round ${r.round} open for recheck, ${r.to_recheck} item(s)`, "warn");
     loadWorklist();
   };
 
@@ -328,7 +310,7 @@ export default function QaDesk() {
 
   const downloadAnnotated = async () => {
     if (!sheets.length) return;
-    setBusy("Building the reviewed workbook...");
+    setBusy("Building the reviewed workbook..."); log("Writing remarks into the workbook");
     try {
       const XLSX: any = await import(/* @vite-ignore */ "https://esm.sh/xlsx@0.18.5");
       const wb = XLSX.utils.book_new();
@@ -337,15 +319,14 @@ export default function QaDesk() {
         for (const f of findings) if (f.tab_index === ti) byRow.set(f.row_index, f);
         const rows = sheets[ti].rows.map((r, i) => {
           const f = byRow.get(i);
-          return { ...r, "QA status": f ? f.status : "not checked", "QA severity": f?.severity || "",
-            "QA mistake type": f?.mistake_category || "", "QA observed live": f?.observed || "", "QA remark": f?.remark || "" };
+          return { ...r, "QA status": f ? f.status : "not checked", "QA severity": f?.severity || "", "QA mistake type": f?.mistake_category || "", "QA observed live": f?.observed || "", "QA remark": f?.remark || "" };
         });
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), sheets[ti].name.slice(0, 31));
       }
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheets.map((s, i) => ({ Tab: s.name, "Rows checked": progress[i]?.checked ?? 0, "Reviewer remark": progress[i]?.remark || "" }))), "QA remarks");
       if (agenda.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(agenda.map((a: any) => ({ Focus: a.focus, Why: a.why, Weight: a.weight }))), "QA agenda");
       XLSX.writeFile(wb, `QA reviewed ${fileName || "workbook"}`.replace(/\.xlsx?$/i, "") + ".xlsx");
-      setBusy("");
+      setBusy(""); log("Reviewed workbook downloaded", "ok");
     } catch (e: any) { setBusy(""); setError(`Could not build the workbook. ${e?.message || ""}`); }
   };
 
@@ -355,48 +336,60 @@ export default function QaDesk() {
     setReviewId(id); setAgenda(r.review.agenda || []); setSiteUrl(r.review.site_url || "");
     setClientName(r.review.client_name || ""); setExecName(r.review.executive_name || "");
     setFindings((r.findings || []).map((f: any) => ({ ...f, tab_index: -1 })));
-    setSummary({ totals: r.review.totals || {}, status: r.review.status, round: r.review.round,
-      verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
+    setSummary({ totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
+    log(`Loaded saved review for ${r.review.client_name || r.review.site_url}`, "ok");
   };
 
   const t = summary?.totals || {};
   const totalRows = sheets.reduce((a, s) => a + s.rows.length, 0);
-  const checkedRows = Object.values(progress).reduce((a: number, p: any) => a + (p?.checked || 0), 0);
-  const gscConnected = Boolean(gsc?.connected) && !mismatch;
-  const gscBound = gscConnected && Boolean(gsc?.resourceId);
-  const gscOn = gscBound && Boolean(gsc?.lastPullAt);
-  const step1done = Boolean(siteUrl.trim() && (clientContext.trim() || mailText.trim()));
-  const step2done = Boolean(projectId) && !mismatch;
-  const step3done = sheets.length > 0;
+  const s1: string = (siteUrl.trim() && (clientContext.trim() || mailText.trim())) ? "good" : "idle";
+  const s2: string = mismatch ? "warn" : (projectId && crawlReady) ? "good" : (crawling || setupBusy) ? "work" : "idle";
+  const s3: string = sheets.length ? "good" : "idle";
+  const s4: string = running ? "work" : findings.length ? (findings.some((f) => f.status === "failed") ? "bad" : findings.some((f) => f.status === "partial") ? "warn" : "good") : "idle";
+  const s5: string = summary ? (summary.ready_to_submit ? "good" : "bad") : "idle";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <PortalNav />
       <div className="max-w-6xl mx-auto px-4 py-8">
 
-        <div className="flex flex-wrap items-end justify-between gap-3 mb-1">
-          <h1 className="text-2xl font-bold tracking-tight">QA Desk</h1>
-          {summary ? (
-            <span className={`text-xs px-3 py-1 rounded-full border font-semibold ${summary.ready_to_submit ? PILL.passed : PILL.awaiting_fix}`}>
-              {summary.ready_to_submit ? "Cleared to send" : "Held: not ready to send"}
-            </span>
-          ) : (
-            <span className="text-xs px-3 py-1 rounded-full border border-border text-muted-foreground">Nothing checked yet</span>
-          )}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">QA Desk</h1>
+            <p className="text-sm text-muted-foreground">The checkpoint between finished work and the client.</p>
+          </div>
+          <span className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${summary ? (summary.ready_to_submit ? TONE.good : TONE.bad) : TONE.idle}`}>
+            {summary ? (summary.ready_to_submit ? "Cleared to send" : "Held: do not send") : "Nothing checked yet"}
+          </span>
         </div>
-        <p className="text-sm text-muted-foreground mb-6">The checkpoint between finished work and the client. Nothing reaches them until every claim is confirmed on the live site.</p>
+
+        {/* Evidence in hand, visible at all times */}
+        <div className="grid sm:grid-cols-3 gap-2 mb-5">
+          <div className={`rounded-xl border px-3 py-2 ${mismatch ? TONE.warn : projectId ? TONE.good : TONE.idle}`}>
+            <div className="text-[10px] uppercase tracking-wider opacity-80">Project</div>
+            <div className="text-xs font-semibold truncate">{mismatch ? "Different site from the nav project" : projectId ? (projectLabel || navProjectName || siteDomain || "bound") : "Not set"}</div>
+          </div>
+          <div className={`rounded-xl border px-3 py-2 ${gscReady ? TONE.good : gscConnected ? TONE.warn : TONE.idle}`}>
+            <div className="text-[10px] uppercase tracking-wider opacity-80">Search Console</div>
+            <div className="text-xs font-semibold truncate">{gscReady ? (gsc?.resourceLabel || gsc?.resourceId) : gscBound ? "Bound, not pulled" : gscConnected ? "Pick a property" : "Not connected"}</div>
+          </div>
+          <div className={`rounded-xl border px-3 py-2 ${crawlReady ? TONE.good : crawling ? TONE.work : TONE.idle}`}>
+            <div className="text-[10px] uppercase tracking-wider opacity-80">Site crawl</div>
+            <div className="text-xs font-semibold truncate">{crawlReady ? `${crawl.done} pages ready` : crawling ? `${crawl?.done || 0} of ${crawl?.total || "?"}` : "Not crawled"}</div>
+          </div>
+        </div>
 
         <div className="grid lg:grid-cols-[1fr_320px] gap-5 items-start">
           <div className="space-y-4">
 
-            <Step n={1} title="The client and the promise" hint="Paste the conversation and the mail, then let it fill the record." done={step1done}>
+            <Stage n={1} title="Brief" hint="What was promised, and what this client judges the work by." tone={s1}>
               <div className="grid md:grid-cols-2 gap-3 mb-3">
-                <textarea className="w-full h-28 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client chat and call notes. This sets the QA agenda." value={clientContext} onChange={(e) => setClientContext(e.target.value)} />
-                <textarea className="w-full h-28 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Commitment mail sent to the project manager." value={mailText} onChange={(e) => setMailText(e.target.value)} />
+                <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client chat and call notes. This sets the QA agenda." value={clientContext} onChange={(e) => setClientContext(e.target.value)} />
+                <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Commitment mail sent to the project manager." value={mailText} onChange={(e) => setMailText(e.target.value)} />
               </div>
               <button onClick={readContext} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 mb-3">Fill from chat and calls</button>
-              <div className="grid md:grid-cols-3 gap-3">
-                <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Executive who did the work" value={execName} onChange={(e) => setExecName(e.target.value)} />
+              <div className="grid md:grid-cols-3 gap-2">
+                <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Executive" value={execName} onChange={(e) => setExecName(e.target.value)} />
                 <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
                 <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="https://client.com/" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} />
               </div>
@@ -407,22 +400,21 @@ export default function QaDesk() {
                   {(extracted.pain_points || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Pain points: </span>{extracted.pain_points.join("; ")}</p> : null}
                 </div>
               ) : null}
-            </Step>
+            </Stage>
 
-            <Step n={2} title="Setup for this site" hint="The project and Search Console this round will use. Set it up here." done={step2done}>
+            <Stage n={2} title="Evidence" hint="The project, Search Console and the whole site, in hand before any row is judged." tone={s2}>
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/20 px-3 py-2.5">
                   <div className="min-w-0">
                     <div className="text-xs font-semibold">Project</div>
                     <div className="text-[11px] text-muted-foreground truncate">
-                      {mismatch
-                        ? `The nav project is ${navProjectName || projDomain} (${projDomain}), a different site from ${siteDomain}.`
-                        : projectId ? `${projectLabel || navProjectName || projDomain || "selected"} covers ${siteDomain || "this site"}.` : "No project selected."}
+                      {mismatch ? `The nav project is ${navProjectName || projDomain}, a different site from ${siteDomain}.`
+                        : projectId ? `${projectLabel || navProjectName || projDomain} covers ${siteDomain || "this site"}.` : "No project selected."}
                     </div>
                   </div>
-                  {mismatch || !projectId ? (
-                    <button onClick={createProjectForSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap">Create project for {siteDomain || "this site"}</button>
-                  ) : <span className={`text-[11px] px-2 py-0.5 rounded-full border ${PILL.verified}`}>matched</span>}
+                  {mismatch || !projectId
+                    ? <button onClick={createProjectForSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap">Create for {siteDomain || "this site"}</button>
+                    : <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.good}`}>matched</span>}
                 </div>
 
                 <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
@@ -430,162 +422,139 @@ export default function QaDesk() {
                     <div className="min-w-0">
                       <div className="text-xs font-semibold">Search Console</div>
                       <div className="text-[11px] text-muted-foreground truncate">
-                        {mismatch
-                          ? "Left out while the project does not match, because that data belongs to another client."
-                          : gscOn ? `${gsc?.resourceLabel || gsc?.resourceId}, last pulled ${gsc?.lastPullAt ? new Date(gsc.lastPullAt).toLocaleDateString() : "recently"}.`
+                        {mismatch ? "Left out while the project does not match, because that data belongs to another client."
+                          : gscReady ? `${gsc?.resourceLabel || gsc?.resourceId}, last pulled ${gsc?.lastPullAt ? new Date(gsc.lastPullAt).toLocaleDateString() : "recently"}.`
                           : gscBound ? `${gsc?.resourceLabel || gsc?.resourceId} is bound. Pull the data to use it.`
                           : gscConnected ? "Authorised. Choose which property belongs to this site."
                           : "Not connected. Optional: the live page checks do not need it."}
                       </div>
                     </div>
                     {mismatch ? null
-                      : gscOn ? <span className={`text-[11px] px-2 py-0.5 rounded-full border ${PILL.verified}`}>ready</span>
+                      : gscReady ? <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.good}`}>ready</span>
                       : gscBound ? <button onClick={pullGsc} disabled={gscPulling} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap disabled:opacity-50">{gscPulling ? "Pulling..." : "Pull data"}</button>
                       : gscConnected ? <button onClick={() => loadGscProperties(projectId)} className="text-xs px-3 py-1.5 rounded-lg border border-border whitespace-nowrap">Choose property</button>
                       : <button onClick={connectGsc} disabled={!projectId} className="text-xs px-3 py-1.5 rounded-lg border border-border whitespace-nowrap disabled:opacity-50">Connect</button>}
                   </div>
                   {gscSites.length ? (
                     <div className="mt-2 space-y-1">
-                      <div className="text-[10px] text-muted-foreground">Properties on this Google account. Pick the one for {siteDomain || "this site"}.</div>
+                      <div className="text-[10px] text-muted-foreground">Pick the property for {siteDomain || "this site"}.</div>
                       {gscSites.map((st: any, i: number) => {
                         const u = String(st?.siteUrl || st?.url || st || "");
-                        const suggested = siteDomain && u.toLowerCase().includes(siteDomain);
-                        return (
-                          <button key={i} onClick={() => chooseProperty(st)}
-                            className={`w-full text-left text-[11px] px-2 py-1.5 rounded-lg border hover:bg-muted/40 ${suggested ? "border-primary/40 text-primary" : "border-border"}`}>
-                            {u}{suggested ? " (matches this site)" : ""}
-                          </button>
-                        );
+                        const match = siteDomain && u.toLowerCase().includes(siteDomain);
+                        return <button key={i} onClick={() => chooseProperty(st)} className={`w-full text-left text-[11px] px-2 py-1.5 rounded-lg border hover:bg-muted/40 ${match ? "border-primary/40 text-primary" : "border-border"}`}>{u}{match ? " (matches this site)" : ""}</button>;
                       })}
                     </div>
                   ) : null}
                 </div>
 
-                {mismatch ? (
-                  <p className="text-[11px] text-amber-400">
-                    Live page checks run against {siteDomain} either way and stay valid. Create the project above to bring Search Console into this round.
-                  </p>
-                ) : null}
-                {setupBusy ? <p className="text-[11px] text-muted-foreground">{setupBusy}</p> : null}
+                <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold">Whole site crawl</div>
+                      <div className="text-[11px] text-muted-foreground truncate">
+                        {crawlReady ? `${crawl.done} pages crawled and ready to check against.` : crawling ? `Crawling ${crawl?.done || 0} of ${crawl?.total || "?"} pages, batch by batch.` : "Crawl the site so every claim can be checked against the real pages."}
+                      </div>
+                    </div>
+                    <button onClick={runCrawl} disabled={crawling || running} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap disabled:opacity-50">
+                      {crawling ? "Crawling..." : crawlReady ? "Crawl again" : "Crawl the site"}
+                    </button>
+                  </div>
+                  {crawl ? <div className="mt-2"><Bar pct={crawl.total ? (crawl.done / crawl.total) * 100 : 0} tone={crawl.complete ? "good" : "work"} /></div> : null}
+                </div>
+                {setupBusy ? <p className="text-[11px] text-sky-400">{setupBusy}</p> : null}
               </div>
-            </Step>
+            </Stage>
 
-            <Step n={3} title="Delivery workbook" hint="Every tab is read, then checked in slots so nothing times out." done={step3done}>
+            <Stage n={3} title="Submitted work" hint="The executive's workbook. Every tab is read." tone={s3}>
               <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onWorkbook(e.target.files)}
                 className="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-border file:bg-muted/40 file:text-xs" />
               {sheets.length ? (
                 <div className="mt-3 space-y-1.5">
-                  <div className="text-[11px] text-muted-foreground">{sheets.length} tab(s), {totalRows} rows{checkedRows ? ` | ${checkedRows} checked` : ""}</div>
+                  <div className="text-[11px] text-muted-foreground">{sheets.length} tab(s), {totalRows} rows</div>
                   {sheets.map((s, i) => {
-                    const p = progress[i]; const pct = p && p.total ? Math.round((p.checked / p.total) * 100) : 0;
+                    const p = progress[i]; const pct = p && p.total ? (p.checked / p.total) * 100 : 0;
                     return (
                       <div key={i} className="rounded-lg border border-border px-3 py-2">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-medium truncate">{s.name}</span>
-                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">{p ? `${p.checked}/${p.total}` : `${s.rows.length} rows`}</span>
+                          <span className="text-[10px] text-muted-foreground">{p ? `${p.checked}/${p.total}` : `${s.rows.length} rows`}</span>
                         </div>
-                        <div className="h-1 rounded-full bg-muted mt-1.5 overflow-hidden">
-                          <div className={`h-full ${p?.done ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${pct}%` }} />
-                        </div>
+                        {p ? <div className="mt-1.5"><Bar pct={pct} tone={p.done ? "good" : "work"} /></div> : null}
                         {p?.remark ? <p className="text-[10px] text-muted-foreground mt-1">{p.remark}</p> : null}
                       </div>
                     );
                   })}
                 </div>
               ) : null}
-            </Step>
+            </Stage>
 
-            <Step n={4} title="Whole site crawl" hint="The final gate reads every page, not only the claimed rows." done={Boolean(crawl?.complete)}>
-              <label className="flex items-center gap-2 text-xs mb-3 cursor-pointer">
-                <input type="checkbox" checked={crawlFirst} onChange={(e) => setCrawlFirst(e.target.checked)} />
-                Crawl the whole site as part of the check, in batches
-              </label>
-              {crawl ? (
-                <div className="rounded-lg border border-border px-3 py-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-medium">{crawl.complete ? "Crawl complete" : "Crawling"}</span>
-                    <span className="text-[10px] text-muted-foreground">{crawl.done}/{crawl.total} pages</span>
-                  </div>
-                  <div className="h-1 rounded-full bg-muted mt-1.5 overflow-hidden">
-                    <div className={`h-full ${crawl.complete ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${crawl.total ? Math.round((crawl.done / crawl.total) * 100) : 0}%` }} />
-                  </div>
-                </div>
-              ) : null}
-              <button onClick={() => runCrawl()} disabled={crawling || running}
-                className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-border disabled:opacity-50">
-                {crawling ? "Crawling..." : "Crawl the site now"}
-              </button>
+            <Stage n={4} title="Review" hint="Every claimed row checked against the evidence, then the whole site audited." tone={s4}>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={startReview} disabled={running || !sheets.length}
+                  className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
+                  {running ? "Reviewing..." : "Review the work"}
+                </button>
+                {!crawlReady ? <span className="text-[11px] text-amber-400">Crawl the site in step 2 first so rows can be checked against real pages.</span> : null}
+                {busy ? <span className="text-xs text-sky-400">{busy}</span> : null}
+              </div>
+              {error ? <p className="text-sm text-red-400 mt-2">{error}</p> : null}
               {siteAudit ? (
                 <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
                   <p className="text-xs font-semibold mb-1">{siteAudit.summary}</p>
                   <ul className="space-y-0.5">
                     {(siteAudit.detail || []).map((d: any, i: number) => (
                       <li key={i} className="text-[11px]">
-                        <span className={d.severity === "high" ? "text-red-400" : d.severity === "medium" ? "text-amber-400" : "text-muted-foreground"}>[{d.severity}]</span>{" "}
-                        {d.label}: {d.pages} page(s)
+                        <span className={d.severity === "high" ? "text-red-400" : d.severity === "medium" ? "text-amber-400" : "text-muted-foreground"}>[{d.severity}]</span> {d.label}: {d.pages} page(s)
                       </li>
                     ))}
                   </ul>
                 </div>
               ) : null}
-            </Step>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={startReview} disabled={running} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60">
-                {running ? "Checking..." : "Run the check"}
-              </button>
-              {reviewId ? <button onClick={downloadAnnotated} className="px-3 py-2 rounded-xl border border-border text-sm">Download reviewed workbook</button> : null}
-              {summary && summary.status === "awaiting_fix" ? <button onClick={openRecheck} className="px-3 py-2 rounded-xl border border-sky-500/40 text-sky-400 text-sm">Open recheck round</button> : null}
-              {busy ? <span className="text-xs text-muted-foreground">{busy}</span> : null}
-            </div>
-            {error ? <p className="text-sm text-red-400">{error}</p> : null}
-
-            {summary ? (
-              <div className={`rounded-2xl border p-5 ${summary.ready_to_submit ? "border-emerald-500/40 bg-emerald-500/10" : "border-amber-500/40 bg-amber-500/10"}`}>
-                <div className="text-sm font-bold mb-1">Round {summary.round}</div>
-                <p className="text-sm text-foreground/90">{summary.verdict}</p>
-                <div className="flex flex-wrap gap-3 mt-2 text-xs">
-                  <span className="text-emerald-400">{t.verified || 0} verified</span>
-                  <span className="text-amber-400">{t.partial || 0} partial</span>
-                  <span className="text-red-400">{t.failed || 0} failed</span>
-                  <span className="text-muted-foreground">{t.unverifiable || 0} unverifiable</span>
-                  {t.site_issues ? <span className={t.site_blocking ? "text-red-400" : "text-muted-foreground"}>{t.site_issues} site wide ({t.site_blocking || 0} blocking)</span> : null}
-                </div>
-                {summary.documents ? (
-                  <div className="flex flex-wrap gap-2 mt-3">
-                    <button onClick={() => openDoc("QA report", summary.documents.internal_qa)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">QA report</button>
-                    <button onClick={() => openDoc("Fix list", summary.documents.fix_list)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Fix list</button>
-                    <button onClick={() => openDoc("Client summary", summary.documents.client_summary)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Client summary</button>
-                  </div>
-                ) : null}
-                {(summary.missing || []).length ? <p className="text-xs mt-3"><span className="text-muted-foreground">Promised but not reported: </span><span className="text-amber-400">{summary.missing.map((m: any) => m.title).join(", ")}</span></p> : null}
-                {(summary.quantity || []).map((q: any, i: number) => (
-                  <p key={i} className="text-xs mt-1"><span className="font-semibold">{q.title}</span>: committed {q.committed}, reported {q.reported}, live {q.verified}. <span className="text-muted-foreground">{q.note}</span></p>
-                ))}
-                {(summary.mistake_pattern || []).length ? (
-                  <p className="text-xs mt-2"><span className="text-muted-foreground">Mistake pattern: </span>{summary.mistake_pattern.map((m: any) => `${m.category} (${m.count})`).join(", ")}</p>
-                ) : null}
-                {summary.gsc ? <p className="text-[11px] text-muted-foreground mt-2">{summary.gsc.note}</p> : null}
-              </div>
-            ) : null}
-
-            {findings.length ? (
-              <div className="rounded-2xl border border-border p-5">
-                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Findings ({findings.length})</div>
-                <div className="space-y-2 max-h-[520px] overflow-auto">
+              {findings.length ? (
+                <div className="mt-3 space-y-2 max-h-[420px] overflow-auto">
                   {findings.filter((f) => f.status !== "verified").concat(findings.filter((f) => f.status === "verified")).map((f, i) => (
-                    <div key={i} className="rounded-xl border border-border p-3">
+                    <div key={i} className={`rounded-xl border p-3 ${f.status === "failed" ? "border-red-500/30" : f.status === "partial" ? "border-amber-500/30" : "border-border"}`}>
                       <div className="flex items-start justify-between gap-3">
                         <div className="text-sm font-semibold">{f.item}</div>
-                        <span className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${PILL[f.status] || PILL.queued}`}>{f.status}{f.severity ? ` / ${f.severity}` : ""}</span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${STATUS_TONE[f.status] || TONE.idle}`}>{f.status}{f.severity ? ` / ${f.severity}` : ""}</span>
                       </div>
                       <div className="text-[11px] text-muted-foreground mt-0.5">{f.tab_name}{f.url ? ` | ${String(f.url).replace(/^https?:\/\//, "")}` : ""}</div>
                       <div className="text-xs text-foreground/85 mt-1">{f.remark}</div>
                     </div>
                   ))}
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+            </Stage>
+
+            <Stage n={5} title="Verdict" hint="Remarks back to the executive, or cleared for the client." tone={s5}>
+              {!summary ? <p className="text-xs text-muted-foreground">The verdict appears once the review has run.</p> : (
+                <>
+                  <p className="text-sm text-foreground/90">{summary.verdict}</p>
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.good}`}>{t.verified || 0} verified</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.warn}`}>{t.partial || 0} partial</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.bad}`}>{t.failed || 0} failed</span>
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.idle}`}>{t.unverifiable || 0} unverifiable</span>
+                    {t.site_issues ? <span className={`text-[11px] px-2 py-0.5 rounded-full border ${t.site_blocking ? TONE.bad : TONE.idle}`}>{t.site_issues} site wide ({t.site_blocking || 0} blocking)</span> : null}
+                  </div>
+                  {(summary.missing || []).length ? <p className="text-xs mt-3"><span className="text-muted-foreground">Promised but not reported: </span><span className="text-amber-400">{summary.missing.map((m: any) => m.title).join(", ")}</span></p> : null}
+                  {(summary.quantity || []).map((q: any, i: number) => (
+                    <p key={i} className="text-xs mt-1"><span className="font-semibold">{q.title}</span>: committed {q.committed}, reported {q.reported}, live {q.verified}. <span className="text-muted-foreground">{q.note}</span></p>
+                  ))}
+                  {(summary.mistake_pattern || []).length ? <p className="text-xs mt-2"><span className="text-muted-foreground">Mistake pattern: </span>{summary.mistake_pattern.map((m: any) => `${m.category} (${m.count})`).join(", ")}</p> : null}
+                  {summary.gsc ? <p className="text-[11px] text-muted-foreground mt-2">{summary.gsc.note}</p> : null}
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {summary.documents ? <>
+                      <button onClick={() => openDoc("QA report", summary.documents.internal_qa)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">QA report</button>
+                      <button onClick={() => openDoc("Fix list", summary.documents.fix_list)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Fix list for the executive</button>
+                      <button onClick={() => openDoc("Client summary", summary.documents.client_summary)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Client summary</button>
+                    </> : null}
+                    <button onClick={downloadAnnotated} className="text-xs px-3 py-1.5 rounded-lg border border-border">Download reviewed workbook</button>
+                    {summary.status === "awaiting_fix" ? <button onClick={openRecheck} className="text-xs px-3 py-1.5 rounded-lg border border-sky-500/40 text-sky-400">Open recheck round</button> : null}
+                  </div>
+                </>
+              )}
+            </Stage>
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-6">
@@ -593,29 +562,27 @@ export default function QaDesk() {
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Activity</div>
                 <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                  <span className={`w-1.5 h-1.5 rounded-full ${running || crawling ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground/40"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${running || crawling ? "bg-sky-400 animate-pulse" : "bg-muted-foreground/40"}`} />
                   {running || crawling ? "working" : "idle"}
                 </span>
               </div>
-              <div className="space-y-1 max-h-72 overflow-auto">
+              <div className="space-y-1 max-h-64 overflow-auto">
                 {activity.map((a, i) => (
                   <div key={i} className="flex gap-2 text-[10px] leading-snug">
                     <span className="text-muted-foreground/70 tabular-nums shrink-0">{a.t}</span>
                     <span className={a.kind === "ok" ? "text-emerald-400" : a.kind === "warn" ? "text-amber-400" : a.kind === "err" ? "text-red-400" : "text-foreground/80"}>{a.msg}</span>
                   </div>
                 ))}
-                {!activity.length ? <p className="text-[11px] text-muted-foreground">Every step will appear here as it runs.</p> : null}
+                {!activity.length ? <p className="text-[11px] text-muted-foreground">Every step appears here as it runs.</p> : null}
               </div>
             </div>
+
             {agenda.length ? (
               <div className="rounded-2xl border border-border p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Agenda for this account</div>
                 <ul className="space-y-1.5">
                   {agenda.map((a: any, i: number) => (
-                    <li key={i} className="text-[11px] leading-snug">
-                      <span className="font-semibold">{a.focus}</span>
-                      <span className="text-muted-foreground"> {a.why}</span>
-                    </li>
+                    <li key={i} className="text-[11px] leading-snug"><span className="font-semibold">{a.focus}</span><span className="text-muted-foreground"> {a.why}</span></li>
                   ))}
                 </ul>
               </div>
@@ -634,17 +601,17 @@ export default function QaDesk() {
                     <span className="text-muted-foreground">{worklist.counts.in_progress} in progress</span>
                     <span className="text-emerald-400">{worklist.counts.closed_today} closed today</span>
                   </div>
-                  <div className="space-y-1.5 max-h-64 overflow-auto">
+                  <div className="space-y-1.5 max-h-56 overflow-auto">
                     {(worklist.open || []).map((r: any) => (
                       <button key={r.id} onClick={() => openReview(r.id)} className="w-full text-left rounded-lg border border-border p-2 hover:bg-muted/30">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-[11px] font-semibold truncate">{r.client || r.site}</span>
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${PILL[r.status] || PILL.queued}`}>{r.status} r{r.round}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${STATUS_TONE[r.status] || TONE.idle}`}>{r.status} r{r.round}</span>
                         </div>
                         <div className="text-[10px] text-muted-foreground">{r.executive || "unassigned"} | {r.updated_at ? new Date(r.updated_at).toLocaleString() : ""}</div>
                       </button>
                     ))}
-                    {!(worklist.open || []).length ? <p className="text-[11px] text-muted-foreground">Nothing open. Run a check to start one.</p> : null}
+                    {!(worklist.open || []).length ? <p className="text-[11px] text-muted-foreground">Nothing open. Run a review to start one.</p> : null}
                   </div>
                 </>
               ) : <p className="text-[11px] text-muted-foreground">Loading...</p>}
@@ -655,12 +622,12 @@ export default function QaDesk() {
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Executives</div>
                 <button onClick={loadProfiles} className="text-[11px] text-primary">Load</button>
               </div>
-              <div className="space-y-2 max-h-64 overflow-auto">
+              <div className="space-y-2 max-h-56 overflow-auto">
                 {profiles.map((p, i) => (
                   <div key={i} className="rounded-lg border border-border p-2">
                     <div className="text-[11px] font-semibold">{p.executive}</div>
-                    <div className="text-[10px] text-muted-foreground">{p.first_pass_rate}% clean first pass, {p.average_rounds} rounds avg, {p.items_checked} items</div>
-                    {(p.recurring_mistakes || []).length ? <div className="text-[10px] mt-0.5">{p.recurring_mistakes.slice(0, 3).map((m: any) => `${m.category} (${m.count})`).join(", ")}</div> : null}
+                    <div className="text-[10px] text-muted-foreground">{p.first_pass_rate}% clean first pass, {p.average_rounds} rounds avg</div>
+                    {(p.recurring_mistakes || []).length ? <div className="text-[10px] mt-0.5 text-amber-400/80">{p.recurring_mistakes.slice(0, 3).map((m: any) => `${m.category} (${m.count})`).join(", ")}</div> : null}
                   </div>
                 ))}
                 {!profiles.length ? <p className="text-[11px] text-muted-foreground">Load to see profiles built from real QA history.</p> : null}
