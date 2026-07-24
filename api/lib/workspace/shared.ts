@@ -222,7 +222,17 @@ export async function fetchHtml(url: string, ms = 10000): Promise<string> {
   /* If a proxy route is already the known way in for this domain (the raw origin
      is blocked here), skip the raw fetch entirely and use it, so we do not waste
      10s per page failing the raw request first. */
-  if (PROXY_STRATEGY.get(domainKey(url))) { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; }
+  /* Skip the raw fetch ONLY when a proxy route is genuinely known to WORK for
+     this domain. The memo also records "nothing reached it", and that entry must
+     never suppress the direct fetch: the origin can answer perfectly well even
+     when every proxy fails, so treating a recorded failure as a reason to skip
+     the origin takes a working site offline. */
+  const route = PROXY_STRATEGY.get(domainKey(url));
+  if (route && route.fn && Date.now() - route.at <= MEMO_TTL_MS) {
+    const p = await route.fn(url).catch(() => "");
+    if (p) { noteReach(url); return p; }
+    noteMiss(url); return "";
+  }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
