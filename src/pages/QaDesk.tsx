@@ -73,9 +73,17 @@ export default function QaDesk() {
   const navProjectName = proj?.selectedProject?.name || "";
   const navProjectUrl = proj?.selectedProject?.url || "";
 
-  const [execName, setExecName] = useState("");
+  const [dmeName, setDmeName] = useState(() => localStorage.getItem("qa_last_dme") || "");
+  const [bdeName, setBdeName] = useState("");
+  const [clientId, setClientId] = useState("");
   const [clientName, setClientName] = useState("");
   const [siteUrl, setSiteUrl] = useState("");
+  /* Provenance. A value that came from a default may be replaced by real evidence
+     read out of the conversation. A value the reviewer typed is never overwritten.
+     Without this, a site URL pre-filled from the nav project silently beat the
+     client's actual domain, which then dragged the project and Search Console
+     checks onto the wrong site. */
+  const [srcSite, setSrcSite] = useState<"" | "default" | "read" | "typed">("");
   const [clientContext, setClientContext] = useState("");
   const [mailText, setMailText] = useState("");
   const [extracted, setExtracted] = useState<any>(null);
@@ -122,7 +130,7 @@ export default function QaDesk() {
   const log = (msg: string, kind = "run") => setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
 
   useEffect(() => {
-    if (navProjectUrl && !siteUrl.trim()) setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`);
+    if (navProjectUrl && !siteUrl.trim()) { setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`); setSrcSite("default"); }
     loadWorklist(); loadDirectory("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navProjectUrl]);
@@ -144,11 +152,18 @@ export default function QaDesk() {
     const r: any = await post("wizard_qa_extract_context", { chatText: clientContext, mailText });
     setBusy("");
     if (!r?.success) { setError(r?.error || "Could not read the context."); return; }
+    if (r.client_id && !clientId.trim()) setClientId(r.client_id);
     if (r.client_name && !clientName.trim()) setClientName(r.client_name);
-    if (r.site_url && !siteUrl.trim()) setSiteUrl(r.site_url.startsWith("http") ? r.site_url : `https://${r.site_url}/`);
-    if (r.executive_name && !execName.trim()) setExecName(r.executive_name);
+    if (r.bde_name && !bdeName.trim()) setBdeName(r.bde_name);
+    if (r.site_url && srcSite !== "typed") {
+      const next = r.site_url.startsWith("http") ? r.site_url : `https://${r.site_url}/`;
+      if (dom(next) !== dom(siteUrl)) {
+        setSiteUrl(next); setSrcSite("read");
+        log(`Website read from the conversation: ${dom(next)}${siteUrl ? `, replacing the ${dom(siteUrl)} default` : ""}`, "warn");
+      }
+    }
     setExtracted(r);
-    log(`Record filled: ${r.client_name || "client"}${r.site_url ? `, ${r.site_url}` : ""}`, "ok");
+    log(`Record filled: ${r.client_name || r.client_id || "client"}`, "ok");
   };
 
   const createProjectForSite = async () => {
@@ -256,6 +271,8 @@ export default function QaDesk() {
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
   };
 
+  const rememberDme = (v: string) => { setDmeName(v); try { localStorage.setItem("qa_last_dme", v); } catch { /* storage optional */ } };
+
   const startReview = async () => {
     setError(""); setFindings([]); setSummary(null); setProgress({});
     if (!siteUrl.trim()) { setError("Enter the client site."); return; }
@@ -263,7 +280,8 @@ export default function QaDesk() {
     stopReview.current = false;
     setRunning(true); setBusy("Setting the agenda..."); log("Setting the QA agenda from the client record");
     const created: any = await post("wizard_qa_create", {
-      projectId, siteUrl: siteUrl.trim(), clientName, executiveName: execName, clientContext, mailText,
+      projectId, siteUrl: siteUrl.trim(), clientId, clientName,
+      executiveName: dmeName, bdeName, clientContext, mailText,
       tabs: sheets.map((s) => ({ name: s.name, headers: s.headers, rowCount: s.rows.length })),
     });
     if (!created?.success) { setRunning(false); setBusy(""); setError(created?.error || "Could not start the review."); return; }
@@ -405,8 +423,11 @@ export default function QaDesk() {
   const openReview = async (id: string) => {
     const r: any = await post("wizard_qa_load", { reviewId: id });
     if (!r?.success) { setError(r?.error || "Could not load."); return; }
-    setReviewId(id); setAgenda(r.review.agenda || []); setSiteUrl(r.review.site_url || "");
-    setClientName(r.review.client_name || ""); setExecName(r.review.executive_name || "");
+    setReviewId(id); setAgenda(r.review.agenda || []);
+    setSiteUrl(r.review.site_url || ""); setSrcSite("typed");
+    setClientId(r.review.client_id || ""); setClientName(r.review.client_name || "");
+    if (r.review.executive_name) rememberDme(r.review.executive_name);
+    setBdeName(r.review.bde_name || "");
     setFindings((r.findings || []).map((f: any) => ({ ...f, tab_index: -1 })));
     setSummary(r.report ? { ...r.report, status: r.review.status } : { totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
     log(`Loaded saved review for ${r.review.client_name || r.review.site_url}`, "ok");
@@ -439,7 +460,7 @@ export default function QaDesk() {
         <div className="grid sm:grid-cols-3 gap-2 mb-5">
           <div className={`rounded-xl border px-3 py-2 ${mismatch ? TONE.warn : projectId ? TONE.good : TONE.idle}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-80">Project</div>
-            <div className="text-xs font-semibold truncate">{mismatch ? "Different site from the nav project" : projectId ? (projectLabel || navProjectName || siteDomain || "bound") : "Not set"}</div>
+            <div className="text-xs font-semibold truncate">{mismatch ? `Nav project is ${projDomain}, not ${siteDomain}` : projectId ? (projectLabel || navProjectName || siteDomain || "bound") : "Not set"}</div>
           </div>
           <div className={`rounded-xl border px-3 py-2 ${gscReady ? TONE.good : gscConnected ? TONE.warn : TONE.idle}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-80">Search Console</div>
@@ -460,14 +481,38 @@ export default function QaDesk() {
                 <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Commitment mail sent to the project manager." value={mailText} onChange={(e) => setMailText(e.target.value)} />
               </div>
               <button onClick={readContext} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 mb-3">Fill from chat and calls</button>
-              <div className="grid md:grid-cols-3 gap-2">
+              <div className="grid md:grid-cols-2 gap-2">
                 <div>
-                  <input list="qa-execs" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Executive" value={execName} onChange={(e) => setExecName(e.target.value)} />
-                  <datalist id="qa-execs">{(dir?.known_executives || []).map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
-                  {(dir?.known_executives || []).length ? <p className="text-[10px] text-muted-foreground mt-1">{dir.known_executives.length} known, start typing to pick</p> : null}
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client ID (unique)</label>
+                  <input className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="tyler_tg1" value={clientId} onChange={(e) => setClientId(e.target.value)} />
                 </div>
-                <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
-                <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="https://client.com/" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} />
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client name</label>
+                  <input className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Tyler, TG Racing" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client website</label>
+                  <input className={`w-full bg-muted/40 border rounded-xl px-3 py-2 text-sm ${srcSite === "read" ? "border-sky-500/50" : "border-border"}`}
+                    placeholder="https://client.com/" value={siteUrl}
+                    onChange={(e) => { setSiteUrl(e.target.value); setSrcSite("typed"); }} />
+                  <p className="text-[10px] mt-1">
+                    {srcSite === "read" ? <span className="text-sky-400">Read from the conversation. The work is checked against this site.</span>
+                      : srcSite === "default" ? <span className="text-amber-400">Filled from the project selected in the nav. Confirm this is the client being reviewed.</span>
+                      : srcSite === "typed" ? <span className="text-muted-foreground">Set by you.</span> : null}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">DME who did the work</label>
+                  <input list="qa-dmes" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Set once, remembered after" value={dmeName} onChange={(e) => rememberDme(e.target.value)} />
+                  <datalist id="qa-dmes">{(dir?.known_dmes || []).map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
+                  <p className="text-[10px] text-muted-foreground mt-1">{(dir?.known_dmes || []).length ? `${dir.known_dmes.length} on file` : "Never in the client chat, so set it here"}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">BDE on the account</label>
+                  <input list="qa-bdes" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Read from the chat" value={bdeName} onChange={(e) => setBdeName(e.target.value)} />
+                  <datalist id="qa-bdes">{(dir?.known_bdes || []).map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
+                  <p className="text-[10px] text-muted-foreground mt-1">{(dir?.known_bdes || []).length ? `${dir.known_bdes.length} on file` : "Found in the conversation"}</p>
+                </div>
               </div>
               {extracted ? (
                 <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
@@ -725,7 +770,7 @@ export default function QaDesk() {
               {dir?.interpreted ? <p className="text-[10px] text-sky-400 mb-2">Read as: {dir.interpreted}</p> : null}
               <div className="space-y-2 max-h-72 overflow-auto">
                 {(dir?.executives || []).map((p: any, i: number) => (
-                  <button key={i} onClick={() => { setExecName(p.executive); setDirQuery(p.executive); loadDirectory(p.executive); }}
+                  <button key={i} onClick={() => { rememberDme(p.executive); setDirQuery(p.executive); loadDirectory(p.executive); }}
                     className="w-full text-left rounded-lg border border-border p-2 hover:bg-muted/30">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[11px] font-semibold truncate">{p.executive}</span>

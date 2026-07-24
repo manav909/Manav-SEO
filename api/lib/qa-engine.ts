@@ -42,7 +42,7 @@ export async function qaExtractContext(opts: { chatText?: string; mailText?: str
   const mailText = String(opts.mailText || "").trim();
   if (!chatText && !mailText) return { success: false, error: "Paste the client chat, the call notes or the mail first." };
   try {
-    const sys = "You read a client conversation, call notes and an internal commitment mail, and pull out the record they already contain. Extract ONLY what is actually present. Return ONLY JSON: {\"client_name\":\"\",\"site_url\":\"\",\"executive_name\":\"the delivery executive or project manager named, if any\",\"persona\":\"three to five sentences on who this client is, how they judge work, and how they communicate\",\"priorities\":[\"what they care about most, in their words\"],\"pain_points\":[\"what they complained about or fear\"],\"target_urls\":[\"any page URLs named\"],\"keywords\":[\"any target keywords named\"]}. Leave a field empty rather than guessing. Never invent a name, a domain or a requirement.";
+    const sys = "You read a client conversation, call notes and an internal commitment mail, and pull out the record they already contain. Extract ONLY what is actually present. Return ONLY JSON: {\"client_id\":\"the client's unique handle or account username if one appears, for example a marketplace username. Not their display name\",\"client_name\":\"the person or business name, for example Tyler or TG Racing\",\"site_url\":\"the CLIENT's own website that the work is for. Not a competitor site, not a marketplace profile\",\"bde_name\":\"the person from OUR side who spoke to the client in this conversation, the business development executive. Never the client, and never the person who did the delivery work\",\"persona\":\"three to five sentences on who this client is, how they judge work, and how they communicate\",\"priorities\":[\"what they care about most, in their words\"],\"pain_points\":[\"what they complained about or fear\"],\"competitor_sites\":[\"any competitor domains named, kept separate from the client site\"],\"target_urls\":[\"any page URLs on the client site\"],\"keywords\":[\"any target keywords named\"]}. Leave a field empty rather than guessing. Never invent a name, a domain or a requirement. The digital marketing executive who did the work is NOT in these documents, so never guess one.";
     const user = [
       chatText ? `Client chat and call notes:\n${chatText.slice(0, 16000)}` : "",
       mailText ? `Commitment mail:\n${mailText.slice(0, 10000)}` : "",
@@ -52,9 +52,11 @@ export async function qaExtractContext(opts: { chatText?: string; mailText?: str
     const p: any = m ? JSON.parse(m[0]) : {};
     return {
       success: true,
+      client_id: String(p.client_id || ""),
       client_name: String(p.client_name || ""),
       site_url: String(p.site_url || ""),
-      executive_name: String(p.executive_name || ""),
+      bde_name: String(p.bde_name || ""),
+      competitor_sites: Array.isArray(p.competitor_sites) ? p.competitor_sites.map(String) : [],
       persona: String(p.persona || ""),
       priorities: Array.isArray(p.priorities) ? p.priorities.map(String) : [],
       pain_points: Array.isArray(p.pain_points) ? p.pain_points.map(String) : [],
@@ -181,7 +183,8 @@ function remarkOf(status: string, expected: string, observed: string, evidence: 
 /* ---- 1. Create the review and build the agenda ------------------------------ */
 
 export async function qaCreateReview(opts: {
-  projectId?: string; siteUrl: string; clientName?: string; executiveName?: string;
+  projectId?: string; siteUrl: string; clientId?: string; clientName?: string;
+  executiveName?: string; bdeName?: string;
   title?: string; clientContext?: string; mailText?: string;
   tabs: Array<{ name: string; headers: string[]; rowCount: number }>;
 }) {
@@ -206,12 +209,15 @@ export async function qaCreateReview(opts: {
     agenda = Array.isArray(parsed.agenda) ? parsed.agenda.slice(0, 10) : [];
   } catch { agenda = []; }
 
-  await registerExecutive(String(opts.executiveName || ""));
+  await registerExecutive(String(opts.executiveName || ""), "dme");
+  await registerExecutive(String(opts.bdeName || ""), "bde");
   const { data: rev, error } = await db().from("qa_reviews").insert({
     project_id: opts.projectId || null,
+    client_id: opts.clientId || null,
     client_name: opts.clientName || null,
     site_url: siteUrl,
     executive_name: opts.executiveName || null,
+    bde_name: opts.bdeName || null,
     title: opts.title || `QA of ${opts.clientName || siteUrl}`,
     status: "checking",
     round: 1,
@@ -597,7 +603,7 @@ export async function qaWorklist(opts: { day?: string }) {
   const { data: open } = await db().from("qa_reviews").select("*").in("status", ["queued", "checking", "awaiting_fix", "rechecking"]).order("updated_at", { ascending: false }).limit(100);
   const { data: today } = await db().from("qa_reviews").select("*").gte("updated_at", from).lte("updated_at", to).order("updated_at", { ascending: false }).limit(100);
   const shape = (r: any) => ({
-    id: r.id, title: r.title, client: r.client_name, site: r.site_url, executive: r.executive_name,
+    id: r.id, title: r.title, client: r.client_name || r.client_id, client_id: r.client_id, site: r.site_url, executive: r.executive_name, bde: r.bde_name,
     status: r.status, round: r.round, totals: r.totals || {},
     submitted_at: r.submitted_at, updated_at: r.updated_at, completed_at: r.completed_at,
   });
@@ -619,12 +625,12 @@ export async function qaWorklist(opts: { day?: string }) {
 /* Names are typed once. Every review registers the executive so the next review
    can offer them, and so their record accumulates against real work rather than
    being retyped from scratch each time. */
-async function registerExecutive(name: string): Promise<void> {
+async function registerExecutive(name: string, role: "dme" | "bde"): Promise<void> {
   const n = String(name || "").trim();
   if (!n) return;
   try {
-    const { data: found } = await db().from("qa_executives").select("id").eq("name", n).maybeSingle();
-    if (!found) await db().from("qa_executives").insert({ name: n });
+    const { data: found } = await db().from("qa_executives").select("id").eq("name", n).eq("role", role).maybeSingle();
+    if (!found) await db().from("qa_executives").insert({ name: n, role });
   } catch { /* the directory still reads names from the reviews themselves */ }
 }
 
@@ -634,7 +640,7 @@ async function registerExecutive(name: string): Promise<void> {
 export async function qaDirectory(opts: { query?: string }) {
   const q = String(opts.query || "").trim();
   const { data: revs } = await db().from("qa_reviews")
-    .select("id,client_name,site_url,executive_name,project_id,status,round,totals,updated_at")
+    .select("id,client_id,client_name,site_url,executive_name,bde_name,project_id,status,round,totals,updated_at")
     .order("updated_at", { ascending: false }).limit(400);
   const reviews: any[] = (revs as any[]) || [];
 
@@ -647,17 +653,26 @@ export async function qaDirectory(opts: { query?: string }) {
   const byReview = new Map<string, any[]>();
   for (const f of finds) byReview.set(f.review_id, (byReview.get(f.review_id) || []).concat(f));
 
-  let known: string[] = [];
-  try { const { data: ex } = await db().from("qa_executives").select("name").order("name", { ascending: true }).limit(200); known = ((ex as any[]) || []).map((e) => String(e.name)).filter(Boolean); }
-  catch { known = []; }
-  for (const r of reviews) { const n = String(r.executive_name || "").trim(); if (n && !known.includes(n)) known.push(n); }
+  let knownDmes: string[] = []; let knownBdes: string[] = [];
+  try {
+    const { data: ex } = await db().from("qa_executives").select("name,role").order("name", { ascending: true }).limit(400);
+    for (const e of ((ex as any[]) || [])) {
+      const n = String(e.name || "").trim(); if (!n) continue;
+      if (String(e.role || "dme") === "bde") { if (!knownBdes.includes(n)) knownBdes.push(n); }
+      else if (!knownDmes.includes(n)) knownDmes.push(n);
+    }
+  } catch { /* fall back to the reviews themselves */ }
+  for (const r of reviews) {
+    const d = String(r.executive_name || "").trim(); if (d && !knownDmes.includes(d)) knownDmes.push(d);
+    const b = String(r.bde_name || "").trim(); if (b && !knownBdes.includes(b)) knownBdes.push(b);
+  }
 
   const execMap = new Map<string, any>();
   for (const r of reviews) {
     const name = String(r.executive_name || "").trim() || "unattributed";
     const e = execMap.get(name) || { executive: name, reviews: 0, clients: new Set<string>(), sites: new Set<string>(), projects: new Set<string>(), open: 0, items: 0, cleanFirst: 0, firstItems: 0, cats: {} as Record<string, number>, last_active: r.updated_at };
     e.reviews++;
-    if (r.client_name) e.clients.add(String(r.client_name));
+    if (r.client_name || r.client_id) e.clients.add(String(r.client_name || r.client_id));
     if (r.site_url) e.sites.add(String(r.site_url).replace(/^https?:\/\//, "").replace(/\/$/, ""));
     if (r.project_id) e.projects.add(String(r.project_id));
     if (r.status === "awaiting_fix" || r.status === "rechecking") e.open++;
@@ -707,8 +722,8 @@ export async function qaDirectory(opts: { query?: string }) {
   }
 
   return {
-    success: true, query: q, interpreted, known_executives: known, executives,
-    reviews: reviews.slice(0, 60).map((r) => ({ id: r.id, client: r.client_name, site: r.site_url, executive: r.executive_name, status: r.status, round: r.round, updated_at: r.updated_at })),
+    success: true, query: q, interpreted, known_dmes: knownDmes, known_bdes: knownBdes, executives,
+    reviews: reviews.slice(0, 60).map((r) => ({ id: r.id, client_id: r.client_id, client: r.client_name, site: r.site_url, executive: r.executive_name, bde: r.bde_name, status: r.status, round: r.round, updated_at: r.updated_at })),
   };
 }
 

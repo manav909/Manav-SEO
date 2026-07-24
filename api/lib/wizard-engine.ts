@@ -785,8 +785,10 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
       return await qaCreateReview({
         projectId: String(body?.projectId || "").trim() || undefined,
         siteUrl: String(body?.siteUrl || "").trim(),
+        clientId: String(body?.clientId || "").trim() || undefined,
         clientName: String(body?.clientName || "").trim() || undefined,
         executiveName: String(body?.executiveName || "").trim() || undefined,
+        bdeName: String(body?.bdeName || "").trim() || undefined,
         title: String(body?.title || "").trim() || undefined,
         clientContext: String(body?.clientContext || ""),
         mailText: String(body?.mailText || ""),
