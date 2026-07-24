@@ -10,7 +10,7 @@ import {
   Database, Activity, Brain, ChevronDown, Menu, X,
   BookOpenCheck, Rocket, MessageSquare, Users, Target,
   FileText, Search, Heart, Eye, Kanban, UserPlus,
-  DollarSign, Bot, Palette, Map, FlaskConical,
+  DollarSign, Bot, Palette, Map, FlaskConical, ClipboardCheck,
 } from 'lucide-react';
 
 interface Props {
@@ -72,6 +72,8 @@ const EMPIRE_SECTIONS = [
       { href: '/content-hub',     label: 'Content Hub',     icon: FileText,     desc: 'Content briefs',     perm: 'playground' },
       { href: '/content-writer',  label: 'Content Writer',  icon: FileText,     desc: 'Writer dashboard',   perm: 'playground' },
       { href: '/launchpad',       label: 'Launchpad',       icon: Sparkles,     desc: 'Project launchpad',  perm: 'playground' },
+      { href: '/qa-desk',         label: 'QA Desk',         icon: ClipboardCheck, desc: 'Check delivery before it ships', perm: 'playground' },
+      { href: '/report-check',    label: 'Report Check',    icon: FileText,     desc: 'Verify a work report', perm: 'playground' },
     ]
   },
   {
