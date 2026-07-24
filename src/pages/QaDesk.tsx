@@ -99,6 +99,7 @@ export default function QaDesk() {
   const [crawlJobId, setCrawlJobId] = useState("");
   const [crawling, setCrawling] = useState(false);
   const [siteAudit, setSiteAudit] = useState<any>(null);
+  const [crawlWhy, setCrawlWhy] = useState("");
 
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [fileName, setFileName] = useState("");
@@ -235,7 +236,7 @@ export default function QaDesk() {
   /* Evidence: the whole site, crawled in batches, before any row is judged. */
   const runCrawl = async () => {
     if (!siteUrl.trim()) { setError("Enter the client site first."); return ""; }
-    stopCrawl.current = false;
+    stopCrawl.current = false; setCrawlWhy("");
     setCrawling(true); setError(""); log(`Starting the full site crawl of ${siteDomain}`);
     let jobId = ""; let guard = 0;
     try {
@@ -245,6 +246,8 @@ export default function QaDesk() {
         if (!r?.success) { setError(r?.error || "The crawl could not run."); log(`Crawl stopped: ${r?.error || "failed"}`, "err"); break; }
         jobId = r.jobId || jobId;
         setCrawl({ jobId, done: r.done, total: r.total, complete: r.complete });
+        if (r.diagnosis?.reason) { setCrawlWhy(r.diagnosis.reason); log(r.diagnosis.reason, "warn"); }
+        else if (r.render_note) log(r.render_note, "run");
         log(`Crawled ${r.done} of ${r.total} pages`, r.complete ? "ok" : "run");
         if (r.complete) break;
       }
@@ -586,6 +589,7 @@ export default function QaDesk() {
                     </div>
                   </div>
                   {crawl ? <div className="mt-2"><Bar pct={crawl.total ? (crawl.done / crawl.total) * 100 : 0} tone={crawl.complete ? "good" : "work"} /></div> : null}
+                  {crawlWhy ? <p className="text-[11px] text-amber-400 mt-2">{crawlWhy}</p> : null}
                 </div>
                 {setupBusy ? <p className="text-[11px] text-sky-400">{setupBusy}</p> : null}
               </div>

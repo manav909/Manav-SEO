@@ -655,7 +655,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
         const id = `crawljob:${r.projectDomain}:${Date.now()}`;
         const meta = { selected: grown, cap: target, candidatesCount: r.candidatesCount, allBoilerplate: r.allBoilerplate, sitemapCount: r.sitemapCount, sitemapFiles: r.sitemapFiles, renderNote: r.renderNote, useReader: r.useReader, start: r.start, projectDomain: r.projectDomain, homeTitle: r.homeTitle, homeH1: r.homeH1 };
         await db().from("crawl_jobs").insert({ id, project_id: projectId || null, site_url: siteUrl, mode, target_count: grown.length, meta, results, broken, cursor: first.length, status: complete ? "complete" : "running" });
-        return { success: true, jobId: id, done: first.length, total: grown.length, complete, use_reader: r.useReader };
+        return { success: true, jobId: id, done: first.length, total: grown.length, complete, use_reader: r.useReader, diagnosis: (r as any).diagnosis || null, render_note: r.renderNote || "" };
       }
 
       const { data: job } = await db().from("crawl_jobs").select("*").eq("id", jobId).single();

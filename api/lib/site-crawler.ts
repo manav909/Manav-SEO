@@ -309,11 +309,43 @@ export interface ResolveResult {
   useReader: boolean; renderNote: string;
   sitemapCount: number; sitemapFiles: number;
   homeHtml: string; homeTitle: string; homeH1: string;
+  diagnosis?: any;
 }
 
 /* Resolve the site's real URL set (sitemap + homepage links), detect JS
    rendering, and score+select the highest-value pages up to `maxPages`. Shared
    by the single-pass crawl and the batched crawl so selection is identical. */
+/* Reading the homepage is what seeds the whole crawl, so it must not depend on a
+   single raw fetch succeeding. A raw fetch can come back empty (blocked, region
+   locked, WAF), or come back as a shell with no links (JavaScript rendered), and
+   in both cases the frontier collapses to the start URL and the crawl reports one
+   page. So: fetch raw, and render through the reader whenever the raw attempt is
+   empty, looks JavaScript built, OR yields no internal links. Whichever version
+   carries more links wins. */
+async function readHomepage(start: string): Promise<{ html: string; via: string; platform: string; links: number; note: string }> {
+  const raw = await fetchHtml(start).catch(() => "");
+  const jsr = raw ? detectJsRendering(raw) : { js: false, platform: "" };
+  const rawLinks = raw ? extract(start, raw, 200).links.length : 0;
+  const needRender = !raw || jsr.js || rawLinks === 0;
+
+  if (needRender) {
+    const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
+    if (rendered.ok && rendered.html) {
+      const rLinks = extract(start, rendered.html, 200).links.length;
+      if (!raw || rLinks > rawLinks) {
+        return {
+          html: rendered.html, via: "reader", platform: jsr.platform, links: rLinks,
+          note: jsr.js
+            ? `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages are fetched through a rendering proxy so the on-page metadata reflects what users and Google actually see.`
+            : `The raw fetch of the homepage returned ${raw ? "no internal links" : "nothing"}, so it was read through a rendering proxy instead.`,
+        };
+      }
+    }
+    if (!raw) return { html: "", via: "none", platform: jsr.platform, links: 0, note: "The homepage could not be read by a direct fetch or through the rendering proxy." };
+  }
+  return { html: raw, via: "raw", platform: jsr.platform, links: rawLinks, note: jsr.js && !raw ? "" : "" };
+}
+
 export async function resolveTargets(opts: { projectId: string; siteUrl?: string; maxPages?: number }): Promise<ResolveResult | null> {
   const maxPages = Math.max(5, Math.min(opts.maxPages ?? 80, 4000));
   let root = opts.siteUrl ? originOf(opts.siteUrl) : "";
@@ -322,14 +354,10 @@ export async function resolveTargets(opts: { projectId: string; siteUrl?: string
   const projectDomain = domainOf(root || opts.siteUrl || "");
   const start = root.endsWith("/") ? root : root + "/";
   const sm = await discoverSitemapUrls(root, projectDomain, maxPages).catch(() => ({ urls: [] as string[], files: 0 }));
-  let homeHtml = await fetchHtml(start).catch(() => "");
-  const jsr = homeHtml ? detectJsRendering(homeHtml) : { js: false, platform: "" };
-  let useReader = false; let renderNote = "";
-  if (jsr.js) {
-    const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
-    if (rendered.ok && rendered.html) { useReader = true; homeHtml = rendered.html; renderNote = `This site is ${jsr.platform}, which builds its pages with JavaScript. Pages are fetched through a rendering proxy so the on-page metadata reflects what users and Google actually see, a raw server-HTML crawl would falsely report missing meta descriptions, over-long titles and missing H1s that the platform injects via JavaScript.`; }
-    else { renderNote = `This site is ${jsr.platform} (JavaScript-rendered) and the rendering proxy was unavailable, so meta-description, title-length and H1 counts are read from server HTML and are LIKELY OVER-REPORTED, the platform injects those fields via JavaScript a raw crawl cannot see. Verify those counts against the rendered page; schema, performance and search-visibility findings are unaffected.`; }
-  }
+  const home = await readHomepage(start);
+  const homeHtml = home.html;
+  const useReader = home.via === "reader";
+  const renderNote = home.note;
   const homeSig = homeHtml ? extract(start, homeHtml, 200) : null;
   const candidates = new Map<string, string>();
   const addCand = (u: string) => { const k = canonKey(u); if (k && !candidates.has(k)) candidates.set(k, u); };
@@ -347,7 +375,20 @@ export async function resolveTargets(opts: { projectId: string; siteUrl?: string
     if (s.cls === "boilerplate_demo") { if (boilerCount >= 4) continue; boilerCount++; }
     selected.push(s);
   }
-  return { root, projectDomain, start, selected, candidatesCount: candidates.size, allBoilerplate, useReader, renderNote, sitemapCount: sm.urls.length, sitemapFiles: sm.files, homeHtml, homeTitle: homeSig?.title || "", homeH1: homeSig?.h1 || "" };
+  /* Why the page set came out the size it did, so a thin crawl explains itself
+     instead of silently reporting one page. */
+  const diagnosis = {
+    sitemap_files: sm.files, sitemap_urls: sm.urls.length,
+    homepage_read: home.via, homepage_links: home.links,
+    candidates: candidates.size, selected: selected.length,
+    reason: selected.length > 1 ? "" :
+      (home.via === "none"
+        ? `The homepage at ${start} could not be read by a direct fetch or through the rendering proxy, so no pages could be discovered. The site may be blocking automated requests or be unreachable from this region.`
+        : sm.urls.length === 0 && home.links === 0
+          ? `No sitemap was found (${sm.files} sitemap file(s) parsed) and the homepage carried no internal links that could be followed, so only the homepage itself could be queued.`
+          : `Only the homepage passed the page selection, from ${candidates.size} candidate URL(s).`),
+  };
+  return { root, projectDomain, start, selected, candidatesCount: candidates.size, allBoilerplate, useReader, renderNote, sitemapCount: sm.urls.length, sitemapFiles: sm.files, homeHtml, homeTitle: homeSig?.title || "", homeH1: homeSig?.h1 || "", diagnosis };
 }
 
 /* Crawl a specific set of pages (a batch or the full selection). Renders via the
