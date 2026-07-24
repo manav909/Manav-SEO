@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PortalNav from "@/components/PortalNav";
 import { useProject } from "@/contexts/ProjectContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -103,8 +103,10 @@ export default function QaDesk() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [activity, setActivity] = useState<Array<{ t: string; msg: string; kind: string }>>([]);
+  const [dir, setDir] = useState<any>(null);
+  const [dirQuery, setDirQuery] = useState("");
+  const [dirBusy, setDirBusy] = useState(false);
   const [worklist, setWorklist] = useState<any>(null);
-  const [profiles, setProfiles] = useState<any[]>([]);
 
   const siteDomain = dom(siteUrl);
   const projDomain = dom(navProjectUrl);
@@ -114,17 +116,26 @@ export default function QaDesk() {
   const gscReady = gscBound && Boolean(gsc?.lastPullAt);
   const crawlReady = Boolean(crawl?.complete);
 
+  const stopCrawl = useRef(false);
+  const stopReview = useRef(false);
+
   const log = (msg: string, kind = "run") => setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
 
   useEffect(() => {
     if (navProjectUrl && !siteUrl.trim()) setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`);
-    loadWorklist();
+    loadWorklist(); loadDirectory("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navProjectUrl]);
   useEffect(() => { if (projectId) refreshGsc(projectId); }, [projectId]);
 
+  const loadDirectory = async (query: string) => {
+    setDirBusy(true);
+    const r: any = await post("wizard_qa_directory", { query });
+    setDirBusy(false);
+    if (r?.success) setDir(r);
+  };
+
   const loadWorklist = async () => { const r: any = await post("wizard_qa_worklist", {}); if (r?.success) setWorklist(r); };
-  const loadProfiles = async () => { const r: any = await post("wizard_qa_profile", { executiveName: "" }); if (r?.success) setProfiles(r.executives || []); };
   const refreshGsc = async (pid: string) => { const r: any = await post("gsc_status", { projectId: pid }); setGsc(r?.success === false ? null : r); };
 
   const readContext = async () => {
@@ -209,10 +220,12 @@ export default function QaDesk() {
   /* Evidence: the whole site, crawled in batches, before any row is judged. */
   const runCrawl = async () => {
     if (!siteUrl.trim()) { setError("Enter the client site first."); return ""; }
+    stopCrawl.current = false;
     setCrawling(true); setError(""); log(`Starting the full site crawl of ${siteDomain}`);
     let jobId = ""; let guard = 0;
     try {
       while (guard++ < 400) {
+        if (stopCrawl.current) { log(`Crawl stopped by you at ${crawl?.done || 0} pages. The pages already crawled stay usable.`, "warn"); break; }
         const r: any = await post("wizard_crawl_batch", jobId ? { projectId, jobId } : { projectId, siteUrl: siteUrl.trim(), mode: "advanced" });
         if (!r?.success) { setError(r?.error || "The crawl could not run."); log(`Crawl stopped: ${r?.error || "failed"}`, "err"); break; }
         jobId = r.jobId || jobId;
@@ -247,6 +260,7 @@ export default function QaDesk() {
     setError(""); setFindings([]); setSummary(null); setProgress({});
     if (!siteUrl.trim()) { setError("Enter the client site."); return; }
     if (!sheets.length) { setError("Upload the delivery workbook."); return; }
+    stopReview.current = false;
     setRunning(true); setBusy("Setting the agenda..."); log("Setting the QA agenda from the client record");
     const created: any = await post("wizard_qa_create", {
       projectId, siteUrl: siteUrl.trim(), clientName, executiveName: execName, clientContext, mailText,
@@ -260,10 +274,12 @@ export default function QaDesk() {
 
     const collected: any[] = [];
     for (let ti = 0; ti < sheets.length; ti++) {
+      if (stopReview.current) { log("Review paused by you. Everything checked so far is saved.", "warn"); break; }
       const sheet = sheets[ti];
       if (!sheet.rows.length) { setProgress((p) => ({ ...p, [ti]: { checked: 0, total: 0, done: true, remark: "Empty tab." } })); continue; }
       let offset = 0;
       while (true) {
+        if (stopReview.current) { log(`Paused inside ${sheet.name}. Checked rows are saved.`, "warn"); break; }
         setBusy(`${sheet.name}: rows ${offset + 1} to ${Math.min(offset + SLOT, sheet.rows.length)} of ${sheet.rows.length}`);
         const r: any = await post("wizard_qa_check_tab", { reviewId: rid, tabIndex: ti, rowOffset: offset, rows: sheet.rows.slice(offset, offset + SLOT), totalRows: sheet.rows.length });
         if (!r?.success) { setError(`${sheet.name}: ${r?.error || "check failed"}`); log(`${sheet.name} failed: ${r?.error || ""}`, "err"); break; }
@@ -445,7 +461,11 @@ export default function QaDesk() {
               </div>
               <button onClick={readContext} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 mb-3">Fill from chat and calls</button>
               <div className="grid md:grid-cols-3 gap-2">
-                <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Executive" value={execName} onChange={(e) => setExecName(e.target.value)} />
+                <div>
+                  <input list="qa-execs" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Executive" value={execName} onChange={(e) => setExecName(e.target.value)} />
+                  <datalist id="qa-execs">{(dir?.known_executives || []).map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
+                  {(dir?.known_executives || []).length ? <p className="text-[10px] text-muted-foreground mt-1">{dir.known_executives.length} known, start typing to pick</p> : null}
+                </div>
                 <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
                 <input className="bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="https://client.com/" value={siteUrl} onChange={(e) => setSiteUrl(e.target.value)} />
               </div>
@@ -511,9 +531,14 @@ export default function QaDesk() {
                         {crawlReady ? `${crawl.done} pages crawled and ready to check against.` : crawling ? `Crawling ${crawl?.done || 0} of ${crawl?.total || "?"} pages, batch by batch.` : "Crawl the site so every claim can be checked against the real pages."}
                       </div>
                     </div>
-                    <button onClick={runCrawl} disabled={crawling || running} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap disabled:opacity-50">
-                      {crawling ? "Crawling..." : crawlReady ? "Crawl again" : "Crawl the site"}
-                    </button>
+                    <div className="flex gap-1.5 shrink-0">
+                      {crawling ? (
+                        <button onClick={() => { stopCrawl.current = true; }} className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-400 whitespace-nowrap">Stop</button>
+                      ) : null}
+                      <button onClick={runCrawl} disabled={crawling || running} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap disabled:opacity-50">
+                        {crawling ? "Crawling..." : crawlReady ? "Crawl again" : "Crawl the site"}
+                      </button>
+                    </div>
                   </div>
                   {crawl ? <div className="mt-2"><Bar pct={crawl.total ? (crawl.done / crawl.total) * 100 : 0} tone={crawl.complete ? "good" : "work"} /></div> : null}
                 </div>
@@ -522,8 +547,17 @@ export default function QaDesk() {
             </Stage>
 
             <Stage n={3} title="Submitted work" hint="The executive's workbook. Every tab is read." tone={s3}>
-              <input type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onWorkbook(e.target.files)}
-                className="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border file:border-border file:bg-muted/40 file:text-xs" />
+              <label
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); onWorkbook(e.dataTransfer.files); }}
+                className={`flex items-center justify-between gap-3 rounded-xl border border-dashed px-4 py-4 cursor-pointer transition-colors ${sheets.length ? "border-emerald-500/40 bg-emerald-500/5 hover:bg-emerald-500/10" : "border-border bg-muted/20 hover:bg-muted/40 hover:border-primary/40"}`}>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold">{fileName || "Drop the workbook here, or click to choose"}</div>
+                  <div className="text-[11px] text-muted-foreground">{sheets.length ? `${sheets.length} tab(s), ${totalRows} rows ready to review` : "Excel or CSV. Every tab is read."}</div>
+                </div>
+                <span className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap">{sheets.length ? "Replace" : "Choose file"}</span>
+                <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => onWorkbook(e.target.files)} />
+              </label>
               {sheets.length ? (
                 <div className="mt-3 space-y-1.5">
                   <div className="text-[11px] text-muted-foreground">{sheets.length} tab(s), {totalRows} rows</div>
@@ -550,7 +584,8 @@ export default function QaDesk() {
                   className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50">
                   {running ? "Reviewing..." : "Review the work"}
                 </button>
-                {!crawlReady ? <span className="text-[11px] text-amber-400">Crawl the site in step 2 first so rows can be checked against real pages.</span> : null}
+                {running ? <button onClick={() => { stopReview.current = true; }} className="px-3 py-2 rounded-xl border border-amber-500/40 text-amber-400 text-sm">Pause</button> : null}
+                {!crawlReady && !running ? <span className="text-[11px] text-amber-400">Crawl the site in step 2 first so rows can be checked against real pages.</span> : null}
                 {busy ? <span className="text-xs text-sky-400">{busy}</span> : null}
               </div>
               {error ? <p className="text-sm text-red-400 mt-2">{error}</p> : null}
@@ -679,21 +714,35 @@ export default function QaDesk() {
             </div>
 
             <div className="rounded-2xl border border-border p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Executives</div>
-                <button onClick={loadProfiles} className="text-[11px] text-primary">Load</button>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Directory</div>
+              <div className="flex gap-1.5 mb-2">
+                <input value={dirQuery} onChange={(e) => setDirQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") loadDirectory(dirQuery); }}
+                  placeholder="Name, client, or ask a question"
+                  className="flex-1 bg-muted/40 border border-border rounded-lg px-2.5 py-1.5 text-[11px]" />
+                <button onClick={() => loadDirectory(dirQuery)} className="text-[11px] px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">{dirBusy ? "..." : "Find"}</button>
               </div>
-              <div className="space-y-2 max-h-56 overflow-auto">
-                {profiles.map((p, i) => (
-                  <div key={i} className="rounded-lg border border-border p-2">
-                    <div className="text-[11px] font-semibold">{p.executive}</div>
-                    <div className="text-[10px] text-muted-foreground">{p.first_pass_rate}% clean first pass, {p.average_rounds} rounds avg</div>
-                    {(p.recurring_mistakes || []).length ? <div className="text-[10px] mt-0.5 text-amber-400/80">{p.recurring_mistakes.slice(0, 3).map((m: any) => `${m.category} (${m.count})`).join(", ")}</div> : null}
-                  </div>
+              {dir?.interpreted ? <p className="text-[10px] text-sky-400 mb-2">Read as: {dir.interpreted}</p> : null}
+              <div className="space-y-2 max-h-72 overflow-auto">
+                {(dir?.executives || []).map((p: any, i: number) => (
+                  <button key={i} onClick={() => { setExecName(p.executive); setDirQuery(p.executive); loadDirectory(p.executive); }}
+                    className="w-full text-left rounded-lg border border-border p-2 hover:bg-muted/30">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold truncate">{p.executive}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${p.first_pass_rate >= 80 ? TONE.good : p.first_pass_rate >= 50 ? TONE.warn : TONE.bad}`}>{p.first_pass_rate}% first pass</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      {p.reviews} review(s), {p.projects} project(s){p.open_reviews ? `, ${p.open_reviews} open` : ""}
+                    </div>
+                    {(p.clients || []).length ? <div className="text-[10px] text-muted-foreground truncate">Clients: {p.clients.slice(0, 3).join(", ")}</div> : null}
+                    {(p.recurring_mistakes || []).length ? <div className="text-[10px] text-amber-400/80 truncate mt-0.5">{p.recurring_mistakes.slice(0, 2).map((m: any) => `${m.category} (${m.count})`).join(", ")}</div> : null}
+                  </button>
                 ))}
-                {!profiles.length ? <p className="text-[11px] text-muted-foreground">Load to see profiles built from real QA history.</p> : null}
+                {dir && !(dir.executives || []).length ? <p className="text-[11px] text-muted-foreground">No one matches that. Try a name, a client, or a question such as who keeps missing meta descriptions.</p> : null}
+                {!dir ? <p className="text-[11px] text-muted-foreground">Loading...</p> : null}
               </div>
             </div>
+
           </aside>
         </div>
       </div>

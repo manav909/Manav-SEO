@@ -206,6 +206,7 @@ export async function qaCreateReview(opts: {
     agenda = Array.isArray(parsed.agenda) ? parsed.agenda.slice(0, 10) : [];
   } catch { agenda = []; }
 
+  await registerExecutive(String(opts.executiveName || ""));
   const { data: rev, error } = await db().from("qa_reviews").insert({
     project_id: opts.projectId || null,
     client_name: opts.clientName || null,
@@ -614,6 +615,102 @@ export async function qaWorklist(opts: { day?: string }) {
 }
 
 /* ---- 6. Executive profile, built from their real QA history ----------------- */
+
+/* Names are typed once. Every review registers the executive so the next review
+   can offer them, and so their record accumulates against real work rather than
+   being retyped from scratch each time. */
+async function registerExecutive(name: string): Promise<void> {
+  const n = String(name || "").trim();
+  if (!n) return;
+  try {
+    const { data: found } = await db().from("qa_executives").select("id").eq("name", n).maybeSingle();
+    if (!found) await db().from("qa_executives").insert({ name: n });
+  } catch { /* the directory still reads names from the reviews themselves */ }
+}
+
+/* Directory linking executive to client, site and project, searchable in plain
+   words. A direct match handles names and domains; a phrased question is read
+   for intent first, so "who keeps missing meta descriptions" finds the person. */
+export async function qaDirectory(opts: { query?: string }) {
+  const q = String(opts.query || "").trim();
+  const { data: revs } = await db().from("qa_reviews")
+    .select("id,client_name,site_url,executive_name,project_id,status,round,totals,updated_at")
+    .order("updated_at", { ascending: false }).limit(400);
+  const reviews: any[] = (revs as any[]) || [];
+
+  const ids = reviews.map((r) => r.id);
+  let finds: any[] = [];
+  if (ids.length) {
+    try { const { data: f } = await db().from("qa_findings").select("review_id,status,mistake_category,round").in("review_id", ids).limit(6000); finds = (f as any[]) || []; }
+    catch { finds = []; }
+  }
+  const byReview = new Map<string, any[]>();
+  for (const f of finds) byReview.set(f.review_id, (byReview.get(f.review_id) || []).concat(f));
+
+  let known: string[] = [];
+  try { const { data: ex } = await db().from("qa_executives").select("name").order("name", { ascending: true }).limit(200); known = ((ex as any[]) || []).map((e) => String(e.name)).filter(Boolean); }
+  catch { known = []; }
+  for (const r of reviews) { const n = String(r.executive_name || "").trim(); if (n && !known.includes(n)) known.push(n); }
+
+  const execMap = new Map<string, any>();
+  for (const r of reviews) {
+    const name = String(r.executive_name || "").trim() || "unattributed";
+    const e = execMap.get(name) || { executive: name, reviews: 0, clients: new Set<string>(), sites: new Set<string>(), projects: new Set<string>(), open: 0, items: 0, cleanFirst: 0, firstItems: 0, cats: {} as Record<string, number>, last_active: r.updated_at };
+    e.reviews++;
+    if (r.client_name) e.clients.add(String(r.client_name));
+    if (r.site_url) e.sites.add(String(r.site_url).replace(/^https?:\/\//, "").replace(/\/$/, ""));
+    if (r.project_id) e.projects.add(String(r.project_id));
+    if (r.status === "awaiting_fix" || r.status === "rechecking") e.open++;
+    if (!e.last_active || String(r.updated_at) > String(e.last_active)) e.last_active = r.updated_at;
+    for (const f of (byReview.get(r.id) || [])) {
+      e.items++;
+      if ((Number(f.round) || 1) === 1) { e.firstItems++; if (f.status === "verified") e.cleanFirst++; }
+      if (f.mistake_category) e.cats[f.mistake_category] = (e.cats[f.mistake_category] || 0) + 1;
+    }
+    execMap.set(name, e);
+  }
+
+  let executives = Array.from(execMap.values()).map((e) => ({
+    executive: e.executive, reviews: e.reviews,
+    clients: Array.from(e.clients) as string[], sites: Array.from(e.sites) as string[], projects: e.projects.size,
+    open_reviews: e.open, items_checked: e.items,
+    first_pass_rate: e.firstItems ? Math.round((e.cleanFirst / e.firstItems) * 100) : 0,
+    recurring_mistakes: Object.entries(e.cats as Record<string, number>).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => ({ category: k, count: v })),
+    last_active: e.last_active,
+  })).sort((a, b) => b.reviews - a.reviews);
+
+  let interpreted = "";
+  if (q) {
+    const ql = q.toLowerCase();
+    const hit = (e: any) => e.executive.toLowerCase().includes(ql)
+      || e.clients.some((c: string) => c.toLowerCase().includes(ql))
+      || e.sites.some((s: string) => s.toLowerCase().includes(ql))
+      || e.recurring_mistakes.some((m: any) => String(m.category).toLowerCase().includes(ql));
+    let matched = executives.filter(hit);
+    if (!matched.length && q.split(/\s+/).length > 1) {
+      try {
+        const sys = "Map a search over a quality assurance directory to filters. Return ONLY JSON: {\"executive\":\"\",\"client\":\"\",\"mistake_category\":\"one of not_implemented, unverifiable_claim, thin_content, keyword_missing, length_out_of_range, duplication, incomplete_execution, indexation_risk, below_standard, or empty\",\"sort\":\"worst_first_pass|most_open|most_reviews|recent|empty\"}. Leave anything not asked for empty.";
+        const { text } = await llmComplete({ system: sys, user: q, maxTokens: 200, timeoutMs: 30000, label: "qa-directory-search", maxSegments: 1 });
+        const m = String(text || "").match(/\{[\s\S]*\}/);
+        const p: any = m ? JSON.parse(m[0]) : {};
+        interpreted = [p.executive && `executive ${p.executive}`, p.client && `client ${p.client}`, p.mistake_category && `mistakes of type ${p.mistake_category}`, p.sort && `sorted by ${String(p.sort).replace(/_/g, " ")}`].filter(Boolean).join(", ");
+        matched = executives.filter((e) =>
+          (!p.executive || e.executive.toLowerCase().includes(String(p.executive).toLowerCase())) &&
+          (!p.client || e.clients.some((c: string) => c.toLowerCase().includes(String(p.client).toLowerCase()))) &&
+          (!p.mistake_category || e.recurring_mistakes.some((mm: any) => mm.category === p.mistake_category)));
+        if (p.sort === "worst_first_pass") matched.sort((a, b) => a.first_pass_rate - b.first_pass_rate);
+        else if (p.sort === "most_open") matched.sort((a, b) => b.open_reviews - a.open_reviews);
+        else if (p.sort === "recent") matched.sort((a, b) => String(b.last_active).localeCompare(String(a.last_active)));
+      } catch { /* fall back to the plain match */ }
+    }
+    executives = matched;
+  }
+
+  return {
+    success: true, query: q, interpreted, known_executives: known, executives,
+    reviews: reviews.slice(0, 60).map((r) => ({ id: r.id, client: r.client_name, site: r.site_url, executive: r.executive_name, status: r.status, round: r.round, updated_at: r.updated_at })),
+  };
+}
 
 export async function qaExecutiveProfile(opts: { executiveName?: string }) {
   const name = String(opts.executiveName || "").trim();

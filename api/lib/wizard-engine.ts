@@ -833,6 +833,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     catch (e: any) { return { success: false, error: e?.message || "could not load the work list" }; }
   }
 
+  if (action === "wizard_qa_directory") {
+    try { const { qaDirectory } = await import("./qa-engine.js"); return await qaDirectory({ query: String(body?.query || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "directory lookup failed" }; }
+  }
+
   if (action === "wizard_qa_profile") {
     try { const { qaExecutiveProfile } = await import("./qa-engine.js"); return await qaExecutiveProfile({ executiveName: String(body?.executiveName || "") }); }
     catch (e: any) { return { success: false, error: e?.message || "could not load the profile" }; }
