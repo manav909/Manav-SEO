@@ -840,6 +840,16 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     catch (e: any) { return { success: false, error: e?.message || "could not load the work list" }; }
   }
 
+  if (action === "wizard_qa_clients") {
+    try { const { qaClients } = await import("./qa-engine.js"); return await qaClients({ query: String(body?.query || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "client lookup failed" }; }
+  }
+
+  if (action === "wizard_qa_load_client") {
+    try { const { qaLoadClient } = await import("./qa-engine.js"); return await qaLoadClient({ clientId: String(body?.clientId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not load the client" }; }
+  }
+
   if (action === "wizard_qa_directory") {
     try { const { qaDirectory } = await import("./qa-engine.js"); return await qaDirectory({ query: String(body?.query || "") }); }
     catch (e: any) { return { success: false, error: e?.message || "directory lookup failed" }; }

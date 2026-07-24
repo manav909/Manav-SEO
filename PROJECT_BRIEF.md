@@ -2118,3 +2118,13 @@ FIX: skip the raw fetch ONLY when a route is genuinely known to work and is fres
 PROVEN on the exact guard across three memo states: never tried (raw runs, both), working route (skip raw and use it, both, correct), and tried-and-failed (shipped skipped the raw fetch and took the site dark, fixed still runs the raw fetch).
 Verified: esbuild + node --check green, no new tsc errors (shared.ts baseline 4 unchanged), zero em-dashes, api function count still 12.
 LESSON, recorded: changing a memo's value type silently changed the truthiness of every guard that read it. A type change to a shared cache needs every reader re-checked, not just the writer.
+
+### Build 12.98 — The client is a standing record, not something retyped every review [BUILT 2026-07-13, deploy pending]
+Manav: if the module remembers executives and projects, it should remember the client chat, calls and mail too, instead of him pasting the same text every time.
+BUILT (migration 5 + engine + UI):
+qa_clients keyed on the unique client_id holds what belongs to the CLIENT rather than to one review: name, site, BDE, the conversation, the commitment mail, the persona, target keywords and competitors, plus reviews_count and last_seen_at.
+upsertClient() runs on every review create. Its keep() rule is the important part: an empty field NEVER wipes stored text, so a review that omits the mail leaves the stored mail intact, while a filled field updates the record. So the record improves with use and cannot be silently emptied by a hurried run.
+qaClients() lists known clients for the picker; qaLoadClient() returns the full record. Two additive actions, wizard_qa_clients and wizard_qa_load_client.
+UI: the Client ID field is now a picker over known clients. Choosing one, or blurring the field, loads the record and fills the blanks. FILL THE BLANKS, NOT OVERWRITE: anything already on screen is kept, so a record can never clobber work in progress. A line states the record was loaded, how many previous reviews it has, when it was last used, and that edits are saved back on the next review.
+FIXTURE PROVEN end to end: first review stores the record; a second review loads name, site, BDE, chat, mail and keywords with nothing retyped; a review submitted with EMPTY chat and mail leaves both intact (reviews_count still increments); and an edited name and mail are saved back.
+Verified: esbuild + tsc green on all three files, no undefined identifiers, zero em-dashes, api function count still 12.

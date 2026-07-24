@@ -232,6 +232,81 @@ function remarkOf(status: string, expected: string, observed: string, evidence: 
   return `Live but needs work. Observed: ${observed || "nothing usable"}.${q}`;
 }
 
+/* ---- The client record ------------------------------------------------------ */
+
+/* Everything that belongs to the client rather than to one review is kept
+   against the client's unique handle, so the conversation, the mail, the site,
+   the BDE and the keywords are typed once and carried into every later review.
+   Existing text is never wiped by an empty field: a review that omits the mail
+   leaves the stored mail alone. */
+async function upsertClient(rec: {
+  clientId?: string; clientName?: string; siteUrl?: string; bdeName?: string;
+  clientContext?: string; mailText?: string; persona?: string;
+  keywords?: string[]; competitors?: string[];
+}): Promise<void> {
+  const id = String(rec.clientId || "").trim();
+  if (!id) return;
+  try {
+    const { data: existing } = await db().from("qa_clients").select("*").eq("client_id", id).maybeSingle();
+    const keep = (next: any, prev: any) => {
+      const n = typeof next === "string" ? next.trim() : next;
+      if (Array.isArray(n)) return n.length ? n : (prev || []);
+      return n ? n : (prev ?? null);
+    };
+    const row: any = {
+      client_id: id,
+      client_name: keep(rec.clientName, (existing as any)?.client_name),
+      site_url: keep(rec.siteUrl, (existing as any)?.site_url),
+      bde_name: keep(rec.bdeName, (existing as any)?.bde_name),
+      client_context: keep(rec.clientContext, (existing as any)?.client_context),
+      mail_text: keep(rec.mailText, (existing as any)?.mail_text),
+      persona: keep(rec.persona, (existing as any)?.persona),
+      target_keywords: keep(rec.keywords, (existing as any)?.target_keywords),
+      competitors: keep(rec.competitors, (existing as any)?.competitors),
+      last_seen_at: new Date().toISOString(),
+      reviews_count: (Number((existing as any)?.reviews_count) || 0) + 1,
+    };
+    if (existing) await db().from("qa_clients").update(row).eq("client_id", id);
+    else await db().from("qa_clients").insert(row);
+  } catch { /* the review still runs without the client record */ }
+}
+
+/* The known clients, for the picker. */
+export async function qaClients(opts: { query?: string }) {
+  const q = String(opts.query || "").trim().toLowerCase();
+  try {
+    const { data } = await db().from("qa_clients")
+      .select("client_id,client_name,site_url,bde_name,reviews_count,last_seen_at")
+      .order("last_seen_at", { ascending: false }).limit(200);
+    let list: any[] = (data as any[]) || [];
+    if (q) list = list.filter((c) =>
+      String(c.client_id || "").toLowerCase().includes(q) ||
+      String(c.client_name || "").toLowerCase().includes(q) ||
+      String(c.site_url || "").toLowerCase().includes(q));
+    return { success: true, clients: list };
+  } catch (e: any) { return { success: false, error: e?.message || "could not read the clients", clients: [] }; }
+}
+
+/* The full record for one client, used to fill a new review. */
+export async function qaLoadClient(opts: { clientId: string }) {
+  const id = String(opts.clientId || "").trim();
+  if (!id) return { success: false, error: "A client id is required." };
+  try {
+    const { data } = await db().from("qa_clients").select("*").eq("client_id", id).maybeSingle();
+    if (!data) return { success: false, error: "No record for that client yet." };
+    const c: any = data;
+    return {
+      success: true,
+      client: {
+        client_id: c.client_id, client_name: c.client_name || "", site_url: c.site_url || "",
+        bde_name: c.bde_name || "", client_context: c.client_context || "", mail_text: c.mail_text || "",
+        persona: c.persona || "", target_keywords: c.target_keywords || [], competitors: c.competitors || [],
+        reviews_count: c.reviews_count || 0, last_seen_at: c.last_seen_at,
+      },
+    };
+  } catch (e: any) { return { success: false, error: e?.message || "could not load the client" }; }
+}
+
 /* ---- 1. Create the review and build the agenda ------------------------------ */
 
 export async function qaCreateReview(opts: {
@@ -289,6 +364,11 @@ export async function qaCreateReview(opts: {
     agenda = Array.isArray(parsed.agenda) ? parsed.agenda.slice(0, 10) : [];
   } catch { agenda = []; }
 
+  await upsertClient({
+    clientId: opts.clientId, clientName: opts.clientName, siteUrl,
+    bdeName: opts.bdeName, clientContext: opts.clientContext, mailText: opts.mailText,
+    keywords: targetKeywords, competitors: competitorList,
+  });
   await registerExecutive(String(opts.executiveName || ""), "dme");
   await registerExecutive(String(opts.bdeName || ""), "bde");
   const { data: rev, error } = await db().from("qa_reviews").insert({

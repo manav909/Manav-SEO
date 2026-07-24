@@ -116,6 +116,8 @@ export default function QaDesk() {
   const [clientContext, setClientContext] = useState("");
   const [mailText, setMailText] = useState("");
   const [extracted, setExtracted] = useState<any>(null);
+  const [clients, setClients] = useState<any[]>([]);
+  const [clientLoaded, setClientLoaded] = useState<any>(null);
 
   const [projectId, setProjectId] = useState(navProjectId);
   const [projectLabel, setProjectLabel] = useState(navProjectName);
@@ -179,10 +181,32 @@ export default function QaDesk() {
 
   useEffect(() => {
     if (navProjectUrl && !siteUrl.trim()) { setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`); setSrcSite("default"); }
-    loadWorklist(); loadDirectory("");
+    loadWorklist(); loadDirectory(""); loadClients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navProjectUrl]);
   useEffect(() => { if (projectId) refreshGsc(projectId); }, [projectId]);
+
+  const loadClients = async () => { const r: any = await post("wizard_qa_clients", {}); if (r?.success) setClients(r.clients || []); };
+
+  /* Everything already known about this client is filled in, so the same
+     conversation is never pasted twice. Anything already on screen is kept: a
+     stored record fills the blanks, it does not overwrite work in progress. */
+  const loadClient = async (id: string) => {
+    const cid = String(id || "").trim();
+    if (!cid) return;
+    setBusy("Loading the client record...");
+    const r: any = await post("wizard_qa_load_client", { clientId: cid });
+    setBusy("");
+    if (!r?.success) { setClientLoaded(null); return; }
+    const c = r.client;
+    if (c.client_name && !clientName.trim()) setClientName(c.client_name);
+    if (c.bde_name && !bdeName.trim()) setBdeName(c.bde_name);
+    if (c.client_context && !clientContext.trim()) setClientContext(c.client_context);
+    if (c.mail_text && !mailText.trim()) setMailText(c.mail_text);
+    if (c.site_url && srcSite !== "typed" && !siteUrl.trim()) { setSiteUrl(c.site_url); setSrcSite("read"); }
+    setClientLoaded(c);
+    log(`Client record loaded for ${c.client_name || cid}, from ${c.reviews_count} previous review(s)`, "ok");
+  };
 
   const loadDirectory = async (query: string) => {
     setDirBusy(true);
@@ -396,7 +420,7 @@ export default function QaDesk() {
     const fin: any = await post("wizard_qa_finalize", { reviewId: rid });
     setSummary(fin?.success ? fin : null);
     if (fin?.success) log(fin.verdict, fin.ready_to_submit ? "ok" : "warn");
-    setRunning(false); setBusy(""); loadWorklist();
+    setRunning(false); setBusy(""); loadWorklist(); loadClients();
   };
 
   const openRecheck = async () => {
@@ -565,6 +589,11 @@ export default function QaDesk() {
           <div className="space-y-4">
 
             <Stage n={1} title="Brief" hint="What was promised, and what this client judges the work by." tone={s1}>
+              {clientLoaded ? (
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  Filled from the stored record for {clientLoaded.client_name || clientLoaded.client_id}, last used {clientLoaded.last_seen_at ? new Date(clientLoaded.last_seen_at).toLocaleDateString() : "previously"}. Edit anything that has changed and it will be saved back on the next review.
+                </p>
+              ) : null}
               <div className="grid md:grid-cols-2 gap-3 mb-3">
                 <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client chat and call notes. This sets the QA agenda." value={clientContext} onChange={(e) => setClientContext(e.target.value)} />
                 <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Commitment mail sent to the project manager." value={mailText} onChange={(e) => setMailText(e.target.value)} />
@@ -573,7 +602,21 @@ export default function QaDesk() {
               <div className="grid md:grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client ID (unique)</label>
-                  <input className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="tyler_tg1" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+                  <div className="flex gap-1.5">
+                    <input list="qa-clients" className="flex-1 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="tyler_tg1"
+                      value={clientId}
+                      onChange={(e) => { setClientId(e.target.value); if (clients.some((c) => c.client_id === e.target.value)) loadClient(e.target.value); }}
+                      onBlur={(e) => { if (e.target.value.trim() && !clientLoaded) loadClient(e.target.value); }} />
+                    {clientId.trim() ? <button onClick={() => loadClient(clientId)} className="text-xs px-2.5 rounded-xl border border-border whitespace-nowrap">Load</button> : null}
+                  </div>
+                  <datalist id="qa-clients">
+                    {clients.map((c: any, i: number) => <option key={i} value={c.client_id}>{c.client_name || c.site_url}</option>)}
+                  </datalist>
+                  <p className="text-[10px] mt-1">
+                    {clientLoaded
+                      ? <span className="text-emerald-400">Record loaded, {clientLoaded.reviews_count} previous review(s). The conversation and mail below came from it.</span>
+                      : clients.length ? <span className="text-muted-foreground">{clients.length} client(s) on file, pick one to fill everything</span> : null}
+                  </p>
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client name</label>
