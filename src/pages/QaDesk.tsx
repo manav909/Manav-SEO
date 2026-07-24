@@ -43,7 +43,7 @@ const STATUS_TONE: Record<string, string> = {
 const RING: Record<string, string> = { idle: "border-border", work: "border-sky-500/50", good: "border-emerald-500/40", warn: "border-amber-500/40", bad: "border-red-500/50" };
 
 type Cols = { urlKey: string; valueKey: string; itemKey: string; refKey: string };
-type Sheet = { name: string; headers: string[]; rows: any[]; columns: Cols };
+type Sheet = { name: string; headers: string[]; rows: any[]; headerRows: number; columns: Cols };
 
 /* The column mapping is decided once, from the WHOLE sheet, and then used for
    every batch. Deciding it per batch let the fallback lock onto a different
@@ -296,9 +296,28 @@ export default function QaDesk() {
       const out: Sheet[] = [];
       for (const name of (wb.SheetNames || [])) {
         try {
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { defval: "" });
-          const headers = rows.length ? Object.keys(rows[0]) : [];
-          out.push({ name, headers, rows, columns: pickColumns(headers, rows) });
+          const ws = wb.Sheets[name];
+          let rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          let headers = rows.length ? Object.keys(rows[0]) : [];
+          let headerRows = 1;
+          /* When the first row is a title or a banner, the parser names the
+             columns __EMPTY, __EMPTY_1 and so on. That is the signal that the
+             real header row is further down, so find it and re-read from there.
+             Otherwise every column name is meaningless and the tab looks
+             uncheckable when it is perfectly fine. */
+          const blank = headers.filter((h) => /^__EMPTY/.test(h)).length;
+          if (headers.length && blank >= Math.max(1, Math.floor(headers.length * 0.4))) {
+            const grid: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+            const hi = grid.findIndex((row) =>
+              Array.isArray(row) &&
+              row.filter((c) => String(c || "").trim()).length >= 2 &&
+              row.some((c) => /url|page|title|meta|description|keyword|link|address|status|anchor|alt|schema/i.test(String(c || ""))));
+            if (hi > 0) {
+              const re = XLSX.utils.sheet_to_json(ws, { range: hi, defval: "" });
+              if (re.length) { rows = re; headers = Object.keys(re[0]); headerRows = hi + 1; }
+            }
+          }
+          out.push({ name, headers, rows, headerRows, columns: pickColumns(headers, rows) });
         } catch { /* skip an unreadable tab */ }
       }
       setSheets(out); setFileName(f.name); setBusy("");
@@ -655,8 +674,12 @@ export default function QaDesk() {
                         </div>
                         <div className="text-[10px] mt-0.5">
                           {s.columns.urlKey
-                            ? <span className="text-muted-foreground">Pages read from column <span className="text-foreground/80">{s.columns.urlKey}</span>{s.columns.valueKey ? <>, values from <span className="text-foreground/80">{s.columns.valueKey}</span></> : null}</span>
-                            : <span className="text-amber-400">No page URL column found in this tab, its rows cannot be checked against live pages</span>}
+                            ? <span className="text-muted-foreground">
+                                Checks column <span className="text-foreground/80">{s.columns.urlKey}</span> against the live pages
+                                {s.columns.valueKey ? <>, comparing what is live to <span className="text-foreground/80">{s.columns.valueKey}</span></> : ", presence only, no value column found"}
+                                {s.headerRows > 1 ? <span className="text-sky-400"> (headers found on row {s.headerRows})</span> : null}
+                              </span>
+                            : <span className="text-amber-400">No page URL column in this tab, so its {s.rows.length} row(s) will be recorded as unverifiable rather than judged. Rename the column holding the page addresses to Page URL if it should be checked.</span>}
                         </div>
                         {p ? <div className="mt-1.5"><Bar pct={pct} tone={p.done ? "good" : "work"} /></div> : null}
                         {p?.remark ? <p className="text-[10px] text-muted-foreground mt-1">{p.remark}</p> : null}

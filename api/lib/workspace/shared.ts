@@ -151,7 +151,13 @@ export async function fetchWaybackUrls(rootUrl: string, cap = 500): Promise<stri
 }
 
 /* per-domain memo: the winning strategy, or null once every route has failed */
-const PROXY_STRATEGY = new Map<string, ((u: string) => Promise<string>) | null>();
+/* These memos exist to stop one crawl burning its whole time budget retrying a
+   domain that is not answering. They are module scope, and on a warm serverless
+   container the module survives between requests, so without an expiry a single
+   transient failure would mark a domain dead for every later request until the
+   container was recycled. That is a bug, not a cache: everything here expires. */
+const MEMO_TTL_MS = 5 * 60 * 1000;
+const PROXY_STRATEGY = new Map<string, { fn: ((u: string) => Promise<string>) | null; at: number }>();
 
 /* Unreachable-domain memo. When a site cannot be reached by ANY route (raw,
    region proxy, free proxies, archive, or the reader), every later fetch to that
@@ -159,19 +165,39 @@ const PROXY_STRATEGY = new Map<string, ((u: string) => Promise<string>) | null>(
    cause of the 300s FUNCTION_INVOCATION_TIMEOUT on a geo-blocked crawl. After a
    couple of full misses the domain is marked dead and all fetches to it return
    immediately, so the crawl finishes fast and honestly instead of timing out. */
-const DOMAIN_MISS = new Map<string, number>();
+const DOMAIN_MISS = new Map<string, { n: number; at: number }>();
 const DEAD_AFTER = 4;                                   // ~2 URLs (raw+reader each) before giving up
 function domainKey(url: string): string { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; } }
-function isDead(url: string): boolean { const d = domainKey(url); return !!d && (DOMAIN_MISS.get(d) || 0) >= DEAD_AFTER; }
-function noteMiss(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, (DOMAIN_MISS.get(d) || 0) + 1); }
-function noteReach(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.set(d, 0); }
+function isDead(url: string): boolean {
+  const d = domainKey(url); if (!d) return false;
+  const e = DOMAIN_MISS.get(d); if (!e) return false;
+  if (Date.now() - e.at > MEMO_TTL_MS) { DOMAIN_MISS.delete(d); return false; }   // stale, give it another chance
+  return e.n >= DEAD_AFTER;
+}
+function noteMiss(url: string): void {
+  const d = domainKey(url); if (!d) return;
+  const e = DOMAIN_MISS.get(d);
+  const fresh = e && Date.now() - e.at <= MEMO_TTL_MS;
+  DOMAIN_MISS.set(d, { n: fresh ? e!.n + 1 : 1, at: Date.now() });
+}
+function noteReach(url: string): void { const d = domainKey(url); if (d) DOMAIN_MISS.delete(d); }
+
+/* A new crawl starts from a clean slate for its own domain, so a previous run
+   can never decide that this one is pointless. */
+export function resetDomainMemo(url: string): void {
+  const d = domainKey(url.startsWith("http") ? url : "https://" + url);
+  if (!d) return;
+  DOMAIN_MISS.delete(d);
+  PROXY_STRATEGY.delete(d);
+}
 
 export async function fetchViaProxy(url: string, ms = 12000): Promise<string> {
   const domain = domainKey(url); if (!domain) return "";
-  if (PROXY_STRATEGY.has(domain)) {
-    const s = PROXY_STRATEGY.get(domain);
-    return s ? await s(url).catch(() => "") : "";        // known good route, or known-dead -> skip fast
+  const memo = PROXY_STRATEGY.get(domain);
+  if (memo && Date.now() - memo.at <= MEMO_TTL_MS) {
+    return memo.fn ? await memo.fn(url).catch(() => "") : "";   // known good route, or known-dead -> skip fast
   }
+  if (memo) PROXY_STRATEGY.delete(domain);                       // stale, try properly again
   const strategies: Array<(u: string) => Promise<string>> = [];
   const tmpl = (process.env.CRAWL_PROXY_TEMPLATE || "").trim();
   if (tmpl && tmpl.includes("{url}")) strategies.push((u) => proxyGet(tmpl.replace("{url}", encodeURIComponent(u)), ms));
@@ -183,10 +209,10 @@ export async function fetchViaProxy(url: string, ms = 12000): Promise<string> {
   const raced = strategies.map((s) => s(url).then((h) => (h && h.length > 200) ? { s, h } : Promise.reject(new Error("miss"))));
   try {
     const winner = await Promise.any(raced);
-    PROXY_STRATEGY.set(domain, winner.s);              // reuse this route for the rest of the crawl
+    PROXY_STRATEGY.set(domain, { fn: winner.s, at: Date.now() });   // reuse this route for the rest of the crawl
     return winner.h;
   } catch {
-    PROXY_STRATEGY.set(domain, null);                  // nothing reaches it -> skip the chain from now on
+    PROXY_STRATEGY.set(domain, { fn: null, at: Date.now() });       // nothing reaches it -> skip the chain briefly
     return "";
   }
 }

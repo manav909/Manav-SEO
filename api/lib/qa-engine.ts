@@ -146,9 +146,12 @@ export function detectColumns(rows: any[]): { urlKey: string; valueKey: string; 
     }
     if (bestScore >= 2) urlKey = best;
   }
+  /* Never judge the live page against the PREVIOUS value. */
+  const OLD = /previous|old|existing|current|before|original|was\b/i;
+  const findNew = (re: RegExp) => keys.find((k) => re.test(norm(k)) && !OLD.test(norm(k))) || "";
   const valueKey =
-    find(/new (title|meta|value|content|h1)|updated|implemented|optimi[sz]ed|revised|final|after/) ||
-    find(/^title$|^meta|description|^h1$|value|content|anchor|text/) || "";
+    findNew(/new (title|meta|value|content|h1|description)|updated|implemented|optimi[sz]ed|revised|final|after|suggested|recommended/) ||
+    findNew(/^title$|^meta|description|^h1$|value|content|anchor|text/) || "";
   const itemKey = find(/task|item|activity|work|deliverable|type|description of work/) || "";
   /* The sheet's own identifier column, so a finding can name the row the way the
      executive sees it rather than by position alone. */
