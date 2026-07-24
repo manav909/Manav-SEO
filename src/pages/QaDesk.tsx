@@ -148,11 +148,29 @@ export default function QaDesk() {
 
   const siteDomain = dom(siteUrl);
   const projDomain = dom(navProjectUrl);
-  const mismatch = Boolean(siteDomain && projDomain && siteDomain !== projDomain && projectId === navProjectId);
+  /* Coverage is confirmed, mismatched, or UNKNOWN. Unknown was previously
+     treated as confirmed, which is how the screen came to print
+     "lawnq.com.au covers boxflow.co.uk" beside a green matched badge. Nothing
+     shows green unless it has actually been verified against the site. */
+  const coverage: "none" | "confirmed" | "mismatch" | "unknown" =
+    !projectId ? "none"
+    : !siteDomain ? "unknown"
+    : projDomain && projectId === navProjectId ? (projDomain === siteDomain ? "confirmed" : "mismatch")
+    : projectId !== navProjectId ? "confirmed"          // a project created here for this exact site
+    : "unknown";                                         // project carries no URL, so it cannot be confirmed
+  const mismatch = coverage === "mismatch";
+
+  /* Search Console is only usable when the bound property is THIS site. A
+     property for another domain is another client's data and must never read as
+     ready, whatever its connection state. */
+  const gscDomain = dom(String(gsc?.resourceId || gsc?.resourceLabel || "").replace(/^sc-domain:/, ""));
+  const gscWrongSite = Boolean(gscDomain && siteDomain && gscDomain !== siteDomain);
   const gscConnected = Boolean(gsc?.connected) && !mismatch;
-  const gscBound = gscConnected && Boolean(gsc?.resourceId);
+  const gscBound = gscConnected && Boolean(gsc?.resourceId) && !gscWrongSite;
   const gscReady = gscBound && Boolean(gsc?.lastPullAt);
-  const crawlReady = Boolean(crawl?.complete);
+  /* A crawl that only reached the homepage, or that reported a reason it could
+     not proceed, is not evidence. */
+  const crawlReady = Boolean(crawl?.complete) && Number(crawl?.done || 0) > 1 && !crawlWhy;
 
   const stopCrawl = useRef(false);
   const stopReview = useRef(false);
@@ -513,17 +531,33 @@ export default function QaDesk() {
 
         {/* Evidence in hand, visible at all times */}
         <div className="grid sm:grid-cols-3 gap-2 mb-5">
-          <div className={`rounded-xl border px-3 py-2 ${mismatch ? TONE.warn : projectId ? TONE.good : TONE.idle}`}>
+          <div className={`rounded-xl border px-3 py-2 ${coverage === "confirmed" ? TONE.good : coverage === "none" ? TONE.idle : TONE.warn}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-80">Project</div>
-            <div className="text-xs font-semibold truncate">{mismatch ? `Nav project is ${projDomain}, not ${siteDomain}` : projectId ? (projectLabel || navProjectName || siteDomain || "bound") : "Not set"}</div>
+            <div className="text-xs font-semibold truncate">
+              {coverage === "confirmed" ? `${projectLabel || navProjectName || siteDomain} covers ${siteDomain}`
+                : coverage === "mismatch" ? `${projDomain} is not ${siteDomain}`
+                : coverage === "unknown" ? `Cannot confirm it covers ${siteDomain || "this site"}`
+                : "Not set"}
+            </div>
           </div>
-          <div className={`rounded-xl border px-3 py-2 ${gscReady ? TONE.good : gscConnected ? TONE.warn : TONE.idle}`}>
+          <div className={`rounded-xl border px-3 py-2 ${gscReady ? TONE.good : (gscWrongSite || gscConnected) ? TONE.warn : TONE.idle}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-80">Search Console</div>
-            <div className="text-xs font-semibold truncate">{gscReady ? (gsc?.resourceLabel || gsc?.resourceId) : gscBound ? "Bound, not pulled" : gscConnected ? "Pick a property" : "Not connected"}</div>
+            <div className="text-xs font-semibold truncate">
+              {gscWrongSite ? `${gscDomain} is not ${siteDomain}, not used`
+                : gscReady ? (gsc?.resourceLabel || gsc?.resourceId)
+                : gscBound ? "Bound, not pulled"
+                : gscConnected ? "Pick a property" : "Not connected"}
+            </div>
           </div>
           <div className={`rounded-xl border px-3 py-2 ${crawlReady ? TONE.good : crawling ? TONE.work : TONE.idle}`}>
             <div className="text-[10px] uppercase tracking-wider opacity-80">Site crawl</div>
-            <div className="text-xs font-semibold truncate">{crawlReady ? `${crawl.done} pages ready` : crawling ? `${crawl?.done || 0} of ${crawl?.total || "?"}` : "Not crawled"}</div>
+            <div className="text-xs font-semibold truncate">
+              {crawlReady ? `${crawl.done} pages ready`
+                : crawling ? `${crawl?.done || 0} of ${crawl?.total || "?"}`
+                : crawl && crawlWhy ? "Crawl did not reach the site"
+                : crawl ? `Only ${crawl.done} page, not usable as evidence`
+                : "Not crawled"}
+            </div>
           </div>
         </div>
 
@@ -586,8 +620,10 @@ export default function QaDesk() {
                   <div className="min-w-0">
                     <div className="text-xs font-semibold">Project</div>
                     <div className="text-[11px] text-muted-foreground truncate">
-                      {mismatch ? `The nav project is ${navProjectName || projDomain}, a different site from ${siteDomain}.`
-                        : projectId ? `${projectLabel || navProjectName || projDomain} covers ${siteDomain || "this site"}.` : "No project selected."}
+                      {coverage === "mismatch" ? `The nav project is ${navProjectName || projDomain} (${projDomain}), a different site from ${siteDomain}.`
+                        : coverage === "confirmed" ? `${projectLabel || navProjectName || projDomain} covers ${siteDomain}.`
+                        : coverage === "unknown" ? `The selected project ${navProjectName ? `"${navProjectName}"` : ""} has no website recorded, so it cannot be confirmed as the project for ${siteDomain || "this site"}. Search Console from it is not used.`
+                        : "No project selected."}
                     </div>
                   </div>
                   {mismatch || !projectId
@@ -600,7 +636,8 @@ export default function QaDesk() {
                     <div className="min-w-0">
                       <div className="text-xs font-semibold">Search Console</div>
                       <div className="text-[11px] text-muted-foreground truncate">
-                        {mismatch ? "Left out while the project does not match, because that data belongs to another client."
+                        {gscWrongSite ? `Bound to ${gscDomain}, which is not the site being checked. It is left out of this review because it is another site's data.`
+                          : mismatch ? "Left out while the project does not match, because that data belongs to another client."
                           : gscReady ? `${gsc?.resourceLabel || gsc?.resourceId}, last pulled ${gsc?.lastPullAt ? new Date(gsc.lastPullAt).toLocaleDateString() : "recently"}.`
                           : gscBound ? `${gsc?.resourceLabel || gsc?.resourceId} is bound. Pull the data to use it.`
                           : gscConnected ? "Authorised. Choose which property belongs to this site."

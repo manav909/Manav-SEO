@@ -91,6 +91,23 @@ export async function qaGscContext(projectId: string, siteUrl: string) {
       note: `The active project in the nav is ${projName || projDomain} (${projDomain}), which is a different site from the one being checked (${siteDomain}). Search Console was deliberately left out of this review, because that data belongs to another client. Every live page check is unaffected and still valid. To bring Search Console in, switch the active project to this client and run again.` };
   }
 
+  /* The bound property has to be THIS site. A project may carry no URL at all, in
+     which case nothing has been confirmed, and a property for another domain is
+     another site's data. Neither may be reported as usable. */
+  try {
+    const { data: integ } = await db().from("project_integrations").select("resource_id").eq("project_id", projectId).eq("provider", "gsc").maybeSingle();
+    const resource = String((integ as any)?.resource_id || "").replace(/^sc-domain:/, "");
+    const gscDomain = domainOf(resource);
+    if (gscDomain && siteDomain && gscDomain !== siteDomain) {
+      return { connected: false, usable: false, mismatch: true, project_name: projName, project_domain: projDomain, site_domain: siteDomain, rows: [],
+        note: `Search Console on this project is bound to ${gscDomain}, which is not the site being checked (${siteDomain}). It was left out of this review because it is another site's data. The live page checks are unaffected.` };
+    }
+    if (!projDomain && siteDomain && !gscDomain) {
+      return { connected: false, usable: false, mismatch: false, project_name: projName, site_domain: siteDomain, rows: [],
+        note: `The selected project has no website recorded, so it cannot be confirmed as the project for ${siteDomain}. Search Console from it is not used. Create or select the project for this site to bring it in.` };
+    }
+  } catch { /* fall through to the read below */ }
+
   try {
     const g: any = await loadGsc(projectId);
     const rows = ((g && g.topQueries) || []).map((q: any) => ({
