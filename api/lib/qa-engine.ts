@@ -323,7 +323,75 @@ export async function qaCheckTab(opts: {
   };
 }
 
-/* ---- 3. Finalise the round -------------------------------------------------- */
+/* Site wide audit over the FULL batch crawl.
+
+   The claimed rows can all pass while the site around them is broken, so the
+   final gate reads every crawled page too. Findings are aggregated by issue type
+   with counts and example pages, because a reviewer needs "23 pages share one
+   title", not twenty three separate lines. High severity issues block the gate;
+   the rest are reported so the decision is informed rather than hidden. */
+const SITE_BLOCKING = new Set(["broken_page", "noindex_page", "missing_title", "duplicate_title"]);
+
+export async function qaSiteAudit(opts: { reviewId: string; jobId: string }) {
+  const reviewId = String(opts.reviewId || "").trim();
+  const jobId = String(opts.jobId || "").trim();
+  if (!reviewId || !jobId) return { success: false, error: "reviewId and jobId are required." };
+  const { data: rev } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
+  if (!rev) return { success: false, error: "Review not found." };
+  const review: any = rev; const round = Number(review.round) || 1;
+  const { data: job } = await db().from("crawl_jobs").select("results,cursor,target_count,status").eq("id", jobId).maybeSingle();
+  const pages: any[] = Array.isArray((job as any)?.results) ? (job as any).results : [];
+  if (!pages.length) return { success: false, error: "The crawl has no pages yet." };
+
+  const norm2 = (s: any) => String(s || "").trim().toLowerCase();
+  const group = (key: (p: any) => string) => {
+    const m = new Map<string, string[]>();
+    for (const p of pages) { const k = key(p); if (!k) continue; m.set(k, (m.get(k) || []).concat(p.url)); }
+    return Array.from(m.entries()).filter(([, u]) => u.length > 1);
+  };
+
+  const issues: Array<{ category: string; severity: string; label: string; urls: string[]; detail?: string }> = [];
+  const push = (category: string, severity: string, label: string, urls: string[], detail?: string) => {
+    if (urls.length) issues.push({ category, severity, label, urls, detail });
+  };
+
+  push("broken_page", "high", "Pages that did not return a healthy response", pages.filter((p) => p.ok === false || (Number(p.status) || 200) >= 400).map((p) => p.url));
+  push("noindex_page", "high", "Pages set to noindex", pages.filter((p) => p.noindex).map((p) => p.url));
+  push("missing_title", "high", "Pages with no title", pages.filter((p) => p.ok !== false && !String(p.title || "").trim()).map((p) => p.url));
+  for (const [t, urls] of group((p) => norm2(p.title))) push("duplicate_title", "high", `Duplicate title used on ${urls.length} pages`, urls, t.slice(0, 70));
+  push("missing_meta", "medium", "Pages with no meta description", pages.filter((p) => p.ok !== false && !String(p.meta || "").trim()).map((p) => p.url));
+  for (const [m, urls] of group((p) => norm2(p.meta))) push("duplicate_meta", "medium", `Duplicate meta description on ${urls.length} pages`, urls, m.slice(0, 70));
+  push("missing_h1", "medium", "Pages with no H1", pages.filter((p) => p.ok !== false && Number(p.h1_count || 0) === 0).map((p) => p.url));
+  push("multiple_h1", "medium", "Pages with more than one H1", pages.filter((p) => Number(p.h1_count || 0) > 1).map((p) => p.url));
+  push("thin_content", "medium", "Pages under 300 words", pages.filter((p) => p.ok !== false && Number(p.word_count || 0) > 0 && Number(p.word_count) < 300).map((p) => p.url));
+  push("missing_canonical", "low", "Pages with no canonical tag", pages.filter((p) => p.ok !== false && !String(p.canonical || "").trim()).map((p) => p.url));
+  const noAlt = pages.filter((p) => Number(p.images_total || 0) > 0 && Number(p.images_no_alt || 0) > 0);
+  push("images_no_alt", "low", `Pages carrying images without alt text (${noAlt.reduce((a, p) => a + Number(p.images_no_alt || 0), 0)} images)`, noAlt.map((p) => p.url));
+
+  /* Replace any previous site audit for this round so a re-run does not stack. */
+  await db().from("qa_findings").delete().eq("review_id", reviewId).eq("round", round).eq("check_type", "site_audit");
+
+  const rows = issues.map((i, idx) => ({
+    review_id: reviewId, tab_id: null, tab_name: "Site wide", row_index: idx,
+    item: `Site wide: ${i.label}`, check_type: "site_audit", url: i.urls[0] || "",
+    expected: "", observed: `${i.urls.length} page(s)`,
+    status: SITE_BLOCKING.has(i.category) ? "failed" : "partial",
+    severity: i.severity, mistake_category: i.category, round, resolved_round: null,
+    remark: `${i.label}${i.detail ? ` (${i.detail})` : ""}. ${i.urls.length} page(s) affected, for example ${i.urls.slice(0, 3).join(", ")}.`,
+  }));
+  if (rows.length) await db().from("qa_findings").insert(rows);
+  await db().from("qa_reviews").update({ updated_at: new Date().toISOString() }).eq("id", reviewId);
+
+  const blocking = issues.filter((i) => SITE_BLOCKING.has(i.category));
+  return {
+    success: true, pages_audited: pages.length, issues: issues.length,
+    blocking: blocking.length,
+    summary: issues.length
+      ? `${pages.length} crawled pages audited: ${issues.length} site wide issue type(s) found, ${blocking.length} of them blocking.`
+      : `${pages.length} crawled pages audited and no site wide issues were found.`,
+    detail: issues.map((i) => ({ category: i.category, severity: i.severity, label: i.label, pages: i.urls.length, examples: i.urls.slice(0, 3) })),
+  };
+}
 
 /* Reconcile the round against the commitment mail, and produce the documents.
    This is the half that used to live in a separate module: what was promised but
@@ -365,7 +433,7 @@ async function reconcileRound(review: any, findings: any[]) {
   return { commitments, missing, extra, quantity, shortCounts };
 }
 
-function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gsc: any, ready: boolean, verdict: string, round: number) {
+function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gsc: any, ready: boolean, verdict: string, round: number, siteFindings: any[] = []) {
   const site = String(review.site_url || "");
   const row = (f: any) => `| ${f.item || f.check_type} | ${f.tab_name || ""} | ${f.url ? String(f.url).replace(/^https?:\/\//, "") : "n/a"} | ${f.status} | ${(f.observed || "nothing found").slice(0, 70)} | ${(f.remark || "").slice(0, 110)} |`;
   const internal_qa = [
@@ -381,6 +449,7 @@ function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gs
     gaps.missing.length ? `\n## Promised but not reported\n${gaps.missing.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
     gaps.extra.length ? `\n## Reported but not promised\n${gaps.extra.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
     gaps.quantity.length ? `\n## Promised counts\n${gaps.quantity.map((q: any) => `- ${q.title}: committed ${q.committed}, reported ${q.reported}, confirmed live ${q.verified}. ${q.note}`).join("\n")}` : "",
+    siteFindings.length ? `\n## Site wide, from the full crawl\n${siteFindings.map((x: any) => `- [${x.severity}] ${x.remark}`).join("\n")}` : "",
     `\n## Search Console\n${gsc.note}${(gsc.rows || []).length ? `\n\n| Query | Clicks | Impressions | Position |\n| --- | --- | --- | --- |\n${gsc.rows.map((r: any) => `| ${r.query} | ${r.clicks} | ${r.impressions} | ${Number(r.position).toFixed(1)} |`).join("\n")}` : ""}`,
   ].filter(Boolean).join("\n");
 
@@ -392,6 +461,7 @@ function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gs
     ...open.map((f: any, i: number) => `${i + 1}. **${f.item || f.check_type}** (${f.tab_name})\n   ${f.url || ""}\n   Status: ${f.status}${f.severity ? `, severity ${f.severity}` : ""}. ${f.remark}`),
     gaps.missing.length ? `\n## Promised work with no completion record\n${gaps.missing.map((m: any) => `- ${m.title}`).join("\n")}` : "",
     gaps.shortCounts.length ? `\n## Counts that fall short\n${gaps.shortCounts.map((q: any) => `- ${q.title}: ${q.note}`).join("\n")}` : "",
+    siteFindings.filter((x: any) => x.status === "failed").length ? `\n## Site wide issues holding the gate\n${siteFindings.filter((x: any) => x.status === "failed").map((x: any) => `- ${x.remark}`).join("\n")}` : "",
     findings.some((f) => f.status === "unverifiable") ? `\n## Needs its own proof (not visible on the site)\n${findings.filter((f) => f.status === "unverifiable").map((f: any) => `- ${f.item || f.check_type}: ${f.remark}`).join("\n")}` : "",
   ].filter(Boolean).join("\n");
 
@@ -417,17 +487,26 @@ export async function qaFinalize(opts: { reviewId: string }) {
   if (!rev) return { success: false, error: "Review not found." };
   const review: any = rev; const round = Number(review.round) || 1;
   const { data: f } = await db().from("qa_findings").select("*").eq("review_id", reviewId).eq("round", round);
-  const list: any[] = (f as any[]) || [];
+  const all: any[] = (f as any[]) || [];
+  /* Delivery items are what the executive claimed. Site wide findings come from
+     the full crawl and are judged separately, so a pre existing minor issue
+     elsewhere on the site does not fail an otherwise clean delivery, while a
+     serious one still holds the gate shut. */
+  const list = all.filter((x) => x.check_type !== "site_audit");
+  const site = all.filter((x) => x.check_type === "site_audit");
+  const siteBlocking = site.filter((x) => x.status === "failed");
   const totals = {
     total: list.length,
     verified: list.filter((x) => x.status === "verified").length,
     failed: list.filter((x) => x.status === "failed").length,
     partial: list.filter((x) => x.status === "partial").length,
     unverifiable: list.filter((x) => x.status === "unverifiable").length,
+    site_issues: site.length,
+    site_blocking: siteBlocking.length,
   };
   const open = totals.failed + totals.partial;
   const gaps = await reconcileRound(review, list);
-  const ready = open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0;
+  const ready = open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0 && siteBlocking.length === 0;
   const status = ready ? "passed" : "awaiting_fix";
   await db().from("qa_reviews").update({
     totals, status, updated_at: new Date().toISOString(),
@@ -438,13 +517,14 @@ export async function qaFinalize(opts: { reviewId: string }) {
   for (const x of list) { if (x.mistake_category) byCat[x.mistake_category] = (byCat[x.mistake_category] || 0) + 1; }
   const gsc = await qaGscContext(String(review.project_id || ""), String(review.site_url || ""));
   const verdict = ready
-    ? `Round ${round} passes. All ${totals.verified} checked items are confirmed live and within standard.${totals.unverifiable ? ` ${totals.unverifiable} item(s) need their own proof because they are not visible on the site.` : ""}`
-    : `Round ${round} is not clean. ${totals.failed} item(s) are not live, ${totals.partial} need work, ${gaps.missing.length} promised item(s) are unreported, and ${gaps.shortCounts.length} promised count(s) fall short.`;
-  const documents = buildDocuments(review, list, totals, gaps, gsc, ready, verdict, round);
+    ? `Round ${round} passes. All ${totals.verified} checked items are confirmed live and within standard${site.length ? `, and the ${site.length} site wide observation(s) are not blocking` : ""}.${totals.unverifiable ? ` ${totals.unverifiable} item(s) need their own proof because they are not visible on the site.` : ""}`
+    : `Round ${round} is not clean. ${totals.failed} item(s) are not live, ${totals.partial} need work, ${gaps.missing.length} promised item(s) are unreported, ${gaps.shortCounts.length} promised count(s) fall short, and ${siteBlocking.length} site wide issue(s) are blocking.`;
+  const documents = buildDocuments(review, list, totals, gaps, gsc, ready, verdict, round, site);
 
   return {
     success: true, status, round, totals, gsc, ready_to_submit: ready, verdict, documents,
     missing: gaps.missing, extra: gaps.extra, quantity: gaps.quantity,
+    site_findings: site.map((x) => ({ item: x.item, severity: x.severity, category: x.mistake_category, status: x.status, remark: x.remark })),
     open_items: list.filter((x) => x.status === "failed" || x.status === "partial")
       .map((x) => ({ tab: x.tab_name, item: x.item, url: x.url, status: x.status, severity: x.severity, remark: x.remark })),
     mistake_pattern: Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ category: k, count: v })),

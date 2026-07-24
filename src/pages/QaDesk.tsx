@@ -81,8 +81,13 @@ export default function QaDesk() {
   const [findings, setFindings] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [running, setRunning] = useState(false);
+  const [crawlFirst, setCrawlFirst] = useState(true);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [activity, setActivity] = useState<Array<{ t: string; msg: string; kind: string }>>([]);
+  const [crawl, setCrawl] = useState<any>(null);
+  const [crawling, setCrawling] = useState(false);
+  const [siteAudit, setSiteAudit] = useState<any>(null);
   const [worklist, setWorklist] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
 
@@ -99,6 +104,9 @@ export default function QaDesk() {
 
   useEffect(() => { if (projectId) refreshGsc(projectId); }, [projectId]);
 
+  const log = (msg: string, kind: string = "run") =>
+    setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
+
   const loadWorklist = async () => { const r: any = await post("wizard_qa_worklist", {}); if (r?.success) setWorklist(r); };
   const loadProfiles = async () => { const r: any = await post("wizard_qa_profile", { executiveName: "" }); if (r?.success) setProfiles(r.executives || []); };
 
@@ -110,7 +118,7 @@ export default function QaDesk() {
   /* Setup happens here so nobody has to leave the page. */
   const createProjectForSite = async () => {
     if (!siteDomain) { setError("Enter the client site first."); return; }
-    setError(""); setSetupBusy("Creating the project...");
+    setError(""); setSetupBusy("Creating the project..."); log(`Creating a project for ${siteDomain}`);
     const r: any = await post("wizard_create_project", {
       name: clientName.trim() || siteDomain,
       domain: siteUrl.trim(),
@@ -120,12 +128,13 @@ export default function QaDesk() {
     if (!r?.success || !r?.projectId) { setError(r?.error || "Could not create the project."); return; }
     setProjectId(r.projectId);
     setProjectLabel(clientName.trim() || siteDomain);
+    log(`Project created and bound to this review`, "ok");
     refreshGsc(r.projectId);
   };
 
   const connectGsc = async () => {
     if (!projectId) { setError("Select or create the project for this site first."); return; }
-    setError(""); setSetupBusy("Opening Google...");
+    setError(""); setSetupBusy("Opening Google..."); log("Starting the Search Console connection");
     const r: any = await post("gsc_oauth_start", { projectId });
     setSetupBusy("");
     if (!r?.url) { setError(r?.error || "Could not start the Search Console connection."); return; }
@@ -133,6 +142,7 @@ export default function QaDesk() {
     const onMsg = (e: MessageEvent) => {
       if ((e.data || {}).type !== "gsc_connected") return;
       window.removeEventListener("message", onMsg);
+      log("Search Console connected", "ok");
       refreshGsc(projectId);
     };
     window.addEventListener("message", onMsg);
@@ -140,7 +150,7 @@ export default function QaDesk() {
 
   const readContext = async () => {
     if (!clientContext.trim() && !mailText.trim()) { setError("Paste the client chat, call notes or the mail first."); return; }
-    setError(""); setBusy("Reading the chat and calls...");
+    setError(""); setBusy("Reading the chat and calls..."); log("Reading the chat, calls and mail");
     const r: any = await post("wizard_qa_extract_context", { chatText: clientContext, mailText });
     setBusy("");
     if (!r?.success) { setError(r?.error || "Could not read the context."); return; }
@@ -148,12 +158,13 @@ export default function QaDesk() {
     if (r.site_url && !siteUrl.trim()) setSiteUrl(r.site_url.startsWith("http") ? r.site_url : `https://${r.site_url}/`);
     if (r.executive_name && !execName.trim()) setExecName(r.executive_name);
     setExtracted(r);
+    log(`Record filled: ${r.client_name || "client"}${r.site_url ? `, ${r.site_url}` : ""}`, "ok");
   };
 
   const onWorkbook = async (fileList: FileList | null) => {
     const f = (fileList || [])[0];
     if (!f) return;
-    setBusy("Reading every tab...");
+    setBusy("Reading every tab..."); log(`Opening ${f.name}`);
     try {
       const XLSX: any = await import(/* @vite-ignore */ "https://esm.sh/xlsx@0.18.5");
       const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: "array" });
@@ -165,21 +176,57 @@ export default function QaDesk() {
         } catch { /* skip an unreadable tab */ }
       }
       setSheets(out); setFileName(f.name); setBusy("");
+      log(`${out.length} tab(s) read, ${out.reduce((a, x) => a + x.rows.length, 0)} rows total`, "ok");
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
+  };
+
+  /* Full site batch crawl. Runs batch after batch with the count visible, then
+     audits every crawled page so the gate covers the site, not just the rows. */
+  const runCrawl = async (rid?: string) => {
+    if (!siteUrl.trim()) { setError("Enter the client site first."); return null; }
+    setCrawling(true); setError("");
+    log(`Starting the full site crawl of ${siteDomain}`);
+    let jobId = ""; let guard = 0;
+    try {
+      while (guard++ < 400) {
+        const r: any = await post("wizard_crawl_batch", jobId
+          ? { projectId, jobId }
+          : { projectId, siteUrl: siteUrl.trim(), mode: "advanced" });
+        if (!r?.success) { setError(r.error || "The crawl could not run."); log(`Crawl stopped: ${r?.error || "failed"}`, "err"); break; }
+        jobId = r.jobId || jobId;
+        setCrawl({ jobId, done: r.done, total: r.total, complete: r.complete });
+        log(`Crawled ${r.done} of ${r.total} pages`, r.complete ? "ok" : "run");
+        if (r.complete) break;
+      }
+    } catch (e: any) { setError(String(e?.message || e)); log("Crawl error", "err"); }
+    setCrawling(false);
+    const useRid = rid || reviewId;
+    if (jobId && useRid) {
+      log("Auditing every crawled page for site wide issues");
+      const a: any = await post("wizard_qa_site_audit", { reviewId: useRid, jobId });
+      if (a?.success) { setSiteAudit(a); log(a.summary, a.blocking ? "warn" : "ok"); }
+      else log(`Site audit did not run: ${a?.error || "unknown"}`, "warn");
+    }
+    return jobId;
   };
 
   const startReview = async () => {
     setError(""); setFindings([]); setSummary(null); setProgress({});
     if (!siteUrl.trim()) { setError("Enter the client site."); return; }
     if (!sheets.length) { setError("Upload the delivery workbook."); return; }
-    setRunning(true); setBusy("Setting the agenda for this account...");
+    setRunning(true); setBusy("Setting the agenda for this account..."); log("Setting the QA agenda from the client record");
     const created: any = await post("wizard_qa_create", {
       projectId, siteUrl: siteUrl.trim(), clientName, executiveName: execName, clientContext, mailText,
       tabs: sheets.map((s) => ({ name: s.name, headers: s.headers, rowCount: s.rows.length })),
     });
     if (!created?.success) { setRunning(false); setBusy(""); setError(created?.error || "Could not start the review."); return; }
     setReviewId(created.review.id); setAgenda(created.agenda || []);
+    log(`Agenda set with ${(created.agenda || []).length} focus point(s)`, "ok");
+    if (created.gsc?.note) log(created.gsc.note, created.gsc.usable ? "ok" : "warn");
     await runAllTabs(created.review.id);
+    if (crawlFirst) await runCrawl(created.review.id);
+    const fin2: any = await post("wizard_qa_finalize", { reviewId: created.review.id });
+    if (fin2?.success) { setSummary(fin2); log(fin2.verdict, fin2.ready_to_submit ? "ok" : "warn"); }
   };
 
   const runAllTabs = async (rid: string) => {
@@ -198,13 +245,17 @@ export default function QaDesk() {
         for (const f of (r.findings || [])) collected.push({ ...f, tab_name: sheet.name, tab_index: ti });
         setFindings([...collected]);
         setProgress((p) => ({ ...p, [ti]: { checked: r.rows_checked, total: r.row_count, done: r.done, remark: r.tab_remark || "" } }));
+        const bad = (r.findings || []).filter((x: any) => x.status !== "verified").length;
+        log(`${sheet.name}: ${r.rows_checked}/${r.row_count} checked${bad ? `, ${bad} not clean` : ""}`, bad ? "warn" : "run");
         if (r.done || r.next_offset == null) break;
         offset = r.next_offset;
       }
     }
+    log("Reconciling the workbook against the commitment mail");
     setBusy("Reconciling against the commitments...");
     const fin: any = await post("wizard_qa_finalize", { reviewId: rid });
     setSummary(fin?.success ? fin : null);
+    if (fin?.success) log(fin.verdict, fin.ready_to_submit ? "ok" : "warn");
     setRunning(false); setBusy(""); loadWorklist();
   };
 
@@ -370,6 +421,41 @@ export default function QaDesk() {
               ) : null}
             </Step>
 
+            <Step n={4} title="Whole site crawl" hint="The final gate reads every page, not only the claimed rows." done={Boolean(crawl?.complete)}>
+              <label className="flex items-center gap-2 text-xs mb-3 cursor-pointer">
+                <input type="checkbox" checked={crawlFirst} onChange={(e) => setCrawlFirst(e.target.checked)} />
+                Crawl the whole site as part of the check, in batches
+              </label>
+              {crawl ? (
+                <div className="rounded-lg border border-border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium">{crawl.complete ? "Crawl complete" : "Crawling"}</span>
+                    <span className="text-[10px] text-muted-foreground">{crawl.done}/{crawl.total} pages</span>
+                  </div>
+                  <div className="h-1 rounded-full bg-muted mt-1.5 overflow-hidden">
+                    <div className={`h-full ${crawl.complete ? "bg-emerald-500" : "bg-primary"}`} style={{ width: `${crawl.total ? Math.round((crawl.done / crawl.total) * 100) : 0}%` }} />
+                  </div>
+                </div>
+              ) : null}
+              <button onClick={() => runCrawl()} disabled={crawling || running}
+                className="mt-3 text-xs px-3 py-1.5 rounded-lg border border-border disabled:opacity-50">
+                {crawling ? "Crawling..." : "Crawl the site now"}
+              </button>
+              {siteAudit ? (
+                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
+                  <p className="text-xs font-semibold mb-1">{siteAudit.summary}</p>
+                  <ul className="space-y-0.5">
+                    {(siteAudit.detail || []).map((d: any, i: number) => (
+                      <li key={i} className="text-[11px]">
+                        <span className={d.severity === "high" ? "text-red-400" : d.severity === "medium" ? "text-amber-400" : "text-muted-foreground"}>[{d.severity}]</span>{" "}
+                        {d.label}: {d.pages} page(s)
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </Step>
+
             <div className="flex flex-wrap items-center gap-2">
               <button onClick={startReview} disabled={running} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60">
                 {running ? "Checking..." : "Run the check"}
@@ -389,6 +475,7 @@ export default function QaDesk() {
                   <span className="text-amber-400">{t.partial || 0} partial</span>
                   <span className="text-red-400">{t.failed || 0} failed</span>
                   <span className="text-muted-foreground">{t.unverifiable || 0} unverifiable</span>
+                  {t.site_issues ? <span className={t.site_blocking ? "text-red-400" : "text-muted-foreground"}>{t.site_issues} site wide ({t.site_blocking || 0} blocking)</span> : null}
                 </div>
                 {summary.documents ? (
                   <div className="flex flex-wrap gap-2 mt-3">
@@ -428,6 +515,24 @@ export default function QaDesk() {
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-6">
+            <div className="rounded-2xl border border-border p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Activity</div>
+                <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <span className={`w-1.5 h-1.5 rounded-full ${running || crawling ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground/40"}`} />
+                  {running || crawling ? "working" : "idle"}
+                </span>
+              </div>
+              <div className="space-y-1 max-h-72 overflow-auto">
+                {activity.map((a, i) => (
+                  <div key={i} className="flex gap-2 text-[10px] leading-snug">
+                    <span className="text-muted-foreground/70 tabular-nums shrink-0">{a.t}</span>
+                    <span className={a.kind === "ok" ? "text-emerald-400" : a.kind === "warn" ? "text-amber-400" : a.kind === "err" ? "text-red-400" : "text-foreground/80"}>{a.msg}</span>
+                  </div>
+                ))}
+                {!activity.length ? <p className="text-[11px] text-muted-foreground">Every step will appear here as it runs.</p> : null}
+              </div>
+            </div>
             {agenda.length ? (
               <div className="rounded-2xl border border-border p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">Agenda for this account</div>

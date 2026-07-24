@@ -808,6 +808,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     } catch (e: any) { return { success: false, error: e?.message || "tab check failed" }; }
   }
 
+  if (action === "wizard_qa_site_audit") {
+    try { const { qaSiteAudit } = await import("./qa-engine.js"); return await qaSiteAudit({ reviewId: String(body?.reviewId || ""), jobId: String(body?.jobId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "site audit failed" }; }
+  }
+
   if (action === "wizard_qa_finalize") {
     try { const { qaFinalize } = await import("./qa-engine.js"); return await qaFinalize({ reviewId: String(body?.reviewId || "") }); }
     catch (e: any) { return { success: false, error: e?.message || "could not finalise" }; }
