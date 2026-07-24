@@ -774,6 +774,11 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
   /* QA Desk: persistent, agenda driven quality assurance over delivery workbooks.
      Each call handles one bounded slice of one tab, so a large workbook spreads
      across many calls and no single call can time out. */
+  if (action === "wizard_qa_extract_context") {
+    try { const { qaExtractContext } = await import("./qa-engine.js"); return await qaExtractContext({ chatText: String(body?.chatText || ""), mailText: String(body?.mailText || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not read the context" }; }
+  }
+
   if (action === "wizard_qa_create") {
     try {
       const { qaCreateReview } = await import("./qa-engine.js");

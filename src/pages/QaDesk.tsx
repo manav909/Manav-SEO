@@ -56,6 +56,7 @@ export default function QaDesk() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
+  const [extracted, setExtracted] = useState<any>(null);
   const [worklist, setWorklist] = useState<any>(null);
   const [profiles, setProfiles] = useState<any[]>([]);
 
@@ -93,6 +94,19 @@ export default function QaDesk() {
       setSheets(out); setFileName(f.name);
       setBusy(`${out.length} tab(s) read, ${out.reduce((a, s) => a + s.rows.length, 0)} rows in total.`);
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
+  };
+
+  /* Fill the record from the chat and the calls, so nothing is typed twice. */
+  const readContext = async () => {
+    if (!clientContext.trim() && !mailText.trim()) { setError("Paste the client chat, call notes or the mail first."); return; }
+    setError(""); setBusy("Reading the chat and calls...");
+    const r: any = await post("wizard_qa_extract_context", { chatText: clientContext, mailText });
+    setBusy("");
+    if (!r?.success) { setError(r?.error || "Could not read the context."); return; }
+    if (r.client_name && !clientName.trim()) setClientName(r.client_name);
+    if (r.site_url && !siteUrl.trim()) setSiteUrl(r.site_url.startsWith("http") ? r.site_url : `https://${r.site_url}/`);
+    if (r.executive_name && !execName.trim()) setExecName(r.executive_name);
+    setExtracted(r);
   };
 
   const startReview = async () => {
@@ -182,6 +196,13 @@ export default function QaDesk() {
     } catch (e: any) { setBusy(""); setError(`Could not build the workbook. ${e?.message || ""}`); }
   };
 
+  const openDoc = (title: string, md: string) => {
+    const esc = (x: string) => String(x || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font:15px/1.65 -apple-system,system-ui,Segoe UI,sans-serif;color:#1a1a2e;max-width:900px;margin:40px auto;padding:0 22px;white-space:pre-wrap}</style></head><body>${esc(md)}<p style="color:#6b6b80;margin-top:26px">Prepared by Manav S.</p></body></html>`;
+    const tab = window.open("", "_blank");
+    if (tab) { tab.document.write(html); tab.document.close(); }
+  };
+
   const openReview = async (id: string) => {
     setBusy("Loading the saved review...");
     const r: any = await post("wizard_qa_load", { reviewId: id });
@@ -193,6 +214,9 @@ export default function QaDesk() {
     setSiteUrl(r.review.site_url || "");
   };
 
+  const dom = (u: string) => { try { return new URL(String(u).startsWith("http") ? String(u) : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; } };
+  const siteDomain = dom(siteUrl); const projDomain = dom(projectUrl);
+  const mismatch = Boolean(siteDomain && projDomain && siteDomain !== projDomain);
   const t = summary?.totals || {};
 
   return (
@@ -243,6 +267,7 @@ export default function QaDesk() {
             ) : null}
           </div>
           <div className="flex items-center gap-3 flex-wrap">
+            <button onClick={readContext} disabled={running} className="px-3 py-2 rounded-xl border border-border text-sm">Fill from chat and calls</button>
             <button onClick={startReview} disabled={running} className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-60">
               {running ? "Checking..." : "Start QA"}
             </button>
@@ -252,6 +277,25 @@ export default function QaDesk() {
           </div>
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
         </div>
+
+        {extracted ? (
+          <div className="rounded-2xl border border-border p-5 mb-5">
+            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Read from the chat and calls</div>
+            {extracted.persona ? <p className="text-sm text-foreground/90 mb-2">{extracted.persona}</p> : null}
+            {(extracted.priorities || []).length ? <p className="text-xs"><span className="text-muted-foreground">Priorities: </span>{extracted.priorities.join("; ")}</p> : null}
+            {(extracted.pain_points || []).length ? <p className="text-xs mt-0.5"><span className="text-muted-foreground">Pain points: </span>{extracted.pain_points.join("; ")}</p> : null}
+            {(extracted.keywords || []).length ? <p className="text-xs mt-0.5"><span className="text-muted-foreground">Keywords named: </span>{extracted.keywords.join(", ")}</p> : null}
+          </div>
+        ) : null}
+
+        {mismatch ? (
+          <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 mb-5">
+            <div className="text-sm font-bold text-amber-400 mb-1">The site being checked is not the active project</div>
+            <p className="text-xs text-foreground/90">
+              Live page checks run against {siteDomain} and are correct either way. Search Console belongs to the active project ({projDomain}), so it will be left out of this review rather than reporting another client's numbers. Switch the active project in the nav to this client if you want Search Console included.
+            </p>
+          </div>
+        ) : null}
 
         {agenda.length ? (
           <div className="rounded-2xl border border-border p-5 mb-5">
@@ -274,6 +318,25 @@ export default function QaDesk() {
               <span className="text-red-400">{t.failed || 0} failed</span>
               <span className="text-muted-foreground">{t.unverifiable || 0} unverifiable</span>
             </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button onClick={() => openDoc("QA report", summary.documents?.internal_qa || "")} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Open QA report</button>
+              <button onClick={() => openDoc("Fix list", summary.documents?.fix_list || "")} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Open fix list</button>
+              <button onClick={() => openDoc("Client summary", summary.documents?.client_summary || "")} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Open client summary</button>
+            </div>
+            {(summary.missing || []).length ? (
+              <div className="mt-3 text-xs">
+                <span className="text-muted-foreground">Promised but not reported: </span>
+                <span className="text-amber-400">{summary.missing.map((m: any) => m.title).join(", ")}</span>
+              </div>
+            ) : null}
+            {(summary.quantity || []).length ? (
+              <div className="mt-1 text-xs">
+                {summary.quantity.map((q: any, i: number) => (
+                  <div key={i}><span className="font-semibold">{q.title}</span>: committed {q.committed}, reported {q.reported}, live {q.verified}. <span className="text-muted-foreground">{q.note}</span></div>
+                ))}
+              </div>
+            ) : null}
+            {summary.gsc ? <p className="text-[11px] text-muted-foreground mt-2">{summary.gsc.note}</p> : null}
             {(summary.mistake_pattern || []).length ? (
               <div className="mt-3 text-xs">
                 <span className="text-muted-foreground">Mistake pattern this round: </span>

@@ -23,10 +23,89 @@
 
 import { db } from "./db.js";
 import { checkOne } from "./report-verify.js";
+import { loadGsc } from "./workspace/shared.js";
 import { llmComplete } from "./workspace/llm.js";
 
 const ROWS_PER_SLOT = 25;                 // bounded slice: comfortably inside the function budget
 const norm = (s: any) => String(s || "").toLowerCase().trim();
+
+function domainOf(u: string): string {
+  const s = String(u || "").trim();
+  if (!s) return "";
+  try { return new URL(s.startsWith("http") ? s : "https://" + s).hostname.replace(/^www\./, "").toLowerCase(); } catch { return ""; }
+}
+
+/* Read the client chat, the calls and the mail, and fill the review fields from
+   them, so the reviewer types nothing that the record already contains. */
+export async function qaExtractContext(opts: { chatText?: string; mailText?: string }) {
+  const chatText = String(opts.chatText || "").trim();
+  const mailText = String(opts.mailText || "").trim();
+  if (!chatText && !mailText) return { success: false, error: "Paste the client chat, the call notes or the mail first." };
+  try {
+    const sys = "You read a client conversation, call notes and an internal commitment mail, and pull out the record they already contain. Extract ONLY what is actually present. Return ONLY JSON: {\"client_name\":\"\",\"site_url\":\"\",\"executive_name\":\"the delivery executive or project manager named, if any\",\"persona\":\"three to five sentences on who this client is, how they judge work, and how they communicate\",\"priorities\":[\"what they care about most, in their words\"],\"pain_points\":[\"what they complained about or fear\"],\"target_urls\":[\"any page URLs named\"],\"keywords\":[\"any target keywords named\"]}. Leave a field empty rather than guessing. Never invent a name, a domain or a requirement.";
+    const user = [
+      chatText ? `Client chat and call notes:\n${chatText.slice(0, 16000)}` : "",
+      mailText ? `Commitment mail:\n${mailText.slice(0, 10000)}` : "",
+    ].filter(Boolean).join("\n\n");
+    const { text } = await llmComplete({ system: sys, user, maxTokens: 1200, timeoutMs: 60000, label: "qa-extract-context", maxSegments: 1 });
+    const m = String(text || "").match(/\{[\s\S]*\}/);
+    const p: any = m ? JSON.parse(m[0]) : {};
+    return {
+      success: true,
+      client_name: String(p.client_name || ""),
+      site_url: String(p.site_url || ""),
+      executive_name: String(p.executive_name || ""),
+      persona: String(p.persona || ""),
+      priorities: Array.isArray(p.priorities) ? p.priorities.map(String) : [],
+      pain_points: Array.isArray(p.pain_points) ? p.pain_points.map(String) : [],
+      target_urls: Array.isArray(p.target_urls) ? p.target_urls.map(String) : [],
+      keywords: Array.isArray(p.keywords) ? p.keywords.map(String) : [],
+    };
+  } catch (e: any) { return { success: false, error: e?.message || "Could not read the context." }; }
+}
+
+/* Search Console for a QA round, and the honest answer when the site being
+   checked is not the project selected in the nav.
+
+   The live page checks always run against the site URL, so they are correct
+   either way. Search Console is per project, so if the active project is a
+   DIFFERENT site, its data belongs to another client and must not be attached to
+   this review. In that case it is deliberately left out and the reason is said
+   plainly, rather than quietly reporting the wrong client's numbers. */
+export async function qaGscContext(projectId: string, siteUrl: string) {
+  const siteDomain = domainOf(siteUrl);
+  if (!projectId) {
+    return { connected: false, usable: false, mismatch: false, site_domain: siteDomain, rows: [],
+      note: "No project is selected in the nav, so Search Console was not used. The live page checks stand on their own for confirming implementation." };
+  }
+  let projName = "", projDomain = "";
+  try {
+    const { data: proj } = await db().from("projects").select("name,url").eq("id", projectId).maybeSingle();
+    projName = String((proj as any)?.name || ""); projDomain = domainOf(String((proj as any)?.url || ""));
+  } catch { /* project lookup optional */ }
+
+  if (projDomain && siteDomain && projDomain !== siteDomain) {
+    return { connected: false, usable: false, mismatch: true, project_name: projName, project_domain: projDomain, site_domain: siteDomain, rows: [],
+      note: `The active project in the nav is ${projName || projDomain} (${projDomain}), which is a different site from the one being checked (${siteDomain}). Search Console was deliberately left out of this review, because that data belongs to another client. Every live page check is unaffected and still valid. To bring Search Console in, switch the active project to this client and run again.` };
+  }
+
+  try {
+    const g: any = await loadGsc(projectId);
+    const rows = ((g && g.topQueries) || []).map((q: any) => ({
+      query: String(q.query || (Array.isArray(q.keys) ? q.keys[0] : "")),
+      clicks: Number(q.clicks) || 0, impressions: Number(q.impressions) || 0, position: Number(q.position) || 0,
+    })).filter((r: any) => r.query).slice(0, 20);
+    if (!rows.length) {
+      return { connected: false, usable: false, mismatch: false, project_name: projName, site_domain: siteDomain, rows: [],
+        note: "Search Console is not connected for this project, or it holds no query data yet. The live page checks stand on their own for confirming implementation." };
+    }
+    return { connected: true, usable: true, mismatch: false, project_name: projName, project_domain: projDomain, site_domain: siteDomain, rows,
+      note: `Search Console is connected for ${projName || projDomain} and matches the site being checked. These figures are context for the round, not proof that a specific change was made.` };
+  } catch {
+    return { connected: false, usable: false, mismatch: false, project_name: projName, site_domain: siteDomain, rows: [],
+      note: "Search Console could not be read, so this round rests on the live page checks." };
+  }
+}
 
 /* Deterministic tab classification. The tab name is the strongest signal, the
    headers are the tie breaker. No model call is needed for this. */
@@ -149,7 +228,11 @@ export async function qaCreateReview(opts: {
   }));
   const { data: savedTabs } = await db().from("qa_tabs").insert(tabRows).select();
 
-  return { success: true, review: rev, agenda, tabs: savedTabs || tabRows, rows_per_slot: ROWS_PER_SLOT };
+  /* Resolve Search Console up front so the reviewer knows, before any checking,
+     whether it is in play for this round or why it is not. */
+  const gsc = await qaGscContext(String(opts.projectId || ""), siteUrl);
+
+  return { success: true, review: rev, agenda, tabs: savedTabs || tabRows, rows_per_slot: ROWS_PER_SLOT, gsc };
 }
 
 /* ---- 2. Check one bounded slice of one tab (its own slot) ------------------- */
@@ -242,6 +325,92 @@ export async function qaCheckTab(opts: {
 
 /* ---- 3. Finalise the round -------------------------------------------------- */
 
+/* Reconcile the round against the commitment mail, and produce the documents.
+   This is the half that used to live in a separate module: what was promised but
+   never reported, what was reported but never promised, whether promised counts
+   were met, and the submit gate that holds the client summary back until the
+   delivery is actually clean. */
+async function reconcileRound(review: any, findings: any[]) {
+  const mail = String(review.mail_text || "").trim();
+  let commitments: any[] = [];
+  if (mail) {
+    try {
+      const sys = "You are a delivery auditor. From the commitment mail, list ONLY the discrete deliverables actually promised. Return ONLY JSON: {\"commitments\":[{\"id\":\"c1\",\"title\":\"short\",\"type\":\"title|meta_description|h1|canonical|schema|indexing|image_alt|internal_link|content|redirect|keyword|offpage|other\",\"quantity\":1}]}. Never invent a deliverable or a number that is not stated.";
+      const { text } = await llmComplete({ system: sys, user: mail.slice(0, 14000), maxTokens: 1200, timeoutMs: 60000, label: "qa-commitments", maxSegments: 1 });
+      const m = String(text || "").match(/\{[\s\S]*\}/);
+      const p: any = m ? JSON.parse(m[0]) : {};
+      commitments = Array.isArray(p.commitments) ? p.commitments : [];
+    } catch { commitments = []; }
+  }
+
+  const missing: any[] = [];
+  const quantity: any[] = [];
+  for (const c of commitments) {
+    const type = norm(c.type);
+    const rel = findings.filter((f) => norm(f.check_type) === type);
+    if (!rel.length) { missing.push({ title: String(c.title || type), note: "Promised in the commitment mail but nothing in the workbook reports it." }); continue; }
+    const q = Number(c.quantity) || 0;
+    if (q > 1) {
+      const verified = rel.filter((f) => f.status === "verified").length;
+      quantity.push({
+        title: String(c.title || type), committed: q, reported: rel.length, verified,
+        note: rel.length < q ? `Short of the commitment by ${q - rel.length}.` : (verified < rel.length ? `${rel.length - verified} reported item(s) are not confirmed live.` : "Counts line up."),
+      });
+    }
+  }
+  const committedTypes = new Set(commitments.map((c) => norm(c.type)));
+  const extraTypes = Array.from(new Set(findings.map((f) => norm(f.check_type)))).filter((t) => t && committedTypes.size > 0 && !committedTypes.has(t));
+  const extra = extraTypes.map((t) => ({ title: t, note: "Reported in the workbook but not traceable to the commitment mail." }));
+  const shortCounts = quantity.filter((q) => q.reported < q.committed || q.verified < q.reported);
+  return { commitments, missing, extra, quantity, shortCounts };
+}
+
+function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gsc: any, ready: boolean, verdict: string, round: number) {
+  const site = String(review.site_url || "");
+  const row = (f: any) => `| ${f.item || f.check_type} | ${f.tab_name || ""} | ${f.url ? String(f.url).replace(/^https?:\/\//, "") : "n/a"} | ${f.status} | ${(f.observed || "nothing found").slice(0, 70)} | ${(f.remark || "").slice(0, 110)} |`;
+  const internal_qa = [
+    `# QA report: ${review.client_name || site} (round ${round})`,
+    `**Verdict:** ${verdict}`,
+    ``,
+    `Executive: ${review.executive_name || "unattributed"}. Checked ${totals.total} item(s): ${totals.verified} verified, ${totals.partial} partial, ${totals.failed} failed, ${totals.unverifiable} unverifiable.`,
+    ``,
+    `## Item by item`,
+    `| Item | Tab | Page | Status | Observed live | QA remark |`,
+    `| --- | --- | --- | --- | --- | --- |`,
+    ...findings.map(row),
+    gaps.missing.length ? `\n## Promised but not reported\n${gaps.missing.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
+    gaps.extra.length ? `\n## Reported but not promised\n${gaps.extra.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
+    gaps.quantity.length ? `\n## Promised counts\n${gaps.quantity.map((q: any) => `- ${q.title}: committed ${q.committed}, reported ${q.reported}, confirmed live ${q.verified}. ${q.note}`).join("\n")}` : "",
+    `\n## Search Console\n${gsc.note}${(gsc.rows || []).length ? `\n\n| Query | Clicks | Impressions | Position |\n| --- | --- | --- | --- |\n${gsc.rows.map((r: any) => `| ${r.query} | ${r.clicks} | ${r.impressions} | ${Number(r.position).toFixed(1)} |`).join("\n")}` : ""}`,
+  ].filter(Boolean).join("\n");
+
+  const open = findings.filter((f) => f.status === "failed" || f.status === "partial");
+  const fix_list = [
+    `# Fix list for ${review.executive_name || "the executive"} (round ${round})`,
+    open.length ? `${open.length} item(s) need action before this delivery can go to the client.` : `Nothing is failing the live checks.`,
+    ``,
+    ...open.map((f: any, i: number) => `${i + 1}. **${f.item || f.check_type}** (${f.tab_name})\n   ${f.url || ""}\n   Status: ${f.status}${f.severity ? `, severity ${f.severity}` : ""}. ${f.remark}`),
+    gaps.missing.length ? `\n## Promised work with no completion record\n${gaps.missing.map((m: any) => `- ${m.title}`).join("\n")}` : "",
+    gaps.shortCounts.length ? `\n## Counts that fall short\n${gaps.shortCounts.map((q: any) => `- ${q.title}: ${q.note}`).join("\n")}` : "",
+    findings.some((f) => f.status === "unverifiable") ? `\n## Needs its own proof (not visible on the site)\n${findings.filter((f) => f.status === "unverifiable").map((f: any) => `- ${f.item || f.check_type}: ${f.remark}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
+
+  const client_summary = ready
+    ? [
+        `# Work completed: ${review.client_name || site}`,
+        ``,
+        `Every item below was confirmed on the live site at the time of this check.`,
+        ``,
+        `| What was done | Page | Confirmed live |`,
+        `| --- | --- | --- |`,
+        ...findings.filter((f) => f.status === "verified").map((f: any) => `| ${f.item || f.check_type} | ${f.url ? String(f.url).replace(/^https?:\/\//, "") : "site wide"} | Yes |`),
+        (gsc.rows || []).length ? `\n## Current search position for the target terms\n| Query | Clicks | Impressions | Position |\n| --- | --- | --- | --- |\n${gsc.rows.map((r: any) => `| ${r.query} | ${r.clicks} | ${r.impressions} | ${Number(r.position).toFixed(1)} |`).join("\n")}` : "",
+      ].filter(Boolean).join("\n")
+    : `# Client summary is on hold\n\nThis summary is deliberately not generated yet, because the delivery does not pass verification. ${verdict}\n\nClear the fix list, run the recheck round, and the client facing summary will be produced once every item is confirmed live.`;
+
+  return { internal_qa, fix_list, client_summary };
+}
+
 export async function qaFinalize(opts: { reviewId: string }) {
   const reviewId = String(opts.reviewId || "").trim();
   const { data: rev } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
@@ -257,22 +426,28 @@ export async function qaFinalize(opts: { reviewId: string }) {
     unverifiable: list.filter((x) => x.status === "unverifiable").length,
   };
   const open = totals.failed + totals.partial;
-  const status = open === 0 ? "passed" : "awaiting_fix";
+  const gaps = await reconcileRound(review, list);
+  const ready = open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0;
+  const status = ready ? "passed" : "awaiting_fix";
   await db().from("qa_reviews").update({
     totals, status, updated_at: new Date().toISOString(),
-    completed_at: open === 0 ? new Date().toISOString() : null,
+    completed_at: ready ? new Date().toISOString() : null,
   }).eq("id", reviewId);
 
   const byCat: Record<string, number> = {};
   for (const x of list) { if (x.mistake_category) byCat[x.mistake_category] = (byCat[x.mistake_category] || 0) + 1; }
+  const gsc = await qaGscContext(String(review.project_id || ""), String(review.site_url || ""));
+  const verdict = ready
+    ? `Round ${round} passes. All ${totals.verified} checked items are confirmed live and within standard.${totals.unverifiable ? ` ${totals.unverifiable} item(s) need their own proof because they are not visible on the site.` : ""}`
+    : `Round ${round} is not clean. ${totals.failed} item(s) are not live, ${totals.partial} need work, ${gaps.missing.length} promised item(s) are unreported, and ${gaps.shortCounts.length} promised count(s) fall short.`;
+  const documents = buildDocuments(review, list, totals, gaps, gsc, ready, verdict, round);
+
   return {
-    success: true, status, round, totals,
+    success: true, status, round, totals, gsc, ready_to_submit: ready, verdict, documents,
+    missing: gaps.missing, extra: gaps.extra, quantity: gaps.quantity,
     open_items: list.filter((x) => x.status === "failed" || x.status === "partial")
       .map((x) => ({ tab: x.tab_name, item: x.item, url: x.url, status: x.status, severity: x.severity, remark: x.remark })),
     mistake_pattern: Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ category: k, count: v })),
-    verdict: open === 0
-      ? `Round ${round} passes. All ${totals.verified} checked items are confirmed live and within standard.${totals.unverifiable ? ` ${totals.unverifiable} item(s) need their own proof because they are not visible on the site.` : ""}`
-      : `Round ${round} is not clean. ${totals.failed} item(s) are not live and ${totals.partial} need work. Send the remarks back to the executive, then start a recheck once they resubmit.`,
   };
 }
 

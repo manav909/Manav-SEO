@@ -40,7 +40,6 @@ import ClientReportView from "./pages/ClientReportView";
 import PMModule       from "./pages/PMModule";
 import Workspace      from "./pages/Workspace";
 import Wizard         from "./pages/Wizard";
-import ReportCheck    from "./pages/ReportCheck";
 import QaDesk         from "./pages/QaDesk";
 import Deals          from "./pages/Deals";
 import Hod            from "./pages/Hod";
@@ -173,7 +172,6 @@ const AppRoutes = () => {
           <Route path="/content-hub" element={<ContentHub />} />
           <Route path="/intake" element={<Intake />} />
           <Route path="/wizard" element={<B name="wizard"><Wizard /></B>} />
-          <Route path="/report-check" element={<B name="report-check"><ReportCheck /></B>} />
           <Route path="/qa-desk" element={<B name="qa-desk"><QaDesk /></B>} />
           <Route path="/deals" element={<B name="deals"><Deals /></B>} />
           <Route path="/hod" element={<B name="hod"><Hod /></B>} />
