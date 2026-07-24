@@ -481,13 +481,10 @@ function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gs
   return { internal_qa, fix_list, client_summary };
 }
 
-export async function qaFinalize(opts: { reviewId: string }) {
-  const reviewId = String(opts.reviewId || "").trim();
-  const { data: rev } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
-  if (!rev) return { success: false, error: "Review not found." };
-  const review: any = rev; const round = Number(review.round) || 1;
-  const { data: f } = await db().from("qa_findings").select("*").eq("review_id", reviewId).eq("round", round);
-  const all: any[] = (f as any[]) || [];
+/* Compute the whole outcome of a round WITHOUT writing anything, so the same
+   report can be regenerated later from the stored findings. qaFinalize adds the
+   write; loading a saved review uses this untouched. */
+async function computeRound(review: any, all: any[], round: number) {
   /* Delivery items are what the executive claimed. Site wide findings come from
      the full crawl and are judged separately, so a pre existing minor issue
      elsewhere on the site does not fail an otherwise clean delivery, while a
@@ -508,10 +505,6 @@ export async function qaFinalize(opts: { reviewId: string }) {
   const gaps = await reconcileRound(review, list);
   const ready = open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0 && siteBlocking.length === 0;
   const status = ready ? "passed" : "awaiting_fix";
-  await db().from("qa_reviews").update({
-    totals, status, updated_at: new Date().toISOString(),
-    completed_at: ready ? new Date().toISOString() : null,
-  }).eq("id", reviewId);
 
   const byCat: Record<string, number> = {};
   for (const x of list) { if (x.mistake_category) byCat[x.mistake_category] = (byCat[x.mistake_category] || 0) + 1; }
@@ -529,6 +522,20 @@ export async function qaFinalize(opts: { reviewId: string }) {
       .map((x) => ({ tab: x.tab_name, item: x.item, url: x.url, status: x.status, severity: x.severity, remark: x.remark })),
     mistake_pattern: Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ category: k, count: v })),
   };
+}
+
+export async function qaFinalize(opts: { reviewId: string }) {
+  const reviewId = String(opts.reviewId || "").trim();
+  const { data: rev } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
+  if (!rev) return { success: false, error: "Review not found." };
+  const review: any = rev; const round = Number(review.round) || 1;
+  const { data: f } = await db().from("qa_findings").select("*").eq("review_id", reviewId).eq("round", round);
+  const out: any = await computeRound(review, (f as any[]) || [], round);
+  await db().from("qa_reviews").update({
+    totals: out.totals, status: out.status, updated_at: new Date().toISOString(),
+    completed_at: out.ready_to_submit ? new Date().toISOString() : null,
+  }).eq("id", reviewId);
+  return out;
 }
 
 /* ---- 4. Recheck round after the executive resubmits ------------------------- */
@@ -663,5 +670,12 @@ export async function qaLoadReview(opts: { reviewId: string }) {
   if (!rev) return { success: false, error: "Review not found." };
   const { data: tabs } = await db().from("qa_tabs").select("*").eq("review_id", reviewId).order("tab_index", { ascending: true });
   const { data: finds } = await db().from("qa_findings").select("*").eq("review_id", reviewId).order("round", { ascending: true }).limit(5000);
-  return { success: true, review: rev, tabs: tabs || [], findings: finds || [] };
+  const allFinds: any[] = (finds as any[]) || [];
+  const round = Number((rev as any).round) || 1;
+  /* Regenerate the report for the saved round from the stored findings, so a
+     review opened later carries the same QA report, fix list and client summary
+     it produced during checking. Nothing is written by this path. */
+  let report: any = null;
+  try { report = await computeRound(rev, allFinds.filter((x) => (Number(x.round) || 1) === round), round); } catch { report = null; }
+  return { success: true, review: rev, tabs: tabs || [], findings: allFinds, report };
 }

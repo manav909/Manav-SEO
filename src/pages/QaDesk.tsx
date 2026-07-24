@@ -301,11 +301,67 @@ export default function QaDesk() {
     loadWorklist();
   };
 
-  const openDoc = (title: string, md: string) => {
+  /* Render the report as a real document: headings, tables and lists, printable
+     to PDF and saveable as Word, rather than raw markdown on a page. */
+  const mdToHtml = (md: string) => {
     const esc = (x: string) => String(x || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] || c));
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font:15px/1.65 -apple-system,system-ui,Segoe UI,sans-serif;color:#1a1a2e;max-width:900px;margin:40px auto;padding:0 22px;white-space:pre-wrap}</style></head><body>${esc(md)}<p style="color:#6b6b80;margin-top:26px">Prepared by Manav S.</p></body></html>`;
+    const lines = String(md || "").split("\n");
+    const out: string[] = [];
+    let table: string[][] = [];
+    const flushTable = () => {
+      if (!table.length) return;
+      const [head, ...body] = table;
+      out.push(`<table><thead><tr>${head.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`);
+      table = [];
+    };
+    for (const raw of lines) {
+      const line = raw.trimEnd();
+      if (/^\|(.+)\|$/.test(line)) {
+        const cells = line.slice(1, -1).split("|").map((c) => c.trim());
+        if (cells.every((c) => /^-{2,}$/.test(c) || c === "")) continue;   // separator row
+        table.push(cells); continue;
+      }
+      flushTable();
+      if (/^### /.test(line)) out.push(`<h3>${esc(line.slice(4))}</h3>`);
+      else if (/^## /.test(line)) out.push(`<h2>${esc(line.slice(3))}</h2>`);
+      else if (/^# /.test(line)) out.push(`<h1>${esc(line.slice(2))}</h1>`);
+      else if (/^- /.test(line)) out.push(`<li>${esc(line.slice(2)).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`);
+      else if (!line.trim()) out.push("");
+      else out.push(`<p>${esc(line).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</p>`);
+    }
+    flushTable();
+    return out.join("\n").replace(/(<li>[\s\S]*?<\/li>\n?)+/g, (m) => `<ul>${m}</ul>`);
+  };
+
+  const docShell = (title: string, md: string) => `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>
+    body{font:14px/1.6 -apple-system,system-ui,Segoe UI,sans-serif;color:#16161d;max-width:940px;margin:36px auto;padding:0 26px}
+    h1{font-size:22px;margin:0 0 4px} h2{font-size:16px;margin:26px 0 8px;border-bottom:1px solid #e6e6ee;padding-bottom:6px}
+    h3{font-size:14px;margin:16px 0 4px} p{margin:7px 0} ul{margin:7px 0 7px 18px;padding:0} li{margin:3px 0}
+    table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12.5px}
+    th,td{border:1px solid #e6e6ee;padding:6px 8px;text-align:left;vertical-align:top}
+    th{background:#f6f6fa;font-weight:600} tr:nth-child(even) td{background:#fbfbfd}
+    .meta{color:#6b6b80;font-size:12px;margin-top:28px;border-top:1px solid #e6e6ee;padding-top:10px}
+    @media print{ .noprint{display:none} body{margin:0} }
+  </style></head><body>
+    <div class="noprint" style="margin-bottom:14px"><button onclick="window.print()" style="padding:6px 12px;font:13px system-ui;cursor:pointer">Print or save as PDF</button></div>
+    ${mdToHtml(md)}
+    <p class="meta">Prepared by Manav S. Generated ${new Date().toLocaleString()}.</p>
+  </body></html>`;
+
+  const openDoc = (title: string, md: string) => {
+    if (!md) { setError("That document is not available for this review."); return; }
     const tab = window.open("", "_blank");
-    if (tab) { tab.document.write(html); tab.document.close(); }
+    if (tab) { tab.document.write(docShell(title, md)); tab.document.close(); }
+  };
+
+  const downloadDoc = (title: string, md: string) => {
+    if (!md) return;
+    const blob = new Blob([docShell(title, md)], { type: "application/msword" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title} ${clientName || siteDomain || "review"}.doc`;
+    a.click(); URL.revokeObjectURL(a.href);
+    log(`${title} downloaded`, "ok");
   };
 
   const downloadAnnotated = async () => {
@@ -336,7 +392,7 @@ export default function QaDesk() {
     setReviewId(id); setAgenda(r.review.agenda || []); setSiteUrl(r.review.site_url || "");
     setClientName(r.review.client_name || ""); setExecName(r.review.executive_name || "");
     setFindings((r.findings || []).map((f: any) => ({ ...f, tab_index: -1 })));
-    setSummary({ totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
+    setSummary(r.report ? { ...r.report, status: r.review.status } : { totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
     log(`Loaded saved review for ${r.review.client_name || r.review.site_url}`, "ok");
   };
 
@@ -544,11 +600,16 @@ export default function QaDesk() {
                   {(summary.mistake_pattern || []).length ? <p className="text-xs mt-2"><span className="text-muted-foreground">Mistake pattern: </span>{summary.mistake_pattern.map((m: any) => `${m.category} (${m.count})`).join(", ")}</p> : null}
                   {summary.gsc ? <p className="text-[11px] text-muted-foreground mt-2">{summary.gsc.note}</p> : null}
                   <div className="flex flex-wrap gap-2 mt-4">
-                    {summary.documents ? <>
-                      <button onClick={() => openDoc("QA report", summary.documents.internal_qa)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">QA report</button>
-                      <button onClick={() => openDoc("Fix list", summary.documents.fix_list)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Fix list for the executive</button>
-                      <button onClick={() => openDoc("Client summary", summary.documents.client_summary)} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30">Client summary</button>
-                    </> : null}
+                    {summary.documents ? ([
+                      { k: "internal_qa", label: "QA report" },
+                      { k: "fix_list", label: "Fix list for the executive" },
+                      { k: "client_summary", label: "Client summary" },
+                    ]).map((d) => (
+                      <span key={d.k} className="inline-flex rounded-lg overflow-hidden border border-primary/30">
+                        <button onClick={() => openDoc(d.label, summary.documents[d.k])} className="text-xs px-3 py-1.5 bg-primary/10 text-primary">{d.label}</button>
+                        <button onClick={() => downloadDoc(d.label, summary.documents[d.k])} title="Download as Word" className="text-xs px-2 py-1.5 bg-primary/5 text-primary border-l border-primary/30">Save</button>
+                      </span>
+                    )) : null}
                     <button onClick={downloadAnnotated} className="text-xs px-3 py-1.5 rounded-lg border border-border">Download reviewed workbook</button>
                     {summary.status === "awaiting_fix" ? <button onClick={openRecheck} className="text-xs px-3 py-1.5 rounded-lg border border-sky-500/40 text-sky-400">Open recheck round</button> : null}
                   </div>
