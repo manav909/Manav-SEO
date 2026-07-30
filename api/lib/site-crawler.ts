@@ -323,13 +323,13 @@ export interface ResolveResult {
    empty, looks JavaScript built, OR yields no internal links. Whichever version
    carries more links wins. */
 async function readHomepage(start: string): Promise<{ html: string; via: string; platform: string; links: number; note: string }> {
-  const raw = await fetchHtml(start).catch(() => "");
+  const raw = await fetchHtml(start, 10000, { force: true }).catch(() => "");
   const jsr = raw ? detectJsRendering(raw) : { js: false, platform: "" };
   const rawLinks = raw ? extract(start, raw, 200).links.length : 0;
   const needRender = !raw || jsr.js || rawLinks === 0;
 
   if (needRender) {
-    const rendered = await fetchViaReader(start).catch(() => ({ ok: false, html: "" }));
+    const rendered = await fetchViaReader(start, 12000, { force: true }).catch(() => ({ ok: false, html: "" }));
     if (rendered.ok && rendered.html) {
       const rLinks = extract(start, rendered.html, 200).links.length;
       if (!raw || rLinks > rawLinks) {

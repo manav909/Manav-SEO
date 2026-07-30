@@ -217,8 +217,14 @@ export async function fetchViaProxy(url: string, ms = 12000): Promise<string> {
   }
 }
 
-export async function fetchHtml(url: string, ms = 10000): Promise<string> {
-  if (isDead(url)) return "";                           // unreachable this crawl -> instant, no timeout burn
+export async function fetchHtml(url: string, ms = 10000, opts: { force?: boolean } = {}): Promise<string> {
+  /* `force` marks the one URL a crawl cannot do without, its own homepage. It is
+     always given a real attempt whatever the unreachable memo believes, so no
+     amount of earlier probing can cause the crawl to skip the page it exists to
+     read. Deliberately NOT extended to the sitemap probes: those must keep
+     counting misses, because that counter is what stops a genuinely unreachable
+     domain from burning the whole function budget. */
+  if (!opts.force && isDead(url)) return "";           // unreachable this crawl -> instant, no timeout burn
   /* If a proxy route is already the known way in for this domain (the raw origin
      is blocked here), skip the raw fetch entirely and use it, so we do not waste
      10s per page failing the raw request first. */
@@ -240,6 +246,13 @@ export async function fetchHtml(url: string, ms = 10000): Promise<string> {
       headers: BROWSER_HEADERS,
       redirect: "follow", signal: controller.signal,
     });
+    /* A 404 or a 410 is the server ANSWERING. It says this path does not exist,
+       not that the site is unreachable, so it must never count as a miss and must
+       not burn the proxy chain looking for a page that is genuinely absent. This
+       was the defect: probing six sitemap locations on a site that simply has no
+       sitemap logged four misses, marked the whole domain dead, and the homepage
+       was then never fetched at all. */
+    if (r.status === 404 || r.status === 410) { noteReach(url); return ""; }
     /* never return a 4xx/5xx body so no caller parses an error or challenge page.
        If the origin is blocked (often geo-blocking), try the region/proxy chain. */
     if (!r.ok) { const p = await fetchViaProxy(url); if (p) { noteReach(url); return p; } noteMiss(url); return ""; }
@@ -258,8 +271,8 @@ export async function fetchHtml(url: string, ms = 10000): Promise<string> {
    simply refuse our crawler's origin, without ever fabricating: if the reader
    also fails, the caller keeps the honest blocked result. Set JINA_API_KEY for
    higher throughput and reliability on multi-page crawls. */
-export async function fetchViaReader(url: string, ms = 12000): Promise<{ ok: boolean; html: string }> {
-  if (isDead(url)) return { ok: false, html: "" };      // unreachable this crawl -> instant
+export async function fetchViaReader(url: string, ms = 12000, opts: { force?: boolean } = {}): Promise<{ ok: boolean; html: string }> {
+  if (!opts.force && isDead(url)) return { ok: false, html: "" };      // unreachable this crawl -> instant
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -267,6 +280,7 @@ export async function fetchViaReader(url: string, ms = 12000): Promise<{ ok: boo
     const key = process.env.JINA_API_KEY || process.env.JINA_KEY || "";
     if (key) headers["Authorization"] = "Bearer " + key;
     const r = await fetch("https://r.jina.ai/" + url, { headers, redirect: "follow", signal: controller.signal });
+    if (r.status === 404 || r.status === 410) { noteReach(url); return { ok: false, html: "" }; }
     if (!r.ok) { noteMiss(url); return { ok: false, html: "" }; }
     const html = (await r.text()) || "";
     /* the reader can itself hit a challenge or return an error shell, never
