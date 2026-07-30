@@ -188,6 +188,20 @@ export default function QaDesk() {
      not proceed, is not evidence. */
   const crawlReady = Boolean(crawl?.complete) && Number(crawl?.done || 0) > 1 && !crawlWhy;
 
+  /* The BDE picker draws on every place a BDE name is already known, not just the
+     executive roster. The roster only gains a name when a review is CREATED, so on
+     a fresh install it is empty and the picker had nothing to offer even though
+     the stored client records each carry their BDE. Merging the two means the name
+     is selectable from the first client onwards. */
+  const bdeOptions: string[] = (() => {
+    const seen = new Set<string>(); const out: string[] = [];
+    const add = (v: any) => { const n = String(v || "").trim(); if (n && !seen.has(n.toLowerCase())) { seen.add(n.toLowerCase()); out.push(n); } };
+    for (const n of (dir?.known_bdes || [])) add(n);
+    for (const c of clients) add(c?.bde_name);
+    for (const r of (dir?.reviews || [])) add(r?.bde);
+    return out.sort((a, b) => a.localeCompare(b));
+  })();
+
   const stopCrawl = useRef(false);
   const stopReview = useRef(false);
 
@@ -403,6 +417,60 @@ export default function QaDesk() {
 
   const rememberDme = (v: string) => { setDmeName(v); try { localStorage.setItem("qa_last_dme", v); } catch { /* storage optional */ } };
 
+  /* Starting fresh. Two scopes, because the two situations are genuinely
+     different: a second workbook for the SAME client should keep the evidence
+     already gathered (the project, the Search Console binding and the site crawl
+     are all still true for that site, and re-crawling 4000 pages to check a
+     second sheet would be waste), while a NEW client has to drop all of it.
+     Neither scope deletes anything from the database. A review is a standing
+     record with rounds and an executive's history attached, and the client record
+     is deliberately persistent, so a button that cleared the screen and quietly
+     removed rows would be an interface asserting something untrue. Everything
+     already checked stays in the work list and reopens with its report intact.
+     Identity is safe to clear because it is re-read from the chat, calls and mail
+     rather than typed. The DME name is the exception and is kept: it is never
+     present in a client conversation, so nothing can recover it. */
+  const workOnScreen = Boolean(sheets.length || findings.length || summary || reviewId);
+
+  const stopEverything = () => {
+    stopCrawl.current = true; stopReview.current = true;
+    setRunning(false); setCrawling(false); setGscPulling(false); setBusy(""); setSetupBusy("");
+  };
+
+  const clearReviewState = () => {
+    setSheets([]); setFileName(""); setMapping(false);
+    setReviewId(""); setAgenda([]); setProgress({}); setFindings([]); setSummary(null);
+    setSiteAudit(null); setError("");
+  };
+
+  const newWorkbook = () => {
+    if (workOnScreen && !window.confirm("Clear the workbook and this review from the screen, and keep the client, the project, Search Console and the site crawl? Nothing already checked is deleted, it stays in the work list.")) return;
+    stopEverything();
+    clearReviewState();
+    setActivity([]);
+    log(`Cleared for a new workbook${clientName || clientId ? ` on ${clientName || clientId}` : ""}. Evidence in hand was kept. Saved reviews are untouched.`, "ok");
+  };
+
+  const newClient = () => {
+    if (workOnScreen && !window.confirm("Clear everything on screen and start a new client? Nothing is deleted, every saved review and client record stays. Your own name in the DME field is kept.")) return;
+    stopEverything();
+    clearReviewState();
+    setBdeName(""); setClientId(""); setClientName(""); setClientContext(""); setMailText("");
+    setExtracted(null); setClientLoaded(null);
+    setSiteUrl(""); setSrcSite("");
+    setProjectId(navProjectId); setProjectLabel(navProjectName);
+    setGsc(null); setGscSites([]);
+    setCrawl(null); setCrawlJobId(""); setCrawlWhy("");
+    setActivity([]);
+    log("Cleared for a new client. Paste the chat, calls and mail, then read the details from them. Saved reviews and client records are untouched.", "ok");
+    /* Refresh the pickers so a name or client added by the last review is on the
+       list for this one. The directory search box is cleared alongside its query,
+       because reloading the directory unfiltered while the box still showed the
+       previous reviewer's name would put a filter on screen that is not in force. */
+    setDirQuery("");
+    loadClients(); loadDirectory(""); loadWorklist();
+  };
+
   const startReview = async () => {
     setError(""); setFindings([]); setSummary(null); setProgress({});
     if (!siteUrl.trim()) { setError("Enter the client site."); return; }
@@ -593,10 +661,27 @@ export default function QaDesk() {
             <h1 className="text-2xl font-bold tracking-tight">QA Desk</h1>
             <p className="text-sm text-muted-foreground">The checkpoint between finished work and the client.</p>
           </div>
-          <span className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${summary ? (summary.ready_to_submit ? TONE.good : TONE.bad) : TONE.idle}`}>
-            {summary ? (summary.ready_to_submit ? "Cleared to send" : "Held: do not send") : "Nothing checked yet"}
-          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={newWorkbook} disabled={running || crawling}
+              className="text-xs px-3 py-1.5 rounded-full border border-border hover:bg-muted/60 disabled:opacity-40"
+              title="Clear the workbook and findings, keep this client and the evidence already gathered">
+              New workbook
+            </button>
+            <button onClick={newClient} disabled={running || crawling}
+              className="text-xs px-3 py-1.5 rounded-full border border-border hover:bg-muted/60 disabled:opacity-40"
+              title="Clear the whole screen for a different client, keeping your own name and every saved record">
+              New client
+            </button>
+            <span className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${summary ? (summary.ready_to_submit ? TONE.good : TONE.bad) : TONE.idle}`}>
+              {summary ? (summary.ready_to_submit ? "Cleared to send" : "Held: do not send") : "Nothing checked yet"}
+            </span>
+          </div>
         </div>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          {running || crawling
+            ? "A run is in progress, so the reset controls are held. Stop it first and everything checked so far stays saved."
+            : "Starting fresh clears the screen only. Every saved review and client record stays, and reopens from the work list with its report intact."}
+        </p>
 
         {/* Evidence in hand, visible at all times */}
         <div className="grid sm:grid-cols-3 gap-2 mb-5">
@@ -687,8 +772,9 @@ export default function QaDesk() {
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">BDE on the account</label>
                   <input list="qa-bdes" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Read from the chat" value={bdeName} onChange={(e) => setBdeName(e.target.value)} />
-                  <datalist id="qa-bdes">{(dir?.known_bdes || []).map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
-                  <p className="text-[10px] text-muted-foreground mt-1">{(dir?.known_bdes || []).length ? `${dir.known_bdes.length} on file` : "Found in the conversation"}</p>
+                  <datalist id="qa-bdes">{bdeOptions.map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
+                  <p className="text-[10px] text-muted-foreground mt-1">{bdeOptions.length ? `${bdeOptions.length} on file, or read from the chat` : "None on file yet, so it is read from the chat"}</p>
+                  {dir?.roster_note ? <p className="text-[10px] text-amber-400 mt-1">{dir.roster_note}</p> : null}
                 </div>
               </div>
               {extracted ? (

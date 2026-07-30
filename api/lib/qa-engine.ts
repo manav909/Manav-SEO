@@ -1136,14 +1136,20 @@ export async function qaDirectory(opts: { query?: string }) {
   for (const f of finds) byReview.set(f.review_id, (byReview.get(f.review_id) || []).concat(f));
 
   let knownDmes: string[] = []; let knownBdes: string[] = [];
+  let rosterNote = "";
   try {
-    const { data: ex } = await db().from("qa_executives").select("name,role").order("name", { ascending: true }).limit(400);
+    const { data: ex, error: exErr } = await db().from("qa_executives").select("name,role").order("name", { ascending: true }).limit(400);
+    /* This read used to fail silently, which left both pickers permanently empty
+       with nothing on screen to say why. The usual cause is qa_module_migration_2
+       not having been applied, since that is what adds qa_executives.role, and
+       every insert and every read here names that column. Report it instead. */
+    if (exErr) rosterNote = `The saved name roster could not be read (${exErr.message || "unknown error"}). If the message mentions the role column, apply qa_module_migration_2.sql in Supabase. Names already used on past reviews are still listed below.`;
     for (const e of ((ex as any[]) || [])) {
       const n = String(e.name || "").trim(); if (!n) continue;
       if (String(e.role || "dme") === "bde") { if (!knownBdes.includes(n)) knownBdes.push(n); }
       else if (!knownDmes.includes(n)) knownDmes.push(n);
     }
-  } catch { /* fall back to the reviews themselves */ }
+  } catch (e: any) { rosterNote = `The saved name roster could not be read (${e?.message || "unknown error"}). Names already used on past reviews are still listed below.`; }
   for (const r of reviews) {
     const d = String(r.executive_name || "").trim(); if (d && !knownDmes.includes(d)) knownDmes.push(d);
     const b = String(r.bde_name || "").trim(); if (b && !knownBdes.includes(b)) knownBdes.push(b);
@@ -1204,7 +1210,7 @@ export async function qaDirectory(opts: { query?: string }) {
   }
 
   return {
-    success: true, query: q, interpreted, known_dmes: knownDmes, known_bdes: knownBdes, executives,
+    success: true, query: q, interpreted, known_dmes: knownDmes, known_bdes: knownBdes, roster_note: rosterNote, executives,
     reviews: reviews.slice(0, 60).map((r) => ({ id: r.id, client_id: r.client_id, client: r.client_name, site: r.site_url, executive: r.executive_name, bde: r.bde_name, status: r.status, round: r.round, updated_at: r.updated_at })),
   };
 }
