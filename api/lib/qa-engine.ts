@@ -820,6 +820,11 @@ export async function qaCheckTab(opts: {
     }
   } catch { /* corroboration only */ }
   const findings: any[] = [];
+  /* Consecutive live-read failures within this slot, and the point at which the
+     slot stops contacting the site. */
+  const LIVE_FAIL_LIMIT = 5;
+  let liveFails = 0;
+  let liveDead = false;
 
   for (let i = 0; i < slice.length; i++) {
     const r = slice[i] || {};
@@ -859,13 +864,27 @@ export async function qaCheckTab(opts: {
     }
 
     const crawlKey = (() => { try { return new URL(url.startsWith("http") ? url : "https://" + url).toString().replace(/\/$/, "").toLowerCase(); } catch { return url.toLowerCase(); } })();
-    if (crawled.size && !crawled.has(crawlKey)) {
+    const inCrawl = crawled.size ? crawled.has(crawlKey) : true;
+
+    /* A URL the crawl did not include is NOT a reason to skip the check. The
+       crawl selects, caps and filters, so it legitimately omits carts, pagination
+       and pages beyond its budget, and treating those as uncheckable turned 275
+       perfectly real pages into "not found on the site" on one review. The page
+       is fetched directly, and the crawl is used only as corroboration if that
+       fetch also fails. */
+
+    /* Bounded live reading. The site is contacted for at most a few consecutive
+       failures per slot; once it stops answering, the rest of the slot is
+       recorded honestly under one shared reason instead of each row claiming an
+       individual fault. This replaces the crawl-sized dead-domain memo, which
+       silenced hundreds of rows without a request being made. */
+    if (liveDead) {
       findings.push({
         review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
         sheet_row: sheetRow, row_ref: rowRef || null, source_column: urlKey || null,
-        item, check_type: tab.tab_type, url, expected, observed: "",
-        status: "unverifiable", severity: "medium", mistake_category: "url_not_on_site", agenda_ref: agendaRef || null, round,
-        remark: `This URL was not found among the ${crawled.size} pages in the site crawl, so the claim could not be checked against a real page. Confirm the URL in the sheet is correct, or re-crawl if the page is new.`,
+        item, check_type: checkType, url, expected, observed: "",
+        status: "unverifiable", severity: "low", mistake_category: "site_stopped_responding", agenda_ref: agendaRef || null, round,
+        remark: `The site stopped responding partway through this run, after ${LIVE_FAIL_LIMIT} pages in a row could not be read, so this row was not requested. This is a reviewing problem, not a fault in the work. Re-run when the site is answering.`,
         resolved_round: null,
       });
       continue;
@@ -874,7 +893,15 @@ export async function qaCheckTab(opts: {
     const check = await checkOne(
       { id: `${tabIndex}-${rowIndex}`, title: item, type: checkType, url, expected, keywords: (kwKey && String(r[kwKey] || "").trim()) ? String(r[kwKey]).split(/[,;|]/).map((x: string) => x.trim()).filter(Boolean).slice(0, 5) : rowKeywords(r, reviewKeywords), committed: true, claimed: true },
       review.site_url,
+      { force: true },
     );
+    if (check.status === "unverifiable" && /could not be read/i.test(String(check.evidence || ""))) {
+      liveFails++;
+      if (liveFails >= LIVE_FAIL_LIMIT) liveDead = true;
+      if (!inCrawl) check.evidence = `${check.evidence} It was also absent from the ${crawled.size} pages in the site crawl, so confirm the URL in the sheet is correct.`;
+    } else if (check.status !== "unverifiable") {
+      liveFails = 0;
+    }
     let cat = mistakeCategory(check.status, checkType, check.quality || []);
     /* If the live page still shows exactly what the sheet records as the PREVIOUS
        value, the work was not applied, whatever the row's status column says. */
@@ -1090,17 +1117,54 @@ async function reconcileRound(review: any, findings: any[]) {
 
 function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gsc: any, ready: boolean, verdict: string, round: number, siteFindings: any[] = []) {
   const site = String(review.site_url || "");
-  const row = (f: any) => `| ${f.item || f.check_type} | ${f.tab_name || ""} | ${f.url ? String(f.url).replace(/^https?:\/\//, "") : "n/a"} | ${f.status} | ${(f.observed || "nothing found").slice(0, 70)} | ${(f.remark || "").slice(0, 110)} |`;
+  /* Cut at a word boundary. The old fixed slice ended sentences mid word, so the
+     report carried remarks like "could not be checked against a real" and
+     "confirm the p", which reads as a broken tool rather than a considered
+     review. */
+  const clip = (v: string, n: number) => {
+    const t = String(v || "").replace(/\s+/g, " ").trim();
+    if (t.length <= n) return t;
+    const cut = t.slice(0, n);
+    const sp = cut.lastIndexOf(" ");
+    return `${(sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[,;:]$/, "")} ...`;
+  };
+  const row = (f: any) => `| ${f.item || f.check_type} | ${f.tab_name || ""} | ${f.url ? String(f.url).replace(/^https?:\/\//, "") : "n/a"} | ${f.status} | ${clip(f.observed || "nothing found", 120)} | ${clip(f.remark, 220)} |`;
+
+  /* Order and separation. A reviewer reads the failures first, then the work that
+     needs a second pass, then what was confirmed. Rows that were never checked
+     are NOT findings and do not belong in the same table: listing 679 of them
+     beside 89 real results buried the review in noise and made the delivery look
+     far worse than the evidence supported. They are summarised by reason instead. */
+  const RANK: Record<string, number> = { failed: 0, partial: 1, verified: 2, unverifiable: 3 };
+  const assessedRows = findings
+    .filter((f) => f.status !== "unverifiable")
+    .sort((a, b) => (RANK[a.status] ?? 9) - (RANK[b.status] ?? 9) || String(a.tab_name || "").localeCompare(String(b.tab_name || "")));
+  const notChecked = findings.filter((f) => f.status === "unverifiable");
+  const byReason = new Map<string, { n: number; examples: string[] }>();
+  for (const f of notChecked) {
+    const key = clip(f.remark, 160) || "No reason was recorded.";
+    const e = byReason.get(key) || { n: 0, examples: [] };
+    e.n++;
+    if (e.examples.length < 4 && f.url) e.examples.push(String(f.url).replace(/^https?:\/\//, ""));
+    byReason.set(key, e);
+  }
+  const coverage = totals.total ? Math.round(((totals.total - totals.unverifiable) / totals.total) * 100) : 0;
+
   const internal_qa = [
     `# QA report: ${review.client_name || site} (round ${round})`,
     `**Verdict:** ${verdict}`,
     ``,
-    `Executive: ${review.executive_name || "unattributed"}. Checked ${totals.total} item(s): ${totals.verified} verified, ${totals.partial} partial, ${totals.failed} failed, ${totals.unverifiable} unverifiable.`,
+    `Executive: ${review.executive_name || "unattributed"}.`,
     ``,
-    `## Item by item`,
-    `| Item | Tab | Page | Status | Observed live | QA remark |`,
-    `| --- | --- | --- | --- | --- | --- |`,
-    ...findings.map(row),
+    `## What this round actually covered`,
+    `${totals.total} row(s) were submitted. **${totals.total - totals.unverifiable} were actually checked against the live site (${coverage}% coverage)**: ${totals.verified} verified, ${totals.partial} need work, ${totals.failed} not live. The remaining ${totals.unverifiable} could not be checked and are neither passes nor failures.`,
+    coverage < 70 ? `\n> Coverage is below 70%, so this round is not a sound basis for judging the delivery. Resolve the reasons in "Rows that could not be checked" and re-run before drawing any conclusion about the work.` : ``,
+    ``,
+    assessedRows.length ? `## Findings, worst first` : `## Findings`,
+    assessedRows.length ? `| Item | Tab | Page | Status | Observed live | QA remark |` : `Nothing was checked against the live site in this round, so there are no findings.`,
+    assessedRows.length ? `| --- | --- | --- | --- | --- | --- |` : ``,
+    ...assessedRows.map(row),
+    notChecked.length ? `\n## Rows that could not be checked (${notChecked.length})\n\nThese are not defects. Each is a row the reviewer could not confirm either way, grouped by cause.\n\n${Array.from(byReason.entries()).sort((a, b) => b[1].n - a[1].n).map(([reason, e]) => `- **${e.n} row(s):** ${reason}${e.examples.length ? `\n  For example: ${e.examples.join(", ")}` : ""}`).join("\n")}` : ``,
     gaps.missing.length ? `\n## Promised but not reported\n${gaps.missing.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
     gaps.extra.length ? `\n## Reported but not promised\n${gaps.extra.map((m: any) => `- ${m.title}: ${m.note}`).join("\n")}` : "",
     gaps.quantity.length ? `\n## Promised counts\n${gaps.quantity.map((q: any) => `- ${q.title}: committed ${q.committed}, reported ${q.reported}, confirmed live ${q.verified}. ${q.note}`).join("\n")}` : "",
@@ -1117,7 +1181,10 @@ function buildDocuments(review: any, findings: any[], totals: any, gaps: any, gs
     gaps.missing.length ? `\n## Promised work with no completion record\n${gaps.missing.map((m: any) => `- ${m.title}`).join("\n")}` : "",
     gaps.shortCounts.length ? `\n## Counts that fall short\n${gaps.shortCounts.map((q: any) => `- ${q.title}: ${q.note}`).join("\n")}` : "",
     siteFindings.filter((x: any) => x.status === "failed").length ? `\n## Site wide issues holding the gate\n${siteFindings.filter((x: any) => x.status === "failed").map((x: any) => `- ${x.remark}`).join("\n")}` : "",
-    findings.some((f) => f.status === "unverifiable") ? `\n## Needs its own proof (not visible on the site)\n${findings.filter((f) => f.status === "unverifiable").map((f: any) => `- ${f.item || f.check_type}: ${f.remark}`).join("\n")}` : "",
+    /* Grouped, not enumerated. Handing an executive 679 individual lines for rows
+       nobody could check is not a fix list, it is a wall, and it reads as an
+       accusation of 679 faults. */
+    notChecked.length ? `\n## Not checked, so not counted against you (${notChecked.length})\n\n${Array.from(byReason.entries()).sort((a, b) => b[1].n - a[1].n).map(([reason, e]) => `- **${e.n} row(s):** ${reason}`).join("\n")}\n\nWhere the cause is off-page work, send the live URLs of the placements so they can be confirmed. Where the cause is the site not responding or a column that could not be read, that is for the reviewer to resolve, not you.` : "",
   ].filter(Boolean).join("\n");
 
   const client_summary = ready

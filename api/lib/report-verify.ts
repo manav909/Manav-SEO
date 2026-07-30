@@ -69,10 +69,19 @@ function absolute(u: string, base: string): string {
 
 /* Read a live page, using the render fallback so a JavaScript rendered or
    region blocked page is still read rather than being wrongly failed. */
-async function readLive(url: string): Promise<{ ok: boolean; html: string }> {
-  let html = await fetchHtml(url).catch(() => "");
+async function readLive(url: string, force = false): Promise<{ ok: boolean; html: string }> {
+  /* `force` bypasses the unreachable-domain memo. That memo is sized for a crawl,
+     where writing a domain off after a few misses protects the function budget.
+     A QA round is different: it checks hundreds of rows one at a time against a
+     site the crawl has ALREADY read successfully, so a handful of transient
+     misses would otherwise mark the domain dead and every remaining row would
+     return "the page could not be read this run" without a request ever being
+     made. That is how one review reported 255 consecutive unreadable pages on a
+     site whose 223 pages had just been crawled. The caller bounds the attempts
+     instead, which is the honest place for that limit. */
+  let html = await fetchHtml(url, 10000, { force }).catch(() => "");
   if (!html || html.length < 400 || !/<\/html>/i.test(html)) {
-    const r = await fetchViaReader(url).catch(() => ({ ok: false, html: "" }));
+    const r = await fetchViaReader(url, 12000, { force }).catch(() => ({ ok: false, html: "" }));
     if (r.ok && r.html && r.html.length > (html ? html.length : 0)) html = r.html;
   }
   /* A short page is still a real page. Only treat it as unreadable when nothing
@@ -165,7 +174,7 @@ function qualityOf(type: string, observed: string, html: string, keywords: strin
 
 /* Check one claim against the live page. Exported so the QA desk reuses exactly
    this logic rather than keeping a second, drifting copy of it. */
-export async function checkOne(c: any, siteUrl: string): Promise<ClaimCheck> {
+export async function checkOne(c: any, siteUrl: string, opts: { force?: boolean } = {}): Promise<ClaimCheck> {
   const url = absolute(String(c.url || ""), siteUrl);
   const base: ClaimCheck = {
     id: String(c.id || ""), title: String(c.title || ""), type: String(c.type || "other"),
@@ -176,7 +185,7 @@ export async function checkOne(c: any, siteUrl: string): Promise<ClaimCheck> {
   if (offpage) { base.status = "unverifiable"; base.evidence = "Off-page work is not observable on the client site, so it cannot be confirmed by reading the page. Ask for the live URLs of the placements and verify each one."; return base; }
   if (!url) { base.status = "unverifiable"; base.evidence = "No target URL was given for this item, so there is nothing to check against."; return base; }
 
-  const { ok, html } = await readLive(url);
+  const { ok, html } = await readLive(url, Boolean(opts.force));
   if (!ok) { base.status = "unverifiable"; base.evidence = "The page could not be read this run, so the claim was neither confirmed nor disproved. Retry, or confirm the page is reachable."; return base; }
 
   const kws: string[] = Array.isArray(c.keywords) ? c.keywords.map(String) : [];
