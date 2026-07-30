@@ -343,7 +343,14 @@ export default function QaDesk() {
         const c = r.client;
         set("client_id", c.client_id, "record"); set("client_name", c.client_name, "record");
         set("site_url", c.site_url, "record"); set("bde_name", c.bde_name, "record");
-        set("client_context", c.client_context, "record"); set("mail_text", c.mail_text, "record");
+        const chat = String(c.client_context || "").trim();
+        const mail = String(c.mail_text || "").trim();
+        if (chat && mail && chat === mail) {
+          set("mail_text", c.mail_text, "record");
+          log("The stored record holds identical text for the conversation and the mail, so only the mail was filled.", "warn");
+        } else {
+          set("client_context", c.client_context, "record"); set("mail_text", c.mail_text, "record");
+        }
         setClientLoaded(c);
         log(r.note || `Loaded the stored record for ${c.client_name || c.client_id}.`, "ok");
       }
@@ -383,12 +390,31 @@ export default function QaDesk() {
     setBusy("");
     if (!r?.success) { setClientLoaded(null); return; }
     const c = r.client;
-    if (c.client_name && !clientName.trim()) setClientName(c.client_name);
-    if (c.bde_name && !bdeName.trim()) setBdeName(c.bde_name);
-    if (c.client_context && !clientContext.trim()) setClientContext(c.client_context);
-    if (c.mail_text && !mailText.trim()) setMailText(c.mail_text);
-    if (c.site_url && srcSite !== "typed" && !siteUrl.trim()) { setSiteUrl(c.site_url); setSrcSite("read"); }
-    setClientLoaded(c);
+    /* A value from a stored record is marked `record`, NOT `typed`. Using the
+       typed wrappers here stamped the record's values as the reviewer's own,
+       which both lied about where they came from and made them permanent, since
+       nothing outranks typed. */
+    set("client_name", c.client_name, "record");
+    set("bde_name", c.bde_name, "record");
+    set("site_url", c.site_url, "record");
+
+    /* THE TWO PANELS ARE DIFFERENT DOCUMENTS. The client conversation and the
+       commitment mail to the PM are separate inputs and are never the same text.
+       If a record holds the same string in both columns, one of them was captured
+       wrongly at some point, and filling both boxes from it silently presents the
+       mail as if it were the conversation. The mail is kept, the conversation is
+       left empty, and the reason is said out loud. */
+    const chat = String(c.client_context || "").trim();
+    const mail = String(c.mail_text || "").trim();
+    const identical = Boolean(chat && mail && chat === mail);
+    if (identical) {
+      set("mail_text", c.mail_text, "record");
+      log("The stored record holds the same text as both the client conversation and the commitment mail, so only the mail was filled. Paste the real conversation, and the record corrects itself on the next review.", "warn");
+    } else {
+      set("client_context", c.client_context, "record");
+      set("mail_text", c.mail_text, "record");
+    }
+    setClientLoaded({ ...c, chat_equals_mail: identical });
     log(`Client record loaded for ${c.client_name || cid}, from ${c.reviews_count} previous review(s)`, "ok");
   };
 
@@ -972,8 +998,27 @@ export default function QaDesk() {
                 </p>
               ) : null}
               <div className="grid md:grid-cols-2 gap-3 mb-3">
-                <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Client chat and call notes. This sets the QA agenda." value={clientContext} onChange={(e) => setClientContext(e.target.value)} />
-                <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Commitment mail sent to the project manager." value={mailText} onChange={(e) => setMailText(e.target.value)} />
+                {/* Each panel says what it is and where its text came from. The
+                    two are different documents, and when both silently carried the
+                    same string there was nothing on screen to reveal it. */}
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client conversation and call notes</label>
+                  <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="What the client said, in chat or on a call. This sets the QA agenda." value={clientContext} onChange={(e) => setClientContext(e.target.value)} />
+                  <p className="text-[10px] mt-1 text-muted-foreground">
+                    {sourceOf("client_context") === "record" ? "From the stored client record."
+                      : sourceOf("client_context") === "typed" ? "Pasted by you."
+                      : clientLoaded?.chat_equals_mail ? <span className="text-amber-400">The stored record had the mail in this field too, so it was left for you to paste.</span>
+                      : "Not provided yet."}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Commitment mail to the project manager</label>
+                  <textarea className="w-full h-24 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="What was promised to the PM. This is what the delivery is reconciled against." value={mailText} onChange={(e) => setMailText(e.target.value)} />
+                  <p className="text-[10px] mt-1 text-muted-foreground">
+                    {sourceOf("mail_text") === "record" ? "From the stored client record."
+                      : sourceOf("mail_text") === "typed" ? "Pasted by you." : "Not provided yet."}
+                  </p>
+                </div>
               </div>
               <button onClick={readContext} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 mb-3">Fill from chat and calls</button>
               <div className="grid md:grid-cols-2 gap-2">

@@ -526,6 +526,14 @@ async function upsertClient(rec: {
 }): Promise<void> {
   const id = String(rec.clientId || "").trim();
   if (!id) return;
+  /* The client conversation and the commitment mail to the PM are two different
+     documents and are never the same text. Storing one string in both columns
+     makes every later review fill both panels with it, presenting the mail as if
+     it were the conversation. Whichever is the mail is kept, and the conversation
+     is not written, so the record repairs itself rather than propagating. */
+  const chatIn = String(rec.clientContext || "").trim();
+  const mailIn = String(rec.mailText || "").trim();
+  if (chatIn && mailIn && chatIn === mailIn) rec = { ...rec, clientContext: "" };
   try {
     const { data: existing } = await db().from("qa_clients").select("*").eq("client_id", id).maybeSingle();
     const keep = (next: any, prev: any) => {
@@ -538,7 +546,14 @@ async function upsertClient(rec: {
       client_name: keep(rec.clientName, (existing as any)?.client_name),
       site_url: keep(rec.siteUrl, (existing as any)?.site_url),
       bde_name: keep(rec.bdeName, (existing as any)?.bde_name),
-      client_context: keep(rec.clientContext, (existing as any)?.client_context),
+      client_context: (() => {
+        const held = String((existing as any)?.client_context || "").trim();
+        const heldMail = String((existing as any)?.mail_text || "").trim();
+        /* A record already carrying the same string in both columns is corrected
+           here rather than kept, because `keep` would preserve it forever. */
+        const corrupt = Boolean(held && heldMail && held === heldMail);
+        return keep(rec.clientContext, corrupt ? null : (existing as any)?.client_context);
+      })(),
       mail_text: keep(rec.mailText, (existing as any)?.mail_text),
       persona: keep(rec.persona, (existing as any)?.persona),
       target_keywords: keep(rec.keywords, (existing as any)?.target_keywords),
