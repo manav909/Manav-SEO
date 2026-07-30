@@ -387,8 +387,15 @@ export default function QaDesk() {
              real header row is further down, so find it and re-read from there.
              Otherwise every column name is meaningless and the tab looks
              uncheckable when it is perfectly fine. */
+          /* Trigger on ANY unnamed column, not on a 40 percent share of them. A
+             tab whose real headers sit on row 3 can still parse most of its
+             columns from the banner row, so the share test missed it and the tab
+             went on to be checked against columns called __EMPTY_3. The search
+             below is the safeguard: it only re-reads when it actually finds a row
+             that looks like real headers, so loosening the trigger cannot make
+             things worse. */
           const blank = headers.filter((h) => /^__EMPTY/.test(h)).length;
-          if (headers.length && blank >= Math.max(1, Math.floor(headers.length * 0.4))) {
+          if (headers.length && blank >= 1) {
             const grid: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
             const hi = grid.findIndex((row) =>
               Array.isArray(row) &&
@@ -684,8 +691,11 @@ export default function QaDesk() {
               title="Clear the whole screen for a different client, keeping your own name and every saved record">
               New client
             </button>
-            <span className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${summary ? (summary.ready_to_submit ? TONE.good : TONE.bad) : TONE.idle}`}>
-              {summary ? (summary.ready_to_submit ? "Cleared to send" : "Held: do not send") : "Nothing checked yet"}
+            {/* Three states, not two. A round where almost nothing could be
+                checked is neither cleared nor a failure of the work, and calling
+                it either would misrepresent the executive or the delivery. */}
+            <span className={`text-xs px-3 py-1.5 rounded-full border font-semibold ${summary ? (summary.inconclusive ? TONE.warn : summary.ready_to_submit ? TONE.good : TONE.bad) : TONE.idle}`}>
+              {summary ? (summary.inconclusive ? "Not assessed: the review could not run" : summary.ready_to_submit ? "Cleared to send" : "Held: do not send") : "Nothing checked yet"}
             </span>
           </div>
         </div>

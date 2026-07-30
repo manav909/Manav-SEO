@@ -293,7 +293,12 @@ export function rowKeywords(row: any, accountKeywords: string[]): string[] {
 /* Category of mistake, which is what makes an executive profile meaningful. */
 function mistakeCategory(status: string, type: string, quality: string[]): string {
   if (status === "verified") return "";
-  if (status === "unverifiable") return "unverifiable_claim";
+  /* NOT "unverifiable_claim". That name reads as an unsubstantiated marketing
+     claim in the copy, and the tab remark model read it exactly that way and
+     invented accusations about brand claims from rows that had simply not been
+     checked. The category describes OUR inability to check, never the quality of
+     the work. */
+  if (status === "unverifiable") return "could_not_verify";
   if (status === "failed") return "not_implemented";
   const q = quality.join(" ").toLowerCase();
   if (/noindex/.test(q)) return "indexation_risk";
@@ -764,6 +769,44 @@ export async function qaCheckTab(opts: {
   const isSiteScope = String(map.scope || "") === "site";
   const headerRows = Number(opts.headerRows) || 1;
 
+  /* A column named __EMPTY, __EMPTY_1 and so on is the spreadsheet parser saying
+     it found a column with no header, which means the real header row was never
+     located. Checking rows against those columns is checking against nothing, and
+     it produced a tab of 112 rows every one of which came back unchecked, which
+     then read as 112 defects. A tab in that state is reported ONCE as
+     uninterpretable, with what to do about it, rather than generating a row of
+     noise per line. */
+  const emptyCol = (k: string) => /^__EMPTY/i.test(String(k || ""));
+  const sliceKeys = slice.length ? Object.keys(slice[0] || {}) : [];
+  if (emptyCol(urlKey) || emptyCol(valueKey) || (!isSiteScope && !urlKey && sliceKeys.some(emptyCol))) {
+    const named = [urlKey, valueKey].filter((k) => k && emptyCol(k));
+    const finding = {
+      review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: 0,
+      sheet_row: 1, row_ref: null, source_column: null,
+      item: `${tab.tab_name}: the columns could not be identified`,
+      check_type: checkType, url: "", expected: "", observed: "",
+      status: "unverifiable", severity: "medium", mistake_category: "sheet_not_readable",
+      agenda_ref: null, round,
+      remark: `This tab was not checked. The header row could not be found, so ${named.length ? `the column(s) ${named.join(" and ")} carry no name` : "the columns carry no names"} and there is nothing to read the rows against. Put the header row at the top of the tab, or set the page column and the compared column for this tab by hand, then re-run. No conclusion about the work in this tab can be drawn until then.`,
+      resolved_round: null,
+    };
+    await db().from("qa_findings").delete().eq("review_id", reviewId).eq("tab_id", tab.id).eq("round", round);
+    await db().from("qa_findings").insert([finding]);
+    const remark = `NOT ASSESSED. The header row of this tab could not be found, so its columns came through unnamed and no row could be read. This is a problem with how the tab is laid out, not with the work in it. Fix the header row or set the columns by hand, then re-run.`;
+    await db().from("qa_tabs").update({
+      mapping: opts.mapping || {}, rows_checked: totalRows, row_count: totalRows,
+      status: "done", checked_at: new Date().toISOString(), remarks: remark,
+    }).eq("id", tab.id);
+    await db().from("qa_reviews").update({ updated_at: new Date().toISOString() }).eq("id", reviewId);
+    return {
+      success: true, tab_name: tab.tab_name, tab_type: tab.tab_type,
+      rows_checked: totalRows, row_count: totalRows, done: true,
+      next_offset: null, tab_remark: remark,
+      columns: { urlKey: "", valueKey: "", itemKey: "", refKey: "" },
+      findings: [{ row_index: 0, sheet_row: 1, row_ref: null, source_column: null, item: finding.item, url: "", status: "unverifiable", severity: "medium", mistake_category: "sheet_not_readable", remark: finding.remark, observed: "", expected: "" }],
+    };
+  }
+
   /* The crawl is corroboration. If the whole site has been crawled and a claimed
      URL is not among the pages that exist, that is a fact about the URL, not a
      missing element on a page, and it must never be reported as unfinished work. */
@@ -872,22 +915,57 @@ export async function qaCheckTab(opts: {
   let tabRemark = "";
   if (done) {
     try {
-      const { data: all } = await db().from("qa_findings").select("status,mistake_category,item,observed").eq("review_id", reviewId).eq("tab_id", tab.id).eq("round", round);
+      const { data: all } = await db().from("qa_findings").select("status,mistake_category,item,observed,remark").eq("review_id", reviewId).eq("tab_id", tab.id).eq("round", round);
       const list: any[] = (all as any[]) || [];
       const bad = list.filter((f) => f.status !== "verified");
-      if (bad.length) {
-        const sys = "You are a Senior Digital Marketing Specialist writing the reviewer remark for one tab of a delivery workbook. State plainly what is wrong, the pattern behind it if there is one, and what the executive must do. Judge it against what THIS client cares about, which is given to you, not against generic best practice. Separate work that was not done from work that was done below standard. Two to four sentences. Never use an em-dash.";
+      const unver = list.filter((f) => f.status === "unverifiable");
+      const failed = bad.filter((f: any) => f.status === "failed");
+      const partial = bad.filter((f: any) => f.status === "partial");
+      /* THE NO EVIDENCE RULE. When most of a tab could not be checked, the honest
+         output is a statement of that fact, not a verdict on the work. This is
+         written deterministically with NO model call, because a model handed a
+         page of rows it cannot see will fill the silence with a story, which is
+         exactly what happened: every row of six tabs came back unchecked because
+         the site could not be read, and the remarks came out as confident
+         accusations about the copy. Nothing here may be inferred about quality
+         from the absence of evidence. */
+      const unverRate = list.length ? unver.length / list.length : 0;
+      if (list.length && unverRate >= 0.5) {
+        /* Name the dominant reason from the row remarks themselves rather than
+           guessing at one. */
+        const tally = new Map<string, number>();
+        for (const f of unver) { const r = String(f.remark || "").trim() || "No reason was recorded."; tally.set(r, (tally.get(r) || 0) + 1); }
+        const top = Array.from(tally.entries()).sort((a, b) => b[1] - a[1]).slice(0, 2);
+        const reasons = top.map(([r, n]) => `${n} row(s): ${r}`).join(" ");
+        const checked = list.length - unver.length;
+        tabRemark = [
+          `NOT ASSESSED. ${unver.length} of ${list.length} row(s) in this tab could not be checked, so this tab carries no judgement about the work and must not be treated as a fail.`,
+          reasons ? `Why: ${reasons}` : "",
+          checked > 0
+            ? `Only ${checked} row(s) were actually verified against the live site, which is too few to draw a conclusion from.`
+            : `Not one row was verified against the live site.`,
+          `Resolve the reason above and re-run before any of this is put to the executive or the client.`,
+        ].filter(Boolean).join(" ");
+        await db().from("qa_tabs").update({ remarks: tabRemark }).eq("id", tab.id);
+      } else if (bad.length) {
+        const sys = "You are a Senior Digital Marketing Specialist writing the reviewer remark for one tab of a delivery workbook. State plainly what is wrong, the pattern behind it if there is one, and what the executive must do. Judge it against what THIS client cares about, which is given to you, not against generic best practice. Separate work that was not done from work that was done below standard. CRITICAL: a row marked could_not_verify means the REVIEWER could not check it, for example the page did not respond or no URL was given. It says NOTHING about the quality of the work and it is NOT a claim in the copy that lacks substantiation. Never describe an unchecked row as a defect, never infer a pattern of poor work from rows that were not checked, and never write about the wording of titles, descriptions or headings unless a checked row actually showed a problem with them. If the only thing you can say is that some rows were not checked, say exactly that. Two to four sentences. Never use an em-dash.";
         const user = [
           `Tab: ${tab.tab_name} (${tab.tab_type}). ${list.length} rows checked, ${bad.length} not clean.`,
           onAgenda.length ? `What matters on this account for this kind of work: ${onAgenda.map((a: any) => `${a.focus} (${a.why})`).join("; ")}.` : "",
           reviewKeywords.length ? `Target keywords: ${reviewKeywords.slice(0, 15).join(", ")}.` : "",
-          `Not done: ${bad.filter((f: any) => f.status === "failed").length}. Done below standard: ${bad.filter((f: any) => f.status === "partial").length}.`,
-          `Examples: ${bad.slice(0, 8).map((f: any) => `${f.item}: ${f.status}, ${f.mistake_category || "issue"}`).join("; ")}.`,
+          `Not done: ${failed.length}. Done below standard: ${partial.length}. Could not be checked at all: ${unver.length}.`,
+          failed.length || partial.length
+            ? `Findings you may write about, these were genuinely checked: ${bad.filter((f: any) => f.status !== "unverifiable").slice(0, 8).map((f: any) => `${f.item}: ${f.status}, ${f.mistake_category || "issue"}, observed ${String(f.observed || "nothing").slice(0, 120)}`).join("; ")}.`
+            : `NOTHING was genuinely checked in this tab, so there are no findings to write about.`,
+          unver.length ? `Rows that could not be checked, reasons only, do not treat these as defects: ${unver.slice(0, 3).map((f: any) => String(f.remark || "").slice(0, 140)).join("; ")}.` : "",
         ].filter(Boolean).join("\n");
         const { text } = await llmComplete({ system: sys, user, maxTokens: 300, timeoutMs: 40000, label: "qa-tab-remark", maxSegments: 1 });
         tabRemark = String(text || "").trim();
-      } else tabRemark = "Every row in this tab is confirmed live and within standard.";
-      await db().from("qa_tabs").update({ remarks: tabRemark }).eq("id", tab.id);
+        await db().from("qa_tabs").update({ remarks: tabRemark }).eq("id", tab.id);
+      } else {
+        tabRemark = "Every row in this tab is confirmed live and within standard.";
+        await db().from("qa_tabs").update({ remarks: tabRemark }).eq("id", tab.id);
+      }
     } catch { /* remark is a nicety, never block the pass */ }
   }
 
@@ -1080,19 +1158,30 @@ async function computeRound(review: any, all: any[], round: number) {
   };
   const open = totals.failed + totals.partial;
   const gaps = await reconcileRound(review, list);
-  const ready = open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0 && siteBlocking.length === 0;
+  /* THE EVIDENCE FLOOR. A row that could not be checked is not a pass and it is
+     not a fail, it is an absence of evidence, and a round built mostly on absence
+     can support no verdict at all. Without this the gate had TWO opposite failure
+     modes from the same cause: with 400 unchecked rows and no failures it read
+     `open === 0` and CLEARED a delivery nobody had verified, while the tab
+     remarks simultaneously condemned the team for work that had never been
+     looked at. Neither is honest. */
+  const assessed = totals.verified + totals.failed + totals.partial;
+  const inconclusive = totals.total > 0 && (assessed === 0 || totals.unverifiable / totals.total >= 0.5);
+  const ready = !inconclusive && open === 0 && gaps.missing.length === 0 && gaps.shortCounts.length === 0 && siteBlocking.length === 0;
   const status = ready ? "passed" : "awaiting_fix";
 
   const byCat: Record<string, number> = {};
   for (const x of list) { if (x.mistake_category) byCat[x.mistake_category] = (byCat[x.mistake_category] || 0) + 1; }
   const gsc = await qaGscContext(String(review.project_id || ""), String(review.site_url || ""));
-  const verdict = ready
+  const verdict = inconclusive
+    ? `Round ${round} is NOT ASSESSED. ${totals.unverifiable} of ${totals.total} item(s) could not be checked, and only ${assessed} were actually verified against the live site, which is too little to judge the delivery either way. This is a reviewing problem to resolve first, most often the site not being readable or the sheet columns not being identified. Nothing here should be read as a verdict on the executive's work, and nothing should be sent to the client until the review can actually run.`
+    : ready
     ? `Round ${round} passes. All ${totals.verified} checked items are confirmed live and within standard${site.length ? `, and the ${site.length} site wide observation(s) are not blocking` : ""}.${totals.unverifiable ? ` ${totals.unverifiable} item(s) need their own proof because they are not visible on the site.` : ""}`
-    : `Round ${round} is not clean. ${totals.failed} item(s) are not live, ${totals.partial} need work, ${gaps.missing.length} promised item(s) are unreported, ${gaps.shortCounts.length} promised count(s) fall short, and ${siteBlocking.length} site wide issue(s) are blocking.`;
+    : `Round ${round} is not clean. ${totals.failed} item(s) are not live, ${totals.partial} need work, ${gaps.missing.length} promised item(s) are unreported, ${gaps.shortCounts.length} promised count(s) fall short, and ${siteBlocking.length} site wide issue(s) are blocking.${totals.unverifiable ? ` A further ${totals.unverifiable} item(s) could not be checked and are not counted against the work.` : ""}`;
   const documents = buildDocuments(review, list, totals, gaps, gsc, ready, verdict, round, site);
 
   return {
-    success: true, status, round, totals, gsc, ready_to_submit: ready, verdict, documents,
+    success: true, status, round, totals, gsc, ready_to_submit: ready, inconclusive, assessed, verdict, documents,
     missing: gaps.missing, extra: gaps.extra, quantity: gaps.quantity,
     site_findings: site.map((x) => ({ item: x.item, severity: x.severity, category: x.mistake_category, status: x.status, remark: x.remark })),
     open_items: list.filter((x) => x.status === "failed" || x.status === "partial")
@@ -1280,7 +1369,7 @@ export async function qaDirectory(opts: { query?: string }) {
     let matched = executives.filter(hit);
     if (!matched.length && q.split(/\s+/).length > 1) {
       try {
-        const sys = "Map a search over a quality assurance directory to filters. Return ONLY JSON: {\"executive\":\"\",\"client\":\"\",\"mistake_category\":\"one of not_implemented, unverifiable_claim, thin_content, keyword_missing, length_out_of_range, duplication, incomplete_execution, indexation_risk, below_standard, or empty\",\"sort\":\"worst_first_pass|most_open|most_reviews|recent|empty\"}. Leave anything not asked for empty.";
+        const sys = "Map a search over a quality assurance directory to filters. Return ONLY JSON: {\"executive\":\"\",\"client\":\"\",\"mistake_category\":\"one of not_implemented, could_not_verify, thin_content, keyword_missing, length_out_of_range, duplication, incomplete_execution, indexation_risk, below_standard, or empty\",\"sort\":\"worst_first_pass|most_open|most_reviews|recent|empty\"}. Leave anything not asked for empty.";
         const { text } = await llmComplete({ system: sys, user: q, maxTokens: 200, timeoutMs: 30000, label: "qa-directory-search", maxSegments: 1 });
         const m = String(text || "").match(/\{[\s\S]*\}/);
         const p: any = m ? JSON.parse(m[0]) : {};
