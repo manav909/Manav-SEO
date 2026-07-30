@@ -73,6 +73,19 @@ function pickColumns(headers: string[], rows: any[]): Cols {
   };
 }
 
+/* Rows taken from ACROSS the sheet rather than off the top. A column has to hold
+   what it claims all the way down, and the first few rows of a delivery sheet are
+   often the least representative: a leading block can be blank, or hold a summary
+   line, which is enough to hide a genuine page column and send the whole tab down
+   the site level path. */
+function spreadRows(rows: any[], n: number): any[] {
+  if (!Array.isArray(rows) || rows.length <= n) return Array.isArray(rows) ? rows : [];
+  const step = Math.ceil(rows.length / n);
+  const out: any[] = [];
+  for (let i = 0; i < rows.length && out.length < n; i += step) out.push(rows[i]);
+  return out;
+}
+
 function Stage({ n, title, hint, tone = "idle", children }: any) {
   return (
     <section className={`rounded-2xl border bg-card/40 overflow-hidden ${RING[tone] || RING.idle}`}>
@@ -371,7 +384,12 @@ export default function QaDesk() {
       setMapping(true); setBusy("Reading what each tab records...");
       const mr: any = await post("wizard_qa_map_tabs", {
         siteUrl: siteUrl.trim(),
-        tabs: out.map((sh) => ({ name: sh.name, headers: sh.headers, rowCount: sh.rows.length, sample: sh.rows.slice(0, 3) })),
+        tabs: out.map((sh) => ({
+          name: sh.name, headers: sh.headers, rowCount: sh.rows.length,
+          sample: sh.rows.slice(0, 3),
+          validationRows: spreadRows(sh.rows, 60),
+          columns: sh.columns,
+        })),
       });
       setMapping(false); setBusy("");
       if (mr?.success) {
@@ -412,7 +430,18 @@ export default function QaDesk() {
       while (true) {
         if (stopReview.current) { log(`Paused inside ${sheet.name}. Checked rows are saved.`, "warn"); break; }
         setBusy(`${sheet.name}: rows ${offset + 1} to ${Math.min(offset + SLOT, sheet.rows.length)} of ${sheet.rows.length}`);
-        const r: any = await post("wizard_qa_check_tab", { reviewId: rid, tabIndex: ti, rowOffset: offset, rows: sheet.rows.slice(offset, offset + SLOT), totalRows: sheet.rows.length });
+        /* The interpretation, the whole sheet column choice and the header offset
+           go with EVERY batch. They are decided once for the tab, so sending them
+           each time is what stops the engine deriving columns from the slice in
+           front of it, which is how a row could be checked against a URL that
+           belongs somewhere else. headerRows travels too, so a finding's row
+           number matches the row the executive sees when the real headers sit
+           below a banner. */
+        const r: any = await post("wizard_qa_check_tab", {
+          reviewId: rid, tabIndex: ti, rowOffset: offset,
+          rows: sheet.rows.slice(offset, offset + SLOT), totalRows: sheet.rows.length,
+          mapping: sheet.mapping || null, columns: sheet.columns, headerRows: sheet.headerRows,
+        });
         if (!r?.success) { setError(`${sheet.name}: ${r?.error || "check failed"}`); log(`${sheet.name} failed: ${r?.error || ""}`, "err"); break; }
         for (const f of (r.findings || [])) collected.push({ ...f, tab_name: sheet.name, tab_index: ti });
         setFindings([...collected]);

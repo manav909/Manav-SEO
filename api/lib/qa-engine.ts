@@ -303,8 +303,14 @@ export interface TabMapping {
 
 const looksUrl = (v: any) => /^https?:\/\/|^www\.|^\/[a-z0-9]/i.test(String(v || "").trim());
 
-/* Validate an interpretation against the rows themselves. */
-function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
+/* Validate an interpretation against the rows themselves.
+   `hint` carries the column choice already made over the WHOLE sheet in the
+   browser. It is a last resort, used only when neither the interpretation nor
+   the rows supplied here settle a column, because a handful of rows read from
+   one part of a sheet can be unrepresentative: blank leading rows would
+   otherwise leave a genuine page column undiscovered, which then flips the tab
+   to site scope and checks every row against robots.txt. */
+function validateMapping(m: any, headers: string[], rows: any[], hint?: { urlKey?: string; valueKey?: string } | null): TabMapping {
   const has = (c: any) => Boolean(c) && headers.includes(String(c));
   const colHasUrls = (c: string) => {
     const vals = rows.map((r) => String(r[c] || "").trim()).filter(Boolean);
@@ -314,7 +320,13 @@ function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
   const OLD = /previous|old|existing|current|before|original|was\b/i;
 
   let url_column = has(m?.url_column) && colHasUrls(String(m.url_column)) ? String(m.url_column) : "";
-  if (!url_column) {
+  /* A tab read as SITE level has no page list, so no page column is looked for.
+     Without this, a site tab that happens to carry reference links (the robots.txt
+     URL, the sitemap URL) acquires a page column, and the per row path then wins
+     over the site level path, so the robots and sitemap checks never run on the
+     one tab that needs them. A wrong site reading is corrected by the reviewer in
+     the interface, where choosing a page column sets the scope back to page. */
+  if (!url_column && m?.scope !== "site") {
     /* Fall back to the column with the most DISTINCT urls, which is the real page
        list rather than a reference link repeated on every row. */
     let best = ""; let bestScore = 0;
@@ -325,6 +337,12 @@ function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
     }
     if (bestScore >= 1) url_column = best;
   }
+  /* Still nothing, so trust the choice made over every row before falling
+     through to a scope change. Withheld when the tab was read as SITE level: a
+     site tab has no page list by definition, and filling one here would leave
+     the tab scoped to the site while every row carried a URL, which sends it
+     down the per page path and the site level check never runs. */
+  if (!url_column && m?.scope !== "site" && hint?.urlKey && headers.includes(String(hint.urlKey))) url_column = String(hint.urlKey);
   let expected_column = has(m?.expected_column) && !OLD.test(String(m.expected_column)) ? String(m.expected_column) : "";
   const previous_column = has(m?.previous_column) ? String(m.previous_column) : (headers.find((h) => OLD.test(h)) || "");
   if (expected_column && expected_column === previous_column) expected_column = "";
@@ -347,6 +365,13 @@ function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
       return avg >= 12 && !/^(done|updated|complete|completed|yes|no|pending|na|n\/a|ok)$/i.test(v[0]);
     };
     expected_column = usable.find((h) => NEWISH.test(h) && notLinks(h)) || usable.find(isCopy) || "";
+    /* The whole sheet choice is the final resort, and it is accepted only if it
+       is not the old value and not the page column. A presence only check is
+       better than a comparison against the text the work replaced. */
+    if (!expected_column && hint?.valueKey) {
+      const hv = String(hint.valueKey);
+      if (headers.includes(hv) && hv !== url_column && hv !== previous_column && !OLD.test(hv)) expected_column = hv;
+    }
   }
 
   const scope: "page" | "site" = m?.scope === "site" ? "site" : (url_column ? "page" : "site");
@@ -363,7 +388,7 @@ function validateMapping(m: any, headers: string[], rows: any[]): TabMapping {
 }
 
 /* Interpret every tab in one pass. */
-export async function qaMapTabs(opts: { siteUrl?: string; tabs: Array<{ name: string; headers: string[]; sample: any[]; rowCount: number }> }) {
+export async function qaMapTabs(opts: { siteUrl?: string; tabs: Array<{ name: string; headers: string[]; sample: any[]; rowCount: number; validationRows?: any[]; columns?: { urlKey?: string; valueKey?: string } | null }> }) {
   const tabs = Array.isArray(opts.tabs) ? opts.tabs : [];
   if (!tabs.length) return { success: false, error: "No tabs supplied." };
   let parsed: any = {};
@@ -384,7 +409,11 @@ export async function qaMapTabs(opts: { siteUrl?: string; tabs: Array<{ name: st
 
   const mappings = tabs.map((t) => {
     const proposed = byName.get(t.name) || null;
-    const v = validateMapping(proposed, t.headers || [], t.sample || []);
+    /* The model reads three rows because that is enough to recognise a format.
+       Validation reads rows taken from across the sheet, because a column has to
+       hold what it claims throughout, not just at the top. */
+    const checkRows = Array.isArray(t.validationRows) && t.validationRows.length ? t.validationRows : (t.sample || []);
+    const v = validateMapping(proposed, t.headers || [], checkRows, t.columns || null);
     return { name: t.name, ...v, source: proposed ? "read" : "fallback" };
   });
   return { success: true, mappings };
@@ -623,8 +652,19 @@ export async function qaCheckTab(opts: {
   const map = opts.mapping || {};
   const fixed = opts.columns || {};
   const derived = detectColumns(slice);
-  const urlKey = String(map.url_column || fixed.urlKey || derived.urlKey || "");
-  const valueKey = String(map.expected_column || fixed.valueKey || derived.valueKey || "");
+  /* A supplied interpretation is AUTHORITATIVE for the page column and the
+     compared value. It was already validated against real rows, so a blank in it
+     is a decision rather than a gap: a site level tab deliberately carries no
+     page column, and a tab whose only value column holds the text the work
+     replaced deliberately carries no expected column. Refilling either from a
+     fallback would resurrect the two defects the interpretation exists to
+     prevent, a page column belonging to another row and a comparison against the
+     value that was replaced. Without an interpretation the whole sheet choice is
+     used, and only with neither does this fall back to the slice, which is the
+     path that let the column drift between batches. */
+  const hasMap = Boolean(map && (map.check_type || map.url_column || map.scope || map.what_it_verifies));
+  const urlKey = hasMap ? String(map.url_column || "") : String(fixed.urlKey || derived.urlKey || "");
+  const valueKey = hasMap ? String(map.expected_column || "") : String(fixed.valueKey || derived.valueKey || "");
   const itemKey = String(fixed.itemKey || derived.itemKey || "");
   const refKey = String(map.ref_column || fixed.refKey || "");
   const prevKey = String(map.previous_column || "");
@@ -661,7 +701,7 @@ export async function qaCheckTab(opts: {
 
     /* Site level items are one off facts about the site, not per page work, so
        they are checked against the site itself rather than discarded. */
-    if (isSiteScope && !url) {
+    if (isSiteScope) {
       const siteChecked = await siteLevelCheck(checkType, review.site_url, expected);
       findings.push({
         review_id: reviewId, tab_id: tab.id, tab_name: tab.tab_name, row_index: rowIndex,
