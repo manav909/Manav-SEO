@@ -39,33 +39,121 @@ function domainOf(u: string): string {
 
 /* Read the client chat, the calls and the mail, and fill the review fields from
    them, so the reviewer types nothing that the record already contains. */
+/* Hosts that appear in a client conversation but are never the client's own site:
+   the marketplace the chat happens on, mail providers, link shorteners, social and
+   search. Without this the first URL in a Fiverr thread is a Fiverr profile link,
+   and a naive pass would offer that as the site to audit. */
+const NOT_CLIENT_HOST = /(^|\.)(fiverr|upwork|freelancer|peopleperhour|linkedin|facebook|instagram|twitter|x|t|youtube|whatsapp|telegram|gmail|googlemail|google|bing|yahoo|outlook|hotmail|mail|drive|docs|dropbox|wetransfer|zoom|calendly|meet|loom|bit|tinyurl|lnkd|goo)\.[a-z.]{2,}$/i;
+
+/* Domains and URLs read from the text itself, with no model involved. A URL in a
+   conversation is a fact on the page, so it must never depend on an LLM answering
+   in valid JSON. This is the floor the extraction can never fall below. */
+function domainsInText(text: string): { urls: string[]; domains: string[] } {
+  const urls: string[] = []; const domains: string[] = [];
+  const seenU = new Set<string>(); const seenD = new Set<string>();
+  /* isUrl distinguishes a literal address written in the text from a bare domain
+     mention. Only the former may be reported as a page URL: adding a synthesised
+     root for every bare mention would put a URL in target_urls that nobody ever
+     wrote, which is fabrication however small. */
+  const push = (raw: string, isUrl: boolean) => {
+    let u = String(raw || "").trim().replace(/[),.;:'"\]]+$/, "");
+    if (!u) return;
+    if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+    let host = "";
+    try { host = new URL(u).hostname.replace(/^www\./i, "").toLowerCase(); } catch { return; }
+    if (!host.includes(".") || NOT_CLIENT_HOST.test(host)) return;
+    if (isUrl && !seenU.has(u.toLowerCase())) { seenU.add(u.toLowerCase()); urls.push(u); }
+    if (!seenD.has(host)) { seenD.add(host); domains.push(host); }
+  };
+  for (const m of String(text || "").matchAll(/https?:\/\/[^\s<>"')\]]+/gi)) push(m[0], true);
+  for (const m of String(text || "").matchAll(/\bwww\.[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi)) push(m[0], false);
+  /* A bare domain, which is how a client usually types their own site. Restricted
+     to plausible public suffixes so ordinary sentences do not register. */
+  for (const m of String(text || "").matchAll(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|ai|app|shop|store|au|uk|us|ca|in|nz|de|fr|es|it|nl|ie|asia|org\.au|com\.au|co\.uk|co\.nz|co\.in)\b/gi)) push(m[0], false);
+  /* An address is a strong signal of the client's own domain when nothing else
+     names it. */
+  for (const m of String(text || "").matchAll(/[a-z0-9._%+-]+@([a-z0-9.-]+\.[a-z]{2,})/gi)) push(m[1], false);
+  return { urls, domains };
+}
+
 export async function qaExtractContext(opts: { chatText?: string; mailText?: string }) {
   const chatText = String(opts.chatText || "").trim();
   const mailText = String(opts.mailText || "").trim();
   if (!chatText && !mailText) return { success: false, error: "Paste the client chat, the call notes or the mail first." };
+
+  /* Read first, ask second. */
+  const seen = domainsInText(`${chatText}\n${mailText}`);
+
+  let p: any = {};
+  let readOk = false;
+  let readNote = "";
   try {
-    const sys = "You read a client conversation, call notes and an internal commitment mail, and pull out the record they already contain. Extract ONLY what is actually present. Return ONLY JSON: {\"client_id\":\"the client's unique handle or account username if one appears, for example a marketplace username. Not their display name\",\"client_name\":\"the person or business name, for example Tyler or TG Racing\",\"site_url\":\"the CLIENT's own website that the work is for. Not a competitor site, not a marketplace profile\",\"bde_name\":\"the person from OUR side who spoke to the client in this conversation, the business development executive. Never the client, and never the person who did the delivery work\",\"persona\":\"three to five sentences on who this client is, how they judge work, and how they communicate\",\"priorities\":[\"what they care about most, in their words\"],\"pain_points\":[\"what they complained about or fear\"],\"competitor_sites\":[\"any competitor domains named, kept separate from the client site\"],\"target_urls\":[\"any page URLs on the client site\"],\"keywords\":[\"any target keywords named\"]}. Leave a field empty rather than guessing. Never invent a name, a domain or a requirement. The digital marketing executive who did the work is NOT in these documents, so never guess one.";
+    const sys = "You read a client conversation, call notes and an internal commitment mail, and pull out the record they already contain. Extract ONLY what is actually present. Return ONLY JSON, with no prose before or after it: {\"client_id\":\"the client's unique handle or account username if one appears, for example a marketplace username. Not their display name\",\"client_name\":\"the person or business name, for example the person who is speaking as the client\",\"site_url\":\"the CLIENT's own website that the work is for. Not a competitor site, not a marketplace profile\",\"bde_name\":\"the person from OUR side who spoke to the client in this conversation, the business development executive. Never the client, and never the person who did the delivery work\",\"persona\":\"three to five sentences on who this client is, how they judge work, and how they communicate\",\"priorities\":[\"what they care about most, in their words\"],\"pain_points\":[\"what they complained about or fear\"],\"competitor_sites\":[\"any competitor domains named, kept separate from the client site\"],\"target_urls\":[\"any page URLs on the client site\"],\"keywords\":[\"any target keywords named\"]}. A pasted conversation carries interface noise such as the words Profile Image, timestamps, Sent, Delivered and Attachment. Ignore that noise and read the human content around it. The name of the person speaking as the client IS the client name even when the paste is short or ragged. Leave a field empty rather than guessing. Never invent a name, a domain or a requirement. The digital marketing executive who did the work is NOT in these documents, so never guess one.";
     const user = [
       chatText ? `Client chat and call notes:\n${chatText.slice(0, 16000)}` : "",
       mailText ? `Commitment mail:\n${mailText.slice(0, 10000)}` : "",
+      seen.domains.length ? `Domains that literally appear in the text above, already filtered of marketplaces and mail providers. One of these is probably the client site, but decide from the context and leave it empty if none of them is:\n${seen.domains.join("\n")}` : "",
     ].filter(Boolean).join("\n\n");
-    const { text } = await llmComplete({ system: sys, user, maxTokens: 1200, timeoutMs: 60000, label: "qa-extract-context", maxSegments: 1 });
-    const m = String(text || "").match(/\{[\s\S]*\}/);
-    const p: any = m ? JSON.parse(m[0]) : {};
-    return {
-      success: true,
-      client_id: String(p.client_id || ""),
-      client_name: String(p.client_name || ""),
-      site_url: String(p.site_url || ""),
-      bde_name: String(p.bde_name || ""),
-      competitor_sites: Array.isArray(p.competitor_sites) ? p.competitor_sites.map(String) : [],
-      persona: String(p.persona || ""),
-      priorities: Array.isArray(p.priorities) ? p.priorities.map(String) : [],
-      pain_points: Array.isArray(p.pain_points) ? p.pain_points.map(String) : [],
-      target_urls: Array.isArray(p.target_urls) ? p.target_urls.map(String) : [],
-      keywords: Array.isArray(p.keywords) ? p.keywords.map(String) : [],
-    };
-  } catch (e: any) { return { success: false, error: e?.message || "Could not read the context." }; }
+
+    /* Retried once, because the whole record used to be lost when the model
+       answered with prose instead of JSON, and that loss was reported as a
+       success. */
+    for (let attempt = 0; attempt < 2 && !readOk; attempt++) {
+      const { text } = await llmComplete({
+        system: attempt === 0 ? sys : `${sys} Your previous answer could not be parsed. Return the JSON object and nothing else.`,
+        user, maxTokens: 1200, timeoutMs: 60000, label: "qa-extract-context", maxSegments: 1,
+      });
+      const raw = String(text || "");
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (m) { try { p = JSON.parse(m[0]); readOk = true; } catch { p = {}; } }
+      if (!readOk && attempt === 1) {
+        readNote = raw.trim()
+          ? "The reading of the conversation could not be parsed, so only what could be read directly from the text is filled in below. Try again, or fill the fields by hand."
+          : "The reading of the conversation returned nothing, so only what could be read directly from the text is filled in below. Try again, or fill the fields by hand.";
+      }
+    }
+  } catch (e: any) {
+    readNote = `The conversation could not be read (${e?.message || "unknown error"}). Only what could be read directly from the text is filled in below.`;
+  }
+
+  /* The deterministic floor. A site the model missed is still recovered from the
+     text, and marked as such so the reviewer knows it was pattern matched rather
+     than understood. */
+  const modelSite = String(p.site_url || "").trim();
+  let site_url = modelSite;
+  let siteFrom: "read" | "pattern" | "" = modelSite ? "read" : "";
+  if (!site_url && seen.domains.length === 1) { site_url = `https://${seen.domains[0]}/`; siteFrom = "pattern"; }
+
+  const client_name = String(p.client_name || "").trim();
+  const client_id = String(p.client_id || "").trim();
+  const bde_name = String(p.bde_name || "").trim();
+
+  /* Every field says whether it was found and how, so an empty form can never be
+     reported as a filled one. */
+  const found: string[] = []; const missing: string[] = [];
+  const mark = (label: string, value: string, how: string) => { if (value) found.push(`${label} (${how})`); else missing.push(label); };
+  mark("client name", client_name, "read");
+  mark("client id", client_id, "read");
+  mark("website", site_url, siteFrom === "pattern" ? "found in the text" : "read");
+  mark("BDE", bde_name, "read");
+
+  const ambiguousSite = !site_url && seen.domains.length > 1 ? seen.domains.slice(0, 6) : [];
+
+  return {
+    success: true,
+    read_ok: readOk,
+    read_note: readNote,
+    found, missing,
+    site_from: siteFrom,
+    site_candidates: ambiguousSite,
+    client_id, client_name, site_url, bde_name,
+    competitor_sites: Array.isArray(p.competitor_sites) ? p.competitor_sites.map(String) : [],
+    persona: String(p.persona || ""),
+    priorities: Array.isArray(p.priorities) ? p.priorities.map(String) : [],
+    pain_points: Array.isArray(p.pain_points) ? p.pain_points.map(String) : [],
+    target_urls: Array.isArray(p.target_urls) ? p.target_urls.map(String) : (seen.urls.length > 1 ? seen.urls.slice(0, 20) : []),
+    keywords: Array.isArray(p.keywords) ? p.keywords.map(String) : [],
+  };
 }
 
 /* Search Console for a QA round, and the honest answer when the site being

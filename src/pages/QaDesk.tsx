@@ -263,7 +263,19 @@ export default function QaDesk() {
       }
     }
     setExtracted(r);
-    log(`Record filled: ${r.client_name || r.client_id || "client"}`, "ok");
+    /* This used to log a green "Record filled: client" even when every field came
+       back empty, which is how an untouched form came to look like a filled one.
+       The feed now names what was found and what was not, and colours by that. */
+    if (r.read_note) log(r.read_note, "err");
+    if (r.site_from === "pattern") log(`Website ${dom(r.site_url)} was found in the text rather than understood from it, so confirm it is the client site`, "warn");
+    if ((r.site_candidates || []).length) log(`More than one domain appears in the conversation (${r.site_candidates.join(", ")}), so the website was left for you to choose`, "warn");
+    const gotAny = (r.found || []).length > 0;
+    log(
+      gotAny
+        ? `Read from the conversation: ${(r.found || []).join(", ")}${(r.missing || []).length ? `. Not present, fill by hand: ${(r.missing || []).join(", ")}` : ""}`
+        : `Nothing could be read from what was pasted. Fill the fields by hand, or paste more of the conversation.`,
+      gotAny ? ((r.missing || []).length ? "warn" : "ok") : "err",
+    );
   };
 
   const createProjectForSite = async () => {
@@ -733,7 +745,7 @@ export default function QaDesk() {
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client ID (unique)</label>
                   <div className="flex gap-1.5">
-                    <input list="qa-clients" className="flex-1 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="tyler_tg1"
+                    <input list="qa-clients" className="flex-1 bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="A unique handle for this client"
                       value={clientId}
                       onChange={(e) => { setClientId(e.target.value); if (clients.some((c) => c.client_id === e.target.value)) loadClient(e.target.value); }}
                       onBlur={(e) => { if (e.target.value.trim() && !clientLoaded) loadClient(e.target.value); }} />
@@ -750,12 +762,12 @@ export default function QaDesk() {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client name</label>
-                  <input className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Tyler, TG Racing" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+                  <input className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Person or business name" value={clientName} onChange={(e) => setClientName(e.target.value)} />
                 </div>
                 <div className="md:col-span-2">
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">Client website</label>
                   <input className={`w-full bg-muted/40 border rounded-xl px-3 py-2 text-sm ${srcSite === "read" ? "border-sky-500/50" : "border-border"}`}
-                    placeholder="https://client.com/" value={siteUrl}
+                    placeholder="The client's own website" value={siteUrl}
                     onChange={(e) => { setSiteUrl(e.target.value); setSrcSite("typed"); }} />
                   <p className="text-[10px] mt-1">
                     {srcSite === "read" ? <span className="text-sky-400">Read from the conversation. The work is checked against this site.</span>
@@ -771,15 +783,40 @@ export default function QaDesk() {
                 </div>
                 <div>
                   <label className="text-[10px] uppercase tracking-wider text-muted-foreground">BDE on the account</label>
-                  <input list="qa-bdes" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Read from the chat" value={bdeName} onChange={(e) => setBdeName(e.target.value)} />
+                  <input list="qa-bdes" className="w-full bg-muted/40 border border-border rounded-xl px-3 py-2 text-sm" placeholder="Who spoke to this client" value={bdeName} onChange={(e) => setBdeName(e.target.value)} />
                   <datalist id="qa-bdes">{bdeOptions.map((n: string, i: number) => <option key={i} value={n} />)}</datalist>
                   <p className="text-[10px] text-muted-foreground mt-1">{bdeOptions.length ? `${bdeOptions.length} on file, or read from the chat` : "None on file yet, so it is read from the chat"}</p>
                   {dir?.roster_note ? <p className="text-[10px] text-amber-400 mt-1">{dir.roster_note}</p> : null}
                 </div>
               </div>
               {extracted ? (
-                <div className="mt-3 rounded-xl border border-border bg-muted/20 p-3">
-                  {extracted.persona ? <p className="text-xs text-foreground/90">{extracted.persona}</p> : null}
+                <div className={`mt-3 rounded-xl border p-3 ${extracted.read_note ? "border-red-500/50 bg-red-500/5" : (extracted.missing || []).length ? "border-amber-500/40 bg-amber-500/5" : "border-emerald-500/40 bg-emerald-500/5"}`}>
+                  {/* What the read produced, stated plainly. An empty result must
+                      never be presented as a filled record. */}
+                  {extracted.read_note ? <p className="text-xs text-red-300 font-semibold">{extracted.read_note}</p> : null}
+                  <p className="text-[11px]">
+                    {(extracted.found || []).length
+                      ? <><span className="text-muted-foreground">Read from the conversation: </span><span className="text-emerald-300">{extracted.found.join(", ")}</span></>
+                      : <span className="text-amber-300">Nothing could be read from what was pasted, so every field below is still empty and yours to fill.</span>}
+                  </p>
+                  {(extracted.missing || []).length ? (
+                    <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Not present, fill by hand: </span><span className="text-amber-300">{extracted.missing.join(", ")}</span></p>
+                  ) : null}
+                  {extracted.site_from === "pattern" ? (
+                    <p className="text-[11px] mt-0.5 text-amber-300">The website was found in the text rather than understood from it. Confirm it is the client site and not something else they mentioned.</p>
+                  ) : null}
+                  {(extracted.site_candidates || []).length ? (
+                    <div className="text-[11px] mt-1">
+                      <span className="text-muted-foreground">More than one domain appears, so pick the client site: </span>
+                      <span className="inline-flex flex-wrap gap-1.5 mt-1">
+                        {extracted.site_candidates.map((d: string, i: number) => (
+                          <button key={i} onClick={() => { setSiteUrl(`https://${d}/`); setSrcSite("typed"); log(`Website set to ${d} by you from the domains in the conversation`, "ok"); }}
+                            className="px-2 py-0.5 rounded-lg border border-border hover:bg-muted/60">{d}</button>
+                        ))}
+                      </span>
+                    </div>
+                  ) : null}
+                  {extracted.persona ? <p className="text-xs text-foreground/90 mt-2">{extracted.persona}</p> : null}
                   {(extracted.priorities || []).length ? <p className="text-[11px] mt-1"><span className="text-muted-foreground">Priorities: </span>{extracted.priorities.join("; ")}</p> : null}
                   {(extracted.pain_points || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Pain points: </span>{extracted.pain_points.join("; ")}</p> : null}
                   {(extracted.keywords || []).length ? <p className="text-[11px] mt-0.5"><span className="text-muted-foreground">Keywords to judge against: </span>{extracted.keywords.join(", ")}</p> : null}
