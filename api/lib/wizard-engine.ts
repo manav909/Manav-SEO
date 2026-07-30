@@ -789,6 +789,7 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     try {
       const { qaCreateReview } = await import("./qa-engine.js");
       return await qaCreateReview({
+        reviewId: String(body?.reviewId || "").trim() || undefined,
         projectId: String(body?.projectId || "").trim() || undefined,
         siteUrl: String(body?.siteUrl || "").trim(),
         clientId: String(body?.clientId || "").trim() || undefined,
@@ -864,6 +865,47 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
   if (action === "wizard_qa_profile") {
     try { const { qaExecutiveProfile } = await import("./qa-engine.js"); return await qaExecutiveProfile({ executiveName: String(body?.executiveName || "") }); }
     catch (e: any) { return { success: false, error: e?.message || "could not load the profile" }; }
+  }
+
+  /* Build 13.06. Project binding, the session record, and the client record found
+     by site. All additive, all wizard_ prefixed so task-engine routes them, no new
+     api function. */
+  if (action === "wizard_qa_resolve_project") {
+    try {
+      const { qaResolveProject } = await import("./qa-engine.js");
+      return await qaResolveProject({
+        siteUrl: String(body?.siteUrl || ""),
+        navProjectId: String(body?.navProjectId || ""),
+        clientName: String(body?.clientName || ""),
+        userId: String(body?.userId || ""),
+        createIfMissing: body?.createIfMissing !== false,
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "could not resolve the project" }; }
+  }
+
+  if (action === "wizard_qa_client_for_site") {
+    try {
+      const { qaClientForSite } = await import("./qa-engine.js");
+      return await qaClientForSite({ siteUrl: String(body?.siteUrl || ""), projectId: String(body?.projectId || "") });
+    } catch (e: any) { return { success: false, error: e?.message || "could not read the client record" }; }
+  }
+
+  if (action === "wizard_qa_save_draft") {
+    try {
+      const { qaSaveDraft } = await import("./qa-engine.js");
+      return await qaSaveDraft({
+        reviewId: String(body?.reviewId || ""),
+        patch: body?.patch || {},
+        sources: body?.sources || {},
+        keywords: Array.isArray(body?.keywords) ? body.keywords : [],
+        competitors: Array.isArray(body?.competitors) ? body.competitors : [],
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "could not save the session" }; }
+  }
+
+  if (action === "wizard_qa_session") {
+    try { const { qaSession } = await import("./qa-engine.js"); return await qaSession({ reviewId: String(body?.reviewId || "") }); }
+    catch (e: any) { return { success: false, error: e?.message || "could not load the session" }; }
   }
 
   if (action === "wizard_qa_load") {

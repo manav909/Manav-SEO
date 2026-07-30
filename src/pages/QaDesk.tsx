@@ -115,25 +115,86 @@ export default function QaDesk() {
   const navProjectName = proj?.selectedProject?.name || "";
   const navProjectUrl = proj?.selectedProject?.url || "";
 
-  const [dmeName, setDmeName] = useState(() => localStorage.getItem("qa_last_dme") || "");
-  const [bdeName, setBdeName] = useState("");
-  const [clientId, setClientId] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [siteUrl, setSiteUrl] = useState("");
-  /* Provenance. A value that came from a default may be replaced by real evidence
-     read out of the conversation. A value the reviewer typed is never overwritten.
-     Without this, a site URL pre-filled from the nav project silently beat the
-     client's actual domain, which then dragged the project and Search Console
-     checks onto the wrong site. */
-  const [srcSite, setSrcSite] = useState<"" | "default" | "read" | "typed">("");
-  const [clientContext, setClientContext] = useState("");
-  const [mailText, setMailText] = useState("");
+  /* ---- ONE OWNER FOR THE SESSION ------------------------------------------
+     Everything that belongs to the review lives in a single object, is saved to
+     the review record, and comes back on a refresh. Before this, eleven separate
+     useState values were written by five different callers under five different
+     rules: the nav filled defaults, extraction filled reads, a stored client
+     filled blanks, a reopened review overwrote, and typing did whatever it liked.
+     Only the site URL had a provenance flag, added as a patch for exactly this
+     problem, so the other ten still had the original defect.
+
+     `set(field, value, source)` is now the only way any of them changes, and the
+     precedence is declared once, here, for all of them: typed beats read, read
+     beats a stored record, a record beats a nav default. A weaker source may fill
+     a blank; it may never overwrite a stronger one. The wrapper names below are
+     kept so the rendering that already works is untouched by this change. */
+  type Src = "" | "nav" | "record" | "read" | "typed";
+  const RANK: Record<string, number> = { nav: 0, record: 1, read: 2, typed: 3 };
+  type Session = {
+    id: string;
+    client_id: string; client_name: string; site_url: string;
+    bde_name: string; executive_name: string;
+    client_context: string; mail_text: string;
+    project_id: string; project_label: string; project_source: string;
+    crawl_job_id: string; gsc_resource_id: string;
+    sources: Record<string, Src>;
+  };
+  const EMPTY: Session = {
+    id: "", client_id: "", client_name: "", site_url: "", bde_name: "",
+    executive_name: localStorage.getItem("qa_last_dme") || "",
+    client_context: "", mail_text: "",
+    project_id: "", project_label: "", project_source: "",
+    crawl_job_id: "", gsc_resource_id: "", sources: {},
+  };
+  const [session, setSession] = useState<Session>(EMPTY);
+  const dirty = useRef<Record<string, any>>({});
+  const dirtySrc = useRef<Record<string, string>>({});
+
+  const set = (field: keyof Session, value: any, source: Src = "typed") => {
+    setSession((prev) => {
+      const held = String((prev as any)[field] ?? "").trim();
+      const heldSrc = prev.sources[field as string];
+      if (held && heldSrc && (RANK[source] ?? 0) < (RANK[heldSrc] ?? 0)) return prev;
+      if (String((prev as any)[field] ?? "") === String(value ?? "")) return prev;
+      dirty.current[field as string] = value;
+      dirtySrc.current[field as string] = source;
+      return { ...prev, [field]: value, sources: { ...prev.sources, [field]: source } } as Session;
+    });
+  };
+  const sourceOf = (field: string): Src => session.sources[field] || "";
+
+  /* The existing names, so the rendering below does not change. */
+  const dmeName = session.executive_name;
+  const bdeName = session.bde_name;
+  const clientId = session.client_id;
+  const clientName = session.client_name;
+  const siteUrl = session.site_url;
+  const clientContext = session.client_context;
+  const mailText = session.mail_text;
+  const projectId = session.project_id;
+  const projectLabel = session.project_label;
+  const setBdeName = (v: string) => set("bde_name", v, "typed");
+  const setClientId = (v: string) => set("client_id", v, "typed");
+  const setClientName = (v: string) => set("client_name", v, "typed");
+  const setSiteUrl = (v: string) => set("site_url", v, "typed");
+  const setClientContext = (v: string) => set("client_context", v, "typed");
+  const setMailText = (v: string) => set("mail_text", v, "typed");
+  const setProjectId = (v: string) => set("project_id", v, "typed");
+  const setProjectLabel = (v: string) => set("project_label", v, "typed");
+  /* The site provenance label the interface already renders, mapped onto the one
+     precedence model rather than kept as a second parallel flag. */
+  const srcSite: "" | "default" | "read" | "typed" =
+    sourceOf("site_url") === "nav" ? "default"
+    : sourceOf("site_url") === "record" || sourceOf("site_url") === "read" ? "read"
+    : sourceOf("site_url") === "typed" ? "typed" : "";
+  const setSrcSite = (_v: any) => { /* provenance is owned by set(), never assigned directly */ };
+
   const [extracted, setExtracted] = useState<any>(null);
   const [clients, setClients] = useState<any[]>([]);
   const [clientLoaded, setClientLoaded] = useState<any>(null);
-
-  const [projectId, setProjectId] = useState(navProjectId);
-  const [projectLabel, setProjectLabel] = useState(navProjectName);
+  const [projectNote, setProjectNote] = useState("");
+  const [projectDupes, setProjectDupes] = useState<any[]>([]);
   const [gsc, setGsc] = useState<any>(null);
   const [gscSites, setGscSites] = useState<any[]>([]);
   const [gscPulling, setGscPulling] = useState(false);
@@ -148,7 +209,8 @@ export default function QaDesk() {
   const [sheets, setSheets] = useState<Sheet[]>([]);
   const [fileName, setFileName] = useState("");
   const [mapping, setMapping] = useState(false);
-  const [reviewId, setReviewId] = useState("");
+  const reviewId = session.id;
+  const setReviewId = (v: string) => setSession((prev) => ({ ...prev, id: v }));
   const [agenda, setAgenda] = useState<any[]>([]);
   const [progress, setProgress] = useState<Record<number, { checked: number; total: number; done: boolean; remark: string }>>({});
   const [findings, setFindings] = useState<any[]>([]);
@@ -207,11 +269,105 @@ export default function QaDesk() {
 
   const log = (msg: string, kind = "run") => setActivity((a) => [{ t: new Date().toLocaleTimeString(), msg, kind }, ...a].slice(0, 200));
 
+  /* ---- PERSISTENCE ---------------------------------------------------------
+     The session id lives in the address bar, so a refresh is a reload rather than
+     a loss. Before this, nothing but the DME name survived a refresh: the review
+     id was held in state only, so a reload orphaned the record in `checking` and
+     left an entry in the work list that could not properly be resumed. */
+  const sessionParam = () => new URLSearchParams(window.location.search).get("review") || "";
+  const putSessionInUrl = (id: string) => {
+    try {
+      const u = new URL(window.location.href);
+      if (id) u.searchParams.set("review", id); else u.searchParams.delete("review");
+      window.history.replaceState({}, "", u.toString());
+    } catch { /* the address bar is a convenience, never a dependency */ }
+  };
+
+  const hydrate = (rev: any, project: any, src: Src = "record") => {
+    setSession((prev) => {
+      const next: any = { ...prev, id: String(rev.id || prev.id) };
+      const sources = { ...prev.sources };
+      const put = (field: string, value: any) => {
+        const v = value === null || value === undefined ? "" : String(value);
+        if (!v) return;
+        const held = String(next[field] ?? "").trim();
+        const heldSrc = sources[field];
+        if (held && heldSrc && (RANK[src] ?? 0) < (RANK[heldSrc] ?? 0)) return;
+        next[field] = v; sources[field] = src;
+      };
+      put("client_id", rev.client_id); put("client_name", rev.client_name);
+      put("site_url", rev.site_url); put("bde_name", rev.bde_name);
+      put("executive_name", rev.executive_name);
+      put("client_context", rev.client_context); put("mail_text", rev.mail_text);
+      put("project_id", rev.project_id); put("project_source", rev.project_source);
+      put("crawl_job_id", rev.crawl_job_id); put("gsc_resource_id", rev.gsc_resource_id);
+      if (project?.name) put("project_label", project.name);
+      /* Sources the record itself recorded win over the blanket one used here. */
+      const stored = rev.field_sources && typeof rev.field_sources === "object" ? rev.field_sources : {};
+      for (const k of Object.keys(stored)) if (next[k]) sources[k] = stored[k];
+      next.sources = sources;
+      return next as Session;
+    });
+  };
+
+  /* Resume whatever the address bar points at, then fall back to the nav. */
   useEffect(() => {
-    if (navProjectUrl && !siteUrl.trim()) { setSiteUrl(navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`); setSrcSite("default"); }
+    const id = sessionParam();
+    if (id) {
+      (async () => {
+        const r: any = await post("wizard_qa_session", { reviewId: id });
+        if (r?.success) {
+          hydrate(r.review, r.project, "record");
+          if (r.review?.crawl_job_id) setCrawlJobId(String(r.review.crawl_job_id));
+          log(`Resumed the session for ${r.review.client_name || r.review.site_url || "this client"}. Nothing was lost.`, "ok");
+          if (!r.is_draft) { const full: any = await post("wizard_qa_load", { reviewId: id }); if (full?.success) applyLoaded(id, full); }
+        } else { putSessionInUrl(""); }
+      })();
+    }
     loadWorklist(); loadDirectory(""); loadClients();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navProjectUrl]);
+  }, []);
+
+  /* THE NAV PROJECT. Selecting a project brings back everything last stored for
+     that client, which is what makes the dropdown useful rather than a source of
+     confusion. The project URL is only a suggestion for the site: it fills a
+     blank and is marked `nav`, so anything read from the conversation replaces
+     it rather than being beaten by it. */
+  useEffect(() => {
+    if (!navProjectUrl && !navProjectId) return;
+    if (navProjectUrl) set("site_url", navProjectUrl.startsWith("http") ? navProjectUrl : `https://${navProjectUrl}/`, "nav");
+    if (navProjectId) { set("project_id", navProjectId, "nav"); set("project_label", navProjectName, "nav"); }
+    (async () => {
+      const r: any = await post("wizard_qa_client_for_site", { siteUrl: navProjectUrl, projectId: navProjectId });
+      if (r?.success && r.client) {
+        const c = r.client;
+        set("client_id", c.client_id, "record"); set("client_name", c.client_name, "record");
+        set("site_url", c.site_url, "record"); set("bde_name", c.bde_name, "record");
+        set("client_context", c.client_context, "record"); set("mail_text", c.mail_text, "record");
+        setClientLoaded(c);
+        log(r.note || `Loaded the stored record for ${c.client_name || c.client_id}.`, "ok");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navProjectId, navProjectUrl]);
+
+  /* Autosave. Every change lands on the record within a second, so there is no
+     window in which the session exists only on screen. */
+  useEffect(() => {
+    if (!Object.keys(dirty.current).length) return;
+    const t = setTimeout(async () => {
+      const patch = { ...dirty.current }; const sources = { ...dirtySrc.current };
+      dirty.current = {}; dirtySrc.current = {};
+      delete (patch as any).project_label;
+      if (!Object.keys(patch).length) return;
+      const r: any = await post("wizard_qa_save_draft", { reviewId: session.id, patch, sources });
+      if (r?.success && r.review?.id && r.review.id !== session.id) {
+        setSession((prev) => ({ ...prev, id: String(r.review.id) }));
+        putSessionInUrl(String(r.review.id));
+      }
+    }, 900);
+    return () => clearTimeout(t);
+  }, [session]);
   useEffect(() => { if (projectId) refreshGsc(projectId); }, [projectId]);
 
   const loadClients = async () => { const r: any = await post("wizard_qa_clients", {}); if (r?.success) setClients(r.clients || []); };
@@ -278,16 +434,29 @@ export default function QaDesk() {
     );
   };
 
-  const createProjectForSite = async () => {
-    if (!siteDomain) { setError("Enter the client site first."); return; }
-    setError(""); setSetupBusy("Creating the project..."); log(`Creating a project for ${siteDomain}`);
-    const r: any = await post("wizard_create_project", { name: clientName.trim() || siteDomain, domain: siteUrl.trim(), userId: auth?.user?.id || "" });
+  /* RESOLVE, never blindly create. `wizard_create_project` inserts a new client
+     and a new project on every call with no lookup, which is how one site ended
+     up with several projects and how the wrong project came to cover the wrong
+     website. The site domain is the identity: the nav project is checked against
+     it first, then every existing project, and one is created only when nothing
+     anywhere carries that domain. Which of the three happened is always said. */
+  const bindProject = async () => {
+    if (!siteDomain) { setError("Enter the client site first, or read it from the conversation."); return; }
+    setError(""); setSetupBusy("Finding the project for this site..."); log(`Looking for a project that covers ${siteDomain}`);
+    const r: any = await post("wizard_qa_resolve_project", {
+      siteUrl: siteUrl.trim(), navProjectId, clientName: clientName.trim(), userId: auth?.user?.id || "",
+    });
     setSetupBusy("");
-    if (!r?.success || !r?.projectId) { setError(r?.error || "Could not create the project."); return; }
-    setProjectId(r.projectId); setProjectLabel(clientName.trim() || siteDomain);
-    log("Project created and bound to this review", "ok");
+    if (!r?.success || !r?.projectId) { setError(r?.error || "Could not resolve the project."); return; }
+    set("project_id", r.projectId, "typed");
+    set("project_label", r.name || siteDomain, "typed");
+    set("project_source", r.source || "", "typed");
+    setProjectNote(r.note || "");
+    setProjectDupes((r.candidates || []).filter((c: any) => c.projectId !== r.projectId));
+    log(r.note || `Project bound for ${siteDomain}`, r.source === "created" ? "warn" : "ok");
     refreshGsc(r.projectId);
   };
+  const createProjectForSite = bindProject;
 
   const loadGscProperties = async (pid: string) => {
     setSetupBusy("Loading the Search Console properties...");
@@ -364,7 +533,7 @@ export default function QaDesk() {
       }
     } catch (e: any) { setError(String(e?.message || e)); log("Crawl error", "err"); }
     setCrawling(false);
-    if (jobId) setCrawlJobId(jobId);
+    if (jobId) { setCrawlJobId(jobId); set("crawl_job_id", jobId, "typed"); }
     return jobId;
   };
 
@@ -434,7 +603,7 @@ export default function QaDesk() {
     } catch (e: any) { setBusy(""); setError(`Could not read the workbook. ${e?.message || ""}`); }
   };
 
-  const rememberDme = (v: string) => { setDmeName(v); try { localStorage.setItem("qa_last_dme", v); } catch { /* storage optional */ } };
+  const rememberDme = (v: string) => { set("executive_name", v, "typed"); try { localStorage.setItem("qa_last_dme", v); } catch { /* storage optional */ } };
 
   /* Starting fresh. Two scopes, because the two situations are genuinely
      different: a second workbook for the SAME client should keep the evidence
@@ -466,6 +635,11 @@ export default function QaDesk() {
     if (workOnScreen && !window.confirm("Clear the workbook and this review from the screen, and keep the client, the project, Search Console and the site crawl? Nothing already checked is deleted, it stays in the work list.")) return;
     stopEverything();
     clearReviewState();
+    /* A second workbook for the same client is a NEW review, so the session id is
+       released while every identity and evidence field is kept. The previous
+       review stays in the work list under its own id. */
+    setSession((prev) => ({ ...prev, id: "" }));
+    putSessionInUrl("");
     setActivity([]);
     log(`Cleared for a new workbook${clientName || clientId ? ` on ${clientName || clientId}` : ""}. Evidence in hand was kept. Saved reviews are untouched.`, "ok");
   };
@@ -474,10 +648,13 @@ export default function QaDesk() {
     if (workOnScreen && !window.confirm("Clear everything on screen and start a new client? Nothing is deleted, every saved review and client record stays. Your own name in the DME field is kept.")) return;
     stopEverything();
     clearReviewState();
-    setBdeName(""); setClientId(""); setClientName(""); setClientContext(""); setMailText("");
+    /* The whole session is dropped and a new one begins. The old record is NOT
+       deleted, it stays in the work list and can be reopened by its own id. */
+    setSession({ ...EMPTY, executive_name: session.executive_name });
+    dirty.current = {}; dirtySrc.current = {};
+    putSessionInUrl("");
     setExtracted(null); setClientLoaded(null);
-    setSiteUrl(""); setSrcSite("");
-    setProjectId(navProjectId); setProjectLabel(navProjectName);
+    setProjectNote(""); setProjectDupes([]);
     setGsc(null); setGscSites([]);
     setCrawl(null); setCrawlJobId(""); setCrawlWhy("");
     setActivity([]);
@@ -497,6 +674,7 @@ export default function QaDesk() {
     stopReview.current = false;
     setRunning(true); setBusy("Setting the agenda..."); log("Setting the QA agenda from the client record");
     const created: any = await post("wizard_qa_create", {
+      reviewId: session.id,
       projectId, siteUrl: siteUrl.trim(), clientId, clientName,
       executiveName: dmeName, bdeName, clientContext, mailText,
       keywords: extracted?.keywords || [], competitors: extracted?.competitor_sites || [],
@@ -649,16 +827,38 @@ export default function QaDesk() {
     } catch (e: any) { setBusy(""); setError(`Could not build the workbook. ${e?.message || ""}`); }
   };
 
+  /* Reopening a review restores THE WHOLE session, including the project it was
+     bound to and the evidence it used. It previously restored the findings but
+     not the project, the chat or the mail, so the screen showed the nav project
+     while the findings underneath came from a different site. It also marked the
+     site as `typed`, claiming the reviewer had entered a value the record
+     supplied. Both are gone. */
+  const applyLoaded = (id: string, r: any) => {
+    setAgenda(r.review.agenda || []);
+    hydrate({ ...r.review, id }, null, "record");
+    if (r.review.executive_name) { try { localStorage.setItem("qa_last_dme", r.review.executive_name); } catch { /* optional */ } }
+    setFindings((r.findings || []).map((f: any) => ({ ...f, tab_index: -1 })));
+    setSummary(r.report ? { ...r.report, status: r.review.status } : { totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
+  };
+
   const openReview = async (id: string) => {
     const r: any = await post("wizard_qa_load", { reviewId: id });
     if (!r?.success) { setError(r?.error || "Could not load."); return; }
-    setReviewId(id); setAgenda(r.review.agenda || []);
-    setSiteUrl(r.review.site_url || ""); setSrcSite("typed");
-    setClientId(r.review.client_id || ""); setClientName(r.review.client_name || "");
-    if (r.review.executive_name) rememberDme(r.review.executive_name);
-    setBdeName(r.review.bde_name || "");
-    setFindings((r.findings || []).map((f: any) => ({ ...f, tab_index: -1 })));
-    setSummary(r.report ? { ...r.report, status: r.review.status } : { totals: r.review.totals || {}, status: r.review.status, round: r.review.round, verdict: `Saved review, round ${r.review.round}, status ${r.review.status}.`, documents: null });
+    setReviewId(id);
+    putSessionInUrl(id);
+    applyLoaded(id, r);
+    /* The project the findings actually came from, named on screen. */
+    const sess: any = await post("wizard_qa_session", { reviewId: id });
+    if (sess?.success) {
+      if (sess.project) {
+        set("project_id", sess.project.projectId, "record");
+        set("project_label", sess.project.name || sess.project.url, "record");
+        setProjectNote(`This review was run against ${sess.project.name || sess.project.url}. That is the project shown above, not whatever is selected in the nav.`);
+      } else {
+        setProjectNote("This review was not bound to a project when it ran, so Search Console was not part of it.");
+      }
+      if (sess.review?.crawl_job_id) setCrawlJobId(String(sess.review.crawl_job_id));
+    }
     log(`Loaded saved review for ${r.review.client_name || r.review.site_url}`, "ok");
   };
 
@@ -704,6 +904,31 @@ export default function QaDesk() {
             ? "A run is in progress, so the reset controls are held. Stop it first and everything checked so far stays saved."
             : "Starting fresh clears the screen only. Every saved review and client record stays, and reopens from the work list with its report intact."}
         </p>
+
+        {/* WHICH PROJECT COVERS WHAT, said in one line rather than inferred from
+            three chips. This is the question the module was failing to answer. */}
+        {(projectNote || projectDupes.length) ? (
+          <div className={`rounded-xl border px-3 py-2 mb-2 text-xs ${session.project_source === "created" ? TONE.warn : TONE.good}`}>
+            <div className="font-semibold">
+              {session.project_source === "nav" ? "Using the project selected in the nav"
+                : session.project_source === "existing" ? "Attached to a project that already existed"
+                : session.project_source === "created" ? "A new project was created"
+                : "Project"}
+              {projectLabel ? `: ${projectLabel}` : ""}
+            </div>
+            {projectNote ? <div className="opacity-90 mt-0.5">{projectNote}</div> : null}
+            {projectDupes.length ? (
+              <div className="mt-1 opacity-90">
+                Duplicates for this domain, not used by this review: {projectDupes.map((d: any) => d.name || d.projectId).join(", ")}. Merge or archive them so this cannot happen again.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {session.id ? (
+          <p className="text-[11px] text-muted-foreground mb-2">
+            Session saved. This page can be refreshed or reopened from its address and nothing is lost. Every field shows where its value came from.
+          </p>
+        ) : null}
 
         {/* Evidence in hand, visible at all times */}
         <div className="grid sm:grid-cols-3 gap-2 mb-5">
@@ -848,7 +1073,7 @@ export default function QaDesk() {
                     </div>
                   </div>
                   {mismatch || !projectId
-                    ? <button onClick={createProjectForSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap">Create for {siteDomain || "this site"}</button>
+                    ? <button onClick={createProjectForSite} className="text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/30 whitespace-nowrap">Find or create the project for {siteDomain || "this site"}</button>
                     : <span className={`text-[11px] px-2 py-0.5 rounded-full border ${TONE.good}`}>matched</span>}
                 </div>
 

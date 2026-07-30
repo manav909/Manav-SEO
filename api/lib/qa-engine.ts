@@ -522,7 +522,7 @@ export async function qaMapTabs(opts: { siteUrl?: string; tabs: Array<{ name: st
 async function upsertClient(rec: {
   clientId?: string; clientName?: string; siteUrl?: string; bdeName?: string;
   clientContext?: string; mailText?: string; persona?: string;
-  keywords?: string[]; competitors?: string[];
+  keywords?: string[]; competitors?: string[]; projectId?: string;
 }): Promise<void> {
   const id = String(rec.clientId || "").trim();
   if (!id) return;
@@ -545,6 +545,11 @@ async function upsertClient(rec: {
       competitors: keep(rec.competitors, (existing as any)?.competitors),
       last_seen_at: new Date().toISOString(),
       reviews_count: (Number((existing as any)?.reviews_count) || 0) + 1,
+      /* The site is what the nav project and the conversation have in common, so
+         the record is reachable by domain as well as by handle. Selecting a
+         project in the nav can then bring this client's chat and mail back. */
+      site_domain: keep(domainOf(String(rec.siteUrl || "")), (existing as any)?.site_domain),
+      project_id: keep(rec.projectId, (existing as any)?.project_id),
     };
     if (existing) await db().from("qa_clients").update(row).eq("client_id", id);
     else await db().from("qa_clients").insert(row);
@@ -552,6 +557,225 @@ async function upsertClient(rec: {
 }
 
 /* The known clients, for the picker. */
+/* ---- The session record: one owner for the state ---------------------------- */
+
+/* THE STATE OWNERSHIP DEFECT. The review row used to be written once, at the
+   moment checking began, so everything before that lived only in the browser:
+   thirty eight useState values with five different writers filling the same
+   fields under five different rules. A refresh lost the lot, and a reopened
+   review restored the findings but not the project, the chat or the mail, so the
+   screen showed one project while the findings underneath came from another.
+
+   A draft is a real row from the first meaningful input. Every edit lands on it,
+   the page reads from it, and the review id in the address bar makes a refresh a
+   reload rather than a loss.
+
+   `field_sources` records where each value came from: typed beats read, read
+   beats a stored record, a record beats a nav default. One declared order,
+   applied to every field, instead of a provenance flag on the site alone. */
+const SOURCE_RANK: Record<string, number> = { nav: 0, record: 1, read: 2, typed: 3 };
+
+const DRAFT_FIELDS = [
+  "client_id", "client_name", "site_url", "bde_name", "executive_name",
+  "client_context", "mail_text", "project_id", "project_source",
+  "crawl_job_id", "gsc_resource_id",
+] as const;
+
+export async function qaSaveDraft(opts: {
+  reviewId?: string;
+  patch?: Record<string, any>;
+  sources?: Record<string, string>;
+  keywords?: string[];
+  competitors?: string[];
+}) {
+  const patch = opts.patch && typeof opts.patch === "object" ? opts.patch : {};
+  const incoming = opts.sources && typeof opts.sources === "object" ? opts.sources : {};
+  const reviewId = String(opts.reviewId || "").trim();
+
+  try {
+    let current: any = null;
+    if (reviewId) {
+      const { data } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
+      current = data || null;
+      if (!current) return { success: false, error: "That session no longer exists." };
+    }
+
+    const heldSources: Record<string, string> = (current?.field_sources && typeof current.field_sources === "object") ? { ...current.field_sources } : {};
+    const row: any = {};
+    const rejected: string[] = [];
+
+    for (const key of DRAFT_FIELDS) {
+      if (!(key in patch)) continue;
+      const value = patch[key];
+      const nextSource = String(incoming[key] || "typed");
+      const heldSource = heldSources[key];
+      /* A weaker source may fill a blank but may never overwrite a stronger one.
+         This is the rule that stops a nav default beating a domain read out of
+         the client conversation, which is what bound Search Console to the wrong
+         client in an earlier round. */
+      const held = current ? current[key] : null;
+      const isBlank = held === null || held === undefined || String(held).trim() === "";
+      if (!isBlank && heldSource && (SOURCE_RANK[nextSource] ?? 0) < (SOURCE_RANK[heldSource] ?? 0)) {
+        rejected.push(`${key} kept its ${heldSource} value`);
+        continue;
+      }
+      row[key] = value === "" ? null : value;
+      heldSources[key] = nextSource;
+    }
+
+    if (Array.isArray(opts.keywords) && opts.keywords.length) row.target_keywords = opts.keywords;
+    if (Array.isArray(opts.competitors) && opts.competitors.length) row.competitors = opts.competitors;
+    row.field_sources = heldSources;
+    row.updated_at = new Date().toISOString();
+
+    if (!reviewId) {
+      /* Nothing worth remembering yet, so nothing is created. */
+      const meaningful = String(row.site_url || "").trim() || String(row.client_id || "").trim() || String(row.client_context || "").trim() || String(row.mail_text || "").trim();
+      if (!meaningful) return { success: true, review: null, note: "Nothing to save yet." };
+      row.is_draft = true;
+      row.status = "queued";
+      row.round = 1;
+      row.title = `QA of ${row.client_name || row.site_url || "a client"}`;
+      row.submitted_at = new Date().toISOString();
+      const { data: made, error } = await db().from("qa_reviews").insert(row).select().single();
+      if (error) return { success: false, error: error.message };
+      return { success: true, review: made, created: true, rejected };
+    }
+
+    const { data: saved, error } = await db().from("qa_reviews").update(row).eq("id", reviewId).select().single();
+    if (error) return { success: false, error: error.message };
+    return { success: true, review: saved, created: false, rejected };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "Could not save the session." };
+  }
+}
+
+/* Resume by id. Everything the session held comes back, including the project it
+   was bound to and the evidence it used, which is what a reopened review never
+   restored before. */
+export async function qaSession(opts: { reviewId: string }) {
+  const reviewId = String(opts.reviewId || "").trim();
+  if (!reviewId) return { success: false, error: "A session id is required." };
+  try {
+    const { data: rev } = await db().from("qa_reviews").select("*").eq("id", reviewId).maybeSingle();
+    if (!rev) return { success: false, error: "That session no longer exists." };
+    const r: any = rev;
+    let project: any = null;
+    if (r.project_id) {
+      const { data: p } = await db().from("projects").select("id,name,url").eq("id", r.project_id).maybeSingle();
+      if (p) project = { projectId: String((p as any).id), name: (p as any).name || "", url: (p as any).url || "" };
+    }
+    const { data: tabs } = await db().from("qa_tabs").select("*").eq("review_id", reviewId).order("tab_index", { ascending: true });
+    return { success: true, review: r, project, tabs: tabs || [], is_draft: Boolean(r.is_draft) };
+  } catch (e: any) { return { success: false, error: e?.message || "Could not load the session." }; }
+}
+
+/* ---- Project binding: resolve, never blindly create ------------------------- */
+
+/* THE DUPLICATE PROJECT DEFECT. `wizard_create_project` inserts a new clients row
+   and a new projects row on every call, with no lookup, and seeds a data room
+   each time. Pressing the button twice produced two projects for one site, and
+   nothing ever reconciled a domain to a project, which is how the wrong project
+   came to cover the wrong website.
+
+   The site domain, read from the client conversation, is the identity key. The
+   nav project is checked against it FIRST, because if the operator has already
+   selected the right client there is nothing to resolve. Only when no project
+   anywhere carries that domain is one created, and which of the three happened is
+   always reported back so the screen can say it plainly. */
+export async function qaResolveProject(opts: { siteUrl?: string; navProjectId?: string; clientName?: string; userId?: string; createIfMissing?: boolean }) {
+  const domain = domainOf(String(opts.siteUrl || ""));
+  if (!domain) return { success: false, error: "A client site is needed before a project can be resolved." };
+  const navId = String(opts.navProjectId || "").trim();
+
+  const shape = (p: any, source: string) => ({
+    projectId: String(p.id), name: String(p.name || ""), url: String(p.url || ""), source,
+  });
+
+  try {
+    /* 1. The project already selected in the nav, if it is for this site. */
+    if (navId) {
+      const { data: navProj } = await db().from("projects").select("id,name,url").eq("id", navId).maybeSingle();
+      if (navProj && domainOf(String((navProj as any).url || "")) === domain) {
+        return { success: true, ...shape(navProj, "nav"), candidates: [], note: `The project selected in the nav, ${(navProj as any).name || domain}, is for ${domain}, so it was used.` };
+      }
+    }
+
+    /* 2. Any existing project carrying this domain. Matched in code rather than
+       by a SQL pattern because a stored url may or may not have a scheme, a www
+       prefix or a trailing path. */
+    const { data: rows } = await db().from("projects").select("id,name,url,status,created_at").order("created_at", { ascending: true }).limit(2000);
+    const matches = ((rows as any[]) || []).filter((p) => domainOf(String(p.url || "")) === domain);
+    if (matches.length) {
+      const chosen = matches.find((p) => String(p.status || "") === "active") || matches[0];
+      return {
+        success: true, ...shape(chosen, "existing"),
+        candidates: matches.map((p) => ({ projectId: String(p.id), name: String(p.name || ""), url: String(p.url || "") })),
+        note: matches.length > 1
+          ? `${matches.length} projects already exist for ${domain}. The oldest active one, ${chosen.name || domain}, was attached. The duplicates are listed so they can be merged or archived.`
+          : `An existing project for ${domain}, ${chosen.name || domain}, was attached. Nothing new was created.`,
+      };
+    }
+
+    /* 3. Nothing anywhere carries this domain, so one is created. */
+    if (opts.createIfMissing === false) {
+      return { success: true, projectId: "", name: "", url: "", source: "none", candidates: [], note: `No project exists for ${domain} yet.` };
+    }
+    const name = String(opts.clientName || "").trim() || domain;
+    const site = String(opts.siteUrl || "").trim();
+    const { data: client, error: cErr } = await db().from("clients").insert({ name, company: name, email: "", website: site || null }).select("id").single();
+    if (cErr) return { success: false, error: cErr.message };
+    const { data: project, error: pErr } = await db().from("projects").insert({ client_id: (client as any).id, name, url: site || null, status: "active", keywords: [] }).select("id,name,url").single();
+    if (pErr) return { success: false, error: pErr.message };
+    const userId = String(opts.userId || "").trim();
+    if (userId) {
+      try {
+        const { data: prof } = await db().from("profiles").select("id,client_id,client_ids").eq("id", userId).single();
+        if (prof) {
+          const have: string[] = Array.isArray((prof as any).client_ids) ? (prof as any).client_ids : ((prof as any).client_id ? [(prof as any).client_id] : []);
+          if (!have.includes(String((client as any).id))) {
+            await db().from("profiles").update({ client_ids: [...have, (client as any).id], client_id: have[0] || (client as any).id }).eq("id", userId);
+          }
+        }
+      } catch { /* non blocking */ }
+    }
+    return { success: true, ...shape(project, "created"), candidates: [], note: `No project existed for ${domain}, so one was created and attached to this review.` };
+  } catch (e: any) {
+    return { success: false, error: e?.message || "Could not resolve the project." };
+  }
+}
+
+/* The client record found by SITE rather than by handle, which is what makes
+   selecting a project in the nav bring back that client's chat, mail, BDE and
+   keywords without anything being retyped. */
+export async function qaClientForSite(opts: { siteUrl?: string; projectId?: string }) {
+  const domain = domainOf(String(opts.siteUrl || ""));
+  const projectId = String(opts.projectId || "").trim();
+  if (!domain && !projectId) return { success: false, error: "A site or a project is needed." };
+  try {
+    let row: any = null;
+    if (domain) {
+      const { data } = await db().from("qa_clients").select("*").eq("site_domain", domain).order("last_seen_at", { ascending: false }).limit(1);
+      row = Array.isArray(data) ? data[0] : null;
+    }
+    if (!row && projectId) {
+      const { data } = await db().from("qa_clients").select("*").eq("project_id", projectId).order("last_seen_at", { ascending: false }).limit(1);
+      row = Array.isArray(data) ? data[0] : null;
+    }
+    if (!row) return { success: true, client: null, note: domain ? `No client record is stored for ${domain} yet.` : "No client record is stored for that project yet." };
+    return {
+      success: true,
+      client: {
+        client_id: row.client_id, client_name: row.client_name || "", site_url: row.site_url || "",
+        bde_name: row.bde_name || "", client_context: row.client_context || "", mail_text: row.mail_text || "",
+        persona: row.persona || "", target_keywords: row.target_keywords || [], competitors: row.competitors || [],
+        reviews_count: row.reviews_count || 0, last_seen_at: row.last_seen_at,
+      },
+      note: `Loaded what was stored for ${row.client_name || row.client_id} from ${row.reviews_count || 0} previous review(s).`,
+    };
+  } catch (e: any) { return { success: false, error: e?.message || "Could not read the client record." }; }
+}
+
 export async function qaClients(opts: { query?: string }) {
   const q = String(opts.query || "").trim().toLowerCase();
   try {
@@ -590,6 +814,7 @@ export async function qaLoadClient(opts: { clientId: string }) {
 /* ---- 1. Create the review and build the agenda ------------------------------ */
 
 export async function qaCreateReview(opts: {
+  reviewId?: string;
   projectId?: string; siteUrl: string; clientId?: string; clientName?: string;
   executiveName?: string; bdeName?: string; keywords?: string[]; competitors?: string[];
   title?: string; clientContext?: string; mailText?: string;
@@ -647,11 +872,15 @@ export async function qaCreateReview(opts: {
   await upsertClient({
     clientId: opts.clientId, clientName: opts.clientName, siteUrl,
     bdeName: opts.bdeName, clientContext: opts.clientContext, mailText: opts.mailText,
-    keywords: targetKeywords, competitors: competitorList,
+    keywords: targetKeywords, competitors: competitorList, projectId: opts.projectId,
   });
   await registerExecutive(String(opts.executiveName || ""), "dme");
   await registerExecutive(String(opts.bdeName || ""), "bde");
-  const { data: rev, error } = await db().from("qa_reviews").insert({
+  /* Promote the draft this session has been writing to, rather than inserting a
+     second row. Without this, starting a run abandoned everything the session had
+     already recorded and left an orphan behind in the work list. */
+  const draftId = String(opts.reviewId || "").trim();
+  const reviewRow: any = {
     project_id: opts.projectId || null,
     client_id: opts.clientId || null,
     client_name: opts.clientName || null,
@@ -667,8 +896,26 @@ export async function qaCreateReview(opts: {
     target_keywords: targetKeywords,
     competitors: competitorList,
     submitted_at: new Date().toISOString(),
-  }).select().single();
-  if (error || !rev) return { success: false, error: error?.message || "Could not create the review." };
+    is_draft: false,
+  };
+
+  let rev: any = null;
+  if (draftId) {
+    const { data: found } = await db().from("qa_reviews").select("id,is_draft,status").eq("id", draftId).maybeSingle();
+    if (found && ((found as any).is_draft || (found as any).status === "queued")) {
+      const { data: promoted, error: upErr } = await db().from("qa_reviews").update(reviewRow).eq("id", draftId).select().single();
+      if (upErr) return { success: false, error: upErr.message };
+      rev = promoted;
+      /* A promoted draft may already carry rows from an abandoned attempt. */
+      await db().from("qa_tabs").delete().eq("review_id", draftId);
+      await db().from("qa_findings").delete().eq("review_id", draftId);
+    }
+  }
+  if (!rev) {
+    const { data: made, error } = await db().from("qa_reviews").insert(reviewRow).select().single();
+    if (error || !made) return { success: false, error: error?.message || "Could not create the review." };
+    rev = made;
+  }
 
   const tabRows = tabs.map((t, i) => ({
     review_id: (rev as any).id, tab_index: i, tab_name: t.name,
