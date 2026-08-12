@@ -182,6 +182,13 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       if (validIds.length === 0 && /(tool recommendation|martech|cro tool|abandoned cart|heatmap|session recording|site search|search bar|app recommendation|third.?party (tool|app)|tech stack|plugin recommendation|recommended (tool|app|plugin))/i.test(t)) {
         if (getCapability("martech_tool_advisory")) validIds = ["martech_tool_advisory"];
       }
+      /* Client sign-off / copy approval gate. Placed after the session and
+         case-study rules so that "review call" and "review session" keep going
+         to the prep-brief engine: this one is the DOCUMENT the client signs,
+         not a meeting. */
+      if (validIds.length === 0 && /(sign.?off|signoff|approval gate|review gate|copy review|content review|client (approval|sign)|approve .{0,24}(copy|content|text|meta)|before implementation|implementation.?ready|proof.?read|copy qa|language (review|check|qa)|native (speaker|review))/i.test(t)) {
+        if (getCapability("copy_review_gate")) validIds = ["copy_review_gate"];
+      }
       /* Homepage UX / UI redesign brief with a wireframe. */
       if (validIds.length === 0 && /(ux|ui|user experience|user interface|redesign|re-design|wireframe|figma|design brief|layout recommendation|homepage design|landing page design|visual (redesign|refresh|direction)|look and feel|mockup)/i.test(t)) {
         if (getCapability("ux_redesign_advisory")) validIds = ["ux_redesign_advisory"];
@@ -210,6 +217,8 @@ export async function composeDynamicPlan(brief: string, materialsText?: string):
       note = `For a client who wants proof before committing. Run this stage to scope a small, low-risk first engagement from the real quick-wins on their own site, with a result they can verify themselves and a path to the full engagement. It proves the work on their site rather than relying on past examples.`;
     } else if (caps.some(c => c.id === "martech_tool_advisory")) {
       note = `Recommends the third-party tools the site actually needs (abandoned cart, on-site search, heatmaps and more), chosen for the client's platform and business, each with what it fixes and a real sourced industry example from live research. Works without Google Analytics.`;
+    } else if (caps.some(c => c.id === "copy_review_gate")) {
+      note = `Nothing is implemented until the client has approved it item by item. Supply the proposed copy and this produces a numbered approval sheet in the client's own language, plus an internal sheet carrying the findings. Mechanical language errors (a Latin letter hidden inside a Greek word, an accent left on a capitalised word, mixed formal and informal address) are caught as facts and hold an item back. Register and idiom are advisory only and a native speaker confirms them. The set is marked implementation ready only when every item is approved.`;
     } else if (caps.some(c => c.id === "ux_redesign_advisory")) {
       note = `A senior UX and brand redesign brief for the homepage: a critique of the current page, a recommended section-by-section layout drawn as a labelled wireframe, the visual direction and eye-flow, and a prioritised action list. Grounded in the real current page and competitor layouts.`;
     } else if (readiness === "manual_review") {

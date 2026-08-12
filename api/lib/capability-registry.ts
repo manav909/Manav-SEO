@@ -288,6 +288,15 @@ export const CAPABILITY_REGISTRY: Record<string, Capability> = {
     limits: "Everything is tied to what was really found on their site. It never promises a specific ranking or number, and never references a past client or result that does not exist. It wins the proof-first client by proving the work on their own site, honestly.",
     mode: "auto",
   },
+  copy_review_gate: {
+    id: "copy_review_gate",
+    label: "Copy review gate (client sign-off before implementation)",
+    engine: "copy-review-gate engine (mechanical language checks + per-item client sign-off tracking; Greek supported in depth)",
+    inputs_required: ["The proposed copy items (page, element, proposed text). The current text and the target term are optional and sharpen the check."],
+    output: "A numbered client-facing approval sheet, written in the client's own language where that language is supported, plus an internal sheet carrying the findings. Every item is decided individually as approved, changes requested or rejected, and the set is marked implementation ready only when every item is approved and no mechanical error is outstanding.",
+    limits: "Two tiers, never mixed. MECHANICAL findings are rule based and reproducible (a Latin letter hidden inside a Greek word, an accent left on a capitalised word, the final sigma, mixed formal and informal address, number formatting, meta length, target term present in any inflected form) and these can hold an item back. LANGUAGE JUDGEMENT (register, idiom, whether copy reads as translated) is advisory only, never blocks, and always carries the instruction that a native speaker confirms it. The platform does not overrule a native client on their own language. Meta length is a character estimate because only a pixel measurement is exact. Sending the sheet and collecting the client's answer is a human step.",
+    mode: "needs_input",
+  },
   martech_tool_advisory: {
     id: "martech_tool_advisory",
     label: "Martech / CRO tool advisory",

@@ -620,6 +620,50 @@ export async function runWizardStage(opts: {
       }
     }
 
+    /* ── Copy review gate: the client signs off before anything is implemented ── */
+    if (caps.includes("copy_review_gate")) {
+      const supplied = Array.isArray((inputs as any)?.copyItems) ? (inputs as any).copyItems : [];
+      if (!supplied.length) {
+        /* This capability is `needs_input` and says so rather than inventing
+           copy to review. Fabricating the items would defeat the entire point
+           of a gate whose job is to be the honest record of what the client
+           agreed to. */
+        return result("manual", null, null, "Supply the proposed copy items (page, element, proposed text) and re-run. This stage compiles them into a numbered approval sheet in the client language, runs the mechanical language checks, and tracks the client decision on each item. It does not invent copy to review, because the gate has to be the honest record of what the client actually agreed to.");
+      }
+      try {
+        const { buildCopyReviewGate, renderClientDoc, renderInternalDoc } = await import("./copy-review-gate.js");
+        const built: any = await buildCopyReviewGate({
+          projectId,
+          clientId: String((inputs as any)?.clientId || ""),
+          title: String((inputs as any)?.title || "") || `Copy review for ${inputs.siteUrl || "the client"}`,
+          locale: String((inputs as any)?.locale || "el"),
+          business: String((inputs as any)?.business || ""),
+          audience: String((inputs as any)?.audience || ""),
+          items: supplied,
+        });
+        if (!built?.success) throw new Error(built?.error || "the gate could not be built");
+        const client_md = renderClientDoc(built);
+        const internal_md = renderInternalDoc(built);
+        return result(
+          "completed",
+          "copy-review-gate engine (mechanical language checks, advisory kept separate, per-item client sign-off)",
+          {
+            reports: [
+              { step_key: "copy_review_client_sheet", report_md: client_md },
+              { step_key: "copy_review_internal", report_md: internal_md },
+            ],
+            gate_id: built.gateId,
+            counts: built.counts,
+            implementation_ready: built.implementation_ready,
+            summary: built.verdict,
+          },
+          `Copy review gate opened for ${built.counts?.total || 0} item(s). ${built.verdict}`,
+        );
+      } catch (e: any) {
+        return result("manual", null, null, `The copy review gate could not be opened. Confirm the review tables exist (copy review migration 8) and that the copy items are supplied. (${e?.message || "error"}.)`);
+      }
+    }
+
     /* ── Pilot engagement offer for a proof-first client (scoped from their own site) ── */
     if (caps.includes("pilot_engagement_offer")) {
       let findings = "";

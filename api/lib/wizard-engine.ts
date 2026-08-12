@@ -867,6 +867,71 @@ export async function handleWizard(action: string, body: any): Promise<any | nul
     catch (e: any) { return { success: false, error: e?.message || "could not load the profile" }; }
   }
 
+  /* Build 13.08. The copy review gate. All wizard_ prefixed so task-engine routes
+     them, no new api function, no new function slot. */
+  if (action === "wizard_copy_gate_build") {
+    try {
+      const { buildCopyReviewGate } = await import("./copy-review-gate.js");
+      return await buildCopyReviewGate({
+        projectId: String(body?.projectId || ""),
+        clientId: String(body?.clientId || ""),
+        title: String(body?.title || ""),
+        locale: String(body?.locale || "el"),
+        business: String(body?.business || ""),
+        audience: String(body?.audience || ""),
+        items: Array.isArray(body?.items) ? body.items : [],
+        skipAdvisory: body?.skipAdvisory === true,
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "could not build the copy review gate" }; }
+  }
+
+  if (action === "wizard_copy_gate_state") {
+    try { const { gateState } = await import("./copy-review-gate.js"); return await gateState(String(body?.gateId || "")); }
+    catch (e: any) { return { success: false, error: e?.message || "could not read the copy review gate" }; }
+  }
+
+  if (action === "wizard_copy_gate_decide") {
+    try {
+      const { recordCopyDecision } = await import("./copy-review-gate.js");
+      return await recordCopyDecision({
+        gateId: String(body?.gateId || ""),
+        itemIndex: Number(body?.itemIndex),
+        decision: String(body?.decision || "") as any,
+        comment: String(body?.comment || ""),
+        decidedBy: String(body?.decidedBy || ""),
+        override: body?.override === true,
+      });
+    } catch (e: any) { return { success: false, error: e?.message || "could not record the decision" }; }
+  }
+
+  if (action === "wizard_copy_gate_docs") {
+    try {
+      const { gateState, renderClientDoc, renderInternalDoc } = await import("./copy-review-gate.js");
+      const state: any = await gateState(String(body?.gateId || ""));
+      if (!state?.success) return state;
+      return { success: true, client_md: renderClientDoc(state), internal_md: renderInternalDoc(state), state };
+    } catch (e: any) { return { success: false, error: e?.message || "could not render the review documents" }; }
+  }
+
+  /* A single piece of copy checked on its own, with no gate and no database, so
+     the mechanical checks can be used while the copy is still being written
+     rather than only at sign-off. */
+  if (action === "wizard_copy_check") {
+    try {
+      const { greekCopyChecks } = await import("./copy-review-gate.js");
+      const findings = greekCopyChecks(String(body?.text || ""), {
+        element: String(body?.element || ""),
+        locale: String(body?.locale || "el"),
+        keyword: String(body?.keyword || ""),
+      });
+      return {
+        success: true, findings,
+        blocking: findings.filter((f: any) => f.blocking).length,
+        clean: findings.length === 0,
+      };
+    } catch (e: any) { return { success: false, error: e?.message || "could not check the copy" }; }
+  }
+
   /* Build 13.06. Project binding, the session record, and the client record found
      by site. All additive, all wizard_ prefixed so task-engine routes them, no new
      api function. */
