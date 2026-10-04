@@ -330,7 +330,7 @@ export async function bsClientGetInvestorData(body: any): Promise<any> {
 import { resolveClientUserSession } from "./brand-studio-collab.js";
 import { getPanelPlan } from "./panel-plans.js";
 
-async function withClientSession(body: any): Promise<{ user: any | null; error?: string }> {
+export async function withClientSession(body: any): Promise<{ user: any | null; error?: string }> {
   const token = body?.sessionToken;
   if (!token) return { user: null, error: "sessionToken required" };
   const user = await resolveClientUserSession(token);

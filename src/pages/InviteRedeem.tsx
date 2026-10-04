@@ -33,7 +33,7 @@ export default function InviteRedeem() {
       const r = await redeemInvite({ inviteToken: token });
       if (r.session_token) {
         storeClientSession(r.session_token, r.session_expires_at || '');
-        navigate('/c/workspace', { replace: true });
+        navigate('/c/home', { replace: true });
         return;
       }
       if (r.code !== 'name_required') setError(r.error || 'This link no longer works.');
@@ -64,7 +64,7 @@ export default function InviteRedeem() {
       return;
     }
     storeClientSession(r.session_token, r.session_expires_at || '');
-    navigate('/c/workspace');
+    navigate('/c/home');
   };
 
   return (

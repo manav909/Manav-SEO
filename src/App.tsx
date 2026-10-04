@@ -79,6 +79,8 @@ import NotFound       from "./pages/NotFound";
 import SiteManager    from "@/pages/SiteManager";
 import NoAccess       from "@/components/NoAccess";
 import ClientLogin    from "@/pages/ClientLogin";
+import ClientPanel    from "@/pages/client/ClientPanel";
+import TeamInbox      from "@/pages/TeamInbox";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -132,6 +134,11 @@ const AppRoutes = () => {
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
         <Route path="/r/:token"       element={<B name="client-report"> <ClientReportView />                              </B>} />
+        <Route path="/c/home"         element={<B name="client-home">   <ClientPanel section="home" />                     </B>} />
+        <Route path="/c/talk"         element={<B name="client-talk">   <ClientPanel section="talk" />                     </B>} />
+        <Route path="/c/goals"        element={<B name="client-goals">  <ClientPanel section="goals" />                    </B>} />
+        <Route path="/c/reports"      element={<B name="client-reports"><ClientPanel section="reports" />                  </B>} />
+        <Route path="/c/settings"     element={<B name="client-settings"><ClientPanel section="settings" />                </B>} />
         <Route path="/c/login"        element={<B name="client-login">  <ClientLogin />                                    </B>} />
         <Route path="/c/invite/:token" element={<B name="client-invite"> <InviteRedeem />                                  </B>} />
         <Route path="/c/workspace"    element={<B name="client-workspace-session"><ClientWorkspace />                      </B>} />
@@ -193,6 +200,7 @@ const AppRoutes = () => {
           <Route path="/themes" element={<StaffGuard perm="staff"><ThemePreview /></StaffGuard>} />
           <Route path="/ask" element={<StaffGuard perm="staff"><AskEmpire /></StaffGuard>} />
           <Route path="/revenue" element={<StaffGuard perm="hod_only"><RevenueBI /></StaffGuard>} />
+          <Route path="/team/inbox" element={<StaffGuard perm="staff"><B name="team-inbox"><TeamInbox /></B></StaffGuard>} />
           <Route path="/kanban" element={<StaffGuard perm="staff"><KanbanBoard /></StaffGuard>} />
           <Route path="*"               element={<NotFound />} />
       </Routes></div>
