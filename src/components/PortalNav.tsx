@@ -54,6 +54,7 @@ const EMPIRE_SECTIONS = [
     items: [
       { href: '/team/my-day',     label: 'My Day',          icon: Sparkles,     desc: 'What needs you today', perm: null },
       { href: '/team/offers',     label: 'Offers & Orders', icon: DollarSign,   desc: 'Confirm offers, track orders', perm: null },
+      { href: '/team/calls',      label: 'Client Calls',    icon: Activity,     desc: 'Prep, notes & actions', perm: null },
       { href: '/team/inbox',      label: 'Client Inbox',    icon: MessageSquare,desc: 'Messages to Manvisha', perm: null },
       { href: '/vault',           label: 'Vault',           icon: Database,     desc: 'Client intelligence brain', perm: 'bde_panel' },
       { href: '/deals',           label: 'Deal Workspace',  icon: MessageSquare,desc: 'Fiverr conversion copilot', perm: 'bde_panel' },
