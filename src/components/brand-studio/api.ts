@@ -1396,6 +1396,15 @@ export interface ClientSessionContext {
   project: { id: string; name: string; url?: string };
   brand: any;
   visible_features: Record<string, boolean>;
+  /** Client-panel plan: which features are on, limits, locked previews. */
+  panel?: {
+    plan: string;
+    plan_label: string;
+    features: Record<string, boolean>;
+    availability: Record<string, 'mandatory' | 'optional' | 'none'>;
+    limits: { goals: number | null; sites: number | null; seats: number | null };
+    upgrade_previews: boolean;
+  };
 }
 
 export function getStoredClientSession(): { token: string; expires_at: string } | null {
@@ -1425,7 +1434,7 @@ export async function clientSessionResolve(sessionToken: string): Promise<{
 }> {
   const r = await post(ENGINE, { action: 'bs_client_session_resolve', sessionToken });
   if (!r?.success) return { error: r?.error };
-  return { context: { user: r.user, project: r.project, brand: r.brand, visible_features: r.visible_features } };
+  return { context: { user: r.user, project: r.project, brand: r.brand, visible_features: r.visible_features, panel: r.panel } };
 }
 
 export async function clientSessionListDocuments(sessionToken: string): Promise<{
