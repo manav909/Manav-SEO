@@ -431,8 +431,10 @@ function CommandInner() {
        Question → standard chat brain */
     let routedAsCommitment  = false;
     let routedAsExploration = false;
+    let intent: string | undefined;
     try {
       const classification = await seoClassifyIntent({ text });
+      intent = classification.intent;
       if (classification.intent === 'commitment')  routedAsCommitment  = true;
       else if (classification.intent === 'exploration') routedAsExploration = true;
     } catch {
@@ -442,14 +444,17 @@ function CommandInner() {
       }
     }
 
-    if (classification.intent === 'objective') {
+    if (intent === 'objective') {
       const { parseObjectiveCommand } = await import('@/components/pm/api');
       const parsed = parseObjectiveCommand(text);
       if (parsed) {
         const title = text.length < 80 ? text : parsed.goalType.replace(/_/g,' ');
         setPendingObjective({ ...parsed, title });
+        setPendingOriginalInput(text);
+      } else {
+        setCommandError('I understood you want to set an objective but could not parse the goal. Try: grow traffic for /page1, fix technical issues, or improve DA.');
       }
-      setIsLoading(false);
+      setSubmitting(false);
       return;
     }
 
@@ -1247,7 +1252,7 @@ function CommandInner() {
                 key="objective-preview"
                 preview={pendingObjective}
                 projectId={selectedProjectId}
-                originalInput={text}
+                originalInput={pendingOriginalInput}
                 onClose={() => setPendingObjective(null)}
                 onLaunched={() => { setPendingObjective(null); loadBriefing(); }}
               />

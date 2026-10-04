@@ -1071,6 +1071,8 @@ export default function DevPanel({ projectId }: { projectId: string }) {
           ) : (
             <TaskDetail
               task={selected}
+              projectId={projectId}
+              onReload={reloadTask}
               cms={cms}
               elapsedSec={elapsedSec}
               onExecute={() => executeTask(selected)}
@@ -1100,6 +1102,8 @@ type DetailTab = 'instructions' | 'code' | 'rollback' | 'verify' | 'client';
 
 function TaskDetail({
   task,
+  projectId,
+  onReload,
   cms,
   elapsedSec,
   onExecute,
@@ -1110,6 +1114,8 @@ function TaskDetail({
   onCancelRunning,
 }: {
   task: DevTask;
+  projectId: string;
+  onReload: (taskId: string) => Promise<void>;
   cms: CmsInfo | null;
   elapsedSec?: number;
   onExecute: () => void;
@@ -1531,7 +1537,7 @@ function TaskDetail({
 
   const markApproved = async (approved: boolean) => {
     await callApi('dev_approve_task', { taskId: task.id, approved });
-    await reloadTask(task.id);
+    await onReload(task.id);
     // Add a PM note to thread
     await addClientMessage('pm', approved ? '✓ Client approval received and recorded.' : '✗ Client approval withdrawn.');
   };

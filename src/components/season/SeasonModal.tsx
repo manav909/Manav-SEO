@@ -425,7 +425,7 @@ export default function SeasonModal() {
           : parsed.goalType.replace(/_/g,' '));
         setPendingObjective({ ...parsed, title });
       } else {
-        setResponse('I understood you want to set an objective but could not parse the goal type. Try: grow traffic for /page1 — or fix technical issues — or improve DA');
+        setError('I understood you want to set an objective but could not parse the goal type. Try: grow traffic for /page1 — or fix technical issues — or improve DA');
         setMood('thinking');
       }
       setSubmitting(false);

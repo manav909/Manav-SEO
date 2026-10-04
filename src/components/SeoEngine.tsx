@@ -29,7 +29,7 @@ interface SeoEngineProps {
 /* ─────────────────────────────────────────────────────────────────
    Fetch project context from Supabase (client-side)
 ───────────────────────────────────────────────────────────────── */
-async function fetchProjectContext(projectId: string) {
+async function fetchProjectContext(projectId: string, mode: 'standard' | 'deep') {
   try {
     const [projRes, metricsRes, auditsRes] = await Promise.all([
       supabase.from('projects').select('*, clients(*)').eq('id', projectId).single(),
@@ -179,7 +179,7 @@ export const SeoEngine = ({
       // Fetch project context from Supabase if linked to a project
       let projectContext: any = undefined;
       if (projectId) {
-        projectContext = await fetchProjectContext(projectId);
+        projectContext = await fetchProjectContext(projectId, mode);
       }
 
       const res = await fetch('/api/seo-agent', {
