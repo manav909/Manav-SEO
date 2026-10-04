@@ -1052,15 +1052,23 @@ export async function revokeClientUser(opts: { id: string; projectId: string }):
   return { success: true };
 }
 
-export async function redeemInvite(opts: { inviteToken: string; displayName: string }): Promise<{
+export async function redeemInvite(opts: { inviteToken: string; displayName?: string }): Promise<{
   session_token?: string;
   session_expires_at?: string;
   client_user?: ClientUser;
   error?: string;
+  code?: string;
 }> {
   const r = await post(ENGINE, { action: 'bs_redeem_invite', ...opts });
-  if (!r?.success) return { error: r?.error };
+  if (!r?.success) return { error: r?.error, code: r?.code };
   return { session_token: r.session_token, session_expires_at: r.session_expires_at, client_user: r.client_user };
+}
+
+/** Returning client: email a fresh one-time sign-in link. */
+export async function requestClientLogin(email: string): Promise<{ message?: string; error?: string }> {
+  const r = await post(ENGINE, { action: 'bs_client_request_login', email });
+  if (!r?.success) return { error: r?.error || 'Something went wrong — please try again.' };
+  return { message: r.message };
 }
 
 /* ─── Share grants ─── */

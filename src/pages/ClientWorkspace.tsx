@@ -85,7 +85,7 @@ export default function ClientWorkspace() {
       /* /c/workspace — session mode */
       const stored = getStoredClientSession();
       if (!stored?.token) {
-        setError('Please use the invite link your account manager sent you.');
+        setError('Sign in with the email address your SEO Season team invited.');
         setLoading(false);
         return;
       }
@@ -95,7 +95,7 @@ export default function ClientWorkspace() {
       if (cancelled) return;
       if (r.error || !r.context) {
         clearClientSession();
-        setError(r.error || 'Session expired — please use a fresh invite link');
+        setError(r.error || 'Your session has ended — sign in again to continue.');
         setLoading(false);
         return;
       }
@@ -211,8 +211,14 @@ export default function ClientWorkspace() {
           <Lock className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
           <div className="text-base font-bold">Access not available</div>
           <div className="text-sm text-muted-foreground mt-2">{error || 'This workspace is not accessible.'}</div>
-          <div className="text-xs text-muted-foreground/70 mt-4">
-            If you believe this is an error, contact your account manager for a fresh invite link.
+          <button
+            onClick={() => navigate('/c/login')}
+            className="mt-5 w-full px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90"
+          >
+            Email me a sign-in link
+          </button>
+          <div className="text-xs text-muted-foreground/70 mt-3">
+            Still stuck? Your SEO Season strategist can send you a fresh invite.
           </div>
         </div>
       </div>

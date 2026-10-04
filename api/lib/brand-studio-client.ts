@@ -334,6 +334,10 @@ async function withClientSession(body: any): Promise<{ user: any | null; error?:
   if (!token) return { user: null, error: "sessionToken required" };
   const user = await resolveClientUserSession(token);
   if (!user) return { user: null, error: "Invalid or expired session" };
+  /* Switching a project's client portal off cuts every client action, not just the landing page. */
+  const { data: ent } = await db().from("project_entitlements")
+    .select("client_portal_enabled").eq("project_id", user.project_id).maybeSingle();
+  if (!(ent as any)?.client_portal_enabled) return { user: null, error: "Portal not enabled for this project" };
   return { user };
 }
 
