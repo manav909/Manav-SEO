@@ -18,7 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requireAuth, isCronRequest } from "./lib/auth.js";
+import { requireAuth, isCronRequest, authenticate, isOwnerCall } from "./lib/auth.js";
 
 /* ── Lead email notification via Resend API ── */
 async function sendLeadEmail(opts: {
@@ -316,6 +316,21 @@ async function fetchUrl(url: string): Promise<string> {
 }
 
 /* ── Main handler ── */
+/* Actions only owners may call: team accounts, revenue, plans, paid API keys. */
+const OWNER_ACTIONS: ReadonlySet<string> = new Set([
+  "generate_staff_link",
+  "invite_staff",
+  "create_staff",
+  "delete_staff",
+  "update_staff_permissions",
+  "get_revenue_records",
+  "get_revenue_overview",
+  "add_revenue_record",
+  "bs_update_entitlements",
+  "backlink_provider_keys_upsert",
+  "backlink_provider_keys_delete",
+]);
+
 /* Actions a visitor may call without logging in. Each one checks its own
    share / invite / client-session token, or (__bridge) the bridge secret. */
 const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
@@ -434,7 +449,20 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   const isCron = isCronRequest(req);
 
   if (!isCron && req.method !== "POST") return ok(res, { error: "POST only" });
-  if (!isCron && !(await requireAuth(req, res, PUBLIC_ACTIONS))) return;
+
+  /* Who am I: lets the app decide what to show a signed-in user, including
+     one who is not on the team (so it is answered before the team check). */
+  if (!isCron && (req.body as any)?.action === "whoami") {
+    const who = await authenticate(req);
+    if (!who.ok || who.kind !== "user") return res.status(401).json({ error: "Please sign in.", code: "unauthorized" });
+    return ok(res, { success: true, email: who.email, ...who.access });
+  }
+
+  const authRes = isCron ? null : await requireAuth(req, res, PUBLIC_ACTIONS);
+  if (!isCron && !authRes) return;
+  if (!isCron && OWNER_ACTIONS.has(String((req.body as any)?.action || "")) && !(authRes && isOwnerCall(authRes))) {
+    return res.status(403).json({ error: "Only an owner can do this.", code: "owner_only" });
+  }
 
   const body: any = isCron ? { action: "run_scheduled_verifications" } : (req.body || {});
   const { action } = body;

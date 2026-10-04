@@ -200,11 +200,7 @@ export default function AuthModal({ onClose }: Props) {
             </Button>
 
             <div className="text-center text-xs text-muted-foreground">
-              Don't have access?{' '}
-              <button onClick={() => { setMode('signup'); clearError(); }}
-                className="text-primary hover:underline font-medium">
-                Request Access
-              </button>
+              Don't have access? Ask your SEO Season admin to invite you.
             </div>
           </div>
         )}

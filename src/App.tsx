@@ -77,6 +77,7 @@ import RevenueBI from "@/pages/RevenueBI";
 import KanbanBoard from "@/pages/KanbanBoard";
 import NotFound       from "./pages/NotFound";
 import SiteManager    from "@/pages/SiteManager";
+import NoAccess       from "@/components/NoAccess";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -99,14 +100,19 @@ const ApprovedRequired = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Guards a route by permission key — staff without that perm go to their home page
+// Guards a route by permission key — staff without that perm go to their home page.
+// perm "hod_only" = owners only; perm "staff" = any team member.
 const StaffGuard = ({ children, perm }: { children: React.ReactNode; perm: string }) => {
-  const { user, authChecked, loading, isApproved, staffPermissions } = useAuth();
+  const { user, authChecked, loading, isApproved, staffPermissions, isStaff, isOwner, accessChecked } = useAuth();
   if (!authChecked || loading) return <Spinner label="Loading portal..." />;
   if (!user || !isApproved)    return <Navigate to="/" replace />;
-  // null staffPermissions = owner/HOD = always allowed
-  if (perm === 'hod_only' && staffPermissions) return <Navigate to="/bde-panel" replace />;
-  if (staffPermissions && perm !== 'hod_only' && !staffPermissions[perm]) return <Navigate to="/bde-panel" replace />;
+  if (!accessChecked)          return <Spinner label="Checking access..." />;
+  if (!isStaff)                return <NoAccess />;
+  if (isOwner || perm === 'staff') return <>{children}</>;
+  if (perm === 'hod_only' || !staffPermissions?.[perm]) {
+    // bde_panel is the fallback home, so redirecting there would loop
+    return perm === 'bde_panel' ? <NoAccess reason="page" /> : <Navigate to="/bde-panel" replace />;
+  }
   return <>{children}</>;
 };
 
@@ -128,9 +134,9 @@ const AppRoutes = () => {
         <Route path="/c/invite/:token" element={<B name="client-invite"> <InviteRedeem />                                  </B>} />
         <Route path="/c/workspace"    element={<B name="client-workspace-session"><ClientWorkspace />                      </B>} />
         <Route path="/c/:token"       element={<B name="client-workspace"><ClientWorkspace />                            </B>} />
-        <Route path="/admin"          element={<B name="admin">         <Admin />                                          </B>} />
+        <Route path="/admin"          element={<StaffGuard perm="hod_only"><B name="admin">         <Admin />                                          </B></StaffGuard>} />
         <Route path="/staff"          element={<B name="staff">         <Navigate to="/admin?tab=staff" replace />          </B>} />
-        <Route path="/build"          element={<B name="build">         <Build />                                          </B>} />
+        <Route path="/build"          element={<StaffGuard perm="hod_only"><B name="build">         <Build />                                          </B></StaffGuard>} />
 
         {/* Protected routes */}
         <Route path="/data-room"       element={<B name="data-room">      <StaffGuard perm="data_room">      <DataRoom />       </StaffGuard></B>} />
@@ -139,7 +145,7 @@ const AppRoutes = () => {
         <Route path="/client/:projectId" element={<B name="client-lens">    <StaffGuard perm="data_room">      <ClientLens />     </StaffGuard></B>} />
         <Route path="/client-lens-v2/:projectId" element={<B name="client-lens-v2"><StaffGuard perm="data_room">      <ClientShowcase /> </StaffGuard></B>} />
         <Route path="/campaign-report/:projectId" element={<B name="campaign-report"><StaffGuard perm="data_room">      <ClientCampaignReport /> </StaffGuard></B>} />
-        <Route path="/manifesto"       element={<B name="manifesto">      <Manifesto />      </B>} />
+        <Route path="/manifesto"       element={<StaffGuard perm="staff"><B name="manifesto">      <Manifesto />      </B></StaffGuard>} />
         <Route path="/season-settings"  element={<B name="season-settings"><StaffGuard perm="data_room">      <SeasonSettings />  </StaffGuard></B>} />
         <Route path="/dashboard"       element={<B name="dashboard">      <StaffGuard perm="dashboard">      <Dashboard />      </StaffGuard></B>} />
         <Route path="/launchpad"       element={<B name="launchpad">      <StaffGuard perm="playground">     <Launchpad />      </StaffGuard></B>} />
@@ -160,32 +166,32 @@ const AppRoutes = () => {
         <Route path="/bde-panel"       element={<B name="bde-panel">      <StaffGuard perm="bde_panel">      <BdePanel />       </StaffGuard></B>} />
         <Route path="/staff-command"   element={<B name="staff-command">  <StaffGuard perm="staff_command">  <StaffCommand />   </StaffGuard></B>} />
         <Route path="/morning-brief"   element={<B name="morning-brief">  <StaffGuard perm="morning_brief">  <MorningBrief />   </StaffGuard></B>} />
-        <Route path="/client-portal" element={<ClientPortal />} />
-          <Route path="/revenue-proof" element={<RevenueProof />} />
-          <Route path="/scale-control" element={<ScaleControl />} />
-          <Route path="/empire" element={<EmpireCommand />} />
-          <Route path="/llm-visibility" element={<LLMVisibility />} />
-          <Route path="/alerts" element={<AlertCenter />} />
-          <Route path="/health" element={<HealthDashboard />} />
-          <Route path="/reports" element={<Reports />} />
+        <Route path="/client-portal" element={<StaffGuard perm="staff"><ClientPortal /></StaffGuard>} />
+          <Route path="/revenue-proof" element={<StaffGuard perm="hod_only"><RevenueProof /></StaffGuard>} />
+          <Route path="/scale-control" element={<StaffGuard perm="hod_only"><ScaleControl /></StaffGuard>} />
+          <Route path="/empire" element={<StaffGuard perm="hod_only"><EmpireCommand /></StaffGuard>} />
+          <Route path="/llm-visibility" element={<StaffGuard perm="staff"><LLMVisibility /></StaffGuard>} />
+          <Route path="/alerts" element={<StaffGuard perm="staff"><AlertCenter /></StaffGuard>} />
+          <Route path="/health" element={<StaffGuard perm="staff"><HealthDashboard /></StaffGuard>} />
+          <Route path="/reports" element={<StaffGuard perm="staff"><Reports /></StaffGuard>} />
           <Route path="/documents" element={<StaffGuard perm="data_room"><Documents /></StaffGuard>} />
-          <Route path="/content-hub" element={<ContentHub />} />
-          <Route path="/intake" element={<Intake />} />
-          <Route path="/wizard" element={<B name="wizard"><Wizard /></B>} />
-          <Route path="/qa-desk" element={<B name="qa-desk"><QaDesk /></B>} />
-          <Route path="/deals" element={<B name="deals"><Deals /></B>} />
-          <Route path="/hod" element={<B name="hod"><Hod /></B>} />
-          <Route path="/vault" element={<B name="vault"><Vault /></B>} />
+          <Route path="/content-hub" element={<StaffGuard perm="staff"><ContentHub /></StaffGuard>} />
+          <Route path="/intake" element={<StaffGuard perm="staff"><Intake /></StaffGuard>} />
+          <Route path="/wizard" element={<StaffGuard perm="staff"><B name="wizard"><Wizard /></B></StaffGuard>} />
+          <Route path="/qa-desk" element={<StaffGuard perm="staff"><B name="qa-desk"><QaDesk /></B></StaffGuard>} />
+          <Route path="/deals" element={<StaffGuard perm="staff"><B name="deals"><Deals /></B></StaffGuard>} />
+          <Route path="/hod" element={<StaffGuard perm="hod_only"><B name="hod"><Hod /></B></StaffGuard>} />
+          <Route path="/vault" element={<StaffGuard perm="staff"><B name="vault"><Vault /></B></StaffGuard>} />
           <Route path="/presentation/:token" element={<PresentationView />} />
-          <Route path="/client-comms" element={<ClientComms />} />
-          <Route path="/profile/:id" element={<StaffProfile />} />
-          <Route path="/profile" element={<StaffProfile />} />
-          <Route path="/client-dashboard" element={<ClientDashboard />} />
-          <Route path="/content-writer" element={<ContentWriter />} />
-          <Route path="/themes" element={<ThemePreview />} />
-          <Route path="/ask" element={<AskEmpire />} />
-          <Route path="/revenue" element={<RevenueBI />} />
-          <Route path="/kanban" element={<KanbanBoard />} />
+          <Route path="/client-comms" element={<StaffGuard perm="staff"><ClientComms /></StaffGuard>} />
+          <Route path="/profile/:id" element={<StaffGuard perm="staff"><StaffProfile /></StaffGuard>} />
+          <Route path="/profile" element={<StaffGuard perm="staff"><StaffProfile /></StaffGuard>} />
+          <Route path="/client-dashboard" element={<StaffGuard perm="staff"><ClientDashboard /></StaffGuard>} />
+          <Route path="/content-writer" element={<StaffGuard perm="staff"><ContentWriter /></StaffGuard>} />
+          <Route path="/themes" element={<StaffGuard perm="staff"><ThemePreview /></StaffGuard>} />
+          <Route path="/ask" element={<StaffGuard perm="staff"><AskEmpire /></StaffGuard>} />
+          <Route path="/revenue" element={<StaffGuard perm="hod_only"><RevenueBI /></StaffGuard>} />
+          <Route path="/kanban" element={<StaffGuard perm="staff"><KanbanBoard /></StaffGuard>} />
           <Route path="*"               element={<NotFound />} />
       </Routes></div>
         <TourOverlay />

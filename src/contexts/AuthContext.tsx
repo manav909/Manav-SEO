@@ -40,6 +40,12 @@ interface AuthState {
   isApproved:      boolean;
   staffPermissions: Record<string,boolean> | null;
   staffRole:        string | null;
+  /** On the SEO Season team (server-checked). */
+  isStaff:     boolean;
+  /** Owner / head of department: sees admin, revenue and staff settings. */
+  isOwner:     boolean;
+  /** True once the server has answered who this user is. */
+  accessChecked: boolean;
   hasClient:   boolean;
   signOut:     () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -50,6 +56,7 @@ const AuthContext = createContext<AuthState>({
   clients: [], projects: [],
   loading: true, authChecked: false,
   isApproved: false, hasClient: false, staffPermissions: null, staffRole: null,
+  isStaff: false, isOwner: false, accessChecked: false,
   signOut: async () => {}, refreshData: async () => {},
 });
 
@@ -66,6 +73,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [projects,    setProjects]    = useState<any[]>([]);
   const [loading,     setLoading]     = useState(true);
   const [authChecked, setAuthChecked] = useState(false);
+  const [access, setAccess] = useState<{ isStaff: boolean; isOwner: boolean } | null>(null);
 
   const loadingRef          = useRef(false);
   const currentUserId       = useRef<string | null>(null);
@@ -109,6 +117,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
       setProfile(prof);
       // Look up staff permissions — isolated so it never breaks sign-in
+      let staffPerms: Record<string, boolean> | null = null;
       try {
         if (prof?.email) {
           const { data: staffRows } = await supabase
@@ -117,11 +126,35 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             .eq('email', prof.email)
             .limit(1);
           const staffRow = staffRows?.[0];
+          staffPerms = staffRow?.permissions ?? null;
           if (staffRow?.permissions) setStaffPermissions(staffRow.permissions);
           if (staffRow?.role) setStaffRole(staffRow.role);
           if (staffRow?.id) setStaffMemberId(staffRow.id);
         }
       } catch { /* staff lookup failure must never block sign-in */ }
+
+      /* Ask the server who this user is. Until the owner sets OWNER_EMAILS
+         the server runs in legacy mode (enforced=false) and the old rule
+         applies: a staff row with permissions = team member, otherwise owner. */
+      try {
+        const r = await fetch('/api/task-engine', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'whoami' }),
+        });
+        const who = r.ok ? await r.json() : null;
+        if (who?.enforced) {
+          setAccess({ isStaff: !!who.isStaff, isOwner: !!who.isOwner });
+          setStaffPermissions(who.isOwner ? null : (who.permissions ?? {}));
+          if (who.role) setStaffRole(who.role);
+        } else {
+          setAccess({ isStaff: true, isOwner: !staffPerms });
+        }
+      } catch {
+        // Server unreachable: fall back to the old rule. The API still
+        // refuses non-team calls, so this only affects which menus show.
+        setAccess({ isStaff: true, isOwner: !staffPerms });
+      }
 
       // Build the list of client IDs this user has access to
       const idList: string[] = [];
@@ -181,6 +214,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setProfile(null);
     setClients([]);
     setProjects([]);
+    setAccess(null);
+    setStaffPermissions(null);
+    setStaffRole(null);
+    setStaffMemberId(null);
   }, []);
 
   /* ── Single auth listener — INITIAL_SESSION is the source of truth ── */
@@ -232,6 +269,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           setProfile(null);
           setClients([]);
           setProjects([]);
+          setAccess(null);
+          setStaffPermissions(null);
+          setStaffRole(null);
+          setStaffMemberId(null);
           return;
         }
 
@@ -296,6 +337,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       isApproved: profile?.approved === true,
       staffPermissions,
       staffRole,
+      isStaff: access?.isStaff ?? false,
+      isOwner: access?.isOwner ?? false,
+      accessChecked: access !== null,
       hasClient:  clients.length > 0,
       signOut, refreshData,
     }}>
