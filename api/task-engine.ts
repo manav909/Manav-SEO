@@ -329,6 +329,7 @@ const OWNER_ACTIONS: ReadonlySet<string> = new Set([
   "bs_update_entitlements",
   "panel_set_plan",
   "cps_catalog_save",
+  "cps_call_settings_save",
   "backlink_provider_keys_upsert",
   "backlink_provider_keys_delete",
 ]);
@@ -355,6 +356,11 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "cp_wins",
   "cp_win_thanks",
   "cp_keywords",
+  "cp_call_slots",
+  "cp_call_book",
+  "cp_calls",
+  "cp_call_cancel",
+  "cp_action_done",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -870,6 +876,9 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handleClientWins } = await import("./lib/client-wins.js");
     const cwResult = await handleClientWins(action, body, staffEmail);
     if (cwResult !== null) return ok(res, cwResult);
+    const { handleClientCalls } = await import("./lib/client-calls.js");
+    const ccResult = await handleClientCalls(action, body);
+    if (ccResult !== null) return ok(res, ccResult);
   }
 
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */

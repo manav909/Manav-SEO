@@ -14,9 +14,10 @@ import { Loader2, ArrowUpRight, Lock, Send, Moon, Sun, Heart } from 'lucide-reac
 import { clientSessionResolve, getStoredClientSession, clearClientSession, type ClientSessionContext } from '@/components/brand-studio/api';
 import { cp, goalProgress, METRIC_LABEL, SessionEndedError, type HomeData, type ChatMessage, type ClientGoal, type PanelInfo, type Win, type Milestone } from '@/lib/clientPanelApi';
 import { ImprovementsSection, OrdersSection } from './MoneySections';
+import { BookSection, CallsSection } from './CallSections';
 import './clientPanel.css';
 
-export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'keywords' | 'reports' | 'settings';
+export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'book' | 'calls' | 'keywords' | 'reports' | 'settings';
 
 const NIGHT_KEY = 'seoseason_client_night';
 function readNight(): boolean {
@@ -80,6 +81,7 @@ export default function ClientPanel({ section }: { section: Section }) {
     { to: '/c/goals', label: 'Goals & wins', key: 'goals', show: on('goals') },
     { to: '/c/improvements', label: 'Improvements', key: 'improvements', show: on('improvements') },
     { to: '/c/orders', label: 'Orders', key: 'orders', show: on('improvements') },
+    { to: '/c/calls', label: 'Calls & notes', key: 'calls', show: on('calls') },
     { to: '/c/reports', label: 'Reports', key: 'reports', show: on('reports') },
     { to: '/c/keywords', label: 'Keywords', key: 'keywords', show: panel?.features?.keywords === true },
   ];
@@ -108,7 +110,10 @@ export default function ClientPanel({ section }: { section: Section }) {
           </div>
           <div className="cp-side-extra" style={{ marginTop: 'auto', padding: 14, border: '1px solid var(--cp-line)', borderRadius: 12, display: 'grid', gap: 10 }}>
             <StrategistBadge name={strategist} />
-            <Link to="/c/talk" className="cp-btn" style={{ fontSize: 13, padding: '9px 0' }}>Message {strategist}</Link>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link to="/c/talk" className="cp-btn cp-btn-ghost" style={{ flex: 1, fontSize: 13, padding: '9px 0' }}>Message</Link>
+              {on('calls') && <Link to="/c/book" className="cp-btn" style={{ flex: 1, fontSize: 13, padding: '9px 0' }}>Book a call</Link>}
+            </div>
           </div>
         </nav>
         <main className="cp-main" style={{ flex: 1, minWidth: 0, padding: '28px 36px 48px', boxSizing: 'border-box', maxWidth: 1080 }}>
@@ -117,6 +122,8 @@ export default function ClientPanel({ section }: { section: Section }) {
           {section === 'goals' && on('goals') && <GoalsSection onSessionEnded={onSessionEnded} />}
           {section === 'improvements' && on('improvements') && <ImprovementsSection onSessionEnded={onSessionEnded} onRequested={() => navigate('/c/orders')} />}
           {section === 'orders' && on('improvements') && <OrdersSection onSessionEnded={onSessionEnded} />}
+          {section === 'book' && on('calls') && <BookSection onSessionEnded={onSessionEnded} />}
+          {section === 'calls' && on('calls') && <CallsSection onSessionEnded={onSessionEnded} />}
           {section === 'keywords' && panel?.features?.keywords && <KeywordsSection onSessionEnded={onSessionEnded} />}
           {section === 'reports' && on('reports') && <ReportsSection onSessionEnded={onSessionEnded} />}
           {section === 'settings' && <SettingsSection ctx={ctx} panel={panel} night={night} toggleNight={toggleNight} onRenamed={(name) => setCtx({ ...ctx, user: { ...ctx.user, display_name: name } })} />}
@@ -489,7 +496,7 @@ function TalkSection({ onSessionEnded, me }: { onSessionEnded: () => void; me: s
 
 /* ─── Settings ──────────────────────────────────────────────────── */
 
-const LIVE_FEATURES = new Set(['home', 'strategist', 'goals', 'improvements', 'keywords', 'reports', 'brand_studio']);
+const LIVE_FEATURES = new Set(['home', 'strategist', 'calls', 'goals', 'improvements', 'keywords', 'reports', 'brand_studio']);
 
 const FEATURE_NAMES: Record<string, string> = {
   home: 'Home & wins', strategist: 'Talk to your strategist', calls: 'Calls & notes', reports: 'Monthly reports',
