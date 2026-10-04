@@ -59,7 +59,7 @@ export interface PaidOrganicReport {
 }
 
 /* ─── minimal RFC-4180 parser (Ads exports are simple CSV) ─────── */
-function parseCsv(text: string): string[][] {
+export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let field = "", row: string[] = [], inQ = false;
   const s = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");

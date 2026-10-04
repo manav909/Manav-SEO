@@ -1702,14 +1702,15 @@ function composeOpportunitiesDetailed(input: {
     });
   }
 
-  if (input.forecast && input.forecast.projections && input.forecast.projections.length > 0) {
+  const activeCount = input.activeCampaigns?.length || 0;
+  if (input.forecast && activeCount > 0) {
     items.push({
       title:        `Continue active campaign trajectory`,
-      rationale:    `${input.forecast.projections.length} active campaign${input.forecast.projections.length === 1 ? '' : 's'} ${input.forecast.projections.length === 1 ? 'is' : 'are'} projected to deliver compound visibility gains. Maintaining cadence is the single highest-confidence move — discontinuing now would forfeit accumulated momentum.`,
+      rationale:    `${activeCount} active campaign${activeCount === 1 ? '' : 's'} ${activeCount === 1 ? 'is' : 'are'} projected to deliver compound visibility gains. Maintaining cadence is the single highest-confidence move — discontinuing now would forfeit accumulated momentum.`,
       effort:       'small',
       impact:       'meaningful',
       time_horizon: 'Ongoing',
-      data_basis:   `Forecast checkpoints · ${input.forecast.projections.length} active`,
+      data_basis:   `Forecast checkpoints · ${activeCount} active`,
     });
   }
 

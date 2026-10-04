@@ -2903,16 +2903,7 @@ Respond with JSON only:
         }
 
         results.push({ id: item.id, title: item.card_title, verdict });
-      // Auto-extract learning from verification
-      if (item.project_id && parsed.hod_note) {
-        extractAndSaveLearning({
-          source: 'verify_outcome',
-          projectId: item.project_id,
-          content: `Verdict: ${verdict}. ${parsed.hod_note} Evidence found: ${(parsed.evidence_found||[]).join(', ')}`,
-          context: `Verification of: ${item.card_title}`,
-          cardType: item.card_type,
-        });
-      }
+        /* The learning for this verification is already saved just above. */
 
       } catch (err: any) {
         await db()
@@ -3766,7 +3757,8 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
 
   if (action === "requirements") {
-  if (!card) return ok(res, { error: "Missing card" });
+    const { card, context = {}, userInputs = {} } = body;
+    if (!card) return ok(res, { error: "Missing card" });
 
     const BLUEPRINTS: Record<string, any> = {
       technical: {
@@ -6246,15 +6238,23 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
 
       // For keyword_ranking — use the existing campaign engine (it creates panels)
       if (campaignType === 'keyword_ranking') {
-        const { createCampaign } = await import('./lib/seo-campaign-engine.js');
-        const result = await createCampaign({
-          projectId, keyword, campaignType: 'keyword_ranking',
+        const { createOrFindCampaign } = await import('./lib/seo-campaign-engine.js');
+        const result = await createOrFindCampaign({
+          projectId, keyword, campaignKind: 'rank_for_keyword',
           goal: title || GOAL_LABELS.keyword_ranking,
-          goalMetric: goalMetric || 'position',
-          goalTarget: goalTarget,
-          goalBaseline: goalBaseline,
-          goalDeadline: goalDeadline,
         });
+        if (!result.success || !result.campaign_id) return ok(res, { error: result.error || 'Could not create the campaign.' });
+        await getDb().from('seo_campaigns').update({
+          campaign_type:      'keyword_ranking',
+          goal_metric:        goalMetric || 'position',
+          goal_target:        goalTarget   ? Number(goalTarget)   : null,
+          goal_baseline:      goalBaseline ? Number(goalBaseline) : null,
+          goal_deadline:      goalDeadline || null,
+          target_locations:   targetLocations || null,
+          site_id:            siteId || null,
+          parent_campaign_id: parentCampaignId || null,
+          updated_at:         new Date().toISOString(),
+        }).eq('id', result.campaign_id);
         return ok(res, result);
       }
 

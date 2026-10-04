@@ -276,6 +276,13 @@ export async function runWizardStage(opts: {
     }
 
     if (caps.includes("gsc_csv_ingestion")) {
+      const { loadGsc } = await import("./workspace/shared.js");
+      const gsc = await loadGsc(projectId);
+      const rows = (gsc.topQueries?.length || 0) + (gsc.topPages?.length || 0);
+      if (rows > 0) {
+        return result("completed", "gsc-csv-ingest.ts", { top_queries: gsc.topQueries.length, top_pages: gsc.topPages.length },
+          `Search Console data is in place: ${gsc.topQueries.length} queries and ${gsc.topPages.length} pages.`);
+      }
       return result("needs_input", "gsc-csv-ingest.ts", null, `This stage ingests an uploaded GSC export. Supply the CSV via the wizard_ingest_gsc_csv action, then advance.`);
     }
 
