@@ -10,13 +10,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Loader2, ArrowUpRight, Lock, Send, Moon, Sun } from 'lucide-react';
+import { Loader2, ArrowUpRight, Lock, Send, Moon, Sun, Heart } from 'lucide-react';
 import { clientSessionResolve, getStoredClientSession, clearClientSession, type ClientSessionContext } from '@/components/brand-studio/api';
-import { cp, goalProgress, METRIC_LABEL, SessionEndedError, type HomeData, type ChatMessage, type ClientGoal, type PanelInfo, type Win } from '@/lib/clientPanelApi';
+import { cp, goalProgress, METRIC_LABEL, SessionEndedError, type HomeData, type ChatMessage, type ClientGoal, type PanelInfo, type Win, type Milestone } from '@/lib/clientPanelApi';
 import { ImprovementsSection, OrdersSection } from './MoneySections';
 import './clientPanel.css';
 
-export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'reports' | 'settings';
+export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'keywords' | 'reports' | 'settings';
 
 const NIGHT_KEY = 'seoseason_client_night';
 function readNight(): boolean {
@@ -81,6 +81,7 @@ export default function ClientPanel({ section }: { section: Section }) {
     { to: '/c/improvements', label: 'Improvements', key: 'improvements', show: on('improvements') },
     { to: '/c/orders', label: 'Orders', key: 'orders', show: on('improvements') },
     { to: '/c/reports', label: 'Reports', key: 'reports', show: on('reports') },
+    { to: '/c/keywords', label: 'Keywords', key: 'keywords', show: panel?.features?.keywords === true },
   ];
 
   return (
@@ -116,6 +117,7 @@ export default function ClientPanel({ section }: { section: Section }) {
           {section === 'goals' && on('goals') && <GoalsSection onSessionEnded={onSessionEnded} />}
           {section === 'improvements' && on('improvements') && <ImprovementsSection onSessionEnded={onSessionEnded} onRequested={() => navigate('/c/orders')} />}
           {section === 'orders' && on('improvements') && <OrdersSection onSessionEnded={onSessionEnded} />}
+          {section === 'keywords' && panel?.features?.keywords && <KeywordsSection onSessionEnded={onSessionEnded} />}
           {section === 'reports' && on('reports') && <ReportsSection onSessionEnded={onSessionEnded} />}
           {section === 'settings' && <SettingsSection ctx={ctx} panel={panel} night={night} toggleNight={toggleNight} onRenamed={(name) => setCtx({ ...ctx, user: { ...ctx.user, display_name: name } })} />}
         </main>
@@ -232,14 +234,16 @@ function HomeSection({ onSessionEnded }: { onSessionEnded: () => void }) {
         </section>
       )}
 
-      {data.wins.length > 0 && (
-        <section className="cp-card" style={{ padding: 20 }}>
-          <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Recent wins</h2>
-          {data.wins.map((w) => (
-            <div key={w.query} style={{ padding: '10px 0', borderTop: '1px solid var(--cp-line-soft)', fontSize: 14 }}>{winText(w)}</div>
-          ))}
-        </section>
-      )}
+      {data.milestones?.length > 0
+        ? <Milestones wins={data.milestones} onSessionEnded={onSessionEnded} title="Milestones" />
+        : data.wins.length > 0 && (
+          <section className="cp-card" style={{ padding: 20 }}>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>Recent wins</h2>
+            {data.wins.map((w) => (
+              <div key={w.query} style={{ padding: '10px 0', borderTop: '1px solid var(--cp-line-soft)', fontSize: 14 }}>{winText(w)}</div>
+            ))}
+          </section>
+        )}
 
       {data.goals.length > 0 && (
         <section className="cp-card" style={{ padding: 20, display: 'grid', gap: 12 }}>
@@ -283,7 +287,20 @@ function GoalRow({ g }: { g: ClientGoal }) {
 
 function GoalsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
   const { data, error } = useCp<{ goals: ClientGoal[]; wins: Win[]; limit: number | null }>('cp_goals', onSessionEnded);
+  const stored = useCp<{ wins: Milestone[] }>('cp_wins', onSessionEnded);
   if (!data) return <Loading error={error} />;
+  if (stored.data?.wins?.length) {
+    return (
+      <div style={{ display: 'grid', gap: 20 }}>
+        <PageTitle title="Goals & wins" sub="What we're working towards together, and what's already gone well." />
+        <section className="cp-card" style={{ padding: 20, display: 'grid', gap: 16 }}>
+          {data.goals.length ? data.goals.map((g) => <GoalRow key={g.id} g={g} />)
+            : <div style={{ fontSize: 14 }}>No goals yet. <Link to="/c/talk">Ask Manvisha</Link> to set your first goal with you.</div>}
+        </section>
+        <Milestones wins={stored.data.wins} onSessionEnded={onSessionEnded} title="Every win so far" />
+      </div>
+    );
+  }
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       <PageTitle title="Goals & wins" sub="What we're working towards together, and what's already gone well." />
@@ -298,6 +315,82 @@ function GoalsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
           {data.wins.map((w) => <div key={w.query} style={{ padding: '10px 0', borderTop: '1px solid var(--cp-line-soft)', fontSize: 14 }}>{winText(w)}</div>)}
         </section>
       )}
+    </div>
+  );
+}
+
+/* ─── Milestones (stored wins, with thanks) ─────────────────────── */
+
+function Milestones({ wins, onSessionEnded, title }: { wins: Milestone[]; onSessionEnded: () => void; title: string }) {
+  const [thanked, setThanked] = useState<Record<string, boolean>>({});
+  const thank = async (id: string) => {
+    try { await cp('cp_win_thanks', { winId: id, message: 'Thank you, team!' }); setThanked((t) => ({ ...t, [id]: true })); }
+    catch (e: any) { if (e instanceof SessionEndedError) onSessionEnded(); else setThanked((t) => ({ ...t, [id]: true })); }
+  };
+  return (
+    <section className="cp-card" style={{ padding: 20 }}>
+      <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>{title}</h2>
+      {wins.map((w) => {
+        const done = !!w.thanked_at || thanked[w.id];
+        return (
+          <div key={w.id} style={{ padding: '12px 0', borderTop: '1px solid var(--cp-line-soft)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{w.title}</div>
+              <div className="cp-muted" style={{ fontSize: 12 }}>{new Date(w.happened_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}{w.detail ? ` · ${w.detail}` : ''}</div>
+            </div>
+            {done
+              ? <span style={{ fontSize: 12, color: 'var(--cp-good)', display: 'inline-flex', gap: 4, alignItems: 'center' }}><Heart size={13} />Thanked</span>
+              : <button className="cp-btn cp-btn-ghost" style={{ padding: '6px 10px', fontSize: 13 }} onClick={() => thank(w.id)}><Heart size={13} />Thank the team</button>}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+/* ─── Keywords (daily positions) ────────────────────────────────── */
+
+interface KeywordRow { query: string; position: number; clicks: number; impressions: number; change: number | null; series: { day: string; position: number }[]; since: string }
+
+function Sparkline({ series }: { series: { position: number }[] }) {
+  if (series.length < 2) return <span className="cp-muted" style={{ fontSize: 12 }}>Trend starts tomorrow</span>;
+  const w = 120, h = 32, max = Math.max(...series.map((p) => p.position)), min = Math.min(...series.map((p) => p.position));
+  const span = Math.max(1, max - min);
+  // Position 1 is best, so better positions are drawn higher.
+  const pts = series.map((p, i) => `${(i / (series.length - 1)) * w},${((p.position - min) / span) * (h - 4) + 2}`).join(' ');
+  return <svg width={w} height={h} aria-hidden="true"><polyline points={pts} fill="none" stroke="var(--cp-accent)" strokeWidth="2" strokeLinejoin="round" /></svg>;
+}
+
+function KeywordsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
+  const { data, error } = useCp<{ keywords: KeywordRow[] }>('cp_keywords', onSessionEnded);
+  if (!data) return <Loading error={error} />;
+  return (
+    <div style={{ display: 'grid', gap: 20 }}>
+      <PageTitle title="Keywords" sub="Where you show up on Google for the searches that bring you visitors — saved every day, so you can see the trend." />
+      <section className="cp-card" style={{ padding: 8, overflowX: 'auto' }}>
+        {data.keywords.length === 0
+          ? <div style={{ padding: 14, fontSize: 14 }}>Daily positions start being saved once Search Console is connected. Check back tomorrow.</div>
+          : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+              <thead><tr className="cp-muted" style={{ fontSize: 12, textAlign: 'left' }}>
+                <th style={{ padding: '10px 12px' }}>Search</th><th style={{ padding: '10px 12px' }}>Position</th><th style={{ padding: '10px 12px' }}>Last 30 days</th><th style={{ padding: '10px 12px' }}>Visits</th><th style={{ padding: '10px 12px' }}>Trend</th>
+              </tr></thead>
+              <tbody>
+                {data.keywords.map((k) => (
+                  <tr key={k.query} style={{ borderTop: '1px solid var(--cp-line-soft)' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 600 }}>{k.query}</td>
+                    <td style={{ padding: '10px 12px' }}>{k.position.toFixed(1)}</td>
+                    <td style={{ padding: '10px 12px', color: k.change && k.change > 0 ? 'var(--cp-good)' : 'var(--cp-muted)', fontWeight: 600 }}>
+                      {k.change == null || k.change === 0 ? 'Steady' : k.change > 0 ? `▲ up ${k.change}` : `▼ ${Math.abs(k.change)}`}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>{fmt(k.clicks)}</td>
+                    <td style={{ padding: '10px 12px' }}><Sparkline series={k.series} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+      </section>
     </div>
   );
 }
@@ -396,7 +489,7 @@ function TalkSection({ onSessionEnded, me }: { onSessionEnded: () => void; me: s
 
 /* ─── Settings ──────────────────────────────────────────────────── */
 
-const LIVE_FEATURES = new Set(['home', 'strategist', 'goals', 'improvements', 'reports', 'brand_studio']);
+const LIVE_FEATURES = new Set(['home', 'strategist', 'goals', 'improvements', 'keywords', 'reports', 'brand_studio']);
 
 const FEATURE_NAMES: Record<string, string> = {
   home: 'Home & wins', strategist: 'Talk to your strategist', calls: 'Calls & notes', reports: 'Monthly reports',

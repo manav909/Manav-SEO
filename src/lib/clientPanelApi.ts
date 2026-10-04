@@ -22,6 +22,8 @@ export interface ClientGoal {
 
 export interface Win { query: string; position: number; kind: string; clicks?: number }
 
+export interface Milestone { id: string; kind: string; title: string; detail?: string; happened_at: string; thanks?: string | null; thanked_at?: string | null }
+
 export interface HomeData {
   user: { name: string; email: string };
   project: { id: string; name?: string; url?: string };
@@ -34,6 +36,7 @@ export interface HomeData {
     change: Record<'clicks' | 'impressions' | 'position' | 'sessions' | 'conversions', Delta>;
   };
   wins: Win[];
+  milestones: Milestone[];
   goals: ClientGoal[];
   latestReport: null | { id: string; title: string; link: string; periodStart?: string; periodEnd?: string };
   unreadMessages: number;

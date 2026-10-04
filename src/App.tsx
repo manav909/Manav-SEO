@@ -82,6 +82,7 @@ import ClientLogin    from "@/pages/ClientLogin";
 import ClientPanel    from "@/pages/client/ClientPanel";
 import TeamInbox      from "@/pages/TeamInbox";
 import TeamOffers     from "@/pages/TeamOffers";
+import TeamMyDay      from "@/pages/TeamMyDay";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -140,6 +141,7 @@ const AppRoutes = () => {
         <Route path="/c/goals"        element={<B name="client-goals">  <ClientPanel section="goals" />                    </B>} />
         <Route path="/c/improvements" element={<B name="client-improvements"><ClientPanel section="improvements" />        </B>} />
         <Route path="/c/orders"       element={<B name="client-orders"> <ClientPanel section="orders" />                   </B>} />
+        <Route path="/c/keywords"     element={<B name="client-keywords"><ClientPanel section="keywords" />                </B>} />
         <Route path="/c/reports"      element={<B name="client-reports"><ClientPanel section="reports" />                  </B>} />
         <Route path="/c/settings"     element={<B name="client-settings"><ClientPanel section="settings" />                </B>} />
         <Route path="/c/login"        element={<B name="client-login">  <ClientLogin />                                    </B>} />
@@ -203,6 +205,7 @@ const AppRoutes = () => {
           <Route path="/themes" element={<StaffGuard perm="staff"><ThemePreview /></StaffGuard>} />
           <Route path="/ask" element={<StaffGuard perm="staff"><AskEmpire /></StaffGuard>} />
           <Route path="/revenue" element={<StaffGuard perm="hod_only"><RevenueBI /></StaffGuard>} />
+          <Route path="/team/my-day" element={<StaffGuard perm="staff"><B name="team-my-day"><TeamMyDay /></B></StaffGuard>} />
           <Route path="/team/offers" element={<StaffGuard perm="staff"><B name="team-offers"><TeamOffers /></B></StaffGuard>} />
           <Route path="/team/inbox" element={<StaffGuard perm="staff"><B name="team-inbox"><TeamInbox /></B></StaffGuard>} />
           <Route path="/kanban" element={<StaffGuard perm="staff"><KanbanBoard /></StaffGuard>} />

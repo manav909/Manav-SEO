@@ -48,7 +48,7 @@ function isMissingTable(err: any): boolean {
 
 /* ─── Numbers & wins (measured data only) ─────────────────────── */
 
-async function loadNumbers(projectId: string) {
+export async function loadNumbers(projectId: string) {
   try {
     const { bsGetAnalyticsIntel } = await import("./pm-analytics-intel-orchestrator.js");
     const r = await bsGetAnalyticsIntel({ projectId });
@@ -76,7 +76,7 @@ async function loadNumbers(projectId: string) {
   }
 }
 
-async function loadGoals(projectId: string) {
+export async function loadGoals(projectId: string) {
   const { data: goals } = await db().from("analytics_goals")
     .select("id,name,description,metric,target_value,target_date,baseline_value,status,shared_with_client")
     .eq("project_id", projectId).eq("shared_with_client", true)
@@ -126,6 +126,8 @@ async function cpHome(body: any) {
     c.panel.features.reports ? loadSharedReports(pid).catch(() => []) : Promise.resolve([]),
     unreadFromTeam(pid).catch(() => 0),
   ]);
+  const { listWins } = await import("./client-wins.js");
+  const milestones = await listWins(pid, 6).catch(() => []);
   return {
     success: true,
     user: { name: c.user.display_name || c.user.email, email: c.user.email },
@@ -134,6 +136,7 @@ async function cpHome(body: any) {
     panel: c.panel,
     numbers: nums.numbers,
     wins: nums.wins,
+    milestones,
     goals: (goals as any[]).slice(0, 3),
     latestReport: (reports as any[])[0] || null,
     unreadMessages: unread,
