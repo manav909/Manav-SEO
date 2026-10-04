@@ -161,8 +161,40 @@ export function panelCatalog() {
   };
 }
 
-export async function handlePanelPlans(action: string, body: any): Promise<any | null> {
+/** Owner-only: switch a client's portal on and email them a sign-in invite
+ *  in one go. Returns the link too, so it can be shared by hand. */
+async function inviteClient(body: any, siteUrl: string, invitedBy: string | null) {
+  const projectId = String(body?.projectId || "");
+  const email = String(body?.email || "").trim().toLowerCase();
+  if (!projectId) return { success: false, error: "projectId required" };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { success: false, error: "Enter the client's email address." };
+  const { error: entErr } = await db().from("project_entitlements").upsert({ project_id: projectId, client_portal_enabled: true }, { onConflict: "project_id" });
+  if (entErr) return { success: false, error: entErr.message };
+  const { bsInviteClientUser } = await import("./brand-studio-collab.js");
+  const r = await bsInviteClientUser({ projectId, email, role: "client_executive", invitedBy, notes: body?.name ? `Name: ${String(body.name).slice(0, 120)}` : undefined });
+  if (!r?.success) return r;
+  const link = `${siteUrl.replace(/\/$/, "")}/c/invite/${r.invite_token}`;
+  let emailed = false;
+  const key = process.env.RESEND_API_KEY;
+  if (key) {
+    const { data: project } = await db().from("projects").select("name").eq("id", projectId).maybeSingle();
+    const strategist = process.env.STRATEGIST_NAME || "Manvisha";
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.CLIENT_LOGIN_FROM || "SEO Season <noreply@seoseason.com>", to: [email],
+        subject: `Your SEO Season panel for ${(project as any)?.name || "your website"}`,
+        text: `Hi${body?.name ? ` ${String(body.name).split(" ")[0]}` : ""},\n\nYour SEO Season panel is ready — your results, wins and a direct line to ${strategist}, your strategist.\n\nOpen it here (no password needed):\n${link}\n\nNext time, just go to ${siteUrl.replace(/\/$/, "")}/c/login and enter this email.\n\nSEO Season`,
+      }),
+    }).catch(() => null);
+    emailed = !!res && res.ok;
+  }
+  return { success: true, link, emailed, was_regenerated: !!r.was_regenerated };
+}
+
+export async function handlePanelPlans(action: string, body: any, ctx: { siteUrl?: string; staffEmail?: string | null } = {}): Promise<any | null> {
   switch (action) {
+    case "panel_invite_client": return inviteClient(body, ctx.siteUrl || process.env.APP_URL || "https://seoseason.com", ctx.staffEmail || null);
     case "panel_catalog":  return { success: true, ...panelCatalog() };
     case "panel_get_plan": {
       if (!body?.projectId) return { success: false, error: "projectId required" };

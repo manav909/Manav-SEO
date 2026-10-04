@@ -328,6 +328,7 @@ const OWNER_ACTIONS: ReadonlySet<string> = new Set([
   "add_revenue_record",
   "bs_update_entitlements",
   "panel_set_plan",
+  "panel_invite_client",
   "cps_catalog_save",
   "cps_call_settings_save",
   "backlink_provider_keys_upsert",
@@ -892,7 +893,10 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */
   if (typeof action === "string" && action.startsWith("panel_")) {
     const { handlePanelPlans } = await import("./lib/panel-plans.js");
-    const panelResult = await handlePanelPlans(action, body);
+    const panelResult = await handlePanelPlans(action, body, {
+      siteUrl: process.env.APP_URL || `https://${req.headers.host || "seoseason.com"}`,
+      staffEmail: authRes && "kind" in authRes && authRes.kind === "user" ? authRes.email : null,
+    });
     if (panelResult !== null) return ok(res, panelResult);
   }
 

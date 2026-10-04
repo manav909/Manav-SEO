@@ -29,6 +29,18 @@ export default function PlanSwitches({ clients, projects }: { clients: any[]; pr
   const [assigned, setAssigned] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [invite, setInvite] = useState({ name: '', email: '' });
+  const [inviting, setInviting] = useState(false);
+  const [inviteResult, setInviteResult] = useState<{ link: string; emailed: boolean } | null>(null);
+
+  const sendInvite = async () => {
+    setInviting(true); setInviteResult(null);
+    const r = await engine({ action: 'panel_invite_client', projectId, ...invite });
+    setInviting(false);
+    if (!r?.success) { toast({ title: 'Invite not sent', description: r?.error, variant: 'destructive' }); return; }
+    setInviteResult({ link: r.link, emailed: r.emailed });
+    toast({ title: r.emailed ? 'Invite emailed' : 'Invite ready', description: r.emailed ? `${invite.email} can sign in now.` : 'Email isn\'t set up — copy the link and send it yourself.' });
+  };
 
   useEffect(() => {
     engine({ action: 'panel_catalog' }).then((r) => {
@@ -137,6 +149,27 @@ export default function PlanSwitches({ clients, projects }: { clients: any[]; pr
               className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}Save plan
             </button>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card/60 p-5 space-y-3">
+            <div className="text-sm font-semibold">Invite the client to their panel</div>
+            <div className="text-xs text-muted-foreground">Switches their portal on and emails a sign-in link (no password). Afterwards they can always sign in at /c/login with this email.</div>
+            <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+              <input className="h-10 rounded-md border border-border bg-background/60 text-sm px-3 text-foreground" placeholder="Client's name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} aria-label="Client's name" />
+              <input className="h-10 rounded-md border border-border bg-background/60 text-sm px-3 text-foreground" placeholder="client@business.com" type="email" value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} aria-label="Client's email" />
+              <button onClick={sendInvite} disabled={inviting || !invite.email} className="px-4 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-50 inline-flex items-center gap-2">
+                {inviting && <Loader2 className="h-4 w-4 animate-spin" />}Send invite
+              </button>
+            </div>
+            {inviteResult && (
+              <div className="text-xs rounded-lg bg-muted/50 p-3 space-y-1">
+                <div>{inviteResult.emailed ? 'Emailed. You can also share this link:' : 'Copy this link and send it to the client:'}</div>
+                <div className="flex gap-2 items-center">
+                  <code className="truncate flex-1">{inviteResult.link}</code>
+                  <button onClick={() => navigator.clipboard?.writeText(inviteResult.link)} className="px-2 py-1 rounded border border-border">Copy</button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
