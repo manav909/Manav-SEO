@@ -99,7 +99,7 @@ const EMPIRE_SECTIONS = [
 export default function PortalNav({ clientName, companyName, onProjectChange }: Props) {
   const navigate  = useNavigate();
   const location  = useLocation();
-  const { staffPermissions, signOut } = useAuth();
+  const { staffPermissions, isOwner, signOut } = useAuth();
   const { selectedProjectId, setSelectedProjectId, selectedProject, selectedClient } = useProject();
   const { projects } = useAuth();
   const safeProjects = (projects || []).filter((p: any) => p?.id);
@@ -110,12 +110,12 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
   const buttonRef   = useRef<HTMLButtonElement>(null);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
 
-  // null staffPermissions = HOD/owner = sees everything
+  // Owners (server-checked) see everything
   const canAccess = (perm: string | null): boolean => {
-    if (!staffPermissions) return true;           // owner
+    if (isOwner) return true;
     if (perm === null) return true;               // always visible (themes, tour)
     if (perm === 'hod_only') return false;        // never visible to staff
-    return staffPermissions[perm] === true;
+    return staffPermissions?.[perm] === true;
   };
 
   const isActive = (href: string) => path === href || path.startsWith(href + '/');
@@ -157,7 +157,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
           <div className="flex items-center justify-between h-14 gap-4">
 
             {/* Brand */}
-            <button onClick={() => navigate(staffPermissions ? '/bde-panel' : '/oval')}
+            <button onClick={() => navigate(isOwner ? '/oval' : '/bde-panel')}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
               <div className="relative">
                 <img src="/manav.jpg" alt="SEO Season"

@@ -4,7 +4,8 @@
 
    A request is let through when ANY of these holds:
      • it carries a valid Supabase login (Authorization: Bearer <jwt>),
-       which the browser attaches automatically (src/lib/apiAuth.ts);
+       which the browser attaches automatically (src/lib/apiAuth.ts),
+       AND that login belongs to the team (see staffAccess below);
      • it is the Vercel cron (Authorization: Bearer <CRON_SECRET>);
      • its action is on the endpoint's public list — actions used by pages
        a visitor opens without logging in, each of which checks its own
@@ -15,8 +16,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+export interface StaffAccess {
+  isStaff: boolean;          // may use the staff app and its actions
+  isOwner: boolean;          // may use owner-only actions (staff, plans, ...)
+  role: string | null;       // staff_members.role
+  permissions: Record<string, boolean> | null;
+  enforced: boolean;         // false until OWNER_EMAILS is configured
+}
+
 export type AuthResult =
-  | { ok: true; kind: "user"; userId: string; email: string | null }
+  | { ok: true; kind: "user"; userId: string; email: string | null; access: StaffAccess }
   | { ok: true; kind: "cron" }
   | { ok: true; kind: "internal" }
   | { ok: true; kind: "public" }
@@ -75,6 +84,57 @@ async function verifyUser(token: string): Promise<{ userId: string; email: strin
   } catch { return null; }
 }
 
+/* ── Who is on the team ─────────────────────────────────────────────
+   Owners: emails listed in OWNER_EMAILS (comma-separated), plus active
+   staff with the "hod" role. Staff: owners plus any active row in
+   staff_members with the login's email.
+
+   Until OWNER_EMAILS is set, every signed-in user keeps the old
+   behaviour (treated as owner) so nobody is locked out mid-rollout. */
+function ownerEmails(): string[] {
+  return String(process.env.OWNER_EMAILS || "")
+    .split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+}
+
+const accessCache = new Map<string, { access: StaffAccess; until: number }>();
+
+export async function staffAccess(email: string | null): Promise<StaffAccess> {
+  const owners = ownerEmails();
+  if (owners.length === 0) {
+    return { isStaff: true, isOwner: true, role: null, permissions: null, enforced: false };
+  }
+  const em = (email || "").trim().toLowerCase();
+  if (!em) return { isStaff: false, isOwner: false, role: null, permissions: null, enforced: true };
+
+  const now = Date.now();
+  const hit = accessCache.get(em);
+  if (hit && hit.until > now) return hit.access;
+
+  let row: { role?: string; permissions?: Record<string, boolean>; is_active?: boolean } | null = null;
+  try {
+    const client = authClient();
+    if (client) {
+      const pattern = em.replace(/[\\%_]/g, (c) => "\\" + c);
+      const { data } = await client.from("staff_members")
+        .select("role,permissions,is_active").ilike("email", pattern).limit(1);
+      row = (data && data[0]) || null;
+    }
+  } catch { /* lookup failed — treated as not staff unless an owner email */ }
+
+  const active = !!row && row.is_active !== false;
+  const isOwner = owners.includes(em) || (active && String(row?.role || "").toLowerCase() === "hod");
+  const access: StaffAccess = {
+    isStaff: isOwner || active,
+    isOwner,
+    role: active ? (row?.role || null) : null,
+    permissions: isOwner ? null : (active ? (row?.permissions || {}) : null),
+    enforced: true,
+  };
+  if (accessCache.size > 500) accessCache.clear();
+  accessCache.set(em, { access, until: now + CACHE_MS });
+  return access;
+}
+
 function serviceKey(): string {
   return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 }
@@ -106,7 +166,7 @@ export async function authenticate(
   const token = bearer(req);
   if (token) {
     const user = await verifyUser(token);
-    if (user) return { ok: true, kind: "user", userId: user.userId, email: user.email };
+    if (user) return { ok: true, kind: "user", userId: user.userId, email: user.email, access: await staffAccess(user.email) };
   }
 
   const action = req.method === "POST" ? String((req.body as { action?: unknown } | undefined)?.action ?? "") : "";
@@ -115,7 +175,9 @@ export async function authenticate(
   return { ok: false };
 }
 
-/* Call at the top of a handler: `if (!(await requireAuth(req, res))) return;` */
+/* Call at the top of a handler: `if (!(await requireAuth(req, res))) return;`
+   A signed-in user who is not on the team is refused (403) unless the
+   action is public. */
 export async function requireAuth(
   req: VercelRequest,
   res: VercelResponse,
@@ -123,7 +185,21 @@ export async function requireAuth(
 ): Promise<AuthResult | null> {
   if (req.method === "OPTIONS") return { ok: true, kind: "public" };
   const r = await authenticate(req, publicActions);
+  if (r.ok && r.kind === "user" && !r.access.isStaff) {
+    const action = req.method === "POST" ? String((req.body as { action?: unknown } | undefined)?.action ?? "") : "";
+    if (action && publicActions?.has(action)) return { ok: true, kind: "public" };
+    res.status(403).json({ error: "This account doesn't have team access. Ask your SEO Season admin to add you.", code: "not_staff" });
+    return null;
+  }
   if (r.ok) return r;
   res.status(401).json({ error: "Please sign in to use this feature.", code: "unauthorized" });
   return null;
+}
+
+/* True when the caller may use owner-only actions. Cron and our own
+   server calls count as trusted. */
+export function isOwnerCall(r: AuthResult): boolean {
+  if (!r.ok) return false;
+  if (r.kind === "cron" || r.kind === "internal") return true;
+  return r.kind === "user" && r.access.isOwner;
 }

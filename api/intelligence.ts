@@ -264,7 +264,8 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   /* Logged-out visitors (the guest chat on / and /tour) may only ask plain
      questions: no project data, no server-side URL fetches. */
   const auth = await authenticate(req);
-  if (!auth.ok) {
+  /* Not on the team = treated like a logged-out visitor. */
+  if (!auth.ok || (auth.kind === "user" && !auth.access.isStaff)) {
     if (body.mode !== "answer") {
       return res.status(401).json({ error: "Please sign in to use this feature.", code: "unauthorized" });
     }
