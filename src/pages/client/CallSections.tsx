@@ -63,7 +63,7 @@ export function BookSection({ onSessionEnded }: { onSessionEnded: () => void }) 
         <Title title="You're booked" />
         <section className="cp-card" style={{ padding: 22, display: 'grid', gap: 12 }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>{fullLabel(booked.startsAt)}</div>
-          <div className="cp-muted" style={{ fontSize: 14 }}>{data?.host || 'Manvisha'} will be there. We've emailed you a calendar invite too.</div>
+          <div className="cp-muted" style={{ fontSize: 14 }}>{data?.host || 'Manav S'} will be there. We've emailed you a calendar invite too.</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="cp-btn" onClick={() => downloadIcs(booked.ics)}><CalendarPlus size={15} />Add to my calendar</button>
             {booked.meetingLink && <a className="cp-btn cp-btn-ghost" href={booked.meetingLink} target="_blank" rel="noreferrer"><Video size={15} />Meeting link</a>}
@@ -76,7 +76,7 @@ export function BookSection({ onSessionEnded }: { onSessionEnded: () => void }) 
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      <Title title="Book a call" sub={`A short call with ${data?.host || 'Manvisha'} — about ${data?.minutes || 20} minutes. Times are shown in your time zone.`} />
+      <Title title="Book a call" sub={`A short call with ${data?.host || 'Manav S'} — about ${data?.minutes || 20} minutes. Times are shown in your time zone.`} />
       {!data && (error ? <div className="cp-card" style={{ padding: 20 }}>{error}</div> : <Spin />)}
       {data && (
         <>
@@ -90,7 +90,7 @@ export function BookSection({ onSessionEnded }: { onSessionEnded: () => void }) 
             <input id="cp-topic" className="cp-input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Or write your own" />
           </section>
           <section className="cp-card" style={{ padding: 20, display: 'grid', gap: 14 }}>
-            {byDay.length === 0 && <div style={{ fontSize: 14 }}>No free times in the next two weeks. <Link to="/c/talk">Message Manvisha</Link> and we'll find one.</div>}
+            {byDay.length === 0 && <div style={{ fontSize: 14 }}>No free times in the next two weeks. <Link to="/c/talk">Message Manav S</Link> and we'll find one.</div>}
             {byDay.map(([day, slots]) => (
               <div key={day} style={{ display: 'grid', gap: 8 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{day}</div>

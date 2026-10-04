@@ -1,6 +1,6 @@
 /* Team → Client inbox. Every client conversation in one place, waiting
    ones first. When a client writes, an AI draft reply is ready; the team
-   member reads it, edits it and sends it as Manvisha. Nothing AI-written
+   member reads it, edits it and sends it as Manav S. Nothing AI-written
    reaches a client without a person sending it. */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -33,7 +33,7 @@ export default function TeamInbox() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState<'' | 'send' | 'redraft' | 'thread'>('');
-  const [name, setName] = useState('Manvisha');
+  const [name, setName] = useState('Manav S');
 
   const loadInbox = useCallback(async () => {
     const r = await engine({ action: 'cps_inbox' });

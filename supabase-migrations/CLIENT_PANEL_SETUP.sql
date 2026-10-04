@@ -19,7 +19,7 @@ ALTER TABLE project_entitlements
   CHECK (panel_plan IS NULL OR panel_plan IN ('starter','growth','authority','enterprise'));
 
 -- ═══════════ client_messages.sql ═══════════
--- "Talk to Manvisha": one message thread per client project
+-- "Talk to Manav S": one message thread per client project
 -- (see api/lib/client-panel.ts). Safe to run more than once.
 -- Clients only ever see client + staff rows; ai_draft rows are
 -- suggestions for the team and are never shown to clients.
@@ -197,7 +197,7 @@ CREATE POLICY "No public access" ON keyword_history FOR ALL USING (false);
 
 CREATE TABLE IF NOT EXISTS call_settings (
   id             integer     PRIMARY KEY DEFAULT 1 CHECK (id = 1),   -- one row
-  host_name      text        NOT NULL DEFAULT 'Manvisha',
+  host_name      text        NOT NULL DEFAULT 'Manav S',
   host_email     text,
   timezone       text        NOT NULL DEFAULT 'America/Chicago',
   slot_minutes   integer     NOT NULL DEFAULT 20,

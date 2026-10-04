@@ -65,7 +65,7 @@ export function ImprovementsSection({ onSessionEnded, onRequested }: { onSession
       <Title title="Improvements" sub="Small, clear pieces of work with fixed prices. Add what you like to your basket and ask for an offer — your team confirms every detail before you pay anything." />
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
         <div style={{ flex: '999 1 480px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-          {items.length === 0 && <div className="cp-card" style={{ padding: 20, fontSize: 14 }}>Your team is preparing the price list. Meanwhile, <Link to="/c/talk">ask Manvisha</Link> about anything you'd like done.</div>}
+          {items.length === 0 && <div className="cp-card" style={{ padding: 20, fontSize: 14 }}>Your team is preparing the price list. Meanwhile, <Link to="/c/talk">ask Manav S</Link> about anything you'd like done.</div>}
           {items.map((i) => {
             const inBasket = basket.includes(i.id);
             return (
@@ -208,7 +208,7 @@ export function OrdersSection({ onSessionEnded }: { onSessionEnded: () => void }
                     {busy === o.id && <Loader2 size={14} className="animate-spin" />}Accept offer
                   </button>
                 </div>
-              ) : <div className="cp-muted" style={{ fontSize: 13 }}>Manvisha will confirm prices and dates — usually within one working day.</div>}
+              ) : <div className="cp-muted" style={{ fontSize: 13 }}>Manav S will confirm prices and dates — usually within one working day.</div>}
             </div>
           </section>
         );

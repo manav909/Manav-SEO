@@ -22,7 +22,7 @@ import { createNotification } from "./brand-studio-collab.js";
 
 const MIGRATION_HINT = "Call booking isn't set up yet. Run supabase-migrations/calls.sql in the Supabase SQL editor.";
 const DEFAULTS = {
-  host_name: process.env.STRATEGIST_NAME || "Manvisha", host_email: null as string | null,
+  host_name: process.env.STRATEGIST_NAME || "Manav S", host_email: null as string | null,
   timezone: "America/Chicago", slot_minutes: 20, notice_hours: 12, horizon_days: 14, meeting_link: null as string | null,
   weekly_hours: [{ weekday: 2, start: "10:00", end: "12:00" }, { weekday: 4, start: "16:00", end: "18:00" }],
 };
