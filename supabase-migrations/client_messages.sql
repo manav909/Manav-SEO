@@ -1,4 +1,4 @@
--- "Talk to Manvisha": one message thread per client project
+-- "Talk to Manav S": one message thread per client project
 -- (see api/lib/client-panel.ts). Safe to run more than once.
 -- Clients only ever see client + staff rows; ai_draft rows are
 -- suggestions for the team and are never shown to clients.

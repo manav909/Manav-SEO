@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS call_settings (
   id             integer     PRIMARY KEY DEFAULT 1 CHECK (id = 1),   -- one row
-  host_name      text        NOT NULL DEFAULT 'Manvisha',
+  host_name      text        NOT NULL DEFAULT 'Manav S',
   host_email     text,
   timezone       text        NOT NULL DEFAULT 'America/Chicago',
   slot_minutes   integer     NOT NULL DEFAULT 20,

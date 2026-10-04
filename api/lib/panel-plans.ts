@@ -36,7 +36,7 @@ const ALL_MANDATORY: Record<PlanId, Availability> = { starter: "mandatory", grow
 
 export const PANEL_FEATURES: PanelFeature[] = [
   { key: "home",            label: "Home & wins",                  unlocks: "Good news first, milestones, this month's numbers", monthlyCost: 0, availability: ALL_MANDATORY },
-  { key: "strategist",      label: "Talk to Manvisha",             unlocks: "Messages with the strategist, AI answers checked by the team", monthlyCost: 2, availability: ALL_MANDATORY },
+  { key: "strategist",      label: "Talk to Manav S",             unlocks: "Messages with the strategist, AI answers checked by the team", monthlyCost: 2, availability: ALL_MANDATORY },
   { key: "calls",           label: "Book a call & call notes",     unlocks: "Calendar booking, recorded summaries, tracked actions", monthlyCost: 1, availability: ALL_MANDATORY },
   { key: "reports",         label: "Monthly reports",              unlocks: "Monthly report with real Google numbers", monthlyCost: 0, availability: ALL_MANDATORY },
   { key: "connections",     label: "Google connections",           unlocks: "Search Console, Analytics and PageSpeed data", monthlyCost: 0, availability: ALL_MANDATORY },
@@ -178,7 +178,7 @@ async function inviteClient(body: any, siteUrl: string, invitedBy: string | null
   const key = process.env.RESEND_API_KEY;
   if (key) {
     const { data: project } = await db().from("projects").select("name").eq("id", projectId).maybeSingle();
-    const strategist = process.env.STRATEGIST_NAME || "Manvisha";
+    const strategist = process.env.STRATEGIST_NAME || "Manav S";
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({

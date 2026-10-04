@@ -79,7 +79,7 @@ export function HealthSection({ onSessionEnded }: { onSessionEnded: () => void }
       {rest.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Link to="/c/improvements" className="cp-btn">See fixed-price fixes</Link>
-          <Link to="/c/talk" className="cp-btn cp-btn-ghost">Ask Manvisha what to do first</Link>
+          <Link to="/c/talk" className="cp-btn cp-btn-ghost">Ask Manav S what to do first</Link>
         </div>
       )}
     </div>
@@ -163,7 +163,7 @@ export function AiVisibilitySection({ onSessionEnded }: { onSessionEnded: () => 
               </tbody>
             </table>
           </section>
-          <div className="cp-muted" style={{ fontSize: 13 }}>Tap a question to read what each assistant said. Want to show up more? <Link to="/c/talk">Ask Manvisha</Link> — or see the AI visibility fix in <Link to="/c/improvements">Improvements</Link>.</div>
+          <div className="cp-muted" style={{ fontSize: 13 }}>Tap a question to read what each assistant said. Want to show up more? <Link to="/c/talk">Ask Manav S</Link> — or see the AI visibility fix in <Link to="/c/improvements">Improvements</Link>.</div>
         </>
       )}
     </div>

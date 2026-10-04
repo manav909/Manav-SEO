@@ -1,6 +1,6 @@
 /* ════════════════════════════════════════════════════════════════
    api/lib/client-panel.ts
-   The new client panel (/c/home …) and its "Talk to Manvisha" thread.
+   The new client panel (/c/home …) and its "Talk to Manav S" thread.
 
    Client actions (cp_*) are public at the router and authenticate with
    the client's session token (withClientSession), then check the
@@ -23,7 +23,7 @@ import { withClientSession } from "./brand-studio-client.js";
 import { getPanelPlan, type PanelResolution } from "./panel-plans.js";
 import { createNotification } from "./brand-studio-collab.js";
 
-export const STRATEGIST_NAME = process.env.STRATEGIST_NAME || "Manvisha";
+export const STRATEGIST_NAME = process.env.STRATEGIST_NAME || "Manav S";
 const MIGRATION_HINT = "Messages aren't set up yet. Run supabase-migrations/client_messages.sql in the Supabase SQL editor.";
 const MAX_MESSAGE = 4000;
 

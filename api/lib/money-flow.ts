@@ -146,7 +146,7 @@ async function cpOfferDecide(body: any) {
   if (!offer) return { success: false, error: "Offer not found." };
   const o = offer as any;
   if (o.status !== "confirmed") return { success: false, error: o.status === "requested" ? "Your team is still preparing this offer." : "This offer has already been answered." };
-  if (o.valid_until && o.valid_until < new Date().toISOString().slice(0, 10)) return { success: false, error: "This offer has expired — ask Manvisha for a fresh one." };
+  if (o.valid_until && o.valid_until < new Date().toISOString().slice(0, 10)) return { success: false, error: "This offer has expired — ask Manav S for a fresh one." };
 
   const now = new Date().toISOString();
   if (decision === "decline") {

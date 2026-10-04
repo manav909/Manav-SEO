@@ -4,7 +4,7 @@
 
    Clients sign in with an emailed link (no password). The menu only
    shows what their plan switches on; good news comes first; the
-   strategist (Manvisha) is on every screen. All data comes from the
+   strategist (Manav S) is on every screen. All data comes from the
    server for the signed-in client's own project.
 ═══════════════════════════════════════════════════════════════ */
 
@@ -75,7 +75,7 @@ export default function ClientPanel({ section }: { section: Section }) {
 
   const panel = ctx.panel as PanelInfo | undefined;
   const on = (k: string) => panel?.features?.[k] !== false;
-  const strategist = 'Manvisha';
+  const strategist = 'Manav S';
   const links: { to: string; label: string; key: Section; show: boolean }[] = [
     { to: '/c/home', label: 'Home', key: 'home', show: on('home') },
     { to: '/c/talk', label: `Talk to ${strategist}`, key: 'talk', show: on('strategist') },
@@ -309,7 +309,7 @@ function GoalsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
         <PageTitle title="Goals & wins" sub="What we're working towards together, and what's already gone well." />
         <section className="cp-card" style={{ padding: 20, display: 'grid', gap: 16 }}>
           {data.goals.length ? data.goals.map((g) => <GoalRow key={g.id} g={g} />)
-            : <div style={{ fontSize: 14 }}>No goals yet. <Link to="/c/talk">Ask Manvisha</Link> to set your first goal with you.</div>}
+            : <div style={{ fontSize: 14 }}>No goals yet. <Link to="/c/talk">Ask Manav S</Link> to set your first goal with you.</div>}
         </section>
         <Milestones wins={stored.data.wins} onSessionEnded={onSessionEnded} title="Every win so far" />
       </div>
@@ -321,7 +321,7 @@ function GoalsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
       <section className="cp-card" style={{ padding: 20, display: 'grid', gap: 16 }}>
         {data.goals.length
           ? data.goals.map((g) => <GoalRow key={g.id} g={g} />)
-          : <div style={{ fontSize: 14 }}>No goals yet. <Link to="/c/talk">Ask Manvisha</Link> to set your first goal with you — something you can measure, like more bookings from Google.</div>}
+          : <div style={{ fontSize: 14 }}>No goals yet. <Link to="/c/talk">Ask Manav S</Link> to set your first goal with you — something you can measure, like more bookings from Google.</div>}
       </section>
       {data.wins.length > 0 && (
         <section className="cp-card" style={{ padding: 20 }}>
@@ -430,11 +430,11 @@ function ReportsSection({ onSessionEnded }: { onSessionEnded: () => void }) {
   );
 }
 
-/* ─── Talk to Manvisha ──────────────────────────────────────────── */
+/* ─── Talk to Manav S ──────────────────────────────────────────── */
 
 function TalkSection({ onSessionEnded, me }: { onSessionEnded: () => void; me: string }) {
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
-  const [name, setName] = useState('Manvisha');
+  const [name, setName] = useState('Manav S');
   const [error, setError] = useState('');
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -554,7 +554,7 @@ function SettingsSection({ ctx, panel, night, toggleNight, onRenamed }: {
           </div>
           {locked.length > 0 && (
             <>
-              <div className="cp-muted" style={{ fontSize: 13, marginTop: 6 }}>Available to add — ask Manvisha what they'd do for you:</div>
+              <div className="cp-muted" style={{ fontSize: 13, marginTop: 6 }}>Available to add — ask Manav S what they'd do for you:</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {locked.map((k) => (
                   <Link key={k} to="/c/talk" className="cp-pill" style={{ border: '1px solid var(--cp-line)', color: 'var(--cp-text-2)', textDecoration: 'none', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
