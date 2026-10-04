@@ -13,9 +13,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, ArrowUpRight, Lock, Send, Moon, Sun } from 'lucide-react';
 import { clientSessionResolve, getStoredClientSession, clearClientSession, type ClientSessionContext } from '@/components/brand-studio/api';
 import { cp, goalProgress, METRIC_LABEL, SessionEndedError, type HomeData, type ChatMessage, type ClientGoal, type PanelInfo, type Win } from '@/lib/clientPanelApi';
+import { ImprovementsSection, OrdersSection } from './MoneySections';
 import './clientPanel.css';
 
-export type Section = 'home' | 'talk' | 'goals' | 'reports' | 'settings';
+export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'reports' | 'settings';
 
 const NIGHT_KEY = 'seoseason_client_night';
 function readNight(): boolean {
@@ -77,6 +78,8 @@ export default function ClientPanel({ section }: { section: Section }) {
     { to: '/c/home', label: 'Home', key: 'home', show: on('home') },
     { to: '/c/talk', label: `Talk to ${strategist}`, key: 'talk', show: on('strategist') },
     { to: '/c/goals', label: 'Goals & wins', key: 'goals', show: on('goals') },
+    { to: '/c/improvements', label: 'Improvements', key: 'improvements', show: on('improvements') },
+    { to: '/c/orders', label: 'Orders', key: 'orders', show: on('improvements') },
     { to: '/c/reports', label: 'Reports', key: 'reports', show: on('reports') },
   ];
 
@@ -111,6 +114,8 @@ export default function ClientPanel({ section }: { section: Section }) {
           {section === 'home' && <HomeSection onSessionEnded={onSessionEnded} />}
           {section === 'talk' && on('strategist') && <TalkSection onSessionEnded={onSessionEnded} me={ctx.user.display_name} />}
           {section === 'goals' && on('goals') && <GoalsSection onSessionEnded={onSessionEnded} />}
+          {section === 'improvements' && on('improvements') && <ImprovementsSection onSessionEnded={onSessionEnded} onRequested={() => navigate('/c/orders')} />}
+          {section === 'orders' && on('improvements') && <OrdersSection onSessionEnded={onSessionEnded} />}
           {section === 'reports' && on('reports') && <ReportsSection onSessionEnded={onSessionEnded} />}
           {section === 'settings' && <SettingsSection ctx={ctx} panel={panel} night={night} toggleNight={toggleNight} onRenamed={(name) => setCtx({ ...ctx, user: { ...ctx.user, display_name: name } })} />}
         </main>
@@ -391,7 +396,7 @@ function TalkSection({ onSessionEnded, me }: { onSessionEnded: () => void; me: s
 
 /* ─── Settings ──────────────────────────────────────────────────── */
 
-const LIVE_FEATURES = new Set(['home', 'strategist', 'goals', 'reports', 'brand_studio']);
+const LIVE_FEATURES = new Set(['home', 'strategist', 'goals', 'improvements', 'reports', 'brand_studio']);
 
 const FEATURE_NAMES: Record<string, string> = {
   home: 'Home & wins', strategist: 'Talk to your strategist', calls: 'Calls & notes', reports: 'Monthly reports',

@@ -306,14 +306,16 @@ async function cpsReply(body: any, staffEmail: string | null) {
     await db().from("client_messages").update({ status: "used" }).eq("id", body.draftId).eq("project_id", pid);
   }
   /* Let the client's people know there's a reply (best effort). */
-  notifyClients(pid, text).catch(() => {});
+  emailProjectClients(pid, `${STRATEGIST_NAME} replied to your message`,
+    `${STRATEGIST_NAME} from SEO Season replied:\n\n${text.slice(0, 1200)}`, "/c/talk").catch(() => {});
   return { success: true, message: data };
 }
 
-async function notifyClients(projectId: string, text: string) {
+/** Email everyone active on a client project (best effort; needs RESEND_API_KEY). */
+export async function emailProjectClients(projectId: string, subject: string, text: string, path: string) {
   const key = process.env.RESEND_API_KEY;
   if (!key) return;
-  const { data: users } = await db().from("client_users").select("email,display_name").eq("project_id", projectId).eq("active", true);
+  const { data: users } = await db().from("client_users").select("email").eq("project_id", projectId).eq("active", true);
   const to = ((users || []) as any[]).map((u) => u.email).filter(Boolean);
   if (!to.length) return;
   const site = (process.env.APP_URL || "https://seoseason.com").replace(/\/$/, "");
@@ -322,9 +324,8 @@ async function notifyClients(projectId: string, text: string) {
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       from: process.env.CLIENT_LOGIN_FROM || "SEO Season <noreply@seoseason.com>",
-      to,
-      subject: `${STRATEGIST_NAME} replied to your message`,
-      text: `${STRATEGIST_NAME} from SEO Season replied:\n\n${text.slice(0, 1200)}\n\nOpen your panel to reply: ${site}/c/talk`,
+      to, subject,
+      text: `${text}\n\nOpen your panel: ${site}${path}`,
     }),
   });
 }
