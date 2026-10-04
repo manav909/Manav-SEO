@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
 import AnimatedBg from '@/components/AnimatedBg';
-import PortalNav from '@/components/PortalNav';
+import PlanSwitches from '@/components/admin/PlanSwitches';
 import {
   Users, Plus, Globe, CheckCircle,
   ChevronDown, ChevronUp, Zap, DollarSign,
@@ -33,7 +33,7 @@ export default function Admin() {
   /* ── tabs ── */
   const [searchParams] = useSearchParams();
   const defaultTab = (searchParams.get('tab') as any) || 'control';
-  const [tab, setTab] = useState<'control'|'clients'|'metrics'|'upsells'|'launchpad'|'approve'|'staff'>(defaultTab);
+  const [tab, setTab] = useState<'control'|'clients'|'plans'|'metrics'|'upsells'|'launchpad'|'approve'|'staff'>(defaultTab);
 
   /* ── data ── */
   const [clients,       setClients]       = useState<any[]>([]);
@@ -577,7 +577,6 @@ export default function Admin() {
           if (!cp.length) return null;
           return (
             <optgroup key={c.id} label={`${c.name} — ${c.company}`}>
-      <PortalNav />
               {cp.map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({p.url}){p.last_analysis_at ? ' ✓' : ''}
@@ -593,6 +592,7 @@ export default function Admin() {
   const tabs = [
     { id: 'control',   label: 'Control Panel',  icon: Shield },
     { id: 'clients',   label: 'Clients',         icon: Users },
+    { id: 'plans',     label: 'Client plans',    icon: Shield },
     { id: 'metrics',   label: 'Run Analysis',    icon: Sparkles },
     { id: 'upsells',   label: 'Upsells',         icon: Zap },
     { id: 'launchpad', label: 'Launchpad',        icon: Rocket },
@@ -630,7 +630,7 @@ export default function Admin() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 py-8">
 
         {/* Tabs */}
         <div className="flex gap-2 mb-8 flex-wrap">
@@ -1007,6 +1007,8 @@ export default function Admin() {
         {/* ════════════════════════════════════════
             RUN ANALYSIS
         ════════════════════════════════════════ */}
+        {tab === 'plans' && <PlanSwitches clients={clients} projects={projects} />}
+
         {tab === 'metrics' && (
           <div className="max-w-3xl space-y-5">
 

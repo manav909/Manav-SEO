@@ -328,6 +328,7 @@ export async function bsClientGetInvestorData(body: any): Promise<any> {
 ═══════════════════════════════════════════════════════════════ */
 
 import { resolveClientUserSession } from "./brand-studio-collab.js";
+import { getPanelPlan } from "./panel-plans.js";
 
 async function withClientSession(body: any): Promise<{ user: any | null; error?: string }> {
   const token = body?.sessionToken;
@@ -374,6 +375,7 @@ export async function bsClientSessionResolve(body: any): Promise<any> {
     client: null,                                /* legacy field — clients are now per-user */
     brand: brand || null,
     visible_features: (ent as any).client_visible_features || {},
+    panel: await getPanelPlan(user.project_id),
   };
 }
 

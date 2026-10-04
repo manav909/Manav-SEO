@@ -327,6 +327,7 @@ const OWNER_ACTIONS: ReadonlySet<string> = new Set([
   "get_revenue_overview",
   "add_revenue_record",
   "bs_update_entitlements",
+  "panel_set_plan",
   "backlink_provider_keys_upsert",
   "backlink_provider_keys_delete",
 ]);
@@ -839,6 +840,13 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { bsRequestClientLogin } = await import("./lib/brand-studio-collab.js");
     const siteUrl = process.env.APP_URL || `https://${req.headers.host || "seoseason.com"}`;
     return ok(res, await bsRequestClientLogin(body, siteUrl));
+  }
+
+  /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */
+  if (typeof action === "string" && action.startsWith("panel_")) {
+    const { handlePanelPlans } = await import("./lib/panel-plans.js");
+    const panelResult = await handlePanelPlans(action, body);
+    if (panelResult !== null) return ok(res, panelResult);
   }
 
   /* ═══ BRAND STUDIO (Phase H foundation) — bs_* actions ═══ */
