@@ -233,7 +233,7 @@ export async function gscOauthCallback(opts: {
 
 /* ── 3. token refresh (internal) ──────────────────────────── */
 
-async function getAccessToken(projectId: string): Promise<{
+export async function getAccessToken(projectId: string): Promise<{
   token?: string; error?: string;
 }> {
   try {

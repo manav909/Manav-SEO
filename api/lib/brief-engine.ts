@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function generateMorningBrief(scope:"empire"|"project",projectId?:string){
   const today=new Date().toISOString().split("T")[0];
   let q=db().from("morning_briefs").select("id").eq("brief_date",today).eq("scope",scope);

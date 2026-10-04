@@ -27,6 +27,7 @@ export default function Build() {
   const [brief, setBrief]       = useState<any>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [tables, setTables]     = useState<Record<string,number>>({});
+  const [showSearch, setShowSearch] = useState(false);
   const [lastSync, setLastSync] = useState("");
   const [tab, setTab]           = useState<"feed"|"health"|"brief"|"tables"|"pages">("feed");
   const [tick, setTick]         = useState(0);

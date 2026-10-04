@@ -592,7 +592,6 @@ async function readGa4ForOffPage(projectId: string): Promise<{ engagement_rate: 
     };
     const [eng, users] = await Promise.all([readPk('ga4_engagement_rate'), readPk('ga4_users_monthly')]);
     return {
-  const CURRENT_YEAR = new Date().getFullYear();
       engagement_rate: eng   ? parseFloat(String(eng).replace('%',''))  || null : null,
       users:           users ? parseInt(String(users), 10)               || null : null,
     };
@@ -705,9 +704,9 @@ function scoreAssetKeywordFit(
 
 async function identifyExistingAssets(keyword: string, gscPages: GscPageRow[], ga4Data: { engagement_rate: number | null; users: number | null }): Promise<ExistingAsset[]> {
   if (gscPages.length === 0) return [];
+  const CURRENT_YEAR = new Date().getFullYear();
 
   const topPages = gscPages.slice(0, 25).map(p => ({
-  const CURRENT_YEAR = new Date().getFullYear();
     url: p.page, impressions: p.impressions, clicks: p.clicks, position: Number(p.position?.toFixed(1)),
   }));
 
@@ -783,8 +782,7 @@ async function identifyAssetGaps(
   keyword: string,
   gscPages: GscPageRow[],
   clusters: ClusterRow[],
-  compe
-titors: any[],
+  competitors: any[],
 ): Promise<AspirationalAsset[]> {
   const CURRENT_YEAR = new Date().getFullYear();
   const clusterContext = clusters.length > 0

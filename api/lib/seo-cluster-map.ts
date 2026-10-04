@@ -771,10 +771,10 @@ async function runAspirationalClusterMap(opts: {
 
 /* Build 4-6 aspirational clusters using LLM + optional competitor context. */
 async function buildAspirationalClusters(opts: {
-  const CURRENT_YEAR = new Date().getFullYear();
   keyword:     string;
   competitors: any[];
 }): Promise<Cluster[]> {
+  const CURRENT_YEAR = new Date().getFullYear();
   const competitorContext = opts.competitors.length > 0
     ? `Top competing pages for this keyword (from a prior rank pipeline):\n${opts.competitors.slice(0, 5).map((cp: any, i: number) => {
   const CURRENT_YEAR = new Date().getFullYear();
@@ -1507,8 +1507,7 @@ function extractDomainFromUrl(url: string): string {
   }
 }
 
-async function enrichClustersWithSerpApiCompe
-titors(
+async function enrichClustersWithSerpApiCompetitors(
   clusters: Cluster[],
   projectId: string,
   projectUrl: string,

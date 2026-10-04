@@ -1,4 +1,4 @@
-import { db } from "./db";
+import { db } from "./db.js";
 
 // ── WORLD-CLASS CONVERSATION ANALYSER ──────────────────────
 export async function analyseConversation(

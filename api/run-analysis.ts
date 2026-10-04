@@ -867,6 +867,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 async function _run_analysis_h(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(200).json({ error: 'Method not allowed' });
 
+  /* Multi-page orchestrator (Audit page → Orchestrator): streams one JSON
+     event per line — start, page_crawling, page_done, synthesizing, complete. */
+  if (Array.isArray(req.body?.urls)) return runOrchestratorStream(req, res);
+
   const {
     url         = '',
     keywords    = [] as string[],
@@ -1040,4 +1044,46 @@ async function _run_analysis_h(req: VercelRequest, res: VercelResponse) {
   } catch (err: any) {
     return res.status(200).json({ success: false, error: err.message });
   }
+}
+
+
+async function runOrchestratorStream(req: VercelRequest, res: VercelResponse) {
+  const { projectId, urls, mode } = req.body || {};
+  const send = (event: any) => { try { res.write(JSON.stringify({ timestamp: new Date().toISOString(), ...event }) + "\n"); } catch { /* client gone */ } };
+  res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+
+  const list = (urls as any[]).map(u => String(u || "").trim()).filter(Boolean).slice(0, 20)
+    .map(u => (u.startsWith("http") ? u : `https://${u}`));
+  if (!projectId || list.length === 0) {
+    send({ type: "error", summary: !projectId ? "Select a project first." : "Add at least one URL." });
+    return res.end();
+  }
+
+  try {
+    const [{ buildBrainContext }, { runAuditOrchestrator }] = await Promise.all([
+      import("./lib/context.js"),
+      import("./lib/audit-orchestrator.js"),
+    ]);
+    const ctx: any = await buildBrainContext(String(projectId));
+    const keywords: string[] = (ctx.keywords || []).slice(0, 5);
+    const projectContext = [
+      `Project: ${ctx.projectName || ""} (${ctx.url || ""})`,
+      ctx.industry ? `Industry: ${ctx.industry}` : "",
+      ctx.goals ? `Goals: ${ctx.goals}` : "",
+      keywords.length ? `Target keywords: ${keywords.join(", ")}` : "",
+      (ctx.competitors || []).length ? `Competitors: ${(ctx.competitors || []).slice(0, 5).join(", ")}` : "",
+    ].filter(Boolean).join("\n");
+
+    await runAuditOrchestrator({
+      projectId: String(projectId),
+      pages: list.map(url => ({ url, targetKeywords: keywords })),
+      projectContext,
+      algoTopics: ctx.algoTopics || [],
+      mode: mode === "quick" || mode === "deep" ? mode : "standard",
+      onProgress: send,
+    });
+  } catch (e: any) {
+    send({ type: "error", summary: e?.message || "Orchestrator failed" });
+  }
+  res.end();
 }

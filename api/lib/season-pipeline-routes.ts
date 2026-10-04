@@ -474,9 +474,11 @@ export async function bsSeasonPipelineRefreshFromAudit(body: any): Promise<any> 
     /* Build the definition for this pipeline_type */
     let definition: any;
     let firstAuditStepIndex: number = -1;
+    const { findFirstAuditDependentStepIndex } = await import("./season-pipeline-rank-for-keyword.js");
     if (r.pipeline_type === 'rank_for_keyword') {
-      const { buildRankForKeywordPipeline, findFirstAuditDependentStepIndex } = await import("./season-pipeline-rank-for-keyword.js");
+      const { buildRankForKeywordPipeline } = await import("./season-pipeline-rank-for-keyword.js");
       definition = buildRankForKeywordPipeline();
+      firstAuditStepIndex = findFirstAuditDependentStepIndex(definition);
     } else if (r.pipeline_type === 'traffic_growth') {
       const { buildTrafficGrowthPipeline } = await import("./season-pipeline-traffic-growth.js");
       definition = buildTrafficGrowthPipeline();

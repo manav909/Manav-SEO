@@ -5,8 +5,8 @@
    brain_desk from an API route — always use these functions.
 ═══════════════════════════════════════════════════════════ */
 
-import { db } from "./db";
-import { classifyLearning, extractImprovement, checkForConflicts } from "./classify";
+import { db } from "./db.js";
+import { classifyLearning, extractImprovement, checkForConflicts } from "./classify.js";
 
 /* ── Save a learning through the full classification + dedup pipeline ── */
 export async function saveLearning(opts: {

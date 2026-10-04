@@ -415,10 +415,11 @@ export async function bsSeoManavsPick(body: any): Promise<any> {
 }
 
 export async function bsSeoManavsPickAction(body: any): Promise<any> {
-  const { projectId, feedItemId, action, reason } = body || {};
+  const { projectId, feedItemId, feedAction, reason } = body || {};
+  const action = feedAction;
   if (!projectId)  return { success: false, error: "projectId required" };
   if (!feedItemId) return { success: false, error: "feedItemId required" };
-  if (!action)     return { success: false, error: "action required" };
+  if (!action)     return { success: false, error: "feedAction required" };
   const { recordFeedAction } = await import("./season-manavs-pick.js");
   return recordFeedAction({ projectId, feedItemId, action, reason });
 }

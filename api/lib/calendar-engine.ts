@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function generateContentCalendar(projectId:string,weeksAhead:number=4){
   const{data:p}=await db().from("projects").select("name,goals,industry,market").eq("id",projectId).single();
   if(!p)return null;

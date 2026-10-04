@@ -217,7 +217,7 @@ export async function getWarRoomBriefing(opts: {
         worth_exploring,
         positioning_gaps,
       },
-      locked,
+      locked: { items: locked },
       tools_status: toolsStatus,
       honest_note,
       generated_at: new Date().toISOString(),

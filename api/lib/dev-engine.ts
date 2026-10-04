@@ -2103,6 +2103,20 @@ export async function deleteProjectTasks(projectId: string, auditRunId?: string)
   }
 }
 
+/* Detect the CMS behind a URL. Falls back to stored project hints when the
+   page can't be fetched. Used by the Dev Panel after an audit upload. */
+export async function detectCms(url: string, hints: { cms?: string; seoPlugin?: string } = {}): Promise<CmsContext | null> {
+  try {
+    if (url) {
+      const { html, fetchedOk } = await fetchPageHtml(url, 8000);
+      if (fetchedOk && html) return detectCmsFromHtml(html);
+    }
+  } catch { /* fall through to hints */ }
+  if (!hints.cms) return null;
+  const platform = normaliseCmsPlatform(hints.cms);
+  return { platform, seoPlugin: (hints.seoPlugin as any) || 'unknown', confidence: 60, signals: ['From project settings'], adminPath: cmsAdminPath(platform) };
+}
+
 export async function detectCmsForProject(projectId: string): Promise<CmsContext | null> {
   try {
     const { data: proj } = await db()

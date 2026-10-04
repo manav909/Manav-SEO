@@ -3923,7 +3923,9 @@ export async function seoManavsPickAction(opts: {
   action:      'saved' | 'dismissed' | 'skipped' | 'asked_chat';
   reason?:     string;
 }): Promise<{ success?: boolean; error?: string }> {
-  const r = await post(ENGINE, { action: 'bs_seo_manavs_pick_action', ...opts });
+  /* The user's choice travels as feedAction — `action` names the endpoint. */
+  const { action: feedAction, ...rest } = opts;
+  const r = await post(ENGINE, { action: 'bs_seo_manavs_pick_action', ...rest, feedAction });
   if (!r?.success) return { error: r?.error };
   return { success: true };
 }

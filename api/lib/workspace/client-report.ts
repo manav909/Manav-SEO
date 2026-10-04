@@ -42,6 +42,9 @@ interface ClientReportOpts {
   /** Optional uploaded file attachment ids. PDFs are attached as native
       document blocks; DOCX/XLSX/CSV are passed as extracted markdown text. */
   attachmentIds?: string[];
+  /** "strict" (default): only what the operator's context asks for.
+      "comprehensive": also cover the site's current state from the workspace. */
+  mode?: "strict" | "comprehensive";
   /** Optional status callback for live UI updates during the call. */
   onStatus?: (s: string) => Promise<void>;
 }
@@ -247,6 +250,13 @@ Respond with ONLY this JSON (no prose around it, no fences):
   "operator_notes": "honest concerns visible to the operator only: things the operator's context asked for that the attached document didn't fully support; claims you softened or omitted; anything to verify before sending. Never copied into the body."
 }`;
 
+  const comprehensive = opts.mode === "comprehensive";
+  const systemPrompt = comprehensive ? system + `
+
+═══════════════════ MODE: COMPREHENSIVE (overrides rule 1) ═══════════════════
+
+The operator chose a COMPREHENSIVE report. Cover everything the operator's context asks for, AND add a well-structured overview of the site's current state drawn from the workspace analysis provided below: technical health, search visibility, content, the main opportunities and recommended next steps. Rules 2, 3 and 4 still apply in full — every claim must be sourced, never use internal vocabulary, never stretch the evidence.` : system;
+
   let userPrompt = `OPERATOR CONTEXT — this is the ONLY gate for what goes in the report. Include exactly what is asked here, nothing more.\n"""\n${opts.manavContext.trim()}\n"""\n`;
   if (referenceBlock) userPrompt += referenceBlock;
 
@@ -254,6 +264,9 @@ Respond with ONLY this JSON (no prose around it, no fences):
   // only if the operator's context explicitly asks for analysis or
   // current-state input. It is NOT material for the report by default.
   userPrompt += `\n\n═══════════════════ OPTIONAL CONTEXT (not for the report unless operator's context asks for it) ═══════════════════\n\nThe following workspace data describes the site's current analytical state. DO NOT include any of it in the report unless the operator's context above explicitly asks for analytical input, current-state observations, or site findings. This is reference-only context — most reports should ignore it entirely.\n\n## Site analysis (optional — consult only if operator asks)\n\n${pillarsBlock}\n\n## Strategy discussion (optional — consult only if operator asks)\n\n${panelBlock}\n\n## Raw site data (optional — consult only if operator asks for specific figures)\n\n${stepsBlock}\n\n═══════════════════ END OPTIONAL CONTEXT ═══════════════════\n\nNow produce the client report as JSON. Remember: the report's content is gated entirely by the operator's context above. Attached documents are the source of "what was done". Workspace data above is OPTIONAL — most reports will not draw on it at all. Never name filenames, never use internal vocabulary, never write what cannot be sourced. Operator concerns go in operator_notes, never in the body.`;
+  if (comprehensive) {
+    userPrompt += `\n\nOPERATOR MODE: COMPREHENSIVE. Unlike the default, DO use the workspace data above as report material: add a clear overview of the site's current state, the main opportunities and recommended next steps, alongside whatever the operator's context asks for.`;
+  }
 
   // ── Call path ── if PDFs are attached we go direct-API so we can include
   // them as document blocks; otherwise the existing text-only llm() helper.
@@ -274,7 +287,7 @@ Respond with ONLY this JSON (no prose around it, no fences):
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST", signal: controller.signal,
         headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system, messages: [{ role: "user", content: userContent }] }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 16000, system: systemPrompt, messages: [{ role: "user", content: userContent }] }),
       });
       if (!r.ok) {
         const t = await r.text().catch(() => "");
@@ -294,7 +307,7 @@ Respond with ONLY this JSON (no prose around it, no fences):
     }
   } else {
     raw = await llm({
-      system, user: userPrompt,
+      system: systemPrompt, user: userPrompt,
       maxTokens: 16000, timeoutMs: 240_000, label: "client-report",
     });
   }

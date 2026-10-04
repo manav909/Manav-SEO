@@ -224,8 +224,8 @@ async function readBriefingAttention(projectId: string): Promise<{
   positioning_refresh: string | null;
 }> {
   try {
-    const { seasonBriefing } = await import("./season-attention.js");
-    const r = await seasonBriefing({ projectId });
+    const { bsSeasonBriefing } = await import("./season-attention.js");
+    const r = await bsSeasonBriefing({ projectId });
     const items = r?.success && r.briefing ? (r.briefing.attention || []) : [];
     const positioning = await readPositioningStatus(projectId);
     return { items, positioning_resolved: positioning.resolved, positioning_refresh: positioning.refresh };

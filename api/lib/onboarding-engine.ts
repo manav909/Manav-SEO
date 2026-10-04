@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function startOnboarding(projectId:string){
   const{data:project}=await db().from("projects").select("*").eq("id",projectId).single();
   if(!project)return null;
