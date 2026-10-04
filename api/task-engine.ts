@@ -361,6 +361,8 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "cp_calls",
   "cp_call_cancel",
   "cp_action_done",
+  "cp_ai_visibility",
+  "cp_site_health",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -879,6 +881,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handleClientCalls } = await import("./lib/client-calls.js");
     const ccResult = await handleClientCalls(action, body);
     if (ccResult !== null) return ok(res, ccResult);
+    const { handleAiVisibility } = await import("./lib/ai-visibility.js");
+    const avResult = await handleAiVisibility(action, body);
+    if (avResult !== null) return ok(res, avResult);
+    const { handleSiteFoundations } = await import("./lib/site-foundations.js");
+    const sfResult = await handleSiteFoundations(action, body);
+    if (sfResult !== null) return ok(res, sfResult);
   }
 
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */
@@ -2887,6 +2895,19 @@ Return ONLY raw JSON:
       console.log("[cron] client wins", JSON.stringify(await clientWinsCronTick()));
     } catch (e: any) {
       console.error("[cron] client wins failed:", e?.message);
+    }
+    /* ── Weekly per project: site foundations + AI visibility (each skips if checked in the last week) ── */
+    try {
+      const { siteChecksCronTick } = await import("./lib/site-foundations.js");
+      console.log("[cron] site checks", JSON.stringify(await siteChecksCronTick()));
+    } catch (e: any) {
+      console.error("[cron] site checks failed:", e?.message);
+    }
+    try {
+      const { aiVisibilityCronTick } = await import("./lib/ai-visibility.js");
+      console.log("[cron] ai visibility", JSON.stringify(await aiVisibilityCronTick()));
+    } catch (e: any) {
+      console.error("[cron] ai visibility failed:", e?.message);
     }
 
     const now = new Date().toISOString();

@@ -84,6 +84,7 @@ import TeamInbox      from "@/pages/TeamInbox";
 import TeamOffers     from "@/pages/TeamOffers";
 import TeamMyDay      from "@/pages/TeamMyDay";
 import TeamCalls      from "@/pages/TeamCalls";
+import TeamChecks     from "@/pages/TeamChecks";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -145,6 +146,8 @@ const AppRoutes = () => {
         <Route path="/c/keywords"     element={<B name="client-keywords"><ClientPanel section="keywords" />                </B>} />
         <Route path="/c/book"         element={<B name="client-book">   <ClientPanel section="book" />                     </B>} />
         <Route path="/c/calls"        element={<B name="client-calls">  <ClientPanel section="calls" />                    </B>} />
+        <Route path="/c/health"       element={<B name="client-health"> <ClientPanel section="health" />                   </B>} />
+        <Route path="/c/ai-visibility" element={<B name="client-ai">    <ClientPanel section="ai" />                       </B>} />
         <Route path="/c/reports"      element={<B name="client-reports"><ClientPanel section="reports" />                  </B>} />
         <Route path="/c/settings"     element={<B name="client-settings"><ClientPanel section="settings" />                </B>} />
         <Route path="/c/login"        element={<B name="client-login">  <ClientLogin />                                    </B>} />
@@ -209,6 +212,7 @@ const AppRoutes = () => {
           <Route path="/ask" element={<StaffGuard perm="staff"><AskEmpire /></StaffGuard>} />
           <Route path="/revenue" element={<StaffGuard perm="hod_only"><RevenueBI /></StaffGuard>} />
           <Route path="/team/my-day" element={<StaffGuard perm="staff"><B name="team-my-day"><TeamMyDay /></B></StaffGuard>} />
+          <Route path="/team/checks" element={<StaffGuard perm="staff"><B name="team-checks"><TeamChecks /></B></StaffGuard>} />
           <Route path="/team/calls" element={<StaffGuard perm="staff"><B name="team-calls"><TeamCalls /></B></StaffGuard>} />
           <Route path="/team/offers" element={<StaffGuard perm="staff"><B name="team-offers"><TeamOffers /></B></StaffGuard>} />
           <Route path="/team/inbox" element={<StaffGuard perm="staff"><B name="team-inbox"><TeamInbox /></B></StaffGuard>} />

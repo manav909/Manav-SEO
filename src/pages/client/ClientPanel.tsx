@@ -15,9 +15,10 @@ import { clientSessionResolve, getStoredClientSession, clearClientSession, type 
 import { cp, goalProgress, METRIC_LABEL, SessionEndedError, type HomeData, type ChatMessage, type ClientGoal, type PanelInfo, type Win, type Milestone } from '@/lib/clientPanelApi';
 import { ImprovementsSection, OrdersSection } from './MoneySections';
 import { BookSection, CallsSection } from './CallSections';
+import { HealthSection, AiVisibilitySection, FoundationsSummary } from './CheckSections';
 import './clientPanel.css';
 
-export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'book' | 'calls' | 'keywords' | 'reports' | 'settings';
+export type Section = 'home' | 'talk' | 'goals' | 'improvements' | 'orders' | 'book' | 'calls' | 'keywords' | 'health' | 'ai' | 'reports' | 'settings';
 
 const NIGHT_KEY = 'seoseason_client_night';
 function readNight(): boolean {
@@ -83,7 +84,9 @@ export default function ClientPanel({ section }: { section: Section }) {
     { to: '/c/orders', label: 'Orders', key: 'orders', show: on('improvements') },
     { to: '/c/calls', label: 'Calls & notes', key: 'calls', show: on('calls') },
     { to: '/c/reports', label: 'Reports', key: 'reports', show: on('reports') },
+    { to: '/c/health', label: 'Site health', key: 'health', show: on('site_health') },
     { to: '/c/keywords', label: 'Keywords', key: 'keywords', show: panel?.features?.keywords === true },
+    { to: '/c/ai-visibility', label: 'AI visibility', key: 'ai', show: panel?.features?.ai_visibility === true },
   ];
 
   return (
@@ -124,6 +127,8 @@ export default function ClientPanel({ section }: { section: Section }) {
           {section === 'orders' && on('improvements') && <OrdersSection onSessionEnded={onSessionEnded} />}
           {section === 'book' && on('calls') && <BookSection onSessionEnded={onSessionEnded} />}
           {section === 'calls' && on('calls') && <CallsSection onSessionEnded={onSessionEnded} />}
+          {section === 'health' && on('site_health') && <HealthSection onSessionEnded={onSessionEnded} />}
+          {section === 'ai' && panel?.features?.ai_visibility && <AiVisibilitySection onSessionEnded={onSessionEnded} />}
           {section === 'keywords' && panel?.features?.keywords && <KeywordsSection onSessionEnded={onSessionEnded} />}
           {section === 'reports' && on('reports') && <ReportsSection onSessionEnded={onSessionEnded} />}
           {section === 'settings' && <SettingsSection ctx={ctx} panel={panel} night={night} toggleNight={toggleNight} onRenamed={(name) => setCtx({ ...ctx, user: { ...ctx.user, display_name: name } })} />}
@@ -231,6 +236,8 @@ function HomeSection({ onSessionEnded }: { onSessionEnded: () => void }) {
         </div>
         <Link to="/c/talk" className="cp-btn">{data.unreadMessages ? `${data.unreadMessages} new message${data.unreadMessages > 1 ? 's' : ''}` : `Message ${data.strategist.name}`}</Link>
       </section>
+
+      {!n && data.panel?.features?.site_health && <FoundationsSummary onSessionEnded={onSessionEnded} />}
 
       {n && (
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
@@ -496,7 +503,7 @@ function TalkSection({ onSessionEnded, me }: { onSessionEnded: () => void; me: s
 
 /* ─── Settings ──────────────────────────────────────────────────── */
 
-const LIVE_FEATURES = new Set(['home', 'strategist', 'calls', 'goals', 'improvements', 'keywords', 'reports', 'brand_studio']);
+const LIVE_FEATURES = new Set(['home', 'strategist', 'calls', 'site_health', 'goals', 'improvements', 'keywords', 'ai_visibility', 'reports', 'brand_studio']);
 
 const FEATURE_NAMES: Record<string, string> = {
   home: 'Home & wins', strategist: 'Talk to your strategist', calls: 'Calls & notes', reports: 'Monthly reports',
