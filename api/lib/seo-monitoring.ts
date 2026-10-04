@@ -951,7 +951,6 @@ function pushPctFinding(findings: Finding[], opts: {
 ═══════════════════════════════════════════════════════════════ */
 
 async function synthesizeMonitoringNarrative(opts: {
-  const CURRENT_YEAR = new Date().getFullYear();
   keyword:      string;
   currentSnap:  Snapshot;
   baselineSnap: Snapshot;

@@ -3015,13 +3015,13 @@ Respond with JSON only:
 
   if (action === 'check_algorithm_updates') {
     try{
-      const{checkAlgorithmUpdates}=await import('./lib/algorithm-monitor');
+      const{checkAlgorithmUpdates}=await import('./lib/algorithm-monitor.js');
       return ok(res,{success:true,...await checkAlgorithmUpdates()});
     }catch(e:any){return ok(res,{error:e.message});}
   }
   if (action === 'get_algorithm_watchlist') {
     try{
-      const{getAlgorithmWatchlist}=await import('./lib/algorithm-monitor');
+      const{getAlgorithmWatchlist}=await import('./lib/algorithm-monitor.js');
       return ok(res,{events:await getAlgorithmWatchlist()});
     }catch(e:any){return ok(res,{error:e.message});}
   }

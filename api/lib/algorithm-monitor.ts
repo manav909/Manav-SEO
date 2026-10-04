@@ -1,9 +1,9 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function checkAlgorithmUpdates(){
   const ai=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",
     headers:{"Content-Type":"application/json","x-api-key":process.env.ANTHROPIC_API_KEY||"","anthropic-version":"2023-06-01"},
     body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:600,
-      messages:[{role:"user",content:"List 3 important recent Google algorithm updates as JSON: [{"event_type":"core_update","severity":"high","title":"...","description":"...","recommended_actions":["..."]}]. Return JSON array only."}]})});
+      messages:[{role:"user",content:`List 3 important recent Google algorithm updates as JSON: [{"event_type":"core_update","severity":"high","title":"...","description":"...","recommended_actions":["..."]}]. Return JSON array only.`}]})});
   const j=await ai.json() as any;
   let events:any[]=[];
   try{events=JSON.parse((j?.content?.[0]?.text||"[]").replace(/```json|```/g,"").trim());}catch{}
