@@ -311,6 +311,10 @@ async function cpsOrderUpdate(body: any, staffEmail: string | null) {
   }
   const { error: upErr } = await db().from("client_orders").update(patch).eq("id", o.id);
   if (upErr) return fail(upErr);
+  if (changed && status === "delivered") {
+    const { recordWin } = await import("./client-wins.js");
+    await recordWin(o.project_id, { kind: "order_delivered", key: `order:${o.id}`, title: `Done: ${o.name}`, detail: patch.delivered_note || o.delivered_note || undefined, by: staffEmail || "team" }).catch(() => false);
+  }
   if (changed && status !== "cancelled") {
     const extra = status === "delivered" && (patch.delivered_note || o.delivered_note) ? `\n\n${patch.delivered_note || o.delivered_note}` : "";
     emailProjectClients(o.project_id, `“${o.name}”: ${STEP_LABEL[status]}`, `Update on “${o.name}”: ${STEP_LABEL[status]}.${extra}`, "/c/orders").catch(() => {});

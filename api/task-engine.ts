@@ -352,6 +352,9 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "cp_offers_orders",
   "cp_offer_decide",
   "cp_order_thanks",
+  "cp_wins",
+  "cp_win_thanks",
+  "cp_keywords",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -864,6 +867,9 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handleMoneyFlow } = await import("./lib/money-flow.js");
     const mfResult = await handleMoneyFlow(action, body, staffEmail);
     if (mfResult !== null) return ok(res, mfResult);
+    const { handleClientWins } = await import("./lib/client-wins.js");
+    const cwResult = await handleClientWins(action, body, staffEmail);
+    if (cwResult !== null) return ok(res, cwResult);
   }
 
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */
@@ -2864,6 +2870,14 @@ Return ONLY raw JSON:
       livingOverviewSummary = await livingOverviewCronTick();
     } catch (e: any) {
       livingOverviewSummary = { error: e?.message || "living overview cron failed" };
+    }
+
+    /* ── Client panel: keyword history + wins to celebrate (after the Google pulls) ── */
+    try {
+      const { clientWinsCronTick } = await import("./lib/client-wins.js");
+      console.log("[cron] client wins", JSON.stringify(await clientWinsCronTick()));
+    } catch (e: any) {
+      console.error("[cron] client wins failed:", e?.message);
     }
 
     const now = new Date().toISOString();
