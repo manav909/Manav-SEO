@@ -34,7 +34,7 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import { db } from "./db.js";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 
 /* ─── Constants ────────────────────────────────────────────────── */
 
@@ -53,6 +53,7 @@ function accessAtLeast(have: string, want: string): boolean {
 
 const INVITE_EXPIRY_DAYS  = 30;
 const SESSION_EXPIRY_DAYS = 90;
+const LOGIN_LINK_MINUTES  = 30;   /* sign-in links a returning client asks for */
 
 /* ─── Helpers ──────────────────────────────────────────────────── */
 
@@ -64,13 +65,31 @@ function isoExpiry(days: number): string {
   return new Date(Date.now() + days * 86400 * 1000).toISOString();
 }
 
+/** Session tokens are stored hashed, so a leaked database row can't be
+ *  replayed as a login. The raw token only ever lives in the client's browser. */
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
 /** Resolve a client_user from session_token. Used by client-side
  *  endpoints to verify identity. Returns the user if session is
  *  valid + unexpired + active, else null. */
 export async function resolveClientUserSession(sessionToken: string): Promise<any | null> {
   if (!sessionToken) return null;
-  const { data } = await db().from("client_users")
-    .select("*").eq("session_token", sessionToken).maybeSingle();
+  const hashed = hashToken(sessionToken);
+  let { data } = await db().from("client_users")
+    .select("*").eq("session_token", hashed).maybeSingle();
+  if (!data) {
+    /* Sessions minted before hashing stored the raw token — accept once
+       and upgrade the row to the hashed form. */
+    const legacy = await db().from("client_users")
+      .select("*").eq("session_token", sessionToken).maybeSingle();
+    data = legacy.data;
+    if (data) {
+      db().from("client_users").update({ session_token: hashed })
+        .eq("id", (data as any).id).then(() => {}, () => {});
+    }
+  }
   if (!data) return null;
   const u = data as any;
   if (!u.active) return null;
@@ -186,7 +205,9 @@ export async function bsListClientUsers(body: any): Promise<any> {
   q = q.order("created_at", { ascending: false });
   const { data, error } = await q;
   if (error) return { success: false, error: error.message };
-  return { success: true, client_users: data || [] };
+  /* Never hand session tokens to the browser, even hashed. */
+  const users = (data || []).map((u: any) => { const { session_token, ...rest } = u; return rest; });
+  return { success: true, client_users: users };
 }
 
 export async function bsUpdateClientUser(body: any): Promise<any> {
@@ -226,14 +247,16 @@ export async function bsRevokeClientUser(body: any): Promise<any> {
 export async function bsRedeemInvite(body: any): Promise<any> {
   const { inviteToken, displayName } = body;
   if (!inviteToken) return { success: false, error: "inviteToken required" };
-  if (!displayName || !String(displayName).trim()) {
-    return { success: false, error: "displayName required to complete signup" };
-  }
 
   const { data: row } = await db().from("client_users")
     .select("*").eq("invite_token", inviteToken).maybeSingle();
   if (!row) return { success: false, error: "Invalid invite link" };
   const u = row as any;
+  /* First visit asks for a name; a returning client signing in again keeps theirs. */
+  const name = String(displayName || "").trim() || String(u.display_name || "").trim();
+  if (!name) {
+    return { success: false, error: "displayName required to complete signup", code: "name_required" };
+  }
   if (u.invite_used) return { success: false, error: "Invite already used — request a new one from your account manager" };
   if (u.invite_expires_at && new Date(u.invite_expires_at) < new Date()) {
     return { success: false, error: "Invite has expired — request a new one from your account manager" };
@@ -243,12 +266,12 @@ export async function bsRedeemInvite(body: any): Promise<any> {
   const sessionToken   = generateToken(48);
   const sessionExpires = isoExpiry(SESSION_EXPIRY_DAYS);
   const { data: updated, error } = await db().from("client_users").update({
-    display_name:      String(displayName).slice(0, 200),
+    display_name:      name.slice(0, 200),
     invite_used:       true,
-    session_token:     sessionToken,
+    session_token:     hashToken(sessionToken),
     session_expires_at: sessionExpires,
     last_seen_at:      new Date().toISOString(),
-    visit_count:       1,
+    visit_count:       (u.visit_count || 0) + 1,
   }).eq("id", u.id).select().single();
 
   if (error || !updated) return { success: false, error: error?.message || "Could not complete signup" };
@@ -257,8 +280,69 @@ export async function bsRedeemInvite(body: any): Promise<any> {
     success: true,
     session_token: sessionToken,
     session_expires_at: sessionExpires,
-    client_user: updated,
+    client_user: (({ session_token, ...rest }: any) => rest)(updated),
   };
+}
+
+/** A returning client types their email and gets a fresh one-time sign-in
+ *  link (valid 30 minutes). The reply is identical whether or not the email
+ *  has access, so it can't be used to discover who our clients are.
+ *  `siteUrl` comes from the server, never the request body, so the link
+ *  can't be pointed at another site. */
+export async function bsRequestClientLogin(body: any, siteUrl: string): Promise<any> {
+  const generic = { success: true, message: "If that email has access, a sign-in link is on its way. It works for 30 minutes." };
+  const email = String(body?.email || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { success: false, error: "Please enter a valid email address." };
+
+  const { data: rows } = await db().from("client_users")
+    .select("id,email,project_id,display_name,active,invite_sent_at,last_seen_at")
+    .ilike("email", email.replace(/[\\%_]/g, (c) => "\\" + c))
+    .eq("active", true);
+  const candidates = (rows || []) as any[];
+  if (!candidates.length) return generic;
+
+  /* Most recently used project first */
+  candidates.sort((a, b) => String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")));
+  const u = candidates[0];
+
+  /* One email a minute is plenty — stops someone flooding a client's inbox. */
+  if (u.invite_sent_at && Date.now() - new Date(u.invite_sent_at).getTime() < 60_000) return generic;
+
+  /* The project must still have its client portal switched on. */
+  const { data: ent } = await db().from("project_entitlements")
+    .select("client_portal_enabled").eq("project_id", u.project_id).maybeSingle();
+  if (!(ent as any)?.client_portal_enabled) return generic;
+
+  const loginToken = generateToken(32);
+  const { error } = await db().from("client_users").update({
+    invite_token: loginToken,
+    invite_used: false,
+    invite_sent_at: new Date().toISOString(),
+    invite_expires_at: new Date(Date.now() + LOGIN_LINK_MINUTES * 60_000).toISOString(),
+  }).eq("id", u.id);
+  if (error) return generic;
+
+  const link = `${siteUrl.replace(/\/$/, "")}/c/invite/${loginToken}`;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    console.log("[client-login] RESEND_API_KEY not set — sign-in link not emailed");
+    return generic;
+  }
+  try {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: process.env.CLIENT_LOGIN_FROM || "SEO Season <noreply@seoseason.com>",
+        to: [u.email],
+        subject: "Your SEO Season sign-in link",
+        text: `Hi ${u.display_name || "there"},\n\nHere's your sign-in link for SEO Season:\n${link}\n\nIt works once and expires in ${LOGIN_LINK_MINUTES} minutes. If you didn't ask for it, you can ignore this email.\n\nSEO Season`,
+      }),
+    });
+  } catch (e: any) {
+    console.error("[client-login] email send failed:", e?.message);
+  }
+  return generic;
 }
 
 /* ═══════════════════════════════════════════════════════════════

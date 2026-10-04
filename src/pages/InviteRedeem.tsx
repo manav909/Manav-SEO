@@ -8,8 +8,8 @@
    to /c/workspace (session-based client workspace).
 ═══════════════════════════════════════════════════════════════ */
 
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Loader2, Sparkles, Mail, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { redeemInvite, storeClientSession, CLIENT_ROLES } from '@/components/brand-studio/api';
 
@@ -19,9 +19,35 @@ export default function InviteRedeem() {
   const [displayName, setDisplayName] = useState('');
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]             = useState('');
+  const [checking, setChecking]       = useState(true);
 
-  /* No upfront fetch — we don't expose invite details without the user
-     completing signup. Backend validates token + name + mints session. */
+  /* Returning clients (sign-in links) already have a name on file, so try
+     without one first. A first-time invite answers "name_required" without
+     using up the link, and we show the name form. */
+  const attempted = useRef(false);
+  useEffect(() => {
+    // Links are single-use: make sure only one attempt is ever sent.
+    if (!token || attempted.current) return;
+    attempted.current = true;
+    (async () => {
+      const r = await redeemInvite({ inviteToken: token });
+      if (r.session_token) {
+        storeClientSession(r.session_token, r.session_expires_at || '');
+        navigate('/c/workspace', { replace: true });
+        return;
+      }
+      if (r.code !== 'name_required') setError(r.error || 'This link no longer works.');
+      setChecking(false);
+    })();
+  }, [token, navigate]);
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   const submit = async () => {
     if (!token) return;
@@ -81,7 +107,7 @@ export default function InviteRedeem() {
             {error && (
               <div className="rounded-xl border border-red-500/30 bg-red-500/[0.04] p-3 text-xs text-red-400 flex items-start gap-2">
                 <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
-                <span>{error}</span>
+                <span>{error} <Link to="/c/login" className="underline font-semibold">Email me a new sign-in link</Link></span>
               </div>
             )}
 

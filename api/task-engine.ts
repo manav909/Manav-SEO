@@ -337,6 +337,7 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "pm_report_get_shared",
   "get_proposal_by_token",
   "bs_redeem_invite",
+  "bs_client_request_login",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -830,6 +831,14 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { handleMissionControl } = await import("./lib/mission-control.js");
     const mcResult = await handleMissionControl(action, body);
     if (mcResult !== null) return ok(res, mcResult);
+  }
+
+  /* Returning client asks for a sign-in link by email. The link's site comes
+     from APP_URL or this deployment's own host, never from the request body. */
+  if (action === "bs_client_request_login") {
+    const { bsRequestClientLogin } = await import("./lib/brand-studio-collab.js");
+    const siteUrl = process.env.APP_URL || `https://${req.headers.host || "seoseason.com"}`;
+    return ok(res, await bsRequestClientLogin(body, siteUrl));
   }
 
   /* ═══ BRAND STUDIO (Phase H foundation) — bs_* actions ═══ */

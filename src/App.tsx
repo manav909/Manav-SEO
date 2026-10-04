@@ -78,6 +78,7 @@ import KanbanBoard from "@/pages/KanbanBoard";
 import NotFound       from "./pages/NotFound";
 import SiteManager    from "@/pages/SiteManager";
 import NoAccess       from "@/components/NoAccess";
+import ClientLogin    from "@/pages/ClientLogin";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -131,6 +132,7 @@ const AppRoutes = () => {
         <Route path="/"               element={<B name="index">         <Index />                                          </B>} />
         <Route path="/tour"           element={<B name="tour">          <GuestTour />                                      </B>} />
         <Route path="/r/:token"       element={<B name="client-report"> <ClientReportView />                              </B>} />
+        <Route path="/c/login"        element={<B name="client-login">  <ClientLogin />                                    </B>} />
         <Route path="/c/invite/:token" element={<B name="client-invite"> <InviteRedeem />                                  </B>} />
         <Route path="/c/workspace"    element={<B name="client-workspace-session"><ClientWorkspace />                      </B>} />
         <Route path="/c/:token"       element={<B name="client-workspace"><ClientWorkspace />                            </B>} />
