@@ -317,7 +317,7 @@ async function _seo_agent_h(req: VercelRequest, res: VercelResponse) {
   let personaSection = "";
   if (projectId) {
     try {
-      const { data: personaRow } = await (await import("./lib/db")).db()
+      const { data: personaRow } = await (await import("./lib/db.js")).db()
         .from("market_personas")
         .select("persona_data")
         .eq("project_id", projectId)

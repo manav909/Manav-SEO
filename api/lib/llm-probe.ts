@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function checkLLMVisibility(projectId:string){
   const{data:p}=await db().from("projects").select("name,url,goals,industry,market").eq("id",projectId).single();
   if(!p)return null;

@@ -12,11 +12,11 @@
      const { system, user } = formatContextForPrompt(ctx, question);
 ═══════════════════════════════════════════════════════════ */
 
-import { db } from "./db";
+import { db } from "./db.js";
 import type {
   BrainContext, ProjectMetrics, AuditSummary,
   LearningSummary, AlgoTopic, TaskSummary, ContextGaps,
-} from "./types";
+} from "./types.js";
 
 function safeStr(v: any): string { return v == null ? "" : String(v); }
 

@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export interface LeadInput{url:string;email?:string;name?:string;company?:string;source?:string;market?:string;}
 export async function captureAndScoreLead(input:LeadInput){
   const urlClean=input.url.replace(/^https?:\/\//,"").replace(/\/$/,"");

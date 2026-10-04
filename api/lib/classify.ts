@@ -15,8 +15,8 @@
    9. Auto-approve?           → technical/algorithm/quick-win or score ≥ 85
 ═══════════════════════════════════════════════════════════ */
 
-import type { LearningClass } from "./types";
-import { db } from "./db";
+import type { LearningClass } from "./types.js";
+import { db } from "./db.js";
 
 /* ── Patterns ── */
 const SYS_ERR_PAT = [

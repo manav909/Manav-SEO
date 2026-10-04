@@ -553,6 +553,7 @@ export default function Audit() {
               setOrchSynthesis(event.summary);
             }
             if (event.type === 'complete') setOrchComplete(true);
+            if (event.type === 'error') toast({ title: 'Orchestrator failed', description: event.summary, variant: 'destructive' });
           } catch (_) {}
         }
       }

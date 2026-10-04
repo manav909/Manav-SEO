@@ -256,6 +256,11 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
 
   const body = req.body || {};
 
+  /* Liveness probe: answer without spending an AI call. */
+  if (body.action === "health_check" || body.mode === "health_check") {
+    return res.status(200).json({ ok: true, healthy: true });
+  }
+
   /* Logged-out visitors (the guest chat on / and /tour) may only ask plain
      questions: no project data, no server-side URL fetches. */
   const auth = await authenticate(req);

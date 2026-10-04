@@ -5,7 +5,7 @@
  * Extracts structured learnings from raw AI output and saves to brain_learnings.
  */
 
-import { db } from './db';
+import { db } from './db.js';
 
 export interface LearningInput {
   source: string;           // which generation point: task_execution, strategy_generation, etc.

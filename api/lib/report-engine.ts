@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 import { logLlmUsage } from "./llm-usage.js";
 export async function generateReport(projectId:string,reportType:"weekly"|"monthly"|"quarterly"){
   const{data:project}=await db().from("projects").select("name,url,goals").eq("id",projectId).single();

@@ -17,11 +17,11 @@
 ═══════════════════════════════════════════════════════════ */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { fetchUrl, parseJson } from "./fetch";
-import { saveLearning, saveToDesk } from "./save";
-import { runPostAuditPipeline } from "./pipeline";
-import { db } from "./db";
-import type { AlgoTopic } from "./types";
+import { fetchUrl, parseJson } from "./fetch.js";
+import { saveLearning, saveToDesk } from "./save.js";
+import { runPostAuditPipeline } from "./pipeline.js";
+import { db } from "./db.js";
+import type { AlgoTopic } from "./types.js";
 
 /* ── Per-page specification ─────────────────────────────────── */
 export interface PageSpec {

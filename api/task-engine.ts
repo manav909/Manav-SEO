@@ -824,7 +824,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const bdResult = await handleBd(action, body);
     if (bdResult !== null) return ok(res, bdResult);
   }
-  if (typeof action === "string" && action.startsWith("wizard_")) {
+  if (typeof action === "string" && (action.startsWith("wizard_") || action.startsWith("semrush_"))) {
     const { handleWizard } = await import("./lib/wizard-engine.js");
     const wzResult = await handleWizard(action, body);
     if (wzResult !== null) return ok(res, wzResult);
@@ -1126,7 +1126,9 @@ Return ONLY raw JSON:
 
 
 
-  if (action === "get_pipeline") {
+  /* BDE panel: the latest assignments. A request with a staffId (staff
+     profile) is handled by the per-staff get_pipeline further down. */
+  if (action === "get_pipeline" && !body.staffId) {
     try {
       const { data: _pd } = await db().from("lead_assignments").select("*, prospects(*)").order("updated_at", { ascending: false }).limit(30);
       return ok(res, { success: true, assignments: _pd || [] });
@@ -2955,7 +2957,7 @@ Respond with JSON only:
     const{prospectId}=body;
     if(!prospectId)return ok(res,{error:'prospectId required'});
     try{
-      const{generateProposalHTML}=await import('./lib/lead-engine');
+      const{generateProposalHTML}=await import('./lib/lead-engine.js');
       const html=await generateProposalHTML(prospectId);
       const{data:pr}=await db().from('prospects').select('url,company').eq('id',prospectId).single();
       const{data:proposal}=await db().from('proposals').insert({
@@ -2980,7 +2982,7 @@ Respond with JSON only:
     const{projectId}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
     try{
-      const{startOnboarding}=await import('./lib/onboarding-engine');
+      const{startOnboarding}=await import('./lib/onboarding-engine.js');
       const result=await startOnboarding(projectId);
       return ok(res,{success:true,...result});
     }catch(e:any){return ok(res,{error:e.message});}
@@ -2998,7 +3000,7 @@ Respond with JSON only:
     const{projectId}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
     try{
-      const{calculateClientHealth}=await import('./lib/health-engine');
+      const{calculateClientHealth}=await import('./lib/health-engine.js');
       const result=await calculateClientHealth(projectId);
       return ok(res,{success:true,health:result});
     }catch(e:any){return ok(res,{error:e.message});}
@@ -3021,7 +3023,7 @@ Respond with JSON only:
     const{projectId,weeksAhead=4}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
     try{
-      const{generateContentCalendar}=await import('./lib/calendar-engine');
+      const{generateContentCalendar}=await import('./lib/calendar-engine.js');
       return ok(res,{success:true,...await generateContentCalendar(projectId,weeksAhead)});
     }catch(e:any){return ok(res,{error:e.message});}
   }
@@ -3029,7 +3031,7 @@ Respond with JSON only:
     const{projectId}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
     try{
-      const{getContentCalendar}=await import('./lib/calendar-engine');
+      const{getContentCalendar}=await import('./lib/calendar-engine.js');
       return ok(res,{calendar:await getContentCalendar(projectId)});
     }catch(e:any){return ok(res,{error:e.message});}
   }
@@ -3066,14 +3068,14 @@ Respond with JSON only:
     const results:Record<string,any>={};
     const{data:projects}=await db().from('projects').select('id,name').limit(50);
     if(!projects?.length)return ok(res,{success:true,message:'No projects'});
-    try{const{generateMorningBrief}=await import('./lib/brief-engine');results.brief=await generateMorningBrief('empire');}
+    try{const{generateMorningBrief}=await import('./lib/brief-engine.js');results.brief=await generateMorningBrief('empire');}
     catch(e:any){results.brief={error:(e as any).message};}
-    try{const{calculateClientHealth}=await import('./lib/health-engine');let h=0;
+    try{const{calculateClientHealth}=await import('./lib/health-engine.js');let h=0;
       for(const p of projects.slice(0,10)){try{await calculateClientHealth(p.id);h++;}catch{}}
       results.health={updated:h};}
     catch(e:any){results.health={error:(e as any).message};}
     if(new Date().getDay()===1){
-      try{const{generateReport}=await import('./lib/report-engine');let r=0;
+      try{const{generateReport}=await import('./lib/report-engine.js');let r=0;
         for(const p of projects.slice(0,5)){try{await generateReport(p.id,'weekly');r++;}catch{}}
         results.reports={generated:r};}
       catch(e:any){results.reports={error:(e as any).message};}
@@ -3121,7 +3123,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{text,projectId,channel='email'}=body;
     if(!text)return ok(res,{error:'text required'});
     try{
-      const{analyseConversation}=await import('./lib/comms-engine');
+      const{analyseConversation}=await import('./lib/comms-engine.js');
       const result=await analyseConversation(text,projectId,channel);
       return ok(res,{success:true,...result});
     }catch(e:any){return ok(res,{error:e.message});}
@@ -3161,7 +3163,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{objectionType,objectionText,language='en',projectId}=body;
     if(!objectionType||!objectionText)return ok(res,{error:'objectionType and objectionText required'});
     try{
-      const{handleObjection}=await import('./lib/comms-engine');
+      const{handleObjection}=await import('./lib/comms-engine.js');
       let ctx=null;
       if(projectId){const{data}=await db().from('projects').select('name,url,goals').eq('id',projectId).single();ctx=data;}
       const result=await handleObjection(objectionType,objectionText,language,ctx);
@@ -3173,7 +3175,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{projectId,updateType='email',language='en'}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
     try{
-      const{generateClientUpdate}=await import('./lib/comms-engine');
+      const{generateClientUpdate}=await import('./lib/comms-engine.js');
       const result=await generateClientUpdate(projectId,updateType,language);
       return ok(res,{success:true,...result});
     }catch(e:any){return ok(res,{error:e.message});}
@@ -3182,7 +3184,7 @@ HTML: ${html.slice(0,2000)}`}]})});
   if (action === 'generate_presentation') {
     const{type='progress_update',projectId,prospectId,language='en'}=body;
     try{
-      const{generatePresentation}=await import('./lib/comms-engine');
+      const{generatePresentation}=await import('./lib/comms-engine.js');
       const result=await generatePresentation(type,projectId,prospectId,language);
       return ok(res,{success:true,...result});
     }catch(e:any){return ok(res,{error:e.message});}
@@ -3206,7 +3208,7 @@ HTML: ${html.slice(0,2000)}`}]})});
   }
 
   if (action === 'get_timezones') {
-    const{getClientTimezones}=await import('./lib/comms-engine');
+    const{getClientTimezones}=await import('./lib/comms-engine.js');
     return ok(res,{timezones:getClientTimezones()});
   }
 
@@ -3443,7 +3445,7 @@ HTML: ${html.slice(0,2000)}`}]})});
     const{text,staffId,assignmentId}=body;
     if(!text)return ok(res,{error:'text required'});
     try{
-      const{analyseFiverrConversation}=await import('./lib/roles-engine');
+      const{analyseFiverrConversation}=await import('./lib/roles-engine.js');
       const result=await analyseFiverrConversation(text,staffId);
       if(assignmentId&&result.id){
         await db().from('lead_assignments').update({last_contact:new Date().toISOString()}).eq('id',assignmentId);
@@ -3457,7 +3459,7 @@ HTML: ${html.slice(0,2000)}`}]})});
   if (action === 'get_pipeline') {
     const{staffId,role}=body;
     try{
-      const{getPipelineOverview}=await import('./lib/roles-engine');
+      const{getPipelineOverview}=await import('./lib/roles-engine.js');
       return ok(res,{success:true,...await getPipelineOverview(staffId,role)});
     }catch(e:any){return ok(res,{error:e.message});}
   }
@@ -4192,13 +4194,13 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     let q=db().from('morning_briefs').select('*').eq('brief_date',today).eq('scope',scope);
     if(projectId)q=q.eq('project_id',projectId);
     const{data}=await q.order('created_at',{ascending:false}).limit(1).maybeSingle();
-    if(!data){try{const{generateMorningBrief}=await import('./lib/brief-engine');return ok(res,await generateMorningBrief(scope,projectId));}catch(e:any){return ok(res,{brief:null,error:e.message});}}
+    if(!data){try{const{generateMorningBrief}=await import('./lib/brief-engine.js');return ok(res,await generateMorningBrief(scope,projectId));}catch(e:any){return ok(res,{brief:null,error:e.message});}}
     return ok(res,{brief:data});
   }
 
   if (action === 'generate_morning_brief') {
     const{scope='empire',projectId}=body;
-    try{const{generateMorningBrief}=await import('./lib/brief-engine');return ok(res,{success:true,...await generateMorningBrief(scope,projectId)});}
+    try{const{generateMorningBrief}=await import('./lib/brief-engine.js');return ok(res,{success:true,...await generateMorningBrief(scope,projectId)});}
     catch(e:any){return ok(res,{error:e.message});}
   }
 
@@ -4211,7 +4213,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
     const{data:projects}=await db().from('projects').select('id').limit(50);
     if(!projects?.length)return ok(res,{success:true,processed:0});
     let count=0;
-    try{const{calculateClientHealth}=await import('./lib/health-engine');for(const p of projects){try{await calculateClientHealth(p.id);count++;}catch{}}}
+    try{const{calculateClientHealth}=await import('./lib/health-engine.js');for(const p of projects){try{await calculateClientHealth(p.id);count++;}catch{}}}
     catch(e:any){return ok(res,{error:e.message});}
     return ok(res,{success:true,processed:count});
   }
@@ -4226,14 +4228,14 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   if (action === 'generate_report') {
     const{projectId,reportType='weekly'}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
-    try{const{generateReport}=await import('./lib/report-engine');const r=await generateReport(projectId,reportType);return ok(res,{success:true,report:r,shareUrl:`/reports/${r?.token}`});}
+    try{const{generateReport}=await import('./lib/report-engine.js');const r=await generateReport(projectId,reportType);return ok(res,{success:true,report:r,shareUrl:`/reports/${r?.token}`});}
     catch(e:any){return ok(res,{error:e.message});}
   }
 
   if (action === 'check_llm_visibility') {
     const{projectId}=body;
     if(!projectId)return ok(res,{error:'projectId required'});
-    try{const{checkLLMVisibility}=await import('./lib/llm-probe');return ok(res,{success:true,...await checkLLMVisibility(projectId)});}
+    try{const{checkLLMVisibility}=await import('./lib/llm-probe.js');return ok(res,{success:true,...await checkLLMVisibility(projectId)});}
     catch(e:any){return ok(res,{error:e.message});}
   }
 
@@ -4270,7 +4272,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   if (action === 'capture_lead') {
     const{url,email,name,company,source,market}=body;
     if(!url)return ok(res,{error:'url required'});
-    try{const{captureAndScoreLead}=await import('./lib/lead-engine');return ok(res,{success:true,...await captureAndScoreLead({url,email,name,company,source,market})});}
+    try{const{captureAndScoreLead}=await import('./lib/lead-engine.js');return ok(res,{success:true,...await captureAndScoreLead({url,email,name,company,source,market})});}
     catch(e:any){return ok(res,{error:e.message});}
   }
 
@@ -4285,7 +4287,7 @@ ${projectId?`Current project focus: ${projects.find((p:any)=>p.id===projectId)?.
   if (action === 'generate_content_brief') {
     const{projectId,keyword,priority='medium'}=body;
     if(!projectId||!keyword)return ok(res,{error:'projectId and keyword required'});
-    try{const{generateContentBrief}=await import('./lib/content-engine');return ok(res,{success:true,...await generateContentBrief(projectId,keyword,priority)});}
+    try{const{generateContentBrief}=await import('./lib/content-engine.js');return ok(res,{success:true,...await generateContentBrief(projectId,keyword,priority)});}
     catch(e:any){return ok(res,{error:e.message});}
   }
 

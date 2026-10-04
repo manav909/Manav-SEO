@@ -1,4 +1,4 @@
-import {db} from "./db";
+import {db} from "./db.js";
 export async function calculateClientHealth(projectId:string){
   const since30=new Date(Date.now()-30*864e5).toISOString();
   const[pR,tR,lR,vR]=await Promise.allSettled([

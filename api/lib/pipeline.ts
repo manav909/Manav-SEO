@@ -13,9 +13,9 @@
    5. Returns a PipelineResult for monitoring
 ═══════════════════════════════════════════════════════════ */
 
-import { db } from "./db";
-import { saveLearning, logChange } from "./save";
-import type { PipelineResult } from "./types";
+import { db } from "./db.js";
+import { saveLearning, logChange } from "./save.js";
+import type { PipelineResult } from "./types.js";
 
 /* Sections we know produce actionable learnings after an audit */
 const AUDIT_SECTION_TYPES: Record<string, string> = {
