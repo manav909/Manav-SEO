@@ -339,6 +339,13 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "get_proposal_by_token",
   "bs_redeem_invite",
   "bs_client_request_login",
+  /* New client panel — authenticated by client session token inside the handler */
+  "cp_home",
+  "cp_goals",
+  "cp_reports",
+  "cp_settings_update",
+  "cp_messages_list",
+  "cp_message_send",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -840,6 +847,14 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const { bsRequestClientLogin } = await import("./lib/brand-studio-collab.js");
     const siteUrl = process.env.APP_URL || `https://${req.headers.host || "seoseason.com"}`;
     return ok(res, await bsRequestClientLogin(body, siteUrl));
+  }
+
+  /* ═══ CLIENT PANEL — cp_* (client session) and cps_* (team) actions ═══ */
+  if (typeof action === "string" && (action.startsWith("cp_") || action.startsWith("cps_"))) {
+    const { handleClientPanel } = await import("./lib/client-panel.js");
+    const staffEmail = authRes && "kind" in authRes && authRes.kind === "user" ? authRes.email : null;
+    const cpResult = await handleClientPanel(action, body, staffEmail);
+    if (cpResult !== null) return ok(res, cpResult);
   }
 
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */

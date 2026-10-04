@@ -1,0 +1,69 @@
+/* Client panel look: calm, light, friendly — with a night mode.
+   Scoped to .cp so it never touches the team app's theme. */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+.cp {
+  --cp-bg: #F6F6F3;
+  --cp-card: #FFFFFF;
+  --cp-line: #E4E4DE;
+  --cp-line-soft: #ECECE7;
+  --cp-text: #16181D;
+  --cp-text-2: #3A3D45;
+  --cp-muted: #5A5E68;
+  --cp-accent: #1F4FD1;
+  --cp-accent-ink: #FFFFFF;
+  --cp-accent-soft: #EAF0FE;
+  --cp-good: #13795B;
+  --cp-good-soft: #E3F4EC;
+  --cp-warm-soft: #FDEBDD;
+  --cp-warm: #8A3A0B;
+  --cp-bubble-team: #FFFFFF;
+  --cp-bubble-me: #1F4FD1;
+  --cp-bubble-me-ink: #FFFFFF;
+  min-height: 100vh;
+  background: var(--cp-bg);
+  color: var(--cp-text);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+.cp[data-night='true'] {
+  --cp-bg: #111317;
+  --cp-card: #1A1D23;
+  --cp-line: #2B2F37;
+  --cp-line-soft: #252930;
+  --cp-text: #ECEDEF;
+  --cp-text-2: #C9CCD3;
+  --cp-muted: #9AA0AD;
+  --cp-accent: #8FB0FF;
+  --cp-accent-ink: #0E1220;
+  --cp-accent-soft: #1E2A47;
+  --cp-good: #6FD3A8;
+  --cp-good-soft: #17322A;
+  --cp-warm-soft: #3A2618;
+  --cp-warm: #F2B48A;
+  --cp-bubble-team: #20242B;
+  --cp-bubble-me: #2E4C9A;
+  --cp-bubble-me-ink: #FFFFFF;
+}
+.cp a { color: var(--cp-accent); }
+.cp-card { background: var(--cp-card); border: 1px solid var(--cp-line); border-radius: 14px; }
+.cp .cp-btn { font: inherit; font-weight: 600; font-size: 14px; border-radius: 10px; padding: 10px 16px; border: none; cursor: pointer; background: var(--cp-accent); color: var(--cp-accent-ink); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.cp .cp-btn:disabled { opacity: .5; cursor: default; }
+.cp .cp-btn-ghost { background: transparent; color: var(--cp-text); border: 1px solid var(--cp-line); }
+.cp-input { font: inherit; font-size: 14px; color: var(--cp-text); background: var(--cp-card); border: 1px solid var(--cp-line); border-radius: 10px; padding: 10px 12px; width: 100%; box-sizing: border-box; }
+.cp-input:focus { outline: 2px solid var(--cp-accent); outline-offset: 1px; }
+.cp .cp-nav-link { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; border-radius: 8px; font-size: 15px; font-weight: 500; text-decoration: none; color: var(--cp-text-2); }
+.cp .cp-nav-link:hover { background: var(--cp-line-soft); }
+.cp .cp-nav-link[aria-current='page'] { background: var(--cp-accent-soft); color: var(--cp-accent); font-weight: 700; }
+.cp-pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.cp-muted { color: var(--cp-muted); }
+.cp-bar { height: 8px; border-radius: 999px; background: var(--cp-line-soft); overflow: hidden; }
+.cp-bar > span { display: block; height: 100%; background: var(--cp-accent); border-radius: 999px; }
+
+@media (max-width: 860px) {
+  .cp-shell { flex-direction: column; }
+  .cp-side { flex: 0 0 auto !important; max-width: none !important; border-right: none !important; border-bottom: 1px solid var(--cp-line); padding: 12px 16px !important; }
+  .cp-side-links { flex-direction: row !important; overflow-x: auto; gap: 4px; }
+  .cp .cp-side-links .cp-nav-link { white-space: nowrap; font-size: 14px; }
+  .cp-side-extra { display: none !important; }
+  .cp-main { padding: 20px 16px 40px !important; }
+}

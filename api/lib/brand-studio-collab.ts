@@ -102,7 +102,7 @@ export async function resolveClientUserSession(sessionToken: string): Promise<an
 }
 
 /** Create an in-app notification (and reserve email_status for H.6b). */
-async function createNotification(opts: {
+export async function createNotification(opts: {
   projectId:     string;
   recipientType: "staff" | "client";
   recipientId:   string;
