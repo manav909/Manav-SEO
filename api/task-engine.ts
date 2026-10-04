@@ -414,7 +414,7 @@ async function _run(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'POST' && req.url?.includes('/api/bridge') || action === '__bridge') {
     const secret = req.headers['x-bridge-secret'] as string;
     const expectedSecret = process.env.BRIDGE_SECRET || '';
-    if (expectedSecret && secret !== expectedSecret) {
+    if (!expectedSecret || secret !== expectedSecret) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
