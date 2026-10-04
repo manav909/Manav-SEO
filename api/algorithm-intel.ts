@@ -26,6 +26,7 @@ async function quickSave(projectId: string | null, title: string, content: strin
 export const config = { maxDuration: 180 };
 
 import { TOPIC_CATALOG } from "./lib/algo-catalog.js";
+import { requireAuth } from "./lib/auth.js";
 export { TOPIC_CATALOG } from "./lib/algo-catalog.js";
 export type { AlgoTopic } from "./lib/algo-catalog.js";
 
@@ -80,6 +81,7 @@ Return ONLY a raw JSON object (no markdown fences, no prose, start immediately w
 
 /* ── Safe export: catches any uncaught crash before Vercel sees it ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _handler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
 }

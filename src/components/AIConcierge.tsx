@@ -1,6 +1,7 @@
 import React,{useState,useRef,useEffect} from "react";
 import {useLocation} from "react-router-dom";
 import {useTour} from "@/contexts/TourContext";
+import {useAuth} from "@/contexts/AuthContext";
 
 const post=(a:string,b:any={})=>fetch("/api/task-engine",{method:"POST",
   headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a,...b})}).then(r=>r.json()).catch(()=>({}));
@@ -42,6 +43,7 @@ const QUICK_QUESTIONS: Record<string,string[]> = {
 export default function AIConcierge() {
   const location = useLocation();
   const { start, completed } = useTour();
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<{role:string;content:string}[]>([]);
   const [input, setInput] = useState("");
@@ -100,7 +102,8 @@ export default function AIConcierge() {
      Hook count must be constant across renders. Previously this `return null`
      sat above the useEffects, so navigating between HIDE_ON_PATHS and
      non-hidden routes flipped the hook count and threw React error #310. */
-  if (HIDE_ON_PATHS.has(currentPath)) return null;
+  // It answers from internal data, so it is for signed-in staff only.
+  if (!user || HIDE_ON_PATHS.has(currentPath)) return null;
 
   async function ask(q?: string) {
     const question = (q || input).trim();

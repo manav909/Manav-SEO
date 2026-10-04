@@ -3,7 +3,7 @@
    Cache-first for static assets, network-first for API calls.
 ═══════════════════════════════════════════════════════════ */
 
-const CACHE_NAME = "empire-v1";
+const CACHE_NAME = "empire-v2";
 
 const PRECACHE = [
   "/build",
@@ -34,6 +34,13 @@ self.addEventListener("fetch", (event) => {
   // Always go network for API routes
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request).catch(() => new Response("offline", { status: 503 })));
+    return;
+  }
+
+  // Network-first for pages, so a new deploy's HTML (and the bundles it
+  // points at) reaches users instead of a stale cached copy.
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then((c) => c || caches.match("/build")).then((c) => c || new Response("offline", { status: 503 }))));
     return;
   }
 

@@ -8,7 +8,9 @@ deal data — with one-tap to open any of them.
 ## Install
 1. **chrome://extensions** → **Developer mode** on → **Load unpacked** → select this folder.
 2. Click the extension icon → set your **API address** (default `https://seoseason.com`).
-3. After any file change: **↻ reload** on the extension card, **then refresh the Fiverr tab**.
+3. **Sign in:** open seoseason.com in a tab and log in. The extension copies your login from that tab
+   (keep it open — the site renews the login hourly). The extension popup shows whether you're signed in.
+4. After any file change: **↻ reload** on the extension card, **then refresh the Fiverr tab**.
 
 ## Safety model (read this)
 The extension is built to never produce a non-human access pattern on Fiverr:
@@ -48,7 +50,8 @@ parsing isn't built. The expert is fed your saved crawl/AEO/competitor intel but
 `algorithm_knowledge` / `brain_learnings`.
 
 ## Notes
-- **No auth header** is sent. The deal is the same record your web `/deals` workspace and BDE panel use.
+- Every call carries your SEO Season login (`Authorization: Bearer`), picked up by `auth-bridge.js`
+  from an open seoseason.com tab. Without it the engine answers 401. The deal is the same record your web `/deals` workspace and BDE panel use.
 - Engine actions: `bd_deal_find` (identity), `bd_deal_lookup` (board enrichment, read-only),
   `bd_deal_update` (autosave), `bd_strategize` (read-out incl. tone/expectations/"say this next"),
   `bd_ask` (expert + suggestions), `bd_reply_variants`, `bd_run_audit`/`bd_aeo_check`/`bd_competitor_snapshot`

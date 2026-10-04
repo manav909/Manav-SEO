@@ -9,6 +9,7 @@
  */
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { requireAuth } from "./lib/auth.js";
 
 export const config = { maxDuration: 60 };
 
@@ -42,6 +43,7 @@ function fingerprint(input: any): string {
 
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _controlHandler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: e?.message || "unknown" }); } catch (_) {} }
 }

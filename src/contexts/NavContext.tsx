@@ -1,6 +1,7 @@
 
 import React,{createContext,useContext,useState,useEffect,useCallback,useRef} from "react";
 import {useLocation,useNavigate} from "react-router-dom";
+import {useAuth} from "@/contexts/AuthContext";
 
 interface NavBrainState {
   // Current situation
@@ -487,12 +488,15 @@ export function NavProvider({children}:{children:React.ReactNode}){
     });
   },[location.pathname]);
 
+  // Stats come from a signed-in-only endpoint; don't poll it for visitors.
+  const {user}=useAuth();
   const refreshStats=useCallback(()=>{
+    if(!user)return;
     post("get_empire_stats").then(r=>setStats((r as any).stats||{}));
-  },[]);
+  },[user]);
 
-  useEffect(()=>{refreshStats();},[]);
-  useEffect(()=>{const id=setInterval(refreshStats,30000);return()=>clearInterval(id);},[]);
+  useEffect(()=>{refreshStats();},[refreshStats]);
+  useEffect(()=>{const id=setInterval(refreshStats,30000);return()=>clearInterval(id);},[refreshStats]);
 
   const setRole=(r:string)=>{setRole_(r);localStorage.setItem("seosZ_role",r);};
   const setSidebarPinnedWithSave=(v:boolean)=>{

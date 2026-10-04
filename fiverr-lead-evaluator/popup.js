@@ -13,3 +13,15 @@ document.getElementById("save").addEventListener("click", () => {
     setTimeout(() => (okEl.textContent = ""), 1500);
   });
 });
+
+const authEl = document.getElementById("auth");
+chrome.runtime.sendMessage({ type: "getSession" }, (resp) => {
+  const s = resp && resp.session;
+  if (s && s.accessToken && s.expiresAt > Date.now()) {
+    authEl.textContent = "Signed in" + (s.email ? " as " + s.email : "") + ".";
+    authEl.style.color = "#34d399";
+  } else {
+    authEl.textContent = "Not signed in. Open seoseason.com in a tab and log in — the extension picks it up automatically.";
+    authEl.style.color = "#fbbf24";
+  }
+});

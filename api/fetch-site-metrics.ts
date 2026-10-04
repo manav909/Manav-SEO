@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { requireAuth } from "./lib/auth.js";
 
 export const config = { maxDuration: 120 };
 
@@ -74,6 +75,7 @@ function extractCWV(psiData: any) {
 
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _fetch_site_metrics_h(req, res); }
   catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
 }

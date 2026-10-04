@@ -2,6 +2,7 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { authenticate, internalAuthHeaders } from "./lib/auth.js";
 
 /* ── Inline Supabase client (avoid ./lib/db import resolution at Lambda cold start) ── */
 let _supa: any = null;
@@ -36,7 +37,7 @@ async function saveLearningLocal(opts: {
 
     await fetch(`${baseUrl}/api/task-engine`, {
       method:  "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalAuthHeaders() },
       body:    JSON.stringify({
         action:          "save_learning",
         project_id:      opts.projectId,
@@ -254,6 +255,21 @@ async function _handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const body = req.body || {};
+
+  /* Logged-out visitors (the guest chat on / and /tour) may only ask plain
+     questions: no project data, no server-side URL fetches. */
+  const auth = await authenticate(req);
+  if (!auth.ok) {
+    if (body.mode !== "answer") {
+      return res.status(401).json({ error: "Please sign in to use this feature.", code: "unauthorized" });
+    }
+    for (const k of ["projectId", "checkUrl", "blocks", "dataRoom", "projectContext", "projectSummary",
+                     "weekCards", "allPlacedCards", "cardRequirements", "brainAssistantContext"]) {
+      delete body[k];
+    }
+    if (typeof body.question === "string") body.question = body.question.slice(0, 2000);
+  }
+
   const {
     mode             = "chat",
     blocks           = [],

@@ -2,6 +2,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { requireAuth } from "./lib/auth.js";
 
 /* ── Inline Supabase client ── */
 let _supa: any = null;
@@ -859,6 +860,7 @@ Return ONLY valid JSON:
 ══════════════════════════════════════════════════ */
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _run_analysis_h(req, res); }
   catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
 }
