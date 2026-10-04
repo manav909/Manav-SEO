@@ -328,6 +328,7 @@ const OWNER_ACTIONS: ReadonlySet<string> = new Set([
   "add_revenue_record",
   "bs_update_entitlements",
   "panel_set_plan",
+  "cps_catalog_save",
   "backlink_provider_keys_upsert",
   "backlink_provider_keys_delete",
 ]);
@@ -346,6 +347,11 @@ const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
   "cp_settings_update",
   "cp_messages_list",
   "cp_message_send",
+  "cp_catalog",
+  "cp_offer_request",
+  "cp_offers_orders",
+  "cp_offer_decide",
+  "cp_order_thanks",
   "bs_client_resolve",
   "bs_client_list_documents",
   "bs_client_get_document",
@@ -855,6 +861,9 @@ async function _run(req: VercelRequest, res: VercelResponse) {
     const staffEmail = authRes && "kind" in authRes && authRes.kind === "user" ? authRes.email : null;
     const cpResult = await handleClientPanel(action, body, staffEmail);
     if (cpResult !== null) return ok(res, cpResult);
+    const { handleMoneyFlow } = await import("./lib/money-flow.js");
+    const mfResult = await handleMoneyFlow(action, body, staffEmail);
+    if (mfResult !== null) return ok(res, mfResult);
   }
 
   /* ═══ CLIENT PANEL PLAN SWITCHES — panel_* actions ═══ */
