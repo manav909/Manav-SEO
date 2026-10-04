@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 /* ── Inline db() — avoids ./lib/db import ── */
 import { createClient } from "@supabase/supabase-js";
+import { requireAuth } from "./lib/auth.js";
 let _db: any = null;
 function db(): any {
   if (_db) return _db;
@@ -334,6 +335,7 @@ function buildSummary(results: any[]) {
 // Handler
 // ─────────────────────────────────────────────────────────────────────
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _handler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: "Unexpected: " + (e?.message||"unknown"), healthy: false }); } catch (_) {} }
 }

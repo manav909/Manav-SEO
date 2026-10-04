@@ -1,5 +1,6 @@
 import Anthropic                              from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { requireAuth, internalAuthHeaders } from "./lib/auth.js";
 
 /* ── Inline saveLearning: routes through task-engine to avoid ./lib/ imports ── */
 async function saveLearning(opts: {
@@ -11,7 +12,7 @@ async function saveLearning(opts: {
     const base = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000";
     await fetch(`${base}/api/task-engine`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...internalAuthHeaders() },
       body: JSON.stringify({
         action: "save_learning",
         project_id: opts.projectId,
@@ -78,6 +79,7 @@ async function generate(prompt: string, maxTokens: number, anthropic: any): Prom
 
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireAuth(req, res))) return;
   try { return await _playground_analysis_h(req, res); }
   catch (e: any) { try { res.status(200).json({error: e?.message||"unknown"}); } catch (_) {} }
 }

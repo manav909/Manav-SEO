@@ -18,6 +18,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { requireAuth, isCronRequest } from "./lib/auth.js";
 
 /* ── Lead email notification via Resend API ── */
 async function sendLeadEmail(opts: {
@@ -315,6 +316,34 @@ async function fetchUrl(url: string): Promise<string> {
 }
 
 /* ── Main handler ── */
+/* Actions a visitor may call without logging in. Each one checks its own
+   share / invite / client-session token, or (__bridge) the bridge secret. */
+const PUBLIC_ACTIONS: ReadonlySet<string> = new Set([
+  "pm_report_get_shared",
+  "get_proposal_by_token",
+  "bs_redeem_invite",
+  "bs_client_resolve",
+  "bs_client_list_documents",
+  "bs_client_get_document",
+  "bs_client_get_investor_data",
+  "bs_client_session_resolve",
+  "bs_client_session_list_documents",
+  "bs_client_session_get_document",
+  "bs_client_session_list_notifications",
+  "bs_client_session_mark_notification_read",
+  "bs_client_session_list_approvals",
+  "bs_client_session_respond_approval",
+  "bs_client_session_list_comments",
+  "bs_client_session_post_comment",
+  "bs_client_session_list_share_grants",
+  "bs_client_session_share_doc",
+  "bs_client_session_revoke_share",
+  "bs_client_session_list_intake_forms",
+  "bs_client_session_submit_intake",
+  "bs_client_session_upload_file",
+  "__bridge",
+]);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try { return await _run(req, res); }
   catch (e: any) {
@@ -400,10 +429,12 @@ async function _run(req: VercelRequest, res: VercelResponse) {
       return res.status(500).send(`<pre>${(e?.message || "callback failed").replace(/[<>]/g, "")}</pre>`);
     }
   }
-  /* Vercel cron trigger (GET or x-vercel-cron header) — auto-routes to verification runner */
-  const isCron = req.method === "GET" || req.headers["x-vercel-cron"] === "1";
+  /* Vercel cron trigger — Vercel sends "Authorization: Bearer $CRON_SECRET".
+     Auto-routes to the verification runner. */
+  const isCron = isCronRequest(req);
 
   if (!isCron && req.method !== "POST") return ok(res, { error: "POST only" });
+  if (!isCron && !(await requireAuth(req, res, PUBLIC_ACTIONS))) return;
 
   const body: any = isCron ? { action: "run_scheduled_verifications" } : (req.body || {});
   const { action } = body;

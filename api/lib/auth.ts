@@ -13,16 +13,17 @@
 ═══════════════════════════════════════════════════════════════ */
 
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type AuthResult =
   | { ok: true; kind: "user"; userId: string; email: string | null }
   | { ok: true; kind: "cron" }
+  | { ok: true; kind: "internal" }
   | { ok: true; kind: "public" }
   | { ok: false };
 
-let _client: any = null;
-function authClient(): any {
+let _client: SupabaseClient | null = null;
+function authClient(): SupabaseClient | null {
   if (_client) return _client;
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
   const key =
@@ -74,6 +75,22 @@ async function verifyUser(token: string): Promise<{ userId: string; email: strin
   } catch { return null; }
 }
 
+function serviceKey(): string {
+  return process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+}
+
+/* Headers for one of our own functions calling another (e.g. save_learning).
+   The service key never leaves the server, so it proves the call is ours. */
+export function internalAuthHeaders(): Record<string, string> {
+  const key = serviceKey();
+  return key ? { "x-internal-key": key } : {};
+}
+
+function isInternalRequest(req: VercelRequest): boolean {
+  const key = serviceKey();
+  return !!key && String(req.headers["x-internal-key"] || "") === key;
+}
+
 export function isCronRequest(req: VercelRequest): boolean {
   const secret = process.env.CRON_SECRET || "";
   return !!secret && bearer(req) === secret;
@@ -84,6 +101,7 @@ export async function authenticate(
   publicActions: ReadonlySet<string> = new Set(),
 ): Promise<AuthResult> {
   if (isCronRequest(req)) return { ok: true, kind: "cron" };
+  if (isInternalRequest(req)) return { ok: true, kind: "internal" };
 
   const token = bearer(req);
   if (token) {
@@ -91,7 +109,7 @@ export async function authenticate(
     if (user) return { ok: true, kind: "user", userId: user.userId, email: user.email };
   }
 
-  const action = String((req.body as any)?.action ?? (req.query as any)?.action ?? "");
+  const action = req.method === "POST" ? String((req.body as { action?: unknown } | undefined)?.action ?? "") : "";
   if (action && publicActions.has(action)) return { ok: true, kind: "public" };
 
   return { ok: false };

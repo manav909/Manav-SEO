@@ -17,8 +17,10 @@ function isOwnApi(input: RequestInfo | URL): boolean {
 }
 
 export function installApiAuth(): void {
-  if (typeof window === 'undefined' || (window as any).__apiAuthInstalled) return;
-  (window as any).__apiAuthInstalled = true;
+  if (typeof window === 'undefined') return;
+  const w = window as Window & { __apiAuthInstalled?: boolean };
+  if (w.__apiAuthInstalled) return;
+  w.__apiAuthInstalled = true;
 
   const nativeFetch = window.fetch.bind(window);
 
