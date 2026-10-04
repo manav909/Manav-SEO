@@ -191,6 +191,8 @@ export async function bsInviteClientUser(body: any): Promise<any> {
     invite_sent_at: new Date().toISOString(),
     invite_expires_at: inviteExpires,
     invited_by: invitedBy || null,
+    active: true,
+    invite_used: false,
   }).select().single();
 
   if (error || !data) return { success: false, error: error?.message || "invite failed" };
