@@ -1,6 +1,6 @@
 # Business Santa
 
-> Business Santa is an SEO and GEO (AI search) service for US businesses, founded by Manav S. The team (Jyoti, Manav, Sam and Sakshi) does technical SEO, on-page SEO, Google Search Console fixes, WordPress and Yoast SEO, Shopify e-commerce SEO, monthly SEO, and visibility in AI assistants such as ChatGPT, Google AI Overviews, Claude and Gemini.
+> Business Santa, powered by SEO Season (https://seoseason.com, the SEO platform built by Manav S), is an SEO and GEO (AI search) service for US businesses, founded by Manav S. The team (Jyoti, Manav, Sam and Sakshi) does technical SEO, on-page SEO, Google Search Console fixes, WordPress and Yoast SEO, Shopify e-commerce SEO, monthly SEO, and visibility in AI assistants such as ChatGPT, Google AI Overviews, Claude and Gemini.
 
 - Founder: Manav S, 10+ years in SEO, 2,000+ projects delivered, 4.9 average rating from 2,000+ client reviews
 - Starting prices: On-Page SEO from $120, Technical SEO from $160. Monthly, Shopify, GEO and full packages are quoted after a free site review.
