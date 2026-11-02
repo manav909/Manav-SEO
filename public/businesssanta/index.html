@@ -522,7 +522,7 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .gx-tl{grid-auto-flow:row}
 }
 /* movie: Business Santa x SEO Season */
-.mv{margin-top:22px}
+.mv-intro{max-width:66ch;color:#3a3935;margin:0 0 16px}
 .mv-stage{position:relative;aspect-ratio:16/9;border-radius:18px;overflow:hidden;container-type:inline-size;background:#04040d;box-shadow:0 24px 60px rgba(10,10,30,.25);font-family:var(--head)}
 .mv-sc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5cqw;opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s .6s}
 .mv-sc.on{opacity:1;visibility:visible;transition:opacity .6s ease}
@@ -929,60 +929,6 @@ footer a:hover{text-decoration:underline;color:#fff}
         <div class="thumbs" id="thumbs" role="list"></div>
       </div>
 
-      <section class="mv" id="together" aria-label="Business Santa and SEO Season, a short animated story">
-        <div class="mv-stage" id="mvStage">
-          <!-- 1 Business Santa -->
-          <div class="mv-sc s-bs" data-d="4800">
-            <img class="mv-logo a1" src="/businesssanta/assets/img/logo-192.png" alt="">
-            <div class="mv-wm a2">Business <b>SANTA</b></div>
-            <p class="mv-tag a3">A real SEO team, trusted by US businesses for <b>10+ years</b></p>
-            <div class="mv-team">
-              <span class="a4"><img src="/businesssanta/assets/img/jyoti.webp" alt="">Jyoti</span><span class="a5"><img src="/businesssanta/assets/img/manav.webp" alt="">Manav</span><span class="a6"><img src="/businesssanta/assets/img/sam.webp" alt="">Sam</span><span class="a7"><img src="/businesssanta/assets/img/sakshi.webp" alt="">Sakshi</span>
-            </div>
-          </div>
-          <!-- 2 SEO Season -->
-          <div class="mv-sc s-ss" data-d="4800">
-            <div class="mv-grid"></div>
-            <div class="mv-ssm a1"><i></i>SEO Season</div>
-            <p class="mv-tag a2">Our own AI-powered SEO platform, built in-house</p>
-            <div class="mv-chips"><span class="a3">4 AI agents</span><span class="a4">28 algorithm topics</span><span class="a5">AI citation tracking</span><span class="a6">Live audits</span><span class="a7">Human QA desk</span></div>
-          </div>
-          <!-- 3 merge -->
-          <div class="mv-sc s-mg" data-d="4800">
-            <div class="mv-half l"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>Business <b>SANTA</b></span></div>
-            <div class="mv-half r"><span class="mv-ssm sm"><i></i>SEO Season</span></div>
-            <div class="mv-x">×</div>
-            <div class="mv-mt"><h3>People who care.<br><span>Technology that sees more.</span></h3></div>
-          </div>
-          <!-- 4 old way vs our way -->
-          <div class="mv-sc s-vs" data-d="6000">
-            <div class="mv-col old"><h4 class="a1">A typical agency</h4><p class="a2">A monthly spreadsheet</p><p class="a3">Guesses at why rankings fell</p><p class="a4">Finds out weeks later</p><p class="a5">Can't see AI search at all</p></div>
-            <div class="mv-col new"><h4 class="a1">Business Santa + SEO Season</h4><p class="a2">Your own live dashboard</p><p class="a3">Every finding verified</p><p class="a4">Alerts the same day</p><p class="a5">Tracks ChatGPT, Gemini, Perplexity</p></div>
-          </div>
-          <!-- 5 flow -->
-          <div class="mv-sc s-fl" data-d="5600">
-            <div class="mv-in a1"><span>yourbusiness.com</span></div>
-            <div class="mv-eng">
-              <div class="mv-e a2"><div class="mv-faces"><img src="/businesssanta/assets/img/manav.webp" alt=""><img src="/businesssanta/assets/img/sam.webp" alt=""><img src="/businesssanta/assets/img/sakshi.webp" alt=""></div><b>Our team</b><small>judgment, writing, care</small></div>
-              <div class="mv-plus a3">+</div>
-              <div class="mv-e ai a4"><div class="mv-nodes"><i></i><i></i><i></i><i></i></div><b>SEO Season AI</b><small>speed, scale, evidence</small></div>
-            </div>
-            <div class="mv-out"><span class="a5">▲ Page 1 on Google</span><span class="a6">✦ Quoted by AI</span><span class="a7">☎ More calls</span></div>
-          </div>
-          <!-- 6 end -->
-          <div class="mv-sc s-end" data-d="6000">
-            <div class="mv-duo a1"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>×</span><span class="mv-ssm sm"><i></i>SEO Season</span></div>
-            <h3 class="a2">Your free audit starts here</h3>
-            <p class="a3">Real people. Technology most agencies don't have. You pay nothing until you approve the plan.</p>
-            <a class="mv-cta a4" href="#order">Get my free audit</a>
-          </div>
-        </div>
-        <div class="mv-ctl">
-          <button type="button" id="mvPlay" aria-label="Pause">❚❚</button>
-          <div class="mv-dots" id="mvDots" role="tablist" aria-label="Scenes"></div>
-          <span class="mv-lbl">Business Santa × SEO Season</span>
-        </div>
-      </section>
 
     </div>
     <aside class="side" id="order" aria-label="Packages and contact">
@@ -1048,6 +994,63 @@ footer a:hover{text-decoration:underline;color:#fff}
           <li><h3>Plain-English reports</h3><p>You see what we did and why, in words that make sense, with results you can check yourself in Google Search Console.</p></li>
         </ul>
         <div class="sign"><img src="/businesssanta/assets/img/manav.webp" alt="" width="44" height="44" loading="lazy"><span>Manav S, founder. My name is on this work, and I stand behind it.</span></div>
+      </section>
+
+      <section class="block mv" id="together" aria-labelledby="mv-h">
+        <h2 id="mv-h">A real team with its own technology</h2>
+        <p class="mv-intro">Business Santa is the team you talk to. SEO Season is the AI platform we built to do the work faster and prove every result. Watch how they come together for you.</p>
+        <div class="mv-stage" id="mvStage">
+          <!-- 1 Business Santa -->
+          <div class="mv-sc s-bs" data-d="4800">
+            <img class="mv-logo a1" src="/businesssanta/assets/img/logo-192.png" alt="">
+            <div class="mv-wm a2">Business <b>SANTA</b></div>
+            <p class="mv-tag a3">A real SEO team, trusted by US businesses for <b>10+ years</b></p>
+            <div class="mv-team">
+              <span class="a4"><img src="/businesssanta/assets/img/jyoti.webp" alt="">Jyoti</span><span class="a5"><img src="/businesssanta/assets/img/manav.webp" alt="">Manav</span><span class="a6"><img src="/businesssanta/assets/img/sam.webp" alt="">Sam</span><span class="a7"><img src="/businesssanta/assets/img/sakshi.webp" alt="">Sakshi</span>
+            </div>
+          </div>
+          <!-- 2 SEO Season -->
+          <div class="mv-sc s-ss" data-d="4800">
+            <div class="mv-grid"></div>
+            <div class="mv-ssm a1"><i></i>SEO Season</div>
+            <p class="mv-tag a2">Our own AI-powered SEO platform, built in-house</p>
+            <div class="mv-chips"><span class="a3">4 AI agents</span><span class="a4">28 algorithm topics</span><span class="a5">AI citation tracking</span><span class="a6">Live audits</span><span class="a7">Human QA desk</span></div>
+          </div>
+          <!-- 3 merge -->
+          <div class="mv-sc s-mg" data-d="4800">
+            <div class="mv-half l"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>Business <b>SANTA</b></span></div>
+            <div class="mv-half r"><span class="mv-ssm sm"><i></i>SEO Season</span></div>
+            <div class="mv-x">×</div>
+            <div class="mv-mt"><h3>People who care.<br><span>Technology that sees more.</span></h3></div>
+          </div>
+          <!-- 4 old way vs our way -->
+          <div class="mv-sc s-vs" data-d="6000">
+            <div class="mv-col old"><h4 class="a1">A typical agency</h4><p class="a2">A monthly spreadsheet</p><p class="a3">Guesses at why rankings fell</p><p class="a4">Finds out weeks later</p><p class="a5">Can't see AI search at all</p></div>
+            <div class="mv-col new"><h4 class="a1">Business Santa + SEO Season</h4><p class="a2">Your own live dashboard</p><p class="a3">Every finding verified</p><p class="a4">Alerts the same day</p><p class="a5">Tracks ChatGPT, Gemini, Perplexity</p></div>
+          </div>
+          <!-- 5 flow -->
+          <div class="mv-sc s-fl" data-d="5600">
+            <div class="mv-in a1"><span>yourbusiness.com</span></div>
+            <div class="mv-eng">
+              <div class="mv-e a2"><div class="mv-faces"><img src="/businesssanta/assets/img/manav.webp" alt=""><img src="/businesssanta/assets/img/sam.webp" alt=""><img src="/businesssanta/assets/img/sakshi.webp" alt=""></div><b>Our team</b><small>judgment, writing, care</small></div>
+              <div class="mv-plus a3">+</div>
+              <div class="mv-e ai a4"><div class="mv-nodes"><i></i><i></i><i></i><i></i></div><b>SEO Season AI</b><small>speed, scale, evidence</small></div>
+            </div>
+            <div class="mv-out"><span class="a5">▲ Page 1 on Google</span><span class="a6">✦ Quoted by AI</span><span class="a7">☎ More calls</span></div>
+          </div>
+          <!-- 6 end -->
+          <div class="mv-sc s-end" data-d="6000">
+            <div class="mv-duo a1"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>×</span><span class="mv-ssm sm"><i></i>SEO Season</span></div>
+            <h3 class="a2">Your free audit starts here</h3>
+            <p class="a3">Real people. Technology most agencies don't have. You pay nothing until you approve the plan.</p>
+            <a class="mv-cta a4" href="#order">Get my free audit</a>
+          </div>
+        </div>
+        <div class="mv-ctl">
+          <button type="button" id="mvPlay" aria-label="Pause">❚❚</button>
+          <div class="mv-dots" id="mvDots" role="tablist" aria-label="Scenes"></div>
+          <span class="mv-lbl">Business Santa × SEO Season</span>
+        </div>
       </section>
 
       <section class="ss" id="platform" aria-labelledby="ss-h">
