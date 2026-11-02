@@ -642,8 +642,17 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .mv-cta{font-size:4.6cqw;padding:3cqw 7cqw}
   .mv-lbl{display:none}
 }
+.mv-sc .a8{opacity:0}.mv-sc.on .a8{animation:mvUp .6s 2.8s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-spec{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1.4cqw;margin-top:2.6cqw;width:min(78cqw,100%)}
+.mv-spec div{border:1px solid rgba(129,140,248,.35);background:rgba(99,102,241,.08);border-radius:1.4cqw;padding:1.4cqw 1.6cqw;text-align:left;box-shadow:0 0 2.4cqw rgba(99,102,241,.15)}
+.mv-spec b{display:block;font:700 4.4cqw/1 "Space Grotesk",var(--head);background:linear-gradient(135deg,#c7d2fe,#8b5cf6 50%,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+.mv-spec span{display:block;margin-top:.5cqw;font:500 1.55cqw/1.3 "Space Grotesk",var(--body);color:#a0a0c0}
+.mv-sees{position:relative;margin:2.2cqw 0 0;font:500 1.7cqw "JetBrains Mono",monospace;color:#67e8f9}
+.s-ss .mv-ssm{font-size:5.6cqw}.s-ss .mv-ssm i{width:4.4cqw;height:4.4cqw}
+.s-ss .mv-tag{margin-top:1.2cqw}
+@media (max-width:640px){.mv-spec{grid-template-columns:repeat(2,minmax(0,1fr));gap:2cqw;width:100%}.mv-spec div{padding:2.2cqw 2.6cqw}.mv-spec b{font-size:7.4cqw}.mv-spec span{font-size:3cqw}.mv-sees{font-size:3cqw;margin-top:3cqw}.s-ss .mv-ssm{font-size:9cqw}.s-ss .mv-ssm i{width:6.4cqw;height:6.4cqw}}
 .mv-stage.paused .mv-sc.on,.mv-stage.paused .mv-sc.on *{animation-play-state:paused!important}
-@media (prefers-reduced-motion:reduce){.mv-sc .a1,.mv-sc .a2,.mv-sc .a3,.mv-sc .a4,.mv-sc .a5,.mv-sc .a6,.mv-sc .a7{opacity:1}.s-end{opacity:1}}
+@media (prefers-reduced-motion:reduce){.mv-sc .a1,.mv-sc .a2,.mv-sc .a3,.mv-sc .a4,.mv-sc .a5,.mv-sc .a6,.mv-sc .a7,.mv-sc .a8{opacity:1}.s-end{opacity:1}}
 /* trust strip */
 .trust{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden}
 .trust li{padding:14px 16px;border-left:1px solid var(--line);background:#fff}
@@ -998,7 +1007,7 @@ footer a:hover{text-decoration:underline;color:#fff}
 
       <section class="block mv" id="together" aria-labelledby="mv-h">
         <h2 id="mv-h">A real team with its own technology</h2>
-        <p class="mv-intro">Business Santa is the team you talk to. SEO Season is the AI platform we built to do the work faster and prove every result. Watch how they come together for you.</p>
+        <p class="mv-intro">Business Santa is the team you talk to. SEO Season is the AI engine we built to stay years ahead, doing the work faster and proving every result. Watch how they come together for you.</p>
         <div class="mv-stage" id="mvStage">
           <!-- 1 Business Santa -->
           <div class="mv-sc s-bs" data-d="4800">
@@ -1010,11 +1019,19 @@ footer a:hover{text-decoration:underline;color:#fff}
             </div>
           </div>
           <!-- 2 SEO Season -->
-          <div class="mv-sc s-ss" data-d="4800">
+          <div class="mv-sc s-ss" data-d="7000">
             <div class="mv-grid"></div>
             <div class="mv-ssm a1"><i></i>SEO Season</div>
-            <p class="mv-tag a2">Our own AI-powered SEO platform, built in-house</p>
-            <div class="mv-chips"><span class="a3">4 AI agents</span><span class="a4">28 algorithm topics</span><span class="a5">AI citation tracking</span><span class="a6">Live audits</span><span class="a7">Human QA desk</span></div>
+            <p class="mv-tag a2">The SEO engine we built to stay years ahead</p>
+            <div class="mv-spec">
+              <div class="a3"><b data-c="4">0</b><span>AI agents audit your site at once</span></div>
+              <div class="a4"><b data-c="28">0</b><span>Google and AI ranking topics tracked</span></div>
+              <div class="a5"><b data-c="5">0</b><span>search engines and AI assistants watched</span></div>
+              <div class="a6"><b data-c="8">0</b><span>pillar strategy engine</span></div>
+              <div class="a7"><b data-c="3">0</b><span>live signals in one AI visibility score</span></div>
+              <div class="a8"><b>100%</b><span>of changes approved by a person</span></div>
+            </div>
+            <p class="mv-sees a8">Reads Google AI Overviews, ChatGPT visits and JavaScript-heavy sites, where old-school SEO is blind.</p>
           </div>
           <!-- 3 merge -->
           <div class="mv-sc s-mg" data-d="4800">
@@ -1057,8 +1074,8 @@ footer a:hover{text-decoration:underline;color:#fff}
         <div class="ss-hd">
           <div>
             <span class="ss-ey"><i></i>Live on SEO Season, our own platform</span>
-            <h2 id="ss-h">See it <span>in action</span></h2>
-            <p>Pick any feature and watch what happens to your site after you hire us.</p>
+            <h2 id="ss-h">See the engine <span>in action</span></h2>
+            <p>SEO Season is the engine we built to stay years ahead of how SEO is usually done. Pick any feature and watch it work on a sample site.</p>
           </div>
           <span class="ss-ex">Example data, sample project</span>
         </div>
@@ -1832,6 +1849,7 @@ function SSPlayer(scr,path){
     k=(n+sc.length)%sc.length; el=0; t0=performance.now();
     sc.forEach((s,i)=>{ s.classList.remove("on"); });
     void st.offsetWidth; sc[k].classList.add("on");
+    sc[k].querySelectorAll("[data-c]").forEach(el=>{ const n=+el.dataset.c, d0=performance.now()+1300; el.textContent="0"; const f=t=>{ const p=Math.max(0,Math.min(1,(t-d0)/900)); el.textContent=Math.round(n*p); if(p<1&&sc[k].contains(el)) requestAnimationFrame(f); }; requestAnimationFrame(f); });
     db.forEach((b,i)=>{ b.classList.toggle("done",i<k); b.firstChild.style.width=i<k?"100%":"0"; b.setAttribute("aria-selected",i===k); });
   }
   function tick(t){
@@ -1928,7 +1946,7 @@ function SSPlayer(scr,path){
       <ul class="gx-facts"><li><b>${s.price?`$${s.price}`:"Custom"}</b>${s.price?"starting price":"quote after a free review"}</li><li><b>${esc2(g.when)}</b>delivery</li><li><b>4.9 ★</b>2,000+ reviews</li><li><b>$0</b>until you approve</li></ul>
       <div class="gx-team">${g.team.map(t=>`<span><img src="/businesssanta/assets/img/${t[0]}.webp" alt=""><b>${TEAM[t[0]]}</b> ${t[1]}</span>`).join("")}</div></div></header>
      <section class="gx-sec"><h3>What you get</h3><p class="gx-sub">${g.items.length} deliverables. Each one runs below with example data, exactly as it works on SEO Season, the platform we built.</p>${g.items.map((it,k)=>block(it,k+1)).join("")}</section>
-     <section class="gx-sec gx-aisec"><h3>The AI behind this gig <b class="x-adv">Advanced</b></h3><p class="gx-sub">SEO Season does the heavy analysis in minutes. A person on our team checks and approves every change.</p>${g.ai.map(it=>block(it,0,1)).join("")}</section>
+     <section class="gx-sec gx-aisec"><h3>The engine behind this gig <b class="x-adv">Advanced</b></h3><p class="gx-sub">SEO Season runs analysis in minutes that takes days by hand, and sees signals old-school SEO cannot: AI Overviews, ChatGPT visits, AI citations. A person on our team checks and approves every change.</p>${g.ai.map(it=>block(it,0,1)).join("")}</section>
      <section class="gx-sec"><h3>How it runs</h3><ol class="gx-tl">${g.steps.map(s=>`<li><b>${esc2(s[0])}</b><span>${esc2(s[1])}</span></li>`).join("")}</ol></section>
      <section class="gx-cta"><h3>Ready for this on your site?</h3><p>Your free audit is step one. You pay nothing until you approve the plan and price.</p><div><button type="button" class="btn btn-gold" data-gx-choose>Choose this gig</button><button type="button" class="btn" data-gx-ask>Ask the team a question</button></div></section>`;
     body.scrollTop=0;
