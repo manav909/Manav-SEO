@@ -8,7 +8,7 @@ const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---------- the team ---------- */
 const TEAM={
-  jyoti:{name:"Jyoti", role:"Client care and scheduling", img:"/businesssanta/assets/img/jyoti.webp", topics:"questions, quotes and booking calls"},
+  jyoti:{name:"Jyoti", role:"Head of Client Success", img:"/businesssanta/assets/img/jyoti.webp", topics:"your project, quotes, reports and calls"},
   manav:{name:"Manav", role:"Founder, strategy and AI search (GEO)", img:"/businesssanta/assets/img/manav.webp", topics:"strategy, AI search, monthly plans and bigger projects"},
   sam:{name:"Sam", role:"Technical SEO specialist", img:"/businesssanta/assets/img/sam.webp", topics:"Search Console, indexing, speed, schema and site errors"},
   sakshi:{name:"Sakshi", role:"On-page and content specialist", img:"/businesssanta/assets/img/sakshi.webp", topics:"on-page SEO, content, WordPress and Yoast, and Shopify listings"}
