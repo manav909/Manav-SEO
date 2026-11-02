@@ -87,6 +87,18 @@
       "destination": "/api/$1"
     },
     {
+      "source": "/businesssanta",
+      "destination": "/businesssanta/index.html"
+    },
+    {
+      "source": "/businesssanta/privacy",
+      "destination": "/businesssanta/privacy.html"
+    },
+    {
+      "source": "/businesssanta/terms",
+      "destination": "/businesssanta/terms.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
