@@ -395,6 +395,132 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .x-tp{grid-template-columns:18px minmax(0,1fr) auto}.x-tp .e{display:none}
   .x-big{font-size:1.3rem}
 }
+/* demo engine: deliverable and AI parts */
+.ssv{--s-bg:#04040d;--s-bg2:#080818;--s-ind:#6366f1;--s-ind2:#818cf8;--s-cy:#06b6d4;--s-tx:#f0f0ff;--s-sub:#a0a0c0;--s-mut:#6b6b9a;--s-ln:#1a1a3a;--s-ok:#34d399;--s-w:#fbbf24;--s-b:#f87171;
+  --s-grad:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);--s-f:"Space Grotesk",system-ui,sans-serif;--s-m:"JetBrains Mono",ui-monospace,monospace;color:var(--s-tx);font:400 15px/1.55 var(--s-f)}
+.x-old{color:var(--s-mut);text-decoration:line-through;font-size:.8rem;margin-top:4px}
+.x-new{color:var(--s-tx);font-weight:600;min-height:1.4em;margin-top:2px}
+.x-yd{display:inline-flex;align-items:center;gap:5px;font:500 .72rem var(--s-m);color:var(--s-sub);margin-right:8px}
+.x-yd i{width:9px;height:9px;border-radius:50%;background:var(--s-b);transition:background .4s}
+.x-yd i+i{margin-left:6px}
+.x-yd.ok i{background:var(--s-ok)}
+.x-code{margin:6px 0 0;padding:12px;border-radius:10px;background:#05051a;border:1px solid var(--s-ln);font:400 .76rem/1.5 var(--s-m);color:#c7c7e8;white-space:pre-wrap;word-break:break-word;min-height:170px}
+.x-code em{font-style:normal;color:var(--s-cy)}
+.x-km{display:grid;grid-template-columns:minmax(0,1.3fr) 100px 58px 76px minmax(0,1.2fr);gap:8px;align-items:center;padding:7px 10px;margin-top:6px;font-size:.78rem}
+.x-km.hd{margin:0;padding:0 10px}
+.x-km>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.x-df{display:block;height:6px;border-radius:9px;background:#12122c;overflow:hidden}.x-df i{display:block;height:100%;background:linear-gradient(90deg,#34d399,#fbbf24,#f87171)}
+.x-fl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+.x-fl>div{display:grid;gap:6px;align-content:start;position:relative}
+.x-fl>div+div::before{content:"";position:absolute;left:-19px;top:50%;width:16px;height:2px;background:var(--s-grad);border-radius:2px;opacity:.6}
+.x-fl h5{margin:0 0 2px;font:600 .66rem var(--s-m);color:var(--s-mut);text-transform:uppercase;letter-spacing:.06em}
+.x-nd{display:flex;align-items:center;gap:6px;padding:7px 9px;font-size:.76rem;border:1px solid var(--s-ln);border-radius:9px;background:#0b0b20;color:var(--s-mut);transition:all .35s}
+.x-nd img{width:18px;height:18px;border-radius:50%}
+.x-nd.gate{border-style:dashed;border-color:rgba(251,191,36,.45)}
+.x-nd.on{color:var(--s-tx);border-color:var(--s-cy);box-shadow:0 0 14px rgba(6,182,212,.35)}
+.x-nd.ok{color:var(--s-tx);border-color:rgba(52,211,153,.5)}
+.x-nd.ok::after{content:"✓";margin-left:auto;color:var(--s-ok)}
+.x-tk{margin-top:10px;padding:9px 11px;font:400 .74rem var(--s-m);color:var(--s-sub);display:grid;gap:3px;min-height:110px}
+.x-tk b{color:var(--s-ok)}
+.x-gs{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.x-gs .x-ring{width:104px;height:104px;background:conic-gradient(var(--s-cy) calc(var(--v,0)*1%),#14142e 0)}
+.x-gs .x-big{font-size:1.15rem}
+.x-sg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;align-items:center;padding:8px 10px;margin-top:6px;font-size:.8rem}
+.x-sg .t{grid-column:1/-1;height:6px;border-radius:9px;background:#12122c;overflow:hidden}
+.x-sg .t i{display:block;height:100%;width:0;background:var(--s-grad);transition:width 1s ease}
+.x-sg.top{border-color:rgba(251,191,36,.45)}
+.x-gp{display:grid;grid-template-columns:minmax(0,1fr) 84px 76px;gap:8px;align-items:center;padding:7px 10px;margin-top:6px;font-size:.8rem}
+.x-gp.hd{margin:0;padding:0 10px}
+.x-gp .y{color:var(--s-ok);font-weight:700;text-align:center}.x-gp .n{color:var(--s-b);font-weight:700;text-align:center}
+.x-gp.hd span+span{text-align:center}
+.x-rdw{display:flex;align-items:center;gap:16px;margin-bottom:4px}
+.x-rd{width:104px;height:104px;border-radius:50%;position:relative;flex:none;overflow:hidden;border:1px solid rgba(6,182,212,.35);background:repeating-radial-gradient(circle,transparent 0 16px,rgba(6,182,212,.18) 17px 18px)}
+.x-rd::before{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(from 0deg,rgba(6,182,212,.5),transparent 25%);animation:ssSp 2.4s linear infinite}
+@keyframes ssSp{to{transform:rotate(360deg)}}
+.x-rd i{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--s-b);box-shadow:0 0 8px var(--s-b);opacity:0;transition:opacity .4s}
+.x-av{width:18px;height:18px;border-radius:50%}
+.x-ln2{stroke-dasharray:500;stroke-dashoffset:500;animation:ssDr 1.4s .2s ease forwards}
+.x-ln2.late{animation:none}.x-ln2.late.go{animation:ssDr 1.2s ease forwards}
+.x-wf{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start}
+.x-wf svg{width:100%;height:auto}
+.x-wf rect{fill:none;stroke:#4b4b9a;stroke-width:1.5;stroke-dasharray:700;stroke-dashoffset:700;animation:ssDr .9s ease forwards}
+.x-wf rect.f{fill:rgba(99,102,241,.25);stroke:#818cf8}
+.x-nb{opacity:0;animation:ssFa .4s forwards}
+.x-nb circle{fill:#06b6d4}.x-nb text{fill:#04040d;font:700 10px sans-serif;text-anchor:middle}
+.x-num{width:22px;height:22px;border-radius:50%;background:var(--s-cy);color:#04040d;display:grid;place-items:center;font-size:.74rem;flex:none}
+.x-adv{display:inline-block;font:700 .6rem var(--s-m,monospace);letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:linear-gradient(135deg,#fbbf24,#f59e0b);color:#1a1205;vertical-align:middle;margin-left:4px}
+@media (max-width:640px){
+  .x-km{grid-template-columns:minmax(0,1fr) auto}.x-km .m{display:none}
+  .x-fl{grid-template-columns:1fr;gap:10px}.x-fl>div+div::before{display:none}
+  .x-wf{grid-template-columns:150px minmax(0,1fr);gap:10px}
+  .x-gp{grid-template-columns:minmax(0,1fr) 64px 54px;font-size:.74rem}
+}
+/* gig expansion */
+.see-l{margin-top:8px;align-self:flex-start;font:600 .86rem var(--head);color:var(--ink);text-decoration:none;border-bottom:2px solid var(--gold);padding-bottom:1px}
+.see-l:hover{color:#000}
+.gx-open{position:absolute;left:14px;bottom:14px;z-index:2;display:inline-flex;align-items:center;gap:8px;border:0;border-radius:999px;padding:10px 16px;background:rgba(22,22,22,.86);color:#fff;font:600 .9rem var(--head);cursor:pointer;backdrop-filter:blur(6px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+.gx-open b{color:var(--gold)}
+.gx-open[hidden]{display:none}
+.gx{border:0;padding:0;width:min(1080px,96vw);height:min(92vh,1000px);max-height:none;border-radius:var(--r-l);overflow:hidden;color:var(--ink);background:#fff;box-shadow:0 40px 100px rgba(0,0,0,.45)}
+.gx[open]{display:flex;flex-direction:column}
+.gx::backdrop{background:rgba(10,10,20,.65);backdrop-filter:blur(4px)}
+.gx-top{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--line);background:#fff;flex:none}
+.gx-top strong{font:700 1rem var(--head);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.gx-tp{color:var(--muted);font-size:.9rem;white-space:nowrap}
+.gx-top .btn{margin-left:auto;padding:9px 16px;font-size:.9rem;white-space:nowrap}
+.gx-back{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font:600 .86rem var(--head);cursor:pointer;white-space:nowrap}
+.gx-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:22px 26px 40px}
+.gx-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:26px;align-items:center}
+.gx-hero>img{width:100%;height:auto;border-radius:14px;box-shadow:0 14px 40px rgba(0,0,0,.14)}
+.gx-hero h2{font:800 clamp(1.5rem,3vw,2.1rem)/1.12 var(--head);margin:0 0 8px;letter-spacing:-.02em}
+.gx-hero p{margin:0 0 14px;color:#3a3935;font-size:1.02rem}
+.gx-facts{list-style:none;padding:0;margin:0 0 14px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.gx-facts li{background:var(--sand);border-radius:12px;padding:10px 12px;font-size:.8rem;color:var(--muted)}
+.gx-facts b{display:block;font:700 1rem var(--head);color:var(--ink)}
+.gx-team{display:flex;flex-wrap:wrap;gap:8px}
+.gx-team span{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 12px 4px 4px;font-size:.84rem;color:var(--muted)}
+.gx-team img{width:28px;height:28px;border-radius:50%}
+.gx-team b{color:var(--ink)}
+.gx-sec{margin-top:40px}
+.gx-sec h3,.gx-cta h3{font:800 1.45rem var(--head);margin:0 0 4px;letter-spacing:-.01em}
+.gx-sub{margin:0 0 18px;color:var(--muted)}
+.gx-d{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.25fr);gap:24px;align-items:start;padding:22px 0;border-top:1px solid var(--line)}
+.gx-n{display:inline-grid;place-items:center;min-width:34px;height:34px;padding:0 8px;border-radius:10px;background:var(--ink);color:var(--gold);font:700 .86rem var(--head)}
+.gx-dt h4{font:700 1.15rem var(--head);margin:10px 0 6px}
+.gx-dt p{margin:0 0 10px;color:#3a3935}
+.gx-dt ul{list-style:none;padding:0;margin:0 0 12px;display:grid;gap:6px}
+.gx-dt li{display:flex;gap:8px;font-size:.92rem}
+.gx-dt li::before{content:"✓";color:#1E7B4F;font-weight:700}
+.gx-own{display:flex;align-items:center;gap:8px;font-size:.84rem;color:var(--muted)}
+.gx-own img{width:30px;height:30px;border-radius:50%;flex:none}
+.gx-own b{color:var(--ink)}
+.gx-pv{position:relative}
+.gx-pv .ss-win{background:linear-gradient(180deg,#0d0d2a,#080818)}
+.gx-pv .ss-scr{min-height:260px}
+.gx-re{display:block;margin:8px 0 0 auto;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:5px 11px;font:600 .74rem var(--body);cursor:pointer}
+.gx-aisec{margin-left:-26px;margin-right:-26px;padding:30px 26px 10px;background:#04040d;color:#f0f0ff;background-image:radial-gradient(420px 260px at 10% 0%,rgba(99,102,241,.22),transparent 70%),radial-gradient(420px 300px at 90% 100%,rgba(6,182,212,.12),transparent 70%)}
+.gx-aisec .gx-sub,.gx-aisec .gx-dt p,.gx-aisec .gx-own{color:#a0a0c0}
+.gx-aisec .gx-d{border-top-color:#1a1a3a}
+.gx-aisec .gx-own b{color:#f0f0ff}
+.gx-aisec .gx-re{background:transparent;color:#f0f0ff;border-color:#2a2a50}
+.gx-aisec .gx-n{background:linear-gradient(135deg,#6366f1,#06b6d4);color:#fff}
+.gx-tl{list-style:none;padding:0;margin:14px 0 0;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;counter-reset:s}
+.gx-tl li{position:relative;padding:14px;border-radius:12px;background:var(--sand);font-size:.9rem}
+.gx-tl li::before{counter-increment:s;content:counter(s);position:absolute;top:-10px;left:12px;width:22px;height:22px;border-radius:50%;background:var(--gold);display:grid;place-items:center;font:700 .76rem var(--head)}
+.gx-tl b{display:block;font:700 .95rem var(--head);margin:4px 0 2px}
+.gx-cta{margin-top:40px;padding:26px;border-radius:16px;background:var(--ink);color:#fff;text-align:center}
+.gx-cta p{color:#cfcdc6;margin:0 0 16px}
+.gx-cta div{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.gx-cta .btn:not(.btn-gold){background:transparent;color:#fff;border:1.5px solid #555}
+@media (max-width:760px){
+  .gx{width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;border-radius:0;margin:0}
+  .gx-top{padding:8px 12px;gap:8px}.gx-tp{display:none}
+  .gx-body{padding:16px 16px 34px}
+  .gx-hero{grid-template-columns:1fr;gap:16px}
+  .gx-d{grid-template-columns:1fr;gap:14px;padding:18px 0}
+  .gx-aisec{margin-left:-16px;margin-right:-16px;padding:24px 16px 6px}
+  .gx-tl{grid-auto-flow:row}
+}
 /* trust strip */
 .trust{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden}
 .trust li{padding:14px 16px;border-left:1px solid var(--line);background:#fff}
@@ -673,6 +799,7 @@ footer a:hover{text-decoration:underline;color:#fff}
           <button class="play" id="playBtn" type="button" aria-label="Play the 45 second intro video from Manav">
             <span><svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg></span><em>Watch: why cheap SEO is a gamble (0:45)</em>
           </button>
+          <button class="gx-open" id="gxOpen" type="button" hidden>▶ <b>See this gig</b> and its deliverables</button>
           <button class="arrow prev" type="button" aria-label="Previous"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7" fill="none" stroke="#161616" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button class="arrow next" type="button" aria-label="Next"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7" fill="none" stroke="#161616" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
@@ -848,6 +975,10 @@ footer a:hover{text-decoration:underline;color:#fff}
   </div>
 </main>
 
+<dialog class="gx" id="gigx" aria-labelledby="gxName">
+  <div class="gx-top"><button type="button" class="gx-back" id="gxBack">← All gigs</button><strong id="gxTopName"></strong><span class="gx-tp" id="gxTopPrice"></span><button type="button" class="btn btn-gold" id="gxChoose">Choose this gig</button></div>
+  <div class="gx-body" id="gxBody"></div>
+</dialog>
 <dialog class="guide" id="guide" aria-labelledby="gTitle">
   <form method="dialog" class="g-inner" id="gForm">
     <div class="g-top">
@@ -998,6 +1129,7 @@ function show(i){
   $("#stageBg").src = s.type==="video" ? "/businesssanta/assets/img/video-poster.webp" : s.src;
   if(s.type==="video"){ img.src="/businesssanta/assets/img/video-poster.webp"; img.alt="Manav S explains how Business Santa does SEO"; play.hidden=false; }
   else { img.src=s.src; img.alt=s.alt; play.hidden=true; }
+  const go=$("#gxOpen"); go.hidden=s.type==="video"; go.dataset.gig=cur-1;
   thumbs.querySelectorAll("button").forEach((b,k)=>b.setAttribute("aria-current",k===cur?"true":"false"));
 }
 $("#playBtn").onclick=()=>{
@@ -1023,8 +1155,9 @@ $("#loved").innerHTML=REVIEWS.slice(0,4).map((r,i)=>`
 /* services */
 $("#svcGrid").innerHTML=SERVICES.map((s,i)=>`
   <article class="svc-card">
-    <button class="pic" type="button" data-svc="${i}" aria-label="Choose ${esc(s.name)}"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc(s.name)}" loading="lazy" width="1100" height="740"></button>
+    <button class="pic" type="button" data-gig="${i}" aria-label="See what you get with ${esc(s.name)}"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc(s.name)}" loading="lazy" width="1100" height="740"></button>
     <div class="txt"><strong>${esc(s.name)}</strong><span>${esc(s.short)}</span>
+      <a class="see-l" href="#gig-${s.id}" data-gig="${i}">▶ See what you get, with live previews</a>
       <div class="row"><span class="price">${s.price?`$${s.price}<small>starting price</small>`:`Custom<small>quote after a free review</small>`}</span>
       <span class="svc-acts"><a class="ask-l" href="#" data-ask="Tell me about ${esc(s.name)}" data-svc="${i}">Ask</a><button class="btn btn-gold" type="button" data-svc="${i}">Choose</button></span></div></div>
   </article>`).join("");
@@ -1253,23 +1386,26 @@ document.addEventListener("click",e=>{
 
 $("#yr").textContent=new Date().getFullYear();
 Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseService});
-/* see it in action: pick a SEO Season feature and watch it run (example data) */
-(function(){
-  const scr=$("#ssScr"); if(!scr) return;
-  const chipsEl=$("#ssChips"), path=$("#ssPath"), who=$("#ssWho");
+/* SEO Season demo engine: each preview runs on its own (example data) */
+function SSPlayer(scr,path){
+  const U=Math.random().toString(36).slice(2,8);
   const R=matchMedia("(prefers-reduced-motion: reduce)").matches;
   const IMG=k=>`/businesssanta/assets/img/${k}.webp`;
-  let tm=[], cur=0, started=false;
+  let tm=[];
   const T=(fn,ms)=>tm.push(setTimeout(fn,R?0:ms));
   const stop=()=>{ tm.forEach(clearTimeout); tm=[]; };
   const q=s=>scr.querySelector(s);
   const add=(sel,html)=>q(sel)&&q(sel).insertAdjacentHTML("beforeend",html);
-  const count=(el,n,d=1200)=>{ const t0=performance.now(); const f=t=>{ if(!el.isConnected) return; const p=R?1:Math.min(1,(t-t0)/d); el.textContent=Math.round(n*(1-Math.pow(1-p,3))).toLocaleString("en-US"); if(p<1) requestAnimationFrame(f); }; requestAnimationFrame(f); };
+  const tween=(el,a,b,d=1200,dec=0,suf="")=>{ const t0=performance.now(); const f=t=>{ if(!el.isConnected) return; const p=R?1:Math.min(1,(t-t0)/d); const v=a+(b-a)*(1-Math.pow(1-p,3)); el.textContent=(dec?v.toFixed(dec):Math.round(v).toLocaleString("en-US"))+suf; if(p<1) requestAnimationFrame(f); }; requestAnimationFrame(f); };
+  const count=(el,n,d)=>tween(el,0,n,d);
   const P=(c,t)=>`<span class="x-p ${c}">${t}</span>`;
   const NM=k=>k[0].toUpperCase()+k.slice(1);
+  const type=(el,txt,ms=16,done)=>{ let i=0; const go=()=>{ if(!el.isConnected) return; el.innerHTML=txt.slice(0,i)+'<span class="x-car"></span>'; if(i++<txt.length) T(go,ms); else { el.textContent=txt; done&&done(); } }; go(); };
+  const GRAD=`<defs><linearGradient id="ssLg${U}" x1="0" x2="1"><stop offset="0" stop-color="#6366f1"/><stop offset=".5" stop-color="#8b5cf6"/><stop offset="1" stop-color="#06b6d4"/></linearGradient><linearGradient id="ssLa${U}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6366f1" stop-opacity=".35"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></linearGradient></defs>`;
 
-  const F=[
-  {e:"⚡",n:"Free audit",p:"Lead intake  /  Free audit",w:["jyoti","<b>Jyoti</b> sends you these results the same day, before you pay anything."],
+  const D={
+  /* ---------- project journey ---------- */
+  audit:{e:"⚡",n:"Free audit",p:"Lead intake  /  Free audit",w:["jyoti","<b>Jyoti</b> sends you these results the same day, before you pay anything."],
    run(){
     scr.innerHTML=`<div class="x-k x-m">Website URL</div><div class="x-g x-m" style="padding:8px 11px;margin-top:5px">https://yourbusiness.com</div><div class="x-bar"><i id="xb"></i></div><div class="x-k x-m" id="xt">Starting</div><div class="x-log" id="xl"></div>
      <div class="x-sc" id="xs"><div class="x-ring" id="xr"><b id="xv">0</b></div><div><div class="x-k">SEO score, out of 100</div><div class="x-row" style="margin-top:6px">${P("x-b","38 pages not indexed")}${P("x-w","22 missing titles")}${P("x-ok","4 quick wins")}</div></div></div>`;
@@ -1277,7 +1413,7 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
     st.forEach((x,k)=>T(()=>{ q("#xb").style.width=x[0]+"%"; q("#xt").textContent=x[0]+"%  "+x[1]; add("#xl",`<div class="x-pop">${k===st.length-1?"<b>✓</b>":"›"} ${x[1]}</div>`); },150+k*480));
     T(()=>{ q("#xs").style.opacity=1; let v=0; const go=()=>{ if(!q("#xv")) return; v+=2; const n=Math.min(v,54); q("#xv").textContent=n; q("#xr").style.setProperty("--v",n); if(v<54) T(go,22); }; go(); },150+st.length*480);
    }},
-  {e:"🔎",n:"4 specialists",p:"Audit  /  4-agent analysis",w:["sam","<b>Sam</b> personally reviews every technical finding."],
+  agents:{e:"🔎",n:"4 specialists",p:"Audit  /  4-agent analysis",w:["sam","<b>Sam</b> personally reviews every technical finding."],
    run(){
     const A=[["Technical crawler","Indexing, speed, schema"],["Content and E-E-A-T","Expertise, trust, gaps"],["AI visibility tester","ChatGPT, Gemini, Perplexity"],["Ranking and competitors","Who outranks you, and why"]];
     scr.innerHTML=`<div class="x-2 ag">${A.map((a,k)=>`<div class="x-g x-pad x-ag"><strong>${a[0]}</strong><span class="x-k">${a[1]}</span><div class="x-st" id="xa${k}"><i class="x-dot"></i>Running</div></div>`).join("")}</div>
@@ -1286,7 +1422,7 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
     [["Verified 92%","x-ok"],["Likely 71%","x-w"],["Verified 85%","x-ok"],["Estimated 44%","x-b"]].forEach((x,k)=>T(()=>{ q("#xa"+k).innerHTML=`${P(x[1],x[0])} Done`; },800+k*600));
     T(()=>q("#xv").style.opacity=1,3300);
    }},
-  {e:"🧭",n:"Strategy",p:"Workspace  /  Panel and pillars",w:["manav","<b>Manav</b> signs off your strategy before any work starts."],
+  strategy:{e:"🧭",n:"Strategy",p:"Workspace  /  Panel and pillars",w:["manav","<b>Manav</b> signs off your strategy before any work starts."],
    run(){
     const PL=["Visibility","Query opportunity","On-page health","Technical","Internal links","Engagement","Monitoring","Client report"];
     scr.innerHTML=`<div class="x-g x-pad"><div class="x-k x-m" id="xps">Review panel, round 1</div><div class="x-chat" id="xc"></div></div><div class="x-4" style="margin-top:9px">${PL.map((p,k)=>`<div class="x-g x-pil" id="xp${k}"><span>${p}</span>${P("x-n","Queued")}</div>`).join("")}</div>`;
@@ -1294,14 +1430,14 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
     T(()=>q("#xps").textContent="Agreed. Released to 8 pillars",2900);
     PL.forEach((p,k)=>{ T(()=>{ q(`#xp${k} .x-p`).outerHTML=P("x-c","Solving"); },2900+k*300); T(()=>{ q(`#xp${k} .x-p`).outerHTML=P("x-ok","✓ Solved"); },3350+k*300); });
    }},
-  {e:"🗓",n:"5-week plan",p:"Project management  /  Board",w:["manav","<b>You</b> approve the plan and price in one message. Nothing is charged before that."],
+  plan:{e:"🗓",n:"5-week plan",p:"Project management  /  Board",w:["manav","<b>You</b> approve the plan and price in one message. Nothing is charged before that."],
    run(){
     const W=[["Week 1","Foundation"],["Week 2","Build"],["Week 3","Accelerate"],["Week 4","Compound"],["Backlog","Long-term"]];
     scr.innerHTML=`<div class="x-5 sc">${W.map((w,k)=>`<div class="x-g x-col" id="xw${k}"><h4>${w[0]}</h4><small>${w[1]}</small></div>`).join("")}</div>`;
     [[0,"Fix indexing on 38 pages","sam"],[0,"Repair schema errors","sam"],[1,"Dallas service page","sakshi"],[1,"Plano service page","sakshi"],[1,"Rewrite 22 page titles","sakshi"],[2,"Answer-first FAQ for AI search","manav"],[2,"Local citations","jyoti"],[3,"Quality backlinks","manav"],[3,"Internal link pass","sakshi"],[4,"Monthly content plan","manav"]]
      .forEach((c,k)=>T(()=>add("#xw"+c[0],`<div class="x-card">${c[1]}<div class="r">${P(k%3?"x-i":"x-ok",k%3?"good fit":"best fit")}<img src="${IMG(c[2])}" alt=""></div></div>`),200+k*240));
    }},
-  {e:"📋",n:"Task board",p:"Kanban delivery board",w:["sakshi","<b>Sakshi</b> and <b>Sam</b> move your tasks daily. Verified means a second person checked it."],
+  board:{e:"📋",n:"Task board",p:"Kanban delivery board",w:["sakshi","<b>Sakshi</b> and <b>Sam</b> move your tasks daily. Verified means a second person checked it."],
    run(){
     const C=["To do","In progress","Review","Done","Verified"];
     scr.innerHTML=`<div class="x-5 sc">${C.map((c,k)=>`<div class="x-g x-col" data-c="${k}"><h4>${c}<span></span></h4></div>`).join("")}</div>`;
@@ -1312,16 +1448,15 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
     Tk.forEach(t=>put(t,0)); let s=0;
     for(let col=1;col<=4;col++) Tk.forEach(t=>{ if(t[3]>=col) T(()=>put(t,col),500+(s++)*300); });
    }},
-  {e:"✍️",n:"Content brief",p:"Content intelligence  /  Brief",w:["sakshi","<b>Sakshi</b> writes every page by hand from this brief. No mass-produced AI pages."],
+  brief:{e:"✍️",n:"Content brief",p:"Content intelligence  /  Brief",w:["sakshi","<b>Sakshi</b> writes every page by hand from this brief. No mass-produced AI pages."],
    run(){
     scr.innerHTML=`<div class="x-g x-pad"><div class="x-k x-m">Target question</div><div style="font-weight:600;margin-top:2px">Who offers same-day water heater repair in Dallas?</div>
      <div class="x-k x-m" style="margin-top:11px">LLM direct answer, put at top of article</div><div class="x-ans" id="xn"></div><div class="x-k x-m">Entities to mention</div><div class="x-row" id="xe" style="margin-top:5px"></div>
      <div class="x-row" style="margin-top:11px">${P("x-c","Answer first")}${P("x-c","Clear headings")}${P("x-c","Use data")}${P("x-c","Name entities")}</div></div>`;
-    const txt="Yes. Your Business Plumbing offers same-day water heater repair across Dallas, with licensed plumbers 7 days a week and upfront pricing before work starts.";
-    let i=0; const go=()=>{ const el=q("#xn"); if(!el) return; el.innerHTML=txt.slice(0,i)+'<span class="x-car"></span>'; if(i++<txt.length) T(go,16); }; go();
+    type(q("#xn"),"Yes. Your Business Plumbing offers same-day water heater repair across Dallas, with licensed plumbers 7 days a week and upfront pricing before work starts.");
     ["Dallas","water heater repair","licensed plumber","same-day service","Plano","upfront pricing"].forEach((e,k)=>T(()=>add("#xe",`<span class="x-p x-i x-pop">${e}</span>`),400+k*230));
    }},
-  {e:"✅",n:"QA Desk",p:"QA Desk  /  Checkpoint before delivery",w:["manav","<b>Manav</b> clears work for delivery. Anything partial goes back with a fix list."],
+  qa:{e:"✅",n:"QA Desk",p:"QA Desk  /  Checkpoint before delivery",w:["manav","<b>Manav</b> clears work for delivery. Anything partial goes back with a fix list."],
    run(){
     const S=[["Brief","What was promised"],["Evidence","Site and Search Console"],["Work","Every tab read"],["Review","Each row checked"],["Verdict","Cleared or sent back"]];
     scr.innerHTML=`<div class="x-5 x-qs">${S.map((s,k)=>`<div id="xq${k}"><b>${k+1}. ${s[0]}</b>${s[1]}</div>`).join("")}</div><div class="x-row" id="xqv" style="margin:10px 0 2px;min-height:20px"></div><div id="xqr"></div>`;
@@ -1330,7 +1465,7 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
      .forEach((r,k)=>T(()=>add("#xqr",`<div class="x-g x-li x-pop"><span>${r[0]}</span>${P(r[1],r[2])}</div>`),1900+k*360));
     T(()=>{ q("#xq4").className="dn"; q("#xqv").innerHTML=P("x-ok","4 verified")+P("x-w","1 partial")+P("x-n","0 failed")+P("x-c","Fix list sent to the team"); },3900);
    }},
-  {e:"🤖",n:"AI visibility",p:"LLM visibility  /  AI citation tracking",w:["manav","<b>Manav</b> leads AI search. We re-check what AI assistants say about you every week."],
+  aivis:{e:"🤖",n:"AI visibility",p:"LLM visibility  /  AI citation tracking",w:["manav","<b>Manav</b> leads AI search. We re-check what AI assistants say about you every week."],
    run(){
     scr.innerHTML=`<div class="x-3"><div class="x-g x-pad"><div class="x-k">Citation rate</div><div class="x-big" id="xcr">0%</div></div><div class="x-g x-pad"><div class="x-k">Checks cited</div><div class="x-big" id="xcc">0</div></div><div class="x-g x-pad"><div class="x-k">Total checks</div><div class="x-big" id="xct">0</div></div></div><div id="xai"></div>`;
     const Q=[["ChatGPT","best emergency plumber in Dallas",1],["Perplexity","same-day water heater repair Dallas",1],["Claude","affordable drain cleaning near Dallas",0],["Gemini","licensed plumbers Dallas reviews",1],["ChatGPT","plumber open Sunday in Plano",0],["Perplexity","who installs tankless water heaters in Dallas",1]];
@@ -1338,19 +1473,19 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
       add("#xai",`<div class="x-g x-ai x-pop ${x[2]?"c":""}"><span class="m x-m x-k">${x[0]}</span><span>“${x[1]}”</span>${P(x[2]?"x-ok":"x-n",x[2]?"CITED":"NOT YET")}</div>`);
       q("#xct").textContent=k+1; q("#xcc").textContent=c; const e=q("#xcr"); e.textContent=Math.round(100*r)+"%"; e.style.color=r>.6?"var(--s-ok)":r>.3?"var(--s-w)":"var(--s-b)"; },250+k*480));
    }},
-  {e:"📡",n:"Algorithm watch",p:"Algorithm intelligence  /  28 topics",w:["sam","<b>Sam</b> acts on Google changes. Your pages are re-checked and fixes go on the board."],
+  algo:{e:"📡",n:"Algorithm watch",p:"Algorithm intelligence  /  28 topics",w:["sam","<b>Sam</b> acts on Google changes. Your pages are re-checked and fixes go on the board."],
    run(){
     scr.innerHTML=`<div class="x-row">${P("x-i","All engines")}${["Google","Bing","ChatGPT","Gemini","Perplexity"].map(e=>P("x-n",e)).join("")}</div><div id="xtp"></div>`;
     const L=[[1,"AI Overviews citation patterns","Google","Critical"],[1,"Helpful content and E-E-A-T","Google","Critical"],[0,"Core Web Vitals, INP","Google","High"],[0,"Local pack ranking factors","Google","High"],[0,"ChatGPT search sources","ChatGPT","High"],[0,"Perplexity citation rules","Perplexity","Medium"]];
     L.forEach((l,k)=>T(()=>add("#xtp",`<div class="x-g x-tp x-pop"><span>${l[0]?"🔥":"·"}</span><span>${l[1]}</span><span class="e">${P("x-n",l[2])}</span>${P(l[3]==="Critical"?"x-b":l[3]==="High"?"x-w":"x-i",l[3])}</div>`),200+k*350));
     T(()=>add("#xtp",`<div class="x-g x-tp x-pop" style="border-color:rgba(6,182,212,.45)"><span>↻</span><span>Re-audit yourbusiness.com against 2 critical changes</span><span class="e">${P("x-n","Site audit")}</span>${P("x-c","Fix added")}</div>`),200+L.length*350+300);
    }},
-  {e:"📊",n:"Your dashboard",p:"Sign in to SEO Season",w:["jyoti","<b>You</b> log in with a one-time email link, no password. Message us or book a call from inside."],
+  dash:{e:"📊",n:"Your dashboard",p:"Sign in to SEO Season",w:["jyoti","<b>You</b> log in with a one-time email link, no password. Message us or book a call from inside."],
    run(){
     const mail="you@yourbusiness.com";
     scr.innerHTML=`<div class="x-login"><div class="x-g"><div style="font-weight:600">Sign in to SEO Season</div><div class="x-k">We email you a one-time link. No password.</div><input id="xem" readonly aria-label="Email"><span class="x-btn">Email me a sign-in link</span></div></div>`;
     let i=0; const ty=()=>{ const el=q("#xem"); if(!el) return; el.value=mail.slice(0,i); if(i++<mail.length) T(ty,45); }; T(ty,250);
-    T(()=>{ path.textContent="Your project  /  Home";
+    T(()=>{ path&&(path.textContent="Your project  /  Home");
      scr.innerHTML=`<div class="x-cp"><div class="x-nav"><span class="a">Home</span><span>Talk to Manav</span><span>Goals and wins</span><span>Improvements</span><span>Calls and notes</span><span>Reports</span><span>Site health</span><span>Keywords</span><span>AI visibility</span></div>
       <div class="x-main"><div class="x-good"><b>Good news:</b> your Dallas page is now on Google's first page.</div>
       <div class="x-2"><div class="x-g x-pad"><div class="x-k">Visits from Google</div><span class="x-big" data-n="1240">0</span> <span class="x-up">+38%</span></div><div class="x-g x-pad"><div class="x-k">Times shown on Google</div><span class="x-big" data-n="48300">0</span> <span class="x-up">+52%</span></div>
@@ -1359,34 +1494,257 @@ Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseSe
      [["🏆","38 pages back in Google's index","x-ok","Verified"],["🎯","Goal: 40 enquiries a month","x-c","On track"],["📄","October report is ready","x-i","Open"]].forEach((w,k)=>T(()=>add("#xwn",`<div class="x-g x-li x-pop"><span>${w[0]} ${w[1]}</span>${P(w[2],w[3])}</div>`),1200+k*320));
     },250+mail.length*45+800);
    }},
-  {e:"📈",n:"Monthly report",p:"Campaign report  /  What the data said",w:["jyoti","<b>Jyoti</b> walks you through every report on a call."],
+  report:{e:"📈",n:"Monthly report",p:"Campaign report  /  What the data said",w:["jyoti","<b>Jyoti</b> walks you through every report on a call."],
    run(){
     scr.innerHTML=`<div class="x-4">${[[27,"Keywords winning"],[6,"Holding"],[3,"Slipping, fix planned"],[64,"Technical fixes"]].map(x=>`<div class="x-g x-pad x-c"><div class="x-big" data-n="${x[0]}">0</div><div class="x-k">${x[1]}</div></div>`).join("")}</div>
-     <div class="x-g x-pad x-ch" style="margin-top:9px"><div class="x-k">Clicks from Google, last 8 weeks</div><svg viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="ssLg" x1="0" x2="1"><stop offset="0" stop-color="#6366f1"/><stop offset=".5" stop-color="#8b5cf6"/><stop offset="1" stop-color="#06b6d4"/></linearGradient><linearGradient id="ssLa" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#6366f1" stop-opacity=".35"/><stop offset="1" stop-color="#6366f1" stop-opacity="0"/></linearGradient></defs><path class="x-ar" fill="url(#ssLa)" d="M0,104 L57,100 L114,95 L171,86 L228,70 L285,57 L342,38 L400,20 L400,120 L0,120Z"/><path class="x-ln" d="M0,104 L57,100 L114,95 L171,86 L228,70 L285,57 L342,38 L400,20"/></svg></div>
+     <div class="x-g x-pad x-ch" style="margin-top:9px"><div class="x-k">Clicks from Google, last 8 weeks</div><svg viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true">${GRAD}<path class="x-ar" fill="url(#ssLa${U})" d="M0,104 L57,100 L114,95 L171,86 L228,70 L285,57 L342,38 L400,20 L400,120 L0,120Z"/><path class="x-ln" style="stroke:url(#ssLg${U})" d="M0,104 L57,100 L114,95 L171,86 L228,70 L285,57 L342,38 L400,20"/></svg></div>
      <div class="x-row" style="margin-top:9px">${P("x-c","Next: Dallas and Plano pages, high impact")}${P("x-n","Known gap: call tracking not connected")}</div>`;
     scr.querySelectorAll("[data-n]").forEach(el=>count(el,+el.dataset.n,1000));
-   }}
-  ];
+   }},
 
-  chipsEl.innerHTML=F.map((f,k)=>`<button type="button" role="tab" aria-selected="false" tabindex="-1" data-k="${k}"><span class="e" aria-hidden="true">${f.e}</span>${f.n}</button>`).join("");
+  /* ---------- gig deliverables ---------- */
+  index:{e:"🗂",n:"Indexing fix",p:"Search Console  /  Page indexing",w:["sam","<b>Sam</b> fixes every indexing reason and asks Google to validate the fix."],
+   run(){
+    scr.innerHTML=`<div class="x-3"><div class="x-g x-pad"><div class="x-k">Indexed pages</div><div class="x-big" id="i1">176</div></div><div class="x-g x-pad"><div class="x-k">Not indexed</div><div class="x-big" id="i2" style="color:var(--s-b)">38</div></div><div class="x-g x-pad"><div class="x-k">Sitemap</div><div id="i3" style="margin-top:6px">${P("x-b","Couldn't fetch")}</div></div></div><div id="ir"></div><div id="iv"></div>`;
+    const W=[["Crawled, currently not indexed",21],["Duplicate without user-selected canonical",9],["Page with redirect",5],["Soft 404",3]];
+    W.forEach((w,k)=>{ T(()=>add("#ir",`<div class="x-g x-li x-pop" id="iw${k}"><span>${w[0]}</span>${P("x-b",w[1]+" pages")}</div>`),200+k*260);
+      T(()=>{ q(`#iw${k} .x-p`).outerHTML=P("x-ok","Fixed ✓"); },1600+k*550); });
+    T(()=>{ q("#i3").innerHTML=P("x-ok","Submitted, success"); },1300);
+    T(()=>{ tween(q("#i1"),176,214,1200); tween(q("#i2"),38,0,1200); q("#i2").style.color="var(--s-ok)";
+      add("#iv",`<div class="x-good x-pop" style="margin:8px 0 0"><b>Validation passed.</b> Google confirmed the fix for all 4 reasons.</div>`); },1600+W.length*550);
+   }},
+  titles:{e:"🏷",n:"Titles and meta",p:"On-page  /  Titles and Yoast",w:["sakshi","<b>Sakshi</b> rewrites each title by hand for clicks, keywords and length."],
+   run(){
+    const Rw=[["/","Home","Dallas Plumber, Licensed and Same-Day | Your Business"],["/water-heater-repair","Services | Home","Water Heater Repair in Dallas, Fixed Today | Your Business"],["/blog/tankless-cost","Blog post 14","Tankless Water Heater Cost in Dallas (2026 Prices)"]];
+    scr.innerHTML=Rw.map((r,k)=>`<div class="x-g x-pad" style="margin-top:${k?7:0}px"><div class="x-k x-m">${r[0]}</div><div class="x-old">${r[1]}</div><div class="x-new" id="tn${k}"></div><div class="x-row" style="margin-top:6px;align-items:center"><span class="x-yd" id="ty${k}"><i></i>SEO<i></i>Readability</span><span id="tl${k}">${P("x-b",r[1].length+" chars, too short")}</span></div></div>`).join("");
+    let at=300; Rw.forEach((r,k)=>{ T(()=>type(q("#tn"+k),r[2],22,()=>{ q("#ty"+k).classList.add("ok"); q("#tl"+k).innerHTML=P("x-ok",r[2].length+" chars, good"); }),at); at+=r[2].length*22+500; });
+   }},
+  schema:{e:"🧾",n:"Schema code",p:"Technical  /  Structured data",w:["sam","<b>Sam</b> writes and tests the code so Google understands your business."],
+   run(){
+    const code=`{\n  "@context": "https://schema.org",\n  "@type": "Plumber",\n  "name": "Your Business Plumbing",\n  "areaServed": ["Dallas", "Plano"],\n  "telephone": "+1-214-555-0100",\n  "openingHours": "Mo-Su 00:00-23:59",\n  "priceRange": "$$"\n}`;
+    scr.innerHTML=`<div class="x-k x-m">JSON-LD added to every service page</div><pre class="x-code" id="sc"></pre><div id="sv"></div>`;
+    let i=0; const el=q("#sc"); const go=()=>{ if(!el.isConnected) return; i=Math.min(code.length,i+3); el.textContent=code.slice(0,i); if(i<code.length) T(go,14); else {
+      el.innerHTML=code.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/("[^"]*")(\s*:)/g,'<em>$1</em>$2');
+      add("#sv",`<div class="x-good x-pop" style="margin:8px 0 6px"><b>Rich Results Test: valid ✓</b> No errors, no warnings.</div><div class="x-row x-pop">${P("x-ok","LocalBusiness")}${P("x-ok","FAQPage")}${P("x-ok","Service")}${P("x-ok","BreadcrumbList")}</div>`); } }; T(go,200);
+   }},
+  speed:{e:"🚀",n:"Speed fix",p:"Technical  /  Core Web Vitals",w:["sam","<b>Sam</b> fixes what slows your site, then re-tests on real phones."],
+   run(){
+    const V=[["LCP, main content loads","4.8","2.1","s",1],["INP, reacts to taps","380","140","ms",0],["CLS, page stays still","0.24","0.04","",2]];
+    scr.innerHTML=`<div class="x-3">${V.map((v,k)=>`<div class="x-g x-pad"><div class="x-k">${v[0]}</div><div class="x-big" id="sv${k}" style="color:var(--s-b)">${v[1]}${v[3]}</div><span id="sp${k}">${P("x-b","Poor")}</span></div>`).join("")}</div><div id="sf"></div>`;
+    ["Images converted to WebP, 1.9 MB saved","Render-blocking scripts deferred","Fonts preloaded, no flash of text","Layout shift fixed on the hero"].forEach((f,k)=>T(()=>add("#sf",`<div class="x-g x-li x-pop"><span>${f}</span>${P("x-ok","Done")}</div>`),300+k*450));
+    T(()=>V.forEach((v,k)=>{ const el=q("#sv"+k); tween(el,+v[1],+v[2],1300,v[4],v[3]); el.style.color="var(--s-ok)"; q("#sp"+k).innerHTML=P("x-ok","Good"); }),2200);
+   }},
+  kwmap:{e:"🗺",n:"Keyword map",p:"Research  /  Keyword to page map",w:["manav","<b>Manav</b> picks keywords that bring buyers, not just visitors, from live Google results."],
+   run(){
+    const K=[["emergency plumber dallas","Ready to buy","x-ok","1,900",62,"/emergency-plumber"],["water heater repair dallas","Ready to buy","x-ok","880",48,"/water-heater-repair"],["plumber plano tx","Ready to buy","x-ok","720",41,"/plano"],["tankless water heater cost","Researching","x-i","2,400",35,"/blog/tankless-cost"],["why is my water heater leaking","AI answer","x-c","3,100",22,"/blog/leaking"]];
+    scr.innerHTML=`<div class="x-km x-k x-m hd"><span>Keyword</span><span class="m">Intent</span><span class="m">Monthly</span><span class="m">Difficulty</span><span>Page</span></div><div id="km"></div>`;
+    K.forEach((r,k)=>T(()=>{ add("#km",`<div class="x-g x-km x-pop"><span>${r[0]}</span><span class="m">${P(r[2],r[1])}</span><span class="m x-m">${r[3]}</span><span class="m"><span class="x-df"><i style="width:${r[4]}%"></i></span></span><span class="x-m" style="color:var(--s-cy)">→ ${r[5]}</span></div>`); },200+k*380));
+    T(()=>add("#km",`<div class="x-row x-pop" style="margin-top:9px">${P("x-c","64 keywords mapped to 18 pages")}${P("x-n","No two pages compete for the same keyword")}</div>`),2300);
+   }},
+  product:{e:"🛍",n:"Product listings",p:"Shopify  /  Product SEO",w:["sakshi","<b>Sakshi</b> rewrites product titles, descriptions and image text so shoppers find them."],
+   run(){
+    const F=[["Title","Blue Mug 12oz","Handmade Blue Ceramic Coffee Mug, 12 oz, Dishwasher Safe"],["Description","Nice mug.","Hand-thrown in Austin and glazed in ocean blue. Holds 12 oz, safe for dishwasher and microwave."],["Image alt text","IMG_2231.jpg","Handmade blue ceramic coffee mug on a wooden table"],["URL","/products/copy-of-mug-3","/products/handmade-blue-ceramic-mug"]];
+    scr.innerHTML=F.map((f,k)=>`<div class="x-g x-pad" style="margin-top:${k?7:0}px"><div class="x-k x-m">${f[0]}</div><div class="x-old">${f[1]}</div><div class="x-new" id="pn${k}"></div></div>`).join("")+`<div id="pv"></div>`;
+    let at=200; F.forEach((f,k)=>{ T(()=>type(q("#pn"+k),f[2],14),at); at+=f[2].length*14+300; });
+    T(()=>add("#pv",`<div class="x-row x-pop" style="margin-top:9px">${P("x-ok","Product schema ✓")}${P("x-ok","Collection intro ✓")}${P("x-ok","Google Shopping ready ✓")}</div>`),at);
+   }},
+
+  /* ---------- AI engine, advanced ---------- */
+  engine:{ai:1,e:"🧠",n:"AI engine room",p:"Brain command  /  Agent orchestration",w:["manav","<b>Manav</b>: AI does the heavy lifting. A person approves every change before it touches your site."],
+   run(){
+    const S=["Google Search Console","GA4 analytics","Live Google results","Full site crawl","AI assistant answers"], A=["Crawler","Analyst","Strategist","Writer","Reviewer"];
+    scr.innerHTML=`<div class="x-fl"><div><h5>Your data</h5>${S.map((s,k)=>`<div class="x-nd" id="es${k}">${s}</div>`).join("")}</div><div><h5>AI agents</h5>${A.map((s,k)=>`<div class="x-nd" id="ea${k}">${s}</div>`).join("")}</div>
+     <div><h5>Human checkpoint</h5><div class="x-nd gate" id="eg"><img src="${IMG("manav")}" alt=""><span>Waiting for review</span></div><div class="x-nd" id="eh0">Change goes live</div><div class="x-nd" id="eh1">Logged in your report</div></div></div><div class="x-g x-tk" id="et"></div>`;
+    const on=(id,c)=>{ const n=q("#"+id); n&&(n.className="x-nd "+c+(id==="eg"?" gate":"")); };
+    S.forEach((s,k)=>{ T(()=>on("es"+k,"on"),100+k*200); T(()=>on("es"+k,"ok"),500+k*200); });
+    const L=["Crawler: 214 pages read, JavaScript pages rendered first","Analyst: 38 pages crawled, not indexed (Verified, Search Console)","Strategist: city pages first, highest impact on calls","Writer: Dallas page drafted, answer first","Reviewer: 2 claims had no source, sent back and fixed"];
+    A.forEach((a,k)=>{ T(()=>{ on("ea"+k,"on"); add("#et",`<div class="x-pop">› ${L[k]}</div>`); },1500+k*700); T(()=>on("ea"+k,"ok"),2000+k*700); });
+    const t=1500+A.length*700;
+    T(()=>{ on("eg","on"); q("#eg span").textContent="Manav reviewing"; },t);
+    T(()=>{ on("eg","ok"); q("#eg span").textContent="Approved by Manav"; add("#et",`<div class="x-pop"><b>✓</b> Human approved. Nothing goes live without a person.</div>`); },t+1300);
+    T(()=>on("eh0","ok"),t+1700); T(()=>on("eh1","ok"),t+2000);
+   }},
+  geoscore:{ai:1,e:"🛰",n:"GEO score",p:"GEO  /  Visibility score",w:["manav","<b>Manav</b> tracks this score weekly. It shows how often AI search recommends you."],
+   run(){
+    const G=[["Google AI Overview appearances","Search Console","14",56],["Visits from ChatGPT, Perplexity, Gemini","GA4","212",72],["Quoted in AI answers","Live results, 40 questions","9 of 40",23]];
+    scr.innerHTML=`<div class="x-gs"><div class="x-ring" id="gr" style="--c:var(--s-cy)"><b id="gv">31</b></div><div><div class="x-k">GEO visibility score, out of 100</div><div class="x-big">How visible you are in AI search</div><div class="x-row" style="margin-top:6px">${P("x-n","8 weeks ago: 31")}<span id="gd"></span></div></div></div><div id="gs"></div>`;
+    G.forEach((g,k)=>T(()=>{ add("#gs",`<div class="x-g x-sg x-pop"><span>${g[0]} <span class="x-k">(${g[1]})</span></span><b class="x-m">${g[2]}</b><span class="t"><i id="gb${k}"></i></span></div>`); T(()=>{ const b=q("#gb"+k); b&&(b.style.width=g[3]+"%"); },60); },200+k*350));
+    T(()=>{ let v=31; const go=()=>{ if(!q("#gv")) return; v++; q("#gv").textContent=v; q("#gr").style.setProperty("--v",v); if(v<72) T(go,28); else q("#gd").innerHTML=P("x-ok","+41 points"); }; q("#gr").style.setProperty("--v",31); go(); },1300);
+   }},
+  gap:{ai:1,e:"🧬",n:"Citation gap",p:"GEO  /  Why AI quotes them, not you",w:["sakshi","<b>Sakshi</b> turns every gap into a change on your page."],
+   run(){
+    const R=[["Direct answer in first 50 words",1,0],["Price range table",1,0],["FAQ with schema",1,1],["Licensed plumber details shown",1,0],["Service area list",1,1],["Updated this month",1,0]];
+    scr.innerHTML=`<div class="x-k x-m">Question</div><div style="font-weight:600;margin:2px 0 10px">"How much does water heater repair cost in Dallas?"</div>
+     <div class="x-gp x-k x-m hd"><span>What AI looks for</span><span>Quoted page</span><span>Your page</span></div><div id="gp"></div><div id="gv"></div>`;
+    R.forEach((r,k)=>T(()=>add("#gp",`<div class="x-gp x-g x-pop"><span>${r[0]}</span><span class="y">✓</span><span class="${r[2]?"y":"n"}">${r[2]?"✓":"✕"}</span></div>`),250+k*380));
+    T(()=>add("#gv",`<div class="x-row x-pop" style="margin-top:9px">${P("x-b","4 gaps found")}${P("x-c","Blueprint added to Week 2")}${P("x-n","Re-checked weekly")}</div>`),250+R.length*380+300);
+   }},
+  radar:{ai:1,e:"🚨",n:"AI Overview radar",p:"Alert center  /  AI Overview watch",w:["sam","<b>Sam</b> gets the alert the same day a new AI answer appears for your keywords."],
+   run(){
+    scr.innerHTML=`<div class="x-rdw"><div class="x-rd"><i style="left:28%;top:30%"></i><i style="left:66%;top:58%"></i><i style="left:40%;top:72%"></i></div><div><div class="x-k x-m">Watching</div><div class="x-big">40 questions</div><div class="x-k">across Google AI Overviews, every day</div></div></div><div id="rf"></div>`;
+    T(()=>scr.querySelectorAll(".x-rd i").forEach(i=>i.style.opacity=1),900);
+    const E=[["New AI Overview appeared for “tankless water heater cost dallas”","x-w","New"],["Sources quoted: competitor-a.com, competitor-b.com, homeadvisor.com","x-n","3 sources"],["Your site is not quoted","x-b","Risk: high"],[`<img src="${IMG("sakshi")}" alt="" class="x-av">Task for Sakshi: add cost table and an answer-first intro`,"x-c","On the board"],["3 weeks later: your page is now quoted","x-ok","Quoted ✓"]];
+    E.forEach((e,k)=>T(()=>add("#rf",`<div class="x-g x-li x-pop"><span style="display:flex;align-items:center;gap:7px">${e[0]}</span>${P(e[1],e[2])}</div>`),1100+k*650));
+   }},
+  drop:{ai:1,e:"🩺",n:"Drop doctor",p:"Ranking drop analysis",w:["sam","<b>Sam</b> reads the diagnosis and ships the fix."],
+   run(){
+    const C=[["Google core update, matches 3 of 4 signals",64],["Competitor added a cost table",22],["Page got slower on phones",9],["Lost a backlink",5]];
+    scr.innerHTML=`<div class="x-g x-pad x-ch"><div class="x-k">“water heater repair dallas”, Google position</div><svg viewBox="0 0 400 110" preserveAspectRatio="none" aria-hidden="true"><path d="M0,16 L50,14 L100,17 L150,15 L200,62 L250,66" fill="none" stroke="#f87171" stroke-width="3" stroke-linecap="round" class="x-ln2"/><path d="M250,66 L300,40 L350,18 L400,10" fill="none" stroke="#34d399" stroke-width="3" stroke-linecap="round" class="x-ln2 late" id="dr" style="visibility:hidden"/><text x="4" y="12" fill="#a0a0c0" font-size="10" font-family="monospace">#4</text><text x="230" y="84" fill="#f87171" font-size="10" font-family="monospace">#11</text><text x="372" y="26" fill="#34d399" font-size="10" font-family="monospace" id="dt" style="visibility:hidden">#3</text></svg></div><div class="x-k x-m" style="margin-top:9px">Likely causes</div><div id="dc"></div><div id="dv"></div>`;
+    C.forEach((c,k)=>T(()=>{ add("#dc",`<div class="x-g x-sg x-pop ${k?"":"top"}"><span>${c[0]}</span><b class="x-m">${c[1]}%</b><span class="t"><i id="db${k}"></i></span></div>`); T(()=>{ const b=q("#db"+k); b&&(b.style.width=c[1]+"%"); },60); },1300+k*350));
+    T(()=>{ add("#dv",`<div class="x-good x-pop" style="margin:8px 0 0"><b>Fix:</b> add first-hand detail and a price table. Back to #3 in 4 weeks.</div>`); q("#dr").style.visibility="visible"; q("#dr").classList.add("go"); T(()=>q("#dt").style.visibility="visible",900); },1300+C.length*350+400);
+   }},
+  wire:{ai:1,e:"🧩",n:"Wireframe engine",p:"UX and CRO engine  /  Wireframe",w:["sakshi","<b>Sakshi</b> and <b>Manav</b> turn this wireframe into a page that gets calls."],
+   run(){
+    const N=[["Call button above the fold. Most visitors never scroll."],["Reviews right next to the button."],["Answer-first FAQ that AI tools can quote."],["Sticky call bar on phones."]];
+    const r=(x,y,w,h,d,f)=>`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" style="animation-delay:${d}ms" ${f?'class="f"':""}/>`;
+    const b=(n,x,y,d)=>`<g class="x-nb" style="animation-delay:${d}ms"><circle cx="${x}" cy="${y}" r="9"/><text x="${x}" y="${y+3.5}">${n}</text></g>`;
+    scr.innerHTML=`<div class="x-wf"><svg viewBox="0 0 220 300" aria-hidden="true">${r(2,2,216,296,0)}${r(12,12,196,16,150)}${r(22,40,150,10,300)}${r(22,56,110,10,400)}${r(22,74,84,20,550,1)}${r(12,104,196,18,700)}${r(12,130,60,58,850)}${r(80,130,60,58,950)}${r(148,130,60,58,1050)}${r(12,198,196,13,1200)}${r(12,216,196,13,1280)}${r(12,234,196,13,1360)}${r(12,262,196,26,1500,1)}
+      ${b(1,116,84,1900)}${b(2,200,113,2500)}${b(3,200,222,3100)}${b(4,200,275,3700)}</svg><div id="wn"></div></div>`;
+    N.forEach((n,k)=>T(()=>add("#wn",`<div class="x-g x-li x-pop" style="justify-content:flex-start"><b class="x-num">${k+1}</b><span>${n[0]}</span></div>`),1900+k*600));
+   }},
+  brain:{ai:1,e:"🎓",n:"Learning brain",p:"Brain learning  /  Lessons",w:["manav","<b>Manav</b> reviews every lesson. Your data stays private to your project."],
+   run(){
+    scr.innerHTML=`<div class="x-3"><div class="x-g x-pad"><div class="x-k">Lessons learned</div><div class="x-big" id="b1">0</div></div><div class="x-g x-pad"><div class="x-k">Used on your project</div><div class="x-big" id="b2">0</div></div><div class="x-g x-pad"><div class="x-k">Reviewer score</div><div class="x-big" id="b3">0</div></div></div><div id="bf"></div>`;
+    count(q("#b1"),1284); count(q("#b2"),37); tween(q("#b3"),0,9.2,1200,1,"/10");
+    [["Task scored by reviewer: Dallas page","x-ok","9 of 10"],["Lesson saved: price ranges near the top lift calls for home services","x-i","Saved"],["Lesson saved: answer the question in the first 50 words","x-i","Saved"],["Applied to your next task: Plano page brief","x-c","Applied"]].forEach((r,k)=>T(()=>add("#bf",`<div class="x-g x-li x-pop"><span>${r[0]}</span>${P(r[1],r[2])}</div>`),600+k*600));
+    T(()=>add("#bf",`<div class="x-row x-pop" style="margin-top:9px">${P("x-c","Your project gets sharper with every task")}</div>`),3200);
+   }}
+  };
+
+  return {D,stop,play(id){ stop(); if(D[id]) D[id].run(); }};
+}
+/* see it in action: the project journey on SEO Season (example data) */
+(function(){
+  const scr=$("#ssScr"); if(!scr) return;
+  const chipsEl=$("#ssChips"), who=$("#ssWho");
+  const R=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const pl=SSPlayer(scr,$("#ssPath")), D=pl.D;
+  const list=["audit","agents","strategy","plan","board","brief","qa","aivis","algo","dash","report"];
+  let cur=0, started=false;
+  chipsEl.innerHTML=list.map((id,k)=>`<button type="button" role="tab" aria-selected="${k?"false":"true"}" tabindex="${k?-1:0}"><span class="e" aria-hidden="true">${D[id].e}</span>${D[id].n}</button>`).join("");
   const chips=[...chipsEl.children];
+  const meta=k=>{ const f=D[list[k]]; $("#ssPath").textContent=f.p; who.innerHTML=`<img src="/businesssanta/assets/img/${f.w[0]}.webp" alt=""><span>${f.w[1]}</span>`; };
   function show(k,focus){
-    stop(); cur=k; const f=F[k];
+    cur=k; started=true;
     chips.forEach((b,i)=>{ b.setAttribute("aria-selected",i===k); b.tabIndex=i===k?0:-1; });
     const b=chips[k]; if(chipsEl.scrollWidth>chipsEl.clientWidth) chipsEl.scrollTo({left:b.offsetLeft-chipsEl.offsetLeft-8,behavior:R?"auto":"smooth"});
     if(focus) b.focus({preventScroll:true});
-    path.textContent=f.p;
-    who.innerHTML=`<img src="${IMG(f.w[0])}" alt=""><span>${f.w[1]}</span>`;
-    f.run();
+    meta(k); pl.play(list[k]);
   }
   chips.forEach((b,k)=>{ b.onclick=()=>show(k);
-    b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ e.preventDefault(); show((k+(e.key==="ArrowRight"?1:F.length-1))%F.length,true); } }; });
+    b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ e.preventDefault(); show((k+(e.key==="ArrowRight"?1:list.length-1))%list.length,true); } }; });
   $("#ssRe").onclick=()=>show(cur);
-  $("#ssNx").onclick=()=>show((cur+1)%F.length);
-  chips[0].setAttribute("aria-selected","true"); chips[0].tabIndex=0;
-  path.textContent=F[0].p; who.innerHTML=`<img src="${IMG(F[0].w[0])}" alt=""><span>${F[0].w[1]}</span>`;
-  new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!started){ started=true; show(0); } }),{threshold:.35}).observe(scr);
-  window.showFeature=n=>{ const k=F.findIndex(f=>f.n===n); if(k>-1){ document.getElementById("platform").scrollIntoView({behavior:R?"auto":"smooth",block:"start"}); started=true; show(k); } };
+  $("#ssNx").onclick=()=>show((cur+1)%list.length);
+  meta(0);
+  new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!started) show(0); }),{threshold:.35}).observe(scr);
+})();
+
+/* gig expansion: every gig opens with its deliverables, each with its own live preview */
+(function(){
+  const dlg=$("#gigx"); if(!dlg) return;
+  const body=$("#gxBody");
+  const R=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const META=SSPlayer(null,null).D;
+  const TEAM={jyoti:"Jyoti",manav:"Manav",sam:"Sam",sakshi:"Sakshi"};
+  const GX={
+   full:{promise:"Everything your site needs to rank on Google and get quoted by AI, done by our team and shown to you step by step.",when:"Monthly, first report in 30 days",team:[["manav","strategy"],["sam","technical"],["sakshi","content"],["jyoti","your updates"]],
+    items:[["audit","Full site audit","Every page checked and scored. Issues ranked by how much they hold you back.",["200+ checks on every page","A confidence label on every finding","Plain-English summary you can share"]],
+     ["kwmap","Keyword to page map","The searches your buyers type, each matched to the one page that should win it.",["Buyer intent for every keyword","No two pages competing","Monthly searches and difficulty"]],
+     ["titles","On-page rewrite","Titles, descriptions and headings rewritten by hand to earn the click.",["Every key page","Right length for Google","Keyword placed naturally"]],
+     ["schema","Schema and technical fixes","Code that tells Google exactly what your business is and where you work.",["Business, service and FAQ schema","Tested in Google's Rich Results Test","Crawl and redirect errors fixed"]],
+     ["speed","Speed fixes","A faster site for phone visitors and for Google's Core Web Vitals.",["LCP, INP and CLS to green","Images compressed","Re-tested on real phones"]],
+     ["board","Live task board","Watch every task move, see who is on it and when it was verified.",["Your own login","Second-person check on every task","Overdue items flagged red"]],
+     ["report","Monthly report","What we did, what the data says and what comes next.",["Keywords winning, holding, slipping","Traffic and enquiries","Known gaps listed openly"]]],
+    ai:[["engine","AI engine room","Five AI agents read your data in minutes. A person approves every change."],["gap","Citation gap","Finds exactly why AI quotes a competitor and not you."],["geoscore","GEO score","One number that shows how visible you are in AI search."]],
+    steps:[["Day 0","Free audit. You approve the plan and price."],["Week 1","Foundation: indexing and technical fixes"],["Week 2","Build: pages, titles and schema"],["Week 3","Accelerate: content and links"],["Week 4","Report call and next month's plan"]]},
+   gsc:{promise:"Your pages indexed and your Search Console errors cleared, confirmed by Google's own validation.",when:"3 to 5 days",team:[["sam","technical fixes"],["jyoti","your updates"]],
+    items:[["audit","Search Console audit","Every indexing and coverage issue found and explained.",["Page indexing report reviewed","Sitemaps and robots.txt checked","Each issue in plain English"]],
+     ["index","Indexing fixes, validated by Google","We fix every reason a page is left out, then ask Google to validate.",["Every not-indexed reason fixed","Sitemap resubmitted","Validation requested and tracked"]],
+     ["schema","Structured data errors fixed","Errors and warnings in the Enhancements reports cleared.",["Errors and warnings cleared","Rich Results Test passed","Breadcrumb and FAQ schema"]],
+     ["speed","Core Web Vitals fixes","The speed report in Search Console turned green.",["LCP, INP and CLS fixed","Re-tested on real phones","Before and after numbers"]],
+     ["qa","Checked before handover","A second person checks every fix against Search Console before you see it.",["5-stage QA Desk","Proof for every fix","Partial work sent back"]],
+     ["report","Handover report","A clear record you can keep or share with your developer.",["Before and after numbers","What we fixed and why","What to watch next"]]],
+    ai:[["drop","Drop doctor","If rankings fall, AI matches the drop to its most likely cause."],["engine","AI engine room","AI agents read Search Console and your site. A person approves every fix."]],
+    steps:[["Day 0","Free audit. You approve the fix list and price."],["Day 1 to 2","Fixes made on your site"],["Day 3","Google validation requested"],["Day 4 to 5","QA check and handover report"]]},
+   yoast:{promise:"Yoast set up properly and every key page optimized. Green lights that actually mean something.",when:"2 to 4 days",team:[["sakshi","on-page and content"],["sam","technical"]],
+    items:[["audit","WordPress SEO audit","Your plugins, theme, settings and pages checked.",["Yoast and plugin settings","Theme speed and indexing","Content gaps"]],
+     ["titles","Yoast titles and meta, all green","Every key page rewritten by hand until SEO and readability are green.",["Focus keyphrase per page","Hand-written, not templated","Right length for Google"]],
+     ["schema","Yoast schema configured","Your business details set up so Google reads them correctly.",["Organization and LocalBusiness","Breadcrumbs","FAQ blocks"]],
+     ["kwmap","Keyword plan","Which page targets which search, so pages stop competing.",["Buyer intent","Page for every keyword","No overlaps"]],
+     ["brief","Content brief for new pages","A ready brief for each page you add next.",["Direct answer first","Entities to mention","Headings and structure"]],
+     ["qa","Checked before handover","Every change checked by a second person.",["5-stage QA Desk","Proof for every change","Partial work sent back"]]],
+    ai:[["wire","Wireframe engine","AI drafts a page layout built to get calls. Our team refines it."],["brain","Learning brain","Lessons from every finished task make your next task sharper."]],
+    steps:[["Day 0","Free audit. You approve the plan."],["Day 1","Yoast setup and settings"],["Day 2 to 3","Page rewrites and schema"],["Day 4","QA check and report"]]},
+   monthly:{promise:"A team working on your site every week, a board you can watch, and a report every month.",when:"Monthly, reviewed every 30 days",team:[["manav","strategy"],["sam","technical"],["sakshi","content"],["jyoti","your updates"]],
+    items:[["plan","Your 5-week plan","Every task placed in the week where it does the most good.",["Foundation, build, accelerate, compound","An owner on every task","You approve before work starts"]],
+     ["board","Weekly work, live board","Tasks move every week, and you can watch them.",["To do through Verified","Second-person check","Overdue items flagged"]],
+     ["algo","Google update watch","When Google changes, your pages are re-checked against it.",["28 ranking and AI topics","Critical changes flagged","Fixes added to your board"]],
+     ["aivis","AI visibility tracking","What ChatGPT, Gemini and Perplexity say about you, checked weekly.",["Your buyers' real questions","Citation rate over time","Wins and gaps"]],
+     ["dash","Your dashboard","Your numbers, goals and wins in plain English, anytime.",["One-time email login","Message the team inside","Book a call inside"]],
+     ["report","Monthly report","A report you can show your boss or your board.",["Keywords winning, holding, slipping","Traffic and enquiries","What comes next"]]],
+    ai:[["drop","Drop doctor","If a ranking falls, AI finds the most likely cause the same week."],["brain","Learning brain","Every finished task teaches the system something for your next one."],["engine","AI engine room","AI agents prepare the work. A person approves every change."]],
+    steps:[["Day 0","Free audit and plan approval"],["Every week","Tasks on your board, checked and verified"],["Every week","AI visibility and ranking checks"],["Every month","Report call with Jyoti"]]},
+   shopify:{promise:"Products and collections that Google, shoppers and AI shopping answers can actually find.",when:"5 to 7 days",team:[["sakshi","product content"],["sam","store technical"]],
+    items:[["audit","Store audit","Products, collections, apps and speed checked.",["Duplicate and thin pages","Collection structure","App and theme speed"]],
+     ["product","Product listing rewrites","Titles, descriptions, image text and URLs written for search.",["Hand-written titles","Alt text on every image","Clean product URLs"]],
+     ["schema","Product schema","Price, stock and product details Google can show in results.",["Product and Offer schema","Rich Results Test passed","Google Shopping ready"]],
+     ["speed","Store speed fixes","A faster store on phones, where most shoppers buy.",["Core Web Vitals to green","Heavy apps reviewed","Images compressed"]],
+     ["kwmap","Collection keyword map","Each collection page matched to what shoppers search.",["Buyer intent","Collection intros","No competing pages"]],
+     ["report","Store report","What changed and what to do next.",["Before and after","Top product opportunities","Next steps"]]],
+    ai:[["wire","Wireframe engine","AI drafts a product page layout built to convert. Our team refines it."],["gap","Citation gap","Why AI shopping answers pick a competitor's product, and what to change."]],
+    steps:[["Day 0","Free store audit. You approve the plan."],["Day 1 to 3","Product and collection rewrites"],["Day 4 to 5","Schema and speed fixes"],["Day 6 to 7","QA check and store report"]]},
+   geo:{promise:"Get your business mentioned and quoted by ChatGPT, Google AI Overviews, Claude, Gemini and Perplexity.",when:"Monthly, first AI check in 7 days",team:[["manav","AI search lead"],["sakshi","answer-first content"]],
+    items:[["aivis","AI visibility check","We ask AI assistants your buyers' questions and record if they mention you.",["ChatGPT, Gemini, Claude, Perplexity","Your real buyer questions","Citation rate every week"]],
+     ["geoscore","GEO visibility score","One score built from Search Console, GA4 and live AI answers.",["AI Overview appearances","Visits from AI assistants","Quotes in AI answers"]],
+     ["gap","Citation gap analysis","Why AI quotes a competitor's page and not yours, line by line.",["What AI looks for","Your page vs the quoted page","A change list for each gap"]],
+     ["brief","Answer-first content","Pages written so AI tools can lift your answer directly.",["Direct answer first","Facts and names AI looks for","Written by our team"]],
+     ["radar","AI Overview radar","An alert the day a new AI answer appears for your keywords.",["40 questions watched daily","Who gets quoted","A task the same day"]],
+     ["report","Monthly AI report","Your AI visibility, what we changed and what comes next.",["Score over time","Wins and gaps","Next month's plan"]]],
+    ai:[["engine","AI engine room","AI agents analyse answers at scale. A person approves every change."],["algo","Algorithm watch","Tracks how Google, ChatGPT and Perplexity pick sources."]],
+    steps:[["Day 0","Free AI visibility check"],["Week 1","Citation gaps and content plan"],["Weeks 2 to 3","Answer-first pages and fixes"],["Every month","AI report and next steps"]]}
+  };
+  let players=[], io=null, idx=0;
+  const esc2=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  const block=(it,n,ai)=>{ const f=META[it[0]];
+    return `<article class="gx-d${ai?" gx-dai":""}"><div class="gx-dt"><span class="gx-n">${ai?"AI":String(n).padStart(2,"0")}</span><h4>${esc2(it[1])}</h4><p>${esc2(it[2])}</p>${it[3]?`<ul>${it[3].map(x=>`<li>${esc2(x)}</li>`).join("")}</ul>`:""}
+     <div class="gx-own"><img src="/businesssanta/assets/img/${f.w[0]}.webp" alt=""><span>${f.w[1]}</span></div></div>
+     <div class="ssv gx-pv"><div class="ss-win"><div class="ss-bar"><i></i><i></i><i></i><span>${f.p}</span><em>Example data</em></div><div class="ss-scr" data-demo="${it[0]}"></div></div><button type="button" class="gx-re">↻ Replay</button></div></article>`; };
+  function render(i){
+    const s=SERVICES[i], g=GX[s.id]; idx=i;
+    $("#gxTopName").textContent=s.name;
+    $("#gxTopPrice").textContent=s.price?`From $${s.price}`:"Custom quote";
+    body.innerHTML=`<header class="gx-hero"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc2(s.name)}" width="1100" height="740"><div>
+      <h2 id="gxName">${esc2(s.name)}</h2><p>${esc2(g.promise)}</p>
+      <ul class="gx-facts"><li><b>${s.price?`$${s.price}`:"Custom"}</b>${s.price?"starting price":"quote after a free review"}</li><li><b>${esc2(g.when)}</b>delivery</li><li><b>4.9 ★</b>2,000+ reviews</li><li><b>$0</b>until you approve</li></ul>
+      <div class="gx-team">${g.team.map(t=>`<span><img src="/businesssanta/assets/img/${t[0]}.webp" alt=""><b>${TEAM[t[0]]}</b> ${t[1]}</span>`).join("")}</div></div></header>
+     <section class="gx-sec"><h3>What you get</h3><p class="gx-sub">${g.items.length} deliverables. Each one runs below with example data, exactly as it works on SEO Season, the platform we built.</p>${g.items.map((it,k)=>block(it,k+1)).join("")}</section>
+     <section class="gx-sec gx-aisec"><h3>The AI behind this gig <b class="x-adv">Advanced</b></h3><p class="gx-sub">SEO Season does the heavy analysis in minutes. A person on our team checks and approves every change.</p>${g.ai.map(it=>block(it,0,1)).join("")}</section>
+     <section class="gx-sec"><h3>How it runs</h3><ol class="gx-tl">${g.steps.map(s=>`<li><b>${esc2(s[0])}</b><span>${esc2(s[1])}</span></li>`).join("")}</ol></section>
+     <section class="gx-cta"><h3>Ready for this on your site?</h3><p>Your free audit is step one. You pay nothing until you approve the plan and price.</p><div><button type="button" class="btn btn-gold" data-gx-choose>Choose this gig</button><button type="button" class="btn" data-gx-ask>Ask the team a question</button></div></section>`;
+    body.scrollTop=0;
+    players.forEach(p=>p.stop()); players=[]; io&&io.disconnect();
+    io=new IntersectionObserver(es=>es.forEach(e=>{ const el=e.target; if(e.isIntersecting&&!el.dataset.on){ el.dataset.on=1; el._p.play(el.dataset.demo); } }),{root:body,threshold:.4});
+    body.querySelectorAll("[data-demo]").forEach(el=>{ el._p=SSPlayer(el,null); players.push(el._p); io.observe(el); });
+  }
+  function openGig(i){
+    if(!GX[SERVICES[i]&&SERVICES[i].id]) return;
+    if(!dlg.open) dlg.showModal();
+    render(i);
+    try{ history.replaceState(null,"","#gig-"+SERVICES[i].id); }catch(e){}
+  }
+  function close(){ if(dlg.open) dlg.close(); }
+  dlg.addEventListener("close",()=>{ if(dlg.open) return; players.forEach(p=>p.stop()); io&&io.disconnect(); try{ if(location.hash.startsWith("#gig-")) history.replaceState(null,"",location.pathname+location.search); }catch(e){} });
+  dlg.addEventListener("click",e=>{
+    if(e.target===dlg) return close();
+    const re=e.target.closest(".gx-re"); if(re){ const el=re.parentElement.querySelector("[data-demo]"); el._p.play(el.dataset.demo); return; }
+    if(e.target.closest("[data-gx-choose]")){ close(); chooseService(idx); return; }
+    if(e.target.closest("[data-gx-ask]")){ close(); window.openConcierge&&window.openConcierge(`Tell me about ${SERVICES[idx].name}`,idx); }
+  });
+  $("#gxBack").onclick=close;
+  $("#gxChoose").onclick=()=>{ close(); chooseService(idx); };
+  document.addEventListener("click",e=>{ const a=e.target.closest("[data-gig]"); if(!a||dlg.contains(a)) return; e.preventDefault(); openGig(+a.dataset.gig); });
+  window.openGig=openGig;
+  const h=location.hash.match(/^#gig-(\w+)/); if(h){ const i=SERVICES.findIndex(s=>s.id===h[1]); if(i>-1) setTimeout(()=>openGig(i),300); }
 })();
 
 
