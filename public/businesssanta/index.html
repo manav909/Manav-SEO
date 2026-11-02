@@ -521,6 +521,129 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .gx-aisec{margin-left:-16px;margin-right:-16px;padding:24px 16px 6px}
   .gx-tl{grid-auto-flow:row}
 }
+/* movie: Business Santa x SEO Season */
+.mv{margin-top:22px}
+.mv-stage{position:relative;aspect-ratio:16/9;border-radius:18px;overflow:hidden;container-type:inline-size;background:#04040d;box-shadow:0 24px 60px rgba(10,10,30,.25);font-family:var(--head)}
+.mv-sc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5cqw;opacity:0;visibility:hidden;transition:opacity .6s ease,visibility 0s .6s}
+.mv-sc.on{opacity:1;visibility:visible;transition:opacity .6s ease}
+.mv-sc [class*="a"]{}
+.mv-sc .a1,.mv-sc .a2,.mv-sc .a3,.mv-sc .a4,.mv-sc .a5,.mv-sc .a6,.mv-sc .a7{opacity:0}
+.mv-sc.on .a1{animation:mvUp .7s .15s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a2{animation:mvUp .7s .55s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a3{animation:mvUp .7s .95s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a4{animation:mvUp .6s 1.4s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a5{animation:mvUp .6s 1.75s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a6{animation:mvUp .6s 2.1s cubic-bezier(.2,.8,.2,1) forwards}
+.mv-sc.on .a7{animation:mvUp .6s 2.45s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes mvUp{from{opacity:0;transform:translateY(18px) scale(.97)}to{opacity:1;transform:none}}
+/* 1 BS */
+.s-bs{background:radial-gradient(circle at 50% 30%,#fff 0,#FBF4E3 55%,#F3E6C4 100%);color:#161616}
+.mv-logo{width:13cqw;height:13cqw;border-radius:50%;box-shadow:0 0 0 .6cqw #FDB913,0 1.5cqw 4cqw rgba(0,0,0,.18)}
+.mv-wm{font:800 6.4cqw/1 var(--head);margin-top:2.2cqw;letter-spacing:-.02em}
+.mv-wm b,.mv-half b{color:#E0A100}
+.mv-tag{font:500 2.4cqw/1.35 var(--body);margin:1.6cqw 0 0;max-width:62cqw;opacity:.85}
+.s-bs .mv-tag b{white-space:nowrap;color:#161616;background:#FDB913;padding:0 .8cqw;border-radius:.6cqw}
+.mv-team{display:flex;gap:2.2cqw;margin-top:3cqw}
+.mv-team span{display:flex;flex-direction:column;align-items:center;gap:.8cqw;font:600 1.9cqw var(--head)}
+.mv-team img{width:8.5cqw;height:8.5cqw;border-radius:50%;border:.45cqw solid #fff;box-shadow:0 .8cqw 2cqw rgba(0,0,0,.15)}
+/* 2 SS */
+.s-ss{background:#04040d;color:#f0f0ff;font-family:"Space Grotesk",var(--head)}
+.s-ss::before{content:"";position:absolute;inset:0;background:radial-gradient(40cqw 26cqw at 20% 10%,rgba(99,102,241,.35),transparent 70%),radial-gradient(36cqw 26cqw at 85% 90%,rgba(6,182,212,.22),transparent 70%)}
+.mv-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(99,102,241,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,.12) 1px,transparent 1px);background-size:4cqw 4cqw;mask-image:radial-gradient(ellipse at 50% 50%,#000 20%,transparent 70%)}
+.s-ss.on .mv-grid{animation:mvPan 6s linear infinite}
+@keyframes mvPan{to{background-position:4cqw 4cqw}}
+.mv-ssm{position:relative;display:inline-flex;align-items:center;gap:1.6cqw;font:700 7cqw/1 "Space Grotesk",var(--head);letter-spacing:-.03em;background:linear-gradient(135deg,#a5b4fc,#8b5cf6 45%,#06b6d4);-webkit-background-clip:text;background-clip:text;color:transparent}
+.mv-ssm i{width:5.4cqw;height:5.4cqw;border-radius:1.4cqw;background:linear-gradient(135deg,#6366f1,#8b5cf6,#06b6d4);box-shadow:0 0 4cqw rgba(99,102,241,.7)}
+.mv-ssm.sm{font-size:3.6cqw;gap:1cqw}.mv-ssm.sm i{width:3cqw;height:3cqw;border-radius:.8cqw}
+.s-ss .mv-tag{position:relative;color:#a0a0c0;font-family:"Space Grotesk",var(--body)}
+.mv-chips{position:relative;display:flex;flex-wrap:wrap;justify-content:center;gap:1.2cqw;margin-top:3cqw;max-width:70cqw}
+.mv-chips span{font:500 1.8cqw "JetBrains Mono",monospace;color:#c7d2fe;border:1px solid rgba(129,140,248,.4);background:rgba(99,102,241,.1);border-radius:99px;padding:.8cqw 1.8cqw;box-shadow:0 0 2cqw rgba(99,102,241,.2)}
+/* 3 merge */
+.s-mg{background:#0b0b18;color:#fff;padding:0}
+.mv-half{position:absolute;top:0;bottom:0;width:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.4cqw}
+.mv-half.l{left:0;background:linear-gradient(180deg,#FFF9EC,#F3E6C4);color:#161616;font:800 3.6cqw var(--head)}
+.mv-half.l img{width:9cqw;height:9cqw;border-radius:50%;box-shadow:0 0 0 .5cqw #FDB913}
+.mv-half.r{right:0;background:radial-gradient(circle at 50% 40%,#1a1440,#04040d 70%)}
+.s-mg.on .mv-half.l{animation:mvL 4.8s cubic-bezier(.6,0,.2,1) forwards}
+.s-mg.on .mv-half.r{animation:mvR 4.8s cubic-bezier(.6,0,.2,1) forwards}
+@keyframes mvL{0%{transform:translateX(-100%)}18%,45%{transform:none;opacity:1}62%{transform:translateX(18%);opacity:0}100%{opacity:0}}
+@keyframes mvR{0%{transform:translateX(100%)}18%,45%{transform:none;opacity:1}62%{transform:translateX(-18%);opacity:0}100%{opacity:0}}
+.mv-x{position:relative;z-index:2;width:8cqw;height:8cqw;border-radius:50%;display:grid;place-items:center;font:700 4.4cqw var(--head);color:#161616;background:linear-gradient(135deg,#FDB913,#fff 50%,#818cf8);box-shadow:0 0 5cqw rgba(253,185,19,.6),0 0 8cqw rgba(99,102,241,.5);opacity:0}
+.s-mg.on .mv-x{animation:mvX 4.8s ease forwards}
+@keyframes mvX{0%,14%{opacity:0;transform:scale(.3) rotate(-90deg)}24%{opacity:1;transform:scale(1.1) rotate(0)}45%{opacity:1;transform:scale(1)}60%,100%{opacity:0;transform:scale(3)}}
+.mv-mt{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(120deg,#2a1e05 0%,#3b2a07 22%,#1b1446 55%,#062433 100%);opacity:0}
+.s-mg.on .mv-mt{animation:mvFade 4.8s ease forwards}
+@keyframes mvFade{0%,55%{opacity:0}70%,100%{opacity:1}}
+.mv-mt h3{font:800 5cqw/1.15 var(--head);margin:0;letter-spacing:-.02em;color:#FDE7A6}
+.mv-mt h3 span{background:linear-gradient(135deg,#a5b4fc,#8b5cf6,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+/* 4 vs */
+.s-vs{flex-direction:row;gap:3cqw;background:linear-gradient(90deg,#ece9e2 0 50%,#04040d 50%);padding:4cqw 5cqw}
+.mv-col{flex:1;text-align:left;display:flex;flex-direction:column;gap:1.3cqw}
+.mv-col h4{font:800 2.9cqw var(--head);margin:0 0 .8cqw}
+.mv-col p{margin:0;font:500 2.2cqw/1.3 var(--body);padding:1.3cqw 1.8cqw;border-radius:1.2cqw}
+.mv-col.old{color:#77736a}.mv-col.old p{background:#dcd8cf;text-decoration:line-through;text-decoration-color:rgba(0,0,0,.35)}
+.mv-col.new{color:#f0f0ff;font-family:"Space Grotesk",var(--body)}
+.mv-col.new h4{background:linear-gradient(135deg,#FDB913,#a5b4fc 60%,#22d3ee);-webkit-background-clip:text;background-clip:text;color:transparent}
+.mv-col.new p{border:1px solid rgba(129,140,248,.4);background:rgba(99,102,241,.12);box-shadow:0 0 2cqw rgba(99,102,241,.2)}
+.mv-col.new p::before{content:"✓ ";color:#34d399;font-weight:700}
+/* 5 flow */
+.s-fl{background:linear-gradient(135deg,#FFF6DD 0%,#F3E6C4 30%,#1b1446 70%,#04040d 100%);color:#fff;gap:2.4cqw}
+.mv-in span{display:inline-block;font:600 2.4cqw "JetBrains Mono",monospace;color:#161616;background:#fff;border-radius:99px;padding:1cqw 2.6cqw;box-shadow:0 1cqw 3cqw rgba(0,0,0,.2)}
+.mv-eng{display:flex;align-items:center;gap:2.4cqw}
+.mv-e{width:26cqw;padding:2cqw;border-radius:2cqw;background:#fff;color:#161616;display:flex;flex-direction:column;align-items:center;gap:.6cqw;box-shadow:0 1.5cqw 4cqw rgba(0,0,0,.25)}
+.mv-e b{font:800 2.4cqw var(--head)}.mv-e small{font:500 1.6cqw var(--body);opacity:.7}
+.mv-e.ai{background:#0b0b20;color:#f0f0ff;border:1px solid rgba(129,140,248,.5);box-shadow:0 0 4cqw rgba(99,102,241,.45);font-family:"Space Grotesk",var(--head)}
+.mv-faces{display:flex}.mv-faces img{width:6cqw;height:6cqw;border-radius:50%;border:.4cqw solid #fff;margin-left:-1.4cqw}.mv-faces img:first-child{margin-left:0}
+.mv-nodes{display:flex;gap:1.2cqw;height:6cqw;align-items:center}
+.mv-nodes i{width:2.2cqw;height:2.2cqw;border-radius:50%;background:#22d3ee;box-shadow:0 0 2cqw #22d3ee;animation:mvPulse 1.2s infinite}
+.mv-nodes i:nth-child(2){animation-delay:.2s;background:#818cf8}.mv-nodes i:nth-child(3){animation-delay:.4s;background:#a78bfa}.mv-nodes i:nth-child(4){animation-delay:.6s}
+@keyframes mvPulse{50%{transform:scale(.5);opacity:.4}}
+.mv-plus{font:800 5cqw var(--head);color:#FDB913;text-shadow:0 0 3cqw rgba(253,185,19,.7)}
+.mv-out{display:flex;gap:1.6cqw;flex-wrap:wrap;justify-content:center}
+.mv-out span{font:700 2.2cqw var(--head);color:#04040d;background:linear-gradient(135deg,#FDB913,#fde68a);border-radius:99px;padding:1cqw 2.4cqw;box-shadow:0 0 3cqw rgba(253,185,19,.45)}
+/* 6 end */
+.s-end{background:linear-gradient(120deg,#2a1e05 0%,#3b2a07 22%,#1b1446 58%,#062433 100%);color:#fff}
+.mv-duo{display:flex;align-items:center;gap:2cqw;font:800 3.6cqw var(--head);color:#FDE7A6}
+.mv-duo img{width:8cqw;height:8cqw;border-radius:50%;box-shadow:0 0 0 .5cqw #FDB913}
+.s-end h3{font:800 5.6cqw/1.1 var(--head);margin:2.4cqw 0 1.2cqw;letter-spacing:-.02em}
+.s-end p{font:500 2.2cqw/1.4 var(--body);color:#ddd6c4;max-width:64cqw;margin:0 0 2.6cqw}
+.mv-cta{display:inline-block;font:800 2.4cqw var(--head);color:#161616;background:#FDB913;border-radius:99px;padding:1.5cqw 4cqw;text-decoration:none;box-shadow:0 0 4cqw rgba(253,185,19,.5)}
+/* controls */
+.mv-ctl{display:flex;align-items:center;gap:12px;margin-top:10px}
+.mv-ctl button{width:34px;height:34px;border-radius:50%;border:0;background:var(--ink);color:var(--gold);font:700 .72rem var(--body);cursor:pointer;flex:none}
+.mv-dots{display:flex;gap:6px;flex:1}
+.mv-dots button{flex:1;height:5px;width:auto;border-radius:9px;background:var(--line);padding:0;position:relative;overflow:hidden}
+.mv-dots button i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#FDB913,#818cf8,#06b6d4)}
+.mv-dots button.done i{width:100%}
+.mv-lbl{font:600 .8rem var(--head);color:var(--muted);white-space:nowrap}
+@media (max-width:640px){
+  .mv-stage{aspect-ratio:4/5;border-radius:16px}
+  .mv-sc{padding:7cqw}
+  .mv-logo{width:22cqw;height:22cqw}.mv-wm{font-size:10cqw}
+  .mv-tag{font-size:4.4cqw;max-width:86cqw}
+  .mv-team{flex-wrap:wrap;justify-content:center;gap:4cqw}.mv-team img{width:16cqw;height:16cqw}.mv-team span{font-size:3.6cqw}
+  .mv-ssm{font-size:11cqw;gap:2.4cqw}.mv-ssm i{width:8cqw;height:8cqw;border-radius:2cqw}
+  .mv-ssm.sm{font-size:6cqw}.mv-ssm.sm i{width:5cqw;height:5cqw}
+  .mv-chips{max-width:none;gap:2cqw}.mv-chips span{font-size:3.4cqw;padding:1.4cqw 3cqw}
+  .mv-half{width:100%;height:50%}.mv-half.l{left:0;top:0;bottom:auto;font-size:6cqw}.mv-half.r{right:0;top:auto;bottom:0}.mv-half.l img{width:16cqw;height:16cqw}
+  @keyframes mvL{0%{transform:translateY(-100%)}18%,45%{transform:none;opacity:1}62%{transform:translateY(18%);opacity:0}100%{opacity:0}}
+  @keyframes mvR{0%{transform:translateY(100%)}18%,45%{transform:none;opacity:1}62%{transform:translateY(-18%);opacity:0}100%{opacity:0}}
+  .mv-x{width:14cqw;height:14cqw;font-size:8cqw}
+  .mv-mt h3{font-size:8.6cqw;padding:0 6cqw}
+  .s-vs{flex-direction:column;background:linear-gradient(180deg,#ece9e2 0 46%,#04040d 46%);gap:4cqw;padding:6cqw}
+  .mv-col{gap:1.6cqw}.mv-col h4{font-size:5cqw;margin:0}.mv-col p{font-size:3.6cqw;padding:1.4cqw 2.6cqw}
+  .s-fl{gap:4cqw}.mv-in span{font-size:4.4cqw}
+  .mv-eng{flex-direction:column;gap:2cqw}.mv-e{width:70cqw;padding:3cqw}.mv-e b{font-size:4.6cqw}.mv-e small{font-size:3.2cqw}
+  .mv-faces img{width:11cqw;height:11cqw}.mv-nodes{height:9cqw}.mv-nodes i{width:3.6cqw;height:3.6cqw}
+  .mv-plus{font-size:8cqw;line-height:1}
+  .mv-out{gap:2cqw}.mv-out span{font-size:4cqw;padding:1.6cqw 3.6cqw}
+  .mv-duo{font-size:6cqw}.mv-duo img{width:14cqw;height:14cqw}
+  .s-end h3{font-size:9.6cqw}.s-end p{font-size:4.2cqw;max-width:none}
+  .mv-cta{font-size:4.6cqw;padding:3cqw 7cqw}
+  .mv-lbl{display:none}
+}
+.mv-stage.paused .mv-sc.on,.mv-stage.paused .mv-sc.on *{animation-play-state:paused!important}
+@media (prefers-reduced-motion:reduce){.mv-sc .a1,.mv-sc .a2,.mv-sc .a3,.mv-sc .a4,.mv-sc .a5,.mv-sc .a6,.mv-sc .a7{opacity:1}.s-end{opacity:1}}
 /* trust strip */
 .trust{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden}
 .trust li{padding:14px 16px;border-left:1px solid var(--line);background:#fff}
@@ -806,24 +929,58 @@ footer a:hover{text-decoration:underline;color:#fff}
         <div class="thumbs" id="thumbs" role="list"></div>
       </div>
 
-      <section class="ss" id="platform" aria-labelledby="ss-h">
-        <div class="ss-hd">
-          <div>
-            <span class="ss-ey"><i></i>Live on SEO Season, our own platform</span>
-            <h2 id="ss-h">See it <span>in action</span></h2>
-            <p>Pick any feature and watch what happens to your site after you hire us.</p>
+      <section class="mv" id="together" aria-label="Business Santa and SEO Season, a short animated story">
+        <div class="mv-stage" id="mvStage">
+          <!-- 1 Business Santa -->
+          <div class="mv-sc s-bs" data-d="4800">
+            <img class="mv-logo a1" src="/businesssanta/assets/img/logo-192.png" alt="">
+            <div class="mv-wm a2">Business <b>SANTA</b></div>
+            <p class="mv-tag a3">A real SEO team, trusted by US businesses for <b>10+ years</b></p>
+            <div class="mv-team">
+              <span class="a4"><img src="/businesssanta/assets/img/jyoti.webp" alt="">Jyoti</span><span class="a5"><img src="/businesssanta/assets/img/manav.webp" alt="">Manav</span><span class="a6"><img src="/businesssanta/assets/img/sam.webp" alt="">Sam</span><span class="a7"><img src="/businesssanta/assets/img/sakshi.webp" alt="">Sakshi</span>
+            </div>
           </div>
-          <span class="ss-ex">Example data, sample project</span>
+          <!-- 2 SEO Season -->
+          <div class="mv-sc s-ss" data-d="4800">
+            <div class="mv-grid"></div>
+            <div class="mv-ssm a1"><i></i>SEO Season</div>
+            <p class="mv-tag a2">Our own AI-powered SEO platform, built in-house</p>
+            <div class="mv-chips"><span class="a3">4 AI agents</span><span class="a4">28 algorithm topics</span><span class="a5">AI citation tracking</span><span class="a6">Live audits</span><span class="a7">Human QA desk</span></div>
+          </div>
+          <!-- 3 merge -->
+          <div class="mv-sc s-mg" data-d="4800">
+            <div class="mv-half l"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>Business <b>SANTA</b></span></div>
+            <div class="mv-half r"><span class="mv-ssm sm"><i></i>SEO Season</span></div>
+            <div class="mv-x">×</div>
+            <div class="mv-mt"><h3>People who care.<br><span>Technology that sees more.</span></h3></div>
+          </div>
+          <!-- 4 old way vs our way -->
+          <div class="mv-sc s-vs" data-d="6000">
+            <div class="mv-col old"><h4 class="a1">A typical agency</h4><p class="a2">A monthly spreadsheet</p><p class="a3">Guesses at why rankings fell</p><p class="a4">Finds out weeks later</p><p class="a5">Can't see AI search at all</p></div>
+            <div class="mv-col new"><h4 class="a1">Business Santa + SEO Season</h4><p class="a2">Your own live dashboard</p><p class="a3">Every finding verified</p><p class="a4">Alerts the same day</p><p class="a5">Tracks ChatGPT, Gemini, Perplexity</p></div>
+          </div>
+          <!-- 5 flow -->
+          <div class="mv-sc s-fl" data-d="5600">
+            <div class="mv-in a1"><span>yourbusiness.com</span></div>
+            <div class="mv-eng">
+              <div class="mv-e a2"><div class="mv-faces"><img src="/businesssanta/assets/img/manav.webp" alt=""><img src="/businesssanta/assets/img/sam.webp" alt=""><img src="/businesssanta/assets/img/sakshi.webp" alt=""></div><b>Our team</b><small>judgment, writing, care</small></div>
+              <div class="mv-plus a3">+</div>
+              <div class="mv-e ai a4"><div class="mv-nodes"><i></i><i></i><i></i><i></i></div><b>SEO Season AI</b><small>speed, scale, evidence</small></div>
+            </div>
+            <div class="mv-out"><span class="a5">▲ Page 1 on Google</span><span class="a6">✦ Quoted by AI</span><span class="a7">☎ More calls</span></div>
+          </div>
+          <!-- 6 end -->
+          <div class="mv-sc s-end" data-d="6000">
+            <div class="mv-duo a1"><img src="/businesssanta/assets/img/logo-192.png" alt=""><span>×</span><span class="mv-ssm sm"><i></i>SEO Season</span></div>
+            <h3 class="a2">Your free audit starts here</h3>
+            <p class="a3">Real people. Technology most agencies don't have. You pay nothing until you approve the plan.</p>
+            <a class="mv-cta a4" href="#order">Get my free audit</a>
+          </div>
         </div>
-        <div class="ss-chips" role="tablist" aria-label="Pick a feature" id="ssChips"></div>
-        <div class="ss-win" role="tabpanel" id="ssPanel" aria-live="polite">
-          <div class="ss-bar"><i></i><i></i><i></i><span id="ssPath">SEO Season</span><em>yourbusiness.com</em></div>
-          <div class="ss-scr" id="ssScr"></div>
-        </div>
-        <div class="ss-ft">
-          <div class="ss-who" id="ssWho"></div>
-          <button type="button" id="ssRe">↻ Replay</button>
-          <button type="button" class="nx" id="ssNx">Next feature →</button>
+        <div class="mv-ctl">
+          <button type="button" id="mvPlay" aria-label="Pause">❚❚</button>
+          <div class="mv-dots" id="mvDots" role="tablist" aria-label="Scenes"></div>
+          <span class="mv-lbl">Business Santa × SEO Season</span>
         </div>
       </section>
 
@@ -891,6 +1048,27 @@ footer a:hover{text-decoration:underline;color:#fff}
           <li><h3>Plain-English reports</h3><p>You see what we did and why, in words that make sense, with results you can check yourself in Google Search Console.</p></li>
         </ul>
         <div class="sign"><img src="/businesssanta/assets/img/manav.webp" alt="" width="44" height="44" loading="lazy"><span>Manav S, founder. My name is on this work, and I stand behind it.</span></div>
+      </section>
+
+      <section class="ss" id="platform" aria-labelledby="ss-h">
+        <div class="ss-hd">
+          <div>
+            <span class="ss-ey"><i></i>Live on SEO Season, our own platform</span>
+            <h2 id="ss-h">See it <span>in action</span></h2>
+            <p>Pick any feature and watch what happens to your site after you hire us.</p>
+          </div>
+          <span class="ss-ex">Example data, sample project</span>
+        </div>
+        <div class="ss-chips" role="tablist" aria-label="Pick a feature" id="ssChips"></div>
+        <div class="ss-win" role="tabpanel" id="ssPanel" aria-live="polite">
+          <div class="ss-bar"><i></i><i></i><i></i><span id="ssPath">SEO Season</span><em>yourbusiness.com</em></div>
+          <div class="ss-scr" id="ssScr"></div>
+        </div>
+        <div class="ss-ft">
+          <div class="ss-who" id="ssWho"></div>
+          <button type="button" id="ssRe">↻ Replay</button>
+          <button type="button" class="nx" id="ssNx">Next feature →</button>
+        </div>
       </section>
 
 
@@ -1639,6 +1817,35 @@ function SSPlayer(scr,path){
   new IntersectionObserver(es=>es.forEach(e=>{ if(e.isIntersecting&&!started) show(0); }),{threshold:.35}).observe(scr);
 })();
 
+/* movie: Business Santa x SEO Season, plays when on screen */
+(function(){
+  const st=$("#mvStage"); if(!st) return;
+  const sc=[...st.querySelectorAll(".mv-sc")], dots=$("#mvDots"), pb=$("#mvPlay");
+  const R=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  dots.innerHTML=sc.map((s,k)=>`<button type="button" role="tab" aria-label="Scene ${k+1}"><i></i></button>`).join("");
+  const db=[...dots.children];
+  let k=0, t0=0, el=0, playing=false, inView=false, raf=0, userPaused=false;
+  function go(n){
+    k=(n+sc.length)%sc.length; el=0; t0=performance.now();
+    sc.forEach((s,i)=>{ s.classList.remove("on"); });
+    void st.offsetWidth; sc[k].classList.add("on");
+    db.forEach((b,i)=>{ b.classList.toggle("done",i<k); b.firstChild.style.width=i<k?"100%":"0"; b.setAttribute("aria-selected",i===k); });
+  }
+  function tick(t){
+    if(!playing) return;
+    const d=+sc[k].dataset.d; el=t-t0;
+    db[k].firstChild.style.width=Math.min(100,100*el/d)+"%";
+    if(el>=d){ if(k===sc.length-1){ pause(); return; } go(k+1); }
+    raf=requestAnimationFrame(tick);
+  }
+  function play(){ if(playing) return; if(k===sc.length-1&&el>=+sc[k].dataset.d) go(0); playing=true; t0=performance.now()-el; st.classList.remove("paused"); pb.textContent="❚❚"; pb.setAttribute("aria-label","Pause"); raf=requestAnimationFrame(tick); }
+  function pause(){ playing=false; cancelAnimationFrame(raf); st.classList.add("paused"); pb.textContent="▶"; pb.setAttribute("aria-label",k===sc.length-1?"Replay":"Play"); }
+  pb.onclick=()=>{ if(playing){ userPaused=true; pause(); } else { userPaused=false; play(); } };
+  db.forEach((b,i)=>b.onclick=()=>{ go(i); userPaused=false; playing=false; play(); });
+  go(0);
+  if(R){ go(sc.length-1); pause(); return; }
+  new IntersectionObserver(es=>es.forEach(e=>{ inView=e.isIntersecting; if(inView&&!userPaused&&!(k===sc.length-1&&el>0)) play(); else if(!inView&&playing) pause(); }),{threshold:.5}).observe(st);
+})();
 /* gig expansion: every gig opens with its deliverables, each with its own live preview */
 (function(){
   const dlg=$("#gigx"); if(!dlg) return;
