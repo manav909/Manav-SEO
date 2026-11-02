@@ -387,8 +387,12 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .ss-bar em{display:none}
   .x-4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .x-2.ag{grid-template-columns:1fr}
-  .x-5.sc{display:flex;overflow-x:auto;scroll-snap-type:x mandatory}
-  .x-5.sc>.x-col{flex:0 0 140px;scroll-snap-align:start}
+  .x-5.sc{display:grid;grid-template-columns:minmax(0,1fr);gap:6px}
+  .x-5.sc>.x-col{min-height:0;display:flex;flex-wrap:wrap;align-items:center;gap:5px 6px;padding:7px 8px}
+  .x-5.sc .x-col h4{flex:0 0 auto;margin:0;gap:6px;justify-content:flex-start}
+  .x-5.sc .x-col small{flex:1 0 55%;margin:0}
+  .x-5.sc .x-col:not(:has(small)) h4{flex-basis:100%}
+  .x-5.sc .x-card{flex:1 1 140px;min-width:0;margin:0}
   .x-qs div{font-size:0;padding:7px 3px;text-align:center}.x-qs div b{font-size:.64rem}
   .x-cp{grid-template-columns:1fr;margin:-12px}.x-nav{display:none}
   .x-ai{grid-template-columns:minmax(0,1fr) auto}.x-ai .m{display:none}
