@@ -280,8 +280,8 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
 .pw{font:500 .7rem var(--body);color:#bdbab3;letter-spacing:.01em}
 .pl-intro{max-width:66ch;color:#3a3935}
 .pl{margin-top:18px}
-.pl-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
-.pl-tabs button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 10px;font:600 .9rem var(--head);cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden}
+.pl-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.pl-tabs button{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:9px 8px;font:600 .82rem var(--head);white-space:nowrap;cursor:pointer;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden}
 .pl-tabs button b{width:22px;height:22px;border-radius:50%;background:var(--sand);display:grid;place-items:center;font-size:.78rem;color:var(--ink);flex:none}
 .pl-tabs button[aria-selected="true"]{border-color:var(--ink);color:var(--ink)}
 .pl-tabs button[aria-selected="true"] b{background:var(--gold)}
@@ -335,7 +335,8 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
 @keyframes fadeA{to{opacity:1}}
 .chart small{font-size:.78rem;color:var(--muted)}
 @media (max-width:640px){
-  .pl-tabs{grid-template-columns:repeat(2,1fr)}
+  .pl-tabs{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 -16px 12px;padding:2px 16px;scrollbar-width:none}
+  .pl-tabs button{flex:none;scroll-snap-align:start}
   .au{grid-template-columns:1fr;justify-items:center}
   .pls .row3{grid-template-columns:76px minmax(0,1fr)}
   .pls .who{display:none}
@@ -344,6 +345,72 @@ body.cg-open .cg-launch{opacity:0;pointer-events:none}
   .rp .kpi:nth-child(3){grid-column:1/-1}
   .pl-bar span{display:none}
   .pl-bar em{margin-left:6px}
+}
+
+.feed{list-style:none;margin:0;padding:0;display:grid;gap:6px;font-size:.88rem}
+.feed li{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:8px;background:var(--sand);animation:plIn .3s ease both}
+.feed .ic{width:18px;height:18px;border-radius:50%;flex:none;display:grid;place-items:center;font:700 .7rem var(--body);color:#fff}
+.feed .ok{background:#1E7B4F}.feed .run{background:#3B82F6;animation:pulse2 1s infinite}.feed .bad{background:#E5484D}
+@keyframes pulse2{50%{opacity:.4}}
+.feed em{margin-left:auto;font-style:normal;font:700 .82rem var(--head)}
+.au2{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+.agents{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-content:start}
+.ag{border:1px solid var(--line);border-radius:10px;padding:10px;font-size:.8rem}
+.ag strong{display:block;font:600 .86rem var(--head)}
+.conf{display:inline-block;margin-top:6px;border-radius:999px;padding:2px 9px;font:600 .72rem var(--body)}
+.c-v{background:#E3F4EA;color:#1E5B38}.c-l{background:#FFF4D1;color:#6B4A00}.c-e{background:#FDEBDD;color:#8A3B12}.c-r{background:#E7ECFF;color:#28377A}
+.kb{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;font-size:.78rem}
+.kc{background:var(--sand);border-radius:10px;padding:8px;min-height:230px}
+.kc h4{margin:0 0 8px;font:600 .8rem var(--head);display:flex;justify-content:space-between}
+.kc h4 span{color:var(--muted);font-weight:500}
+.kcard{background:#fff;border-radius:8px;padding:7px 8px;margin-bottom:6px;border-left:3px solid var(--line);box-shadow:0 1px 2px rgba(0,0,0,.06);transition:transform .4s}
+.kcard.p1{border-left-color:#E5484D}.kcard.p2{border-left-color:#F5A524}.kcard.p3{border-left-color:#3B82F6}
+.kcard b{display:block;font-weight:600;font-size:.78rem;line-height:1.3}
+.kcard .who{display:flex;align-items:center;gap:5px;margin-top:5px;color:var(--muted);font-size:.72rem}
+.kcard .who img{width:16px;height:16px;border-radius:50%}
+.kcard.moving{animation:mv .6s ease}
+@keyframes mv{from{opacity:0;transform:translateX(-30px)}to{opacity:1;transform:none}}
+.qa-st{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:14px}
+.qa-st div{border-radius:10px;padding:10px 8px;background:var(--sand);font-size:.76rem;color:var(--muted);transition:background .3s,color .3s}
+.qa-st div strong{display:block;font:600 .84rem var(--head);color:var(--ink)}
+.qa-st .done{background:#E3F4EA;color:#1E5B38}.qa-st .now{background:#DCEBFF;color:#1F4E8C}
+.vp{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 12px}
+.vp span{border-radius:999px;padding:5px 12px;font:600 .82rem var(--body)}
+.rows{display:grid;gap:6px;font-size:.86rem}
+.rows div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);animation:plIn .3s ease both}
+.ai-top{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.ai-row{display:grid;grid-template-columns:96px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 10px;border-radius:10px;border:1px solid var(--line);font-size:.86rem;margin-bottom:6px;animation:plIn .3s ease both}
+.ai-row.cited{background:#F1FAF4;border-color:#BFE5CC}
+.pill{border-radius:999px;padding:3px 10px;font:700 .72rem var(--body);white-space:nowrap}
+.pill.y{background:#1E7B4F;color:#fff}.pill.n{background:#E9E7E0;color:#5C5A55}
+.cp{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px}
+.cp-nav{background:var(--ink);border-radius:12px;padding:12px;color:#cfcdc6;font-size:.8rem;display:grid;gap:6px;align-content:start}
+.cp-nav b{color:#fff;font:600 .82rem var(--head);background:#2b2b2b;border-radius:6px;padding:5px 8px}
+.cp-nav span{padding:2px 8px}
+.cp-good{background:#E3F4EA;color:#1E5B38;border-radius:10px;padding:8px 12px;font-size:.84rem;margin-bottom:10px}
+.tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.tile{background:var(--sand);border-radius:10px;padding:10px}
+.tile span{display:block;font-size:.76rem;color:var(--muted)}
+.tile strong{font:800 1.3rem var(--head)}
+.tile em{font-style:normal;font-size:.76rem;font-weight:600;color:#1E7B4F;margin-left:6px}
+.strat{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:.82rem}
+.strat img{width:30px;height:30px;border-radius:50%}
+.strat button{margin-left:auto;border:0;border-radius:999px;background:var(--gold);padding:6px 12px;font:600 .78rem var(--head)}
+.kw{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.kw div{border-radius:10px;padding:10px;text-align:center}
+.kw strong{display:block;font:800 1.4rem var(--head)}
+.kw span{font-size:.78rem}
+@media (max-width:640px){
+  .au2,.cp{grid-template-columns:1fr}
+  .cp-nav{display:none}
+  .kb{display:flex;overflow-x:auto;gap:8px}
+  .kc{flex:0 0 150px}
+  .qa-st{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+  .qa-st div{padding:8px 4px;text-align:center;font-size:0}
+  .qa-st div strong{font-size:.68rem}
+  .ai-top{grid-template-columns:1fr 1fr 1fr}
+  .ai-row{grid-template-columns:1fr auto}
+  .ai-row .m{display:none}
 }
 /* trust strip */
 .trust{list-style:none;margin:0 0 22px;padding:0;display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--r-m);overflow:hidden}
@@ -697,16 +764,18 @@ footer a:hover{text-decoration:underline;color:#fff}
 
       <section class="block" id="platform" aria-labelledby="plat2-h">
         <h2 id="plat2-h">Your project runs on SEO Season, our own SEO platform</h2>
-        <p class="pl-intro">Business Santa is the team. SEO Season is the software we built to run every project, so nothing gets lost in emails and every change is on record. Here is what working with us looks like, step by step.</p>
+        <p class="pl-intro">Business Santa is the team. SEO Season is the software we built to run every project: audits, task boards, quality checks, AI visibility tracking and reports. You get your own login to follow your project. Here are the screens your project moves through.</p>
         <div class="pl" id="pl">
-          <div class="pl-tabs" role="tablist" aria-label="How a project runs">
-            <button role="tab" aria-selected="true" data-t="0"><b>1</b>Free audit</button>
-            <button role="tab" aria-selected="false" data-t="1" tabindex="-1"><b>2</b>Your plan</button>
-            <button role="tab" aria-selected="false" data-t="2" tabindex="-1"><b>3</b>Work log</button>
-            <button role="tab" aria-selected="false" data-t="3" tabindex="-1"><b>4</b>Report</button>
+          <div class="pl-tabs" role="tablist" aria-label="SEO Season screens">
+            <button role="tab" aria-selected="true" data-t="0"><b>1</b>Live audit</button>
+            <button role="tab" aria-selected="false" data-t="1" tabindex="-1"><b>2</b>Task board</button>
+            <button role="tab" aria-selected="false" data-t="2" tabindex="-1"><b>3</b>Quality check</button>
+            <button role="tab" aria-selected="false" data-t="3" tabindex="-1"><b>4</b>AI visibility</button>
+            <button role="tab" aria-selected="false" data-t="4" tabindex="-1"><b>5</b>Your dashboard</button>
+            <button role="tab" aria-selected="false" data-t="5" tabindex="-1"><b>6</b>Report</button>
           </div>
           <div class="pl-win" role="tabpanel" aria-live="polite">
-            <div class="pl-bar"><i></i><i></i><i></i><span>SEO Season &nbsp;/&nbsp; yourbusiness.com</span><em>Sample preview, example data</em></div>
+            <div class="pl-bar"><i></i><i></i><i></i><span id="plPath">SEO Season &nbsp;/&nbsp; yourbusiness.com</span><em>Sample preview, example data</em></div>
             <div class="pl-body" id="plBody"></div>
           </div>
           <p class="pl-cap" id="plCap"></p>
@@ -1199,55 +1268,96 @@ document.addEventListener("click",e=>{
 
 $("#yr").textContent=new Date().getFullYear();
 Object.assign(window,{SERVICES,MATCH,TIMELINE,REVIEWS,norm,score,waLink,chooseService});
-/* platform preview: auto-plays through the four steps, clickable */
+/* platform preview: six real SEO Season screens, animated, example data */
 (function(){
-  const body=$("#plBody"), cap=$("#plCap"), tabs=[...document.querySelectorAll(".pl-tabs button")];
+  const body=$("#plBody"), cap=$("#plCap"), path=$("#plPath"), tabs=[...document.querySelectorAll(".pl-tabs button")];
   if(!body) return;
   const IMG=k=>`/businesssanta/assets/img/${k}.webp`;
-  const V=[
-   {cap:"Step 1. Free audit. Before you pay anything, we scan your site and list what is holding it back, ranked by impact.",
-    html:`<div class="au"><div class="gauge" style="--v:54"><span>54<small>SEO health</small></span></div>
-      <ul class="iss"><li><i class="dot hi"></i>38 pages not indexed by Google<em>High impact</em></li>
-      <li><i class="dot hi"></i>Schema errors on service pages<em>High impact</em></li>
-      <li><i class="dot md"></i>Missing titles and meta descriptions on 22 pages<em>Medium</em></li>
-      <li><i class="dot md"></i>Slow mobile load on 6 key pages<em>Medium</em></li>
-      <li><i class="dot lo"></i>Not cited in ChatGPT or Google AI answers yet<em>Opportunity</em></li></ul></div>`},
-   {cap:"Step 2. Your plan. Each task, who does it and when. Nothing starts and nothing is charged until you approve it.",
-    html:`<div class="pls">
-      <div class="row3"><span class="wk">Days 1 to 2</span><div class="track"><i style="left:0;width:45%">Fix indexing and schema</i></div><span class="who"><img src="${IMG("sam")}" alt="">Sam</span></div>
-      <div class="row3"><span class="wk">Days 2 to 4</span><div class="track"><i style="left:25%;width:55%;animation-delay:.15s">Rewrite titles and page content</i></div><span class="who"><img src="${IMG("sakshi")}" alt="">Sakshi</span></div>
-      <div class="row3"><span class="wk">Days 4 to 6</span><div class="track"><i style="left:50%;width:50%;animation-delay:.3s">AI search setup</i></div><span class="who"><img src="${IMG("manav")}" alt="">Manav</span></div>
-      <div class="appr"><b>Waiting for your approval</b>Price and timeline confirmed in writing first</div></div>`},
-   {cap:"Step 3. Work log. Every change is recorded with who made it, and checked by a second person before it goes live.",
-    html:`<ul class="lg">
-      <li><img src="${IMG("sam")}" alt=""><div><strong>Fixed 38 pages blocked from Google</strong><span>Sam, technical SEO</span></div><b class="ok">Checked by Manav</b></li>
-      <li style="animation-delay:.12s"><img src="${IMG("sam")}" alt=""><div><strong>Repaired schema on 12 service pages</strong><span>Sam, technical SEO</span></div><b class="ok">Checked by Manav</b></li>
-      <li style="animation-delay:.24s"><img src="${IMG("sakshi")}" alt=""><div><strong>New titles and descriptions on 22 pages</strong><span>Sakshi, on-page and content</span></div><b class="ok">Checked by Sam</b></li>
-      <li style="animation-delay:.36s"><img src="${IMG("jyoti")}" alt=""><div><strong>Weekly update sent to you</strong><span>Jyoti, client care</span></div><b class="ok">Sent</b></li></ul>`},
-   {cap:"Step 4. Report. A plain-English summary, with numbers you can confirm yourself in Google Search Console.",
-    html:`<div class="rp">
-      <div class="kpi"><span>Pages indexed</span><strong>41 to 118</strong><em>Up 77 pages</em></div>
-      <div class="kpi"><span>Errors fixed</span><strong>64</strong><em>All verified</em></div>
-      <div class="kpi"><span>AI answers citing you</span><strong>3</strong><em>New</em></div>
-      <div class="chart"><small>Clicks from Google, last 8 weeks (example)</small>
-        <svg viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="gg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#FDB913" stop-opacity=".45"/><stop offset="1" stop-color="#FDB913" stop-opacity="0"/></linearGradient></defs>
-        <path class="ar" d="M0,100 L57,98 L114,94 L171,86 L228,70 L285,58 L342,40 L400,24 L400,120 L0,120Z"/>
-        <path class="ln" d="M0,100 L57,98 L114,94 L171,86 L228,70 L285,58 L342,40 L400,24"/></svg></div></div>`}
-  ];
-  let cur=0, timer=null, inView=false;
   const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let timers=[];
+  const later=(fn,ms)=>timers.push(setTimeout(fn,reduce?0:ms));
+  const clear=()=>{timers.forEach(clearTimeout);timers=[];};
+  const S=[
+  {path:"Audit",cap:"Live audit. Four specialist checks run on your site at once, and every finding is marked by how sure we are: Verified, Likely or Estimated. No guessing dressed up as fact.",
+   run(){
+    body.innerHTML=`<div class="au2"><ul class="feed" id="fd"></ul><div class="agents">
+      <div class="ag"><strong>Technical crawler</strong>Indexing, speed, schema<br><span class="conf c-v" id="a1">Running</span></div>
+      <div class="ag"><strong>Content and E-E-A-T</strong>Expertise and trust signals<br><span class="conf c-v" id="a2">Running</span></div>
+      <div class="ag"><strong>AI visibility tester</strong>ChatGPT, Gemini, Claude<br><span class="conf c-v" id="a3">Running</span></div>
+      <div class="ag"><strong>Ranking and competitors</strong>Who outranks you, and why<br><span class="conf c-v" id="a4">Running</span></div></div></div>`;
+    const L=[["run","Audit started",""],["run","Crawling yourbusiness.com/",""],["ok","Done: home page","78/100"],["ok","Done: /services","64/100"],["bad","Problem: /locations/dallas not indexed","Fix"],["ok","Done: /about","81/100"],["run","Synthesizing cross-page patterns",""],["ok","Audit complete, report saved","Done"]];
+    const fd=$("#fd"); L.forEach((x,k)=>later(()=>{ if(k&&fd.lastChild&&fd.lastChild.querySelector(".run")) fd.lastChild.querySelector(".run").className="ic ok";
+      fd.insertAdjacentHTML("beforeend",`<li><i class="ic ${x[0]}">${x[0]==="ok"?"✓":x[0]==="bad"?"!":""}</i>${x[1]}<em>${x[2]}</em></li>`); },k*650));
+    [["a1","Verified 92%","c-v"],["a2","Likely 71%","c-l"],["a3","Verified 85%","c-v"],["a4","Estimated 44%","c-e"]].forEach((x,k)=>later(()=>{const e=$("#"+x[0]); if(e){e.textContent=x[1]; e.className="conf "+x[2];}},1800+k*700));
+   }},
+  {path:"Delivery board",cap:"Task board. Every task has an owner, a priority and a due date, and moves from To do to Verified. Nothing is marked done until someone else has checked it.",
+   run(){
+    const C=["To do","In progress","Review","Done","Verified"];
+    body.innerHTML=`<div class="kb">${C.map((c,k)=>`<div class="kc" data-c="${k}"><h4>${c}<span></span></h4></div>`).join("")}</div>`;
+    const T=[["Fix 38 pages not indexed","sam","p1",4],["Repair schema on service pages","sam","p1",3],["Rewrite titles on 22 pages","sakshi","p2",2],["New Dallas service page","sakshi","p2",1],["Answer-first FAQ for AI search","manav","p3",1],["Weekly update to client","jyoti","p3",0]];
+    const put=(t,col)=>{const el=document.querySelector(`.kc[data-c="${col}"]`); if(!el) return;
+      el.insertAdjacentHTML("beforeend",`<div class="kcard ${t[2]} moving"><b>${t[0]}</b><span class="who"><img src="${IMG(t[1])}" alt="">${t[1][0].toUpperCase()+t[1].slice(1)}</span></div>`);
+      document.querySelectorAll(".kc").forEach(c=>c.querySelector("h4 span").textContent=c.querySelectorAll(".kcard").length||"");};
+    T.forEach(t=>put(t,Math.max(0,t[3]-1)));
+    T.forEach((t,k)=>{ if(t[3]>0) later(()=>{ const cards=[...document.querySelectorAll(".kcard")].filter(c=>c.querySelector("b").textContent===t[0]); cards.forEach(c=>c.remove()); put(t,t[3]); },900+k*700); });
+   }},
+  {path:"QA Desk",cap:"Quality check. Before any work reaches you, a reviewer checks every claimed task against the real evidence (your site and Search Console), and sends back anything that is not right.",
+   run(){
+    const st=[["Brief","What was promised"],["Evidence","Site and Search Console"],["Submitted work","Every task read"],["Review","Each row checked"],["Verdict","Cleared or sent back"]];
+    body.innerHTML=`<div class="qa-st">${st.map((x,k)=>`<div id="q${k}"><strong>${k+1}. ${x[0]}</strong>${x[1]}</div>`).join("")}</div>
+      <div id="qv"></div><div class="rows" id="qr"></div>`;
+    st.forEach((x,k)=>{ later(()=>{ $("#q"+k).className="now"; if(k) $("#q"+(k-1)).className="done"; },k*800); });
+    const R=[["Pages resubmitted to Google index","✓ Verified"],["Schema valid on 12 service pages","✓ Verified"],["Titles rewritten on 22 pages","✓ Verified"],["Internal links added","Partial: 2 pages missed, sent back"]];
+    R.forEach((r,k)=>later(()=>$("#qr").insertAdjacentHTML("beforeend",`<div><span>${r[0]}</span><b style="color:${r[1].startsWith("✓")?"#1E7B4F":"#8A5A00"}">${r[1]}</b></div>`),2400+k*450));
+    later(()=>{ $("#q4").className="done"; $("#qv").innerHTML=`<div class="vp"><span style="background:#E3F4EA;color:#1E5B38">3 verified</span><span style="background:#FFF4D1;color:#6B4A00">1 partial</span><span style="background:#F3F1EC;color:#5C5A55">0 failed</span><span style="background:#161616;color:#FDB913">Fix list sent before delivery</span></div>`; },4400);
+   }},
+  {path:"AI visibility",cap:"AI visibility. We ask ChatGPT, Perplexity, Claude and Gemini the questions your buyers ask, and track whether they mention you. Your citation rate is measured, not guessed.",
+   run(){
+    body.innerHTML=`<div class="ai-top"><div class="kpi"><span>Citation rate</span><strong id="cr">0%</strong></div><div class="kpi"><span>Checks cited</span><strong id="cc">0</strong></div><div class="kpi"><span>Total checks</span><strong id="ct">0</strong></div></div><div id="ar"></div>`;
+    const Q=[["ChatGPT","best plumber in Dallas for emergencies",1],["Perplexity","who fixes water heaters same day in Dallas",1],["Claude","affordable drain cleaning near Dallas",0],["Gemini","licensed plumbers Dallas reviews",1],["ChatGPT","Dallas plumber open on Sunday",0]];
+    let cited=0;
+    Q.forEach((q,k)=>later(()=>{ if(q[2]) cited++;
+      $("#ar").insertAdjacentHTML("beforeend",`<div class="ai-row ${q[2]?"cited":""}"><b class="m">${q[0]}</b><span>“${q[1]}”</span><span class="pill ${q[2]?"y":"n"}">${q[2]?"CITED":"NOT YET"}</span></div>`);
+      $("#ct").textContent=k+1; $("#cc").textContent=cited; $("#cr").textContent=Math.round(100*cited/(k+1))+"%"; },500+k*650));
+   }},
+  {path:"Client home",cap:"Your dashboard. You log in with a one-time email link, no password, and see your results in plain English: visits, enquiries, wins, your goals and your latest report.",
+   run(){
+    body.innerHTML=`<div class="cp"><div class="cp-nav"><b>Home</b><span>Goals and wins</span><span>Improvements</span><span>Calls and notes</span><span>Reports</span><span>Site health</span><span>Keywords</span><span>AI visibility</span></div>
+     <div><div class="cp-good"><b>Good news:</b> 3 more pages now show on Google's first page.</div>
+      <div class="tiles"><div class="tile"><span>Visits from Google</span><strong data-n="1240">0</strong><em>+38%</em></div>
+       <div class="tile"><span>Times shown on Google</span><strong data-n="48300">0</strong><em>+52%</em></div>
+       <div class="tile"><span>Enquiries and bookings</span><strong data-n="31">0</strong><em>+9</em></div>
+       <div class="tile"><span>Average Google position</span><strong data-n="11">0</strong><em>from 24</em></div></div>
+      <div class="strat"><img src="${IMG("jyoti")}" alt=""><span><b>Your contact:</b> Jyoti</span><button type="button" tabindex="-1">Book a call</button></div></div></div>`;
+    body.querySelectorAll("[data-n]").forEach(el=>{ const n=+el.dataset.n; const t0=performance.now(); const d=reduce?0:1200;
+      const f=t=>{ const p=d?Math.min(1,(t-t0)/d):1; el.textContent=Math.round(n*(1-Math.pow(1-p,3))).toLocaleString("en-US"); if(p<1) requestAnimationFrame(f); }; requestAnimationFrame(f); });
+   }},
+  {path:"Campaign report",cap:"Report. What we did, what the data says, what moved up and what slipped, and what comes next. It even lists what we could not measure, so you see the full picture.",
+   run(){
+    body.innerHTML=`<div class="kw"><div style="background:#E3F4EA"><strong data-n="27">0</strong><span>Keywords winning</span></div><div style="background:#FFF4D1"><strong data-n="6">0</strong><span>Holding</span></div><div style="background:#FDEBDD"><strong data-n="3">0</strong><span>Slipping, with a fix planned</span></div></div>
+     <div class="chart"><small>Clicks from Google, last 8 weeks</small><svg viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="gg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#FDB913" stop-opacity=".45"/><stop offset="1" stop-color="#FDB913" stop-opacity="0"/></linearGradient></defs>
+     <path class="ar" d="M0,100 L57,98 L114,94 L171,86 L228,70 L285,58 L342,40 L400,24 L400,120 L0,120Z"/><path class="ln" d="M0,100 L57,98 L114,94 L171,86 L228,70 L285,58 L342,40 L400,24"/></svg></div>
+     <div class="rows" style="margin-top:10px"><div><span>What comes next: Dallas and Plano service pages</span><b>High impact</b></div><div><span>Known gap: phone call tracking not connected yet</span><b style="color:#8A5A00">Noted</b></div></div>`;
+    body.querySelectorAll("[data-n]").forEach(el=>{ const n=+el.dataset.n; let k=0; const step=()=>{ el.textContent=Math.min(n,++k); if(k<n) later(step,40); }; step(); });
+   }}
+  ];
+  let cur=0, auto=null, inView=false;
   function show(i,user){
-    cur=i; body.innerHTML=V[i].html; cap.textContent=V[i].cap;
+    cur=i; clear(); clearTimeout(auto);
+    path.innerHTML="SEO Season &nbsp;/&nbsp; "+S[i].path; cap.textContent=S[i].cap;
+    body.innerHTML=""; S[i].run();
     tabs.forEach((b,k)=>{ b.setAttribute("aria-selected",k===i); b.tabIndex=k===i?0:-1;
       let pr=b.querySelector(".prog"); if(!pr){pr=document.createElement("i");pr.className="prog";b.appendChild(pr);}
       pr.style.transition="none"; pr.style.width="0";
-      if(k===i&&!user&&!reduce&&inView){ requestAnimationFrame(()=>{ pr.style.transition="width 6s linear"; pr.style.width="100%"; }); } });
-    clearTimeout(timer);
-    if(!user&&!reduce&&inView) timer=setTimeout(()=>show((cur+1)%V.length),6000);
+      if(k===i&&!user&&!reduce&&inView) requestAnimationFrame(()=>{ pr.style.transition="width 8s linear"; pr.style.width="100%"; }); });
+    if(window.innerWidth<700) tabs[i].scrollIntoView({block:"nearest",inline:"center",behavior:reduce?"auto":"smooth"});
+    if(!user&&!reduce&&inView) auto=setTimeout(()=>show((cur+1)%S.length),8000);
   }
   tabs.forEach((b,k)=>{ b.onclick=()=>show(k,true);
-    b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ const n=(k+(e.key==="ArrowRight"?1:3))%4; show(n,true); tabs[n].focus(); } }; });
-  new IntersectionObserver(es=>{ es.forEach(e=>{ const was=inView; inView=e.isIntersecting; if(inView&&!was) show(cur); if(!inView) clearTimeout(timer); }); },{threshold:.35}).observe($("#pl"));
+    b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ const n=(k+(e.key==="ArrowRight"?1:S.length-1))%S.length; show(n,true); tabs[n].focus(); } }; });
+  let started=false;
+  new IntersectionObserver(es=>{ es.forEach(e=>{ const was=inView; inView=e.isIntersecting;
+    if(inView&&!was){ if(!started){started=true; show(0);} else show(cur); } if(!inView){ clearTimeout(auto); } }); },{threshold:.3}).observe($("#pl"));
   show(0,true);
 })();
 
