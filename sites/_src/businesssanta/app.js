@@ -240,7 +240,7 @@ new IntersectionObserver(es => es.forEach(e => stageVisible = e.isIntersecting),
 gsap.ticker.add(() => { if (world && !document.hidden) world.render(performance.now()); if (stageVisible) hudFrame(); });
 
 /* the street stays alive behind the whole page: dim it under the sections, glide the camera, open it up at the end */
-gsap.timeline({ scrollTrigger: { trigger: "#get", start: "top bottom", endTrigger: "#final", end: "bottom bottom", scrub: 1.6 } })
+gsap.timeline({ scrollTrigger: { trigger: "#stories", start: "top bottom", endTrigger: "#final", end: "bottom bottom", scrub: 1.6 } })
   .fromTo("#dim", { opacity: 0 }, { opacity: .8, duration: .08, ease: "none", immediateRender: false }, 0)
   .fromTo(S, { cx: K.cta[0], cy: K.cta[1], cz: K.cta[2], lx: K.cta[3], ly: K.cta[4], lz: 0 }, { cx: -16, cy: 3.6, cz: 22, lx: -8, ly: 4.6, lz: 0, duration: .35, ease: "sine.inOut", immediateRender: false }, 0)
   .to(S, { cx: 14, cy: 4.4, cz: 20, lx: 6, ly: 5, duration: .35, ease: "sine.inOut" }, .35)
@@ -295,6 +295,55 @@ $$('[data-go="check"]').forEach(a => a.addEventListener("click", e => { e.preven
 $$('a[href="#get"]').forEach(a => a.addEventListener("click", e => { e.preventDefault(); goTo($("#get")); }));
 $$("[data-hand]").forEach(a => a.addEventListener("click", () => trackC("WentToServices")));
 
+
+/* ---------- example stories ---------- */
+function playStory(card) {
+  if (card.dataset.played) return; card.dataset.played = 1;
+  const scn = card.querySelector(".scn"), lis = card.querySelectorAll(".did li");
+  lis.forEach((li, i) => setTimeout(() => li.classList.add("on"), 250 + i * 260));
+  const after = 250 + lis.length * 260 + 150;
+  setTimeout(() => {
+    scn.classList.remove("before"); card.classList.add("go");
+    card.querySelectorAll(".cnt").forEach(el => { const o = { v: +el.dataset.a }; gsap.to(o, { v: +el.dataset.b, duration: 2.2, ease: "power2.out", onUpdate: () => el.textContent = Math.round(o.v) }); });
+    const k = card.dataset.k;
+    if (k === "shop") {
+      const feed = card.querySelector(".feed"), items = [["#2041", "$86", "Linen wrap dress"], ["#2042", "$142", "2 items"], ["#2043", "$64", "Silk scarf"], ["#2044", "$210", "3 items"], ["#2045", "$98", "Summer blouse"]];
+      items.forEach((it, i) => setTimeout(() => { feed.insertAdjacentHTML("afterbegin", `<div><i>$</i><span><b>New order ${it[0]} &middot; ${it[1]}</b><span>${it[2]}</span></span></div>`); if (feed.children.length > 4) feed.lastElementChild.remove(); }, i * 520));
+      gsap.to(card.querySelectorAll(".boxes i"), { opacity: 1, y: 0, duration: .5, ease: "bounce.out", stagger: { each: .35, from: "end" }, delay: .4 });
+    }
+    if (k === "plum") card.querySelectorAll(".cal .j").forEach((j, i) => setTimeout(() => j.classList.add("on"), i * 90));
+    if (k === "bake") { const ln = card.querySelector(".line"); for (let i = 0; i < 14; i++) ln.insertAdjacentHTML("beforeend", "<i></i>"); gsap.to(ln.children, { opacity: 1, y: 0, duration: .4, stagger: .12, ease: "back.out(2)", delay: .3 }); }
+  }, after);
+}
+$$(".cal .d").forEach((d, di) => { for (let i = 0; i < 4; i++) d.insertAdjacentHTML("beforeend", `<div class="j${(di * 4 + i) % 7 === 0 ? " on" : ""}">${["Leak repair", "Water heater", "Drain clean", "Pipe fix"][i]}</div>`); });
+const strack = $("#strack");
+if (innerWidth > 900) {
+  const dist = () => strack.scrollWidth - innerWidth;
+  const hz = gsap.to(strack, { x: () => -dist(), ease: "none", scrollTrigger: { trigger: "#stories", start: "top top", end: () => "+=" + dist(), pin: ".spin", scrub: 1, invalidateOnRefresh: true } });
+  $$(".sto[data-k]").forEach(c => ScrollTrigger.create({ trigger: c, containerAnimation: hz, start: "left 70%", onEnter: () => playStory(c) }));
+} else {
+  const io2 = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) playStory(e.target); }), { root: null, threshold: .55 });
+  $$(".sto[data-k]").forEach(c => io2.observe(c));
+}
+
+/* ---------- dream picker ---------- */
+const DREAMS = {
+  second: ["Picture cutting the ribbon on your second location.", "It starts with more people finding the first one.", "Open a second location"],
+  weekends: ["Picture a Saturday with your family while the bookings keep coming in.", "When customers find you on their own, you stop chasing them.", "Take weekends off again"],
+  hire: ["Picture handing the keys to your first employee.", "Steady customers make that hire possible.", "Hire my first people"],
+  legacy: ["Picture your kids proud of the business you built.", "A business people can find is a business that lasts.", "Build something my kids can take over"],
+  pay: ["Picture paying yourself what you are worth, every single month.", "More customers from people who are already searching.", "Finally pay myself properly"],
+  vacation: ["Picture a real vacation, with the phone still ringing back home.", "Your website and listings keep working while you rest.", "Take my family on a real vacation"],
+  slow: ["Picture a calendar with no slow months.", "Search brings customers in every season.", "No more slow months"]
+};
+let dream = "";
+$$("#dchips button").forEach(b => b.addEventListener("click", () => {
+  dream = b.dataset.d; const d = DREAMS[dream];
+  $$("#dchips button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  gsap.timeline().to("#dout", { opacity: 0, y: 10, duration: .2 }).add(() => { $("#dBig").textContent = d[0]; $("#dSmall").textContent = d[1]; $("#fEyb").textContent = "Your goal: " + d[2]; }).to("#dout", { opacity: 1, y: 0, duration: .5, ease: "power3.out" });
+  trackC("ChoseDream", { dream: d[2] });
+}));
+
 /* ---------- worth calculator ---------- */
 function worth() {
   const val = +$("#wVal").value, n = +$("#wNum").value, f = x => "$" + Math.round(x).toLocaleString("en-US");
@@ -306,7 +355,7 @@ $("#wNum").addEventListener("change", () => trackC("UsedCalculator"));
 /* ---------- leads ---------- */
 const wa = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
 const details = () => ({ type: TYPES[fType.value].l, name: $("#fName").value.trim(), site: $("#fSite").value.trim(), city: $("#fCity").value.trim() });
-const message = d => `Hi Business Santa! I'd like my free check.\n\nBusiness type: ${d.type}\nBusiness name: ${d.name}\nWebsite: ${d.site || "No website yet"}\nCity: ${d.city}`;
+const message = d => `Hi Business Santa! I'd like my free check.\n\nBusiness type: ${d.type}\nBusiness name: ${d.name}\nWebsite: ${d.site || "No website yet"}\nCity: ${d.city}` + (dream ? `\nMy goal: ${DREAMS[dream][2]}` : "");
 function check(errEl) {
   const d = details(); let m = "";
   if (!d.name) m = "Add your business name so we know who you are.";
@@ -326,7 +375,7 @@ $("#emSend").addEventListener("click", async () => {
   try {
     const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.email), {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, page: location.href })
+      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
