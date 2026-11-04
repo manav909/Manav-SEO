@@ -170,18 +170,28 @@ function offerExpert(key, why){
   const t=TEAM[key]; ctx.expert=key;
   const c=card(`<div class="cg-ex"><img src="${t.img}" alt=""><div><strong>${t.name}</strong><span>${esc(t.role)}</span></div></div>
     <p>${why?esc(why)+" ":""}${t.name} handles ${esc(t.topics)}. How would you like to talk?</p>
-    <div class="cg-acts"><button type="button" class="b1">Chat with ${t.name} on WhatsApp</button><button type="button" class="b2">Zoom call with ${t.name}</button></div>`);
+    <div class="cg-acts"><button type="button" class="b1">Chat with ${t.name} on WhatsApp</button><button type="button" class="b2">Zoom call with ${t.name}</button>${window.sendByEmail?`<button type="button" class="b3">Email ${t.name} instead</button>`:""}</div>`);
   c.querySelector(".b1").onclick=()=>handoffWA(key);
   c.querySelector(".b2").onclick=()=>zoomFlow(key);
+  const b3=c.querySelector(".b3"); if(b3) b3.onclick=()=>handoffEmail(key);
   setChips(["Someone else","Ask another question"]);
+}
+function handoffMsg(t){
+  const svc=ctx.svc!=null?SVCS()[ctx.svc].name:"Not chosen yet";
+  return `Hi Business Santa, I was chatting with your website assistant. Please bring ${t.name} (${t.role}) into this conversation.\nService: ${svc}\n\nWhat we discussed:\n${transcript()}`;
+}
+function handoffEmail(key){
+  const t=TEAM[key]; if(!window.sendByEmail) return handoffWA(key);
+  const svc=ctx.svc!=null?SVCS()[ctx.svc].name:"General question";
+  window.sendByEmail({subject:`For ${t.name}: ${svc}, from the website assistant`,message:handoffMsg(t),
+    onSent:d=>bot(`Sent. ${t.name} has our whole conversation and will reply to <b>${esc(d.email)}</b>.`,["Book a Zoom call too","Ask another question"])});
 }
 function handoffWA(key){
   const t=TEAM[key];
-  const svc=ctx.svc!=null?SVCS()[ctx.svc].name:"Not chosen yet";
-  const msg=`Hi Business Santa, I was chatting with your website assistant. Please bring ${t.name} (${t.role}) into this conversation.\nService: ${svc}\nMy website: \n\nWhat we discussed:\n${transcript()}`;
+  const msg=handoffMsg(t).replace("\n\nWhat we discussed:","\nMy website: \n\nWhat we discussed:");
   if(window.fbq) try{fbq("track","Lead")}catch(e){}
   window.open(window.waLink?window.waLink(msg):"https://wa.me/?text="+encodeURIComponent(msg),"_blank","noopener");
-  bot(`Done. WhatsApp is open with our conversation, so ${t.name} has the full picture. Add your website address and press send, and ${t.name} will reply personally.`,["Book a Zoom call too","Ask another question"]);
+  bot(`Done. WhatsApp is open with our conversation, so ${t.name} has the full picture. Add your website address and press send, and ${t.name} will reply personally.`,["Send by email instead","Book a Zoom call too","Ask another question"]);
 }
 function pickExpert(){
   const c=card(`<p>Who would you like to talk to?</p><div class="cg-pick">${Object.entries(TEAM).map(([k,t])=>`<button type="button" data-k="${k}"><img src="${t.img}" alt=""><strong>${t.name}</strong><span>${esc(t.role)}</span></button>`).join("")}</div>`);
@@ -204,22 +214,35 @@ function zoomFlow(key){
     <p class="cg-l">Where should we send the Zoom link?</p>
     <div class="cg-f"><input class="nm" placeholder="Your name" autocomplete="name"><input class="em" type="email" placeholder="Your email" autocomplete="email"><input class="ws" placeholder="Your website" inputmode="url"></div>
     <p class="cg-err" role="alert"></p>
-    <button type="button" class="cg-go">Request this time</button>`);
+    <div class="cg-acts"><button type="button" class="cg-go">Request on WhatsApp</button>${window.postLead?`<button type="button" class="cg-go em-go">Request by email</button>`:""}</div>`);
   c.querySelectorAll(".d button").forEach(b=>b.onclick=()=>{ st.day=fmt(days[+b.dataset.i]); c.querySelectorAll(".d button").forEach(x=>x.setAttribute("aria-pressed",x===b)); });
   c.querySelectorAll(".s button").forEach(b=>b.onclick=()=>{ st.slot=slots[+b.dataset.i]; c.querySelectorAll(".s button").forEach(x=>x.setAttribute("aria-pressed",x===b)); });
-  c.querySelector(".cg-go").onclick=()=>{
+  const go=async(byEmail)=>{
     const nm=c.querySelector(".nm").value.trim(), em=c.querySelector(".em").value.trim(), ws=c.querySelector(".ws").value.trim(), er=c.querySelector(".cg-err");
     if(!st.day||!st.slot){ er.textContent="Pick a day and a time."; return; }
     if(!nm||!/^\S+@\S+\.\S+$/.test(em)){ er.textContent="Add your name and a valid email for the Zoom invite."; return; }
     er.textContent="";
     const svc=ctx.svc!=null?SVCS()[ctx.svc].name:"Not chosen yet";
     const msg=`Hi Business Santa, please book a Zoom call.\nWith: ${t.name} (${t.role})\nDay: ${st.day}\nTime: ${st.slot}, ${tz}\nName: ${nm}\nEmail for the Zoom link: ${em}\nWebsite: ${ws||"(not given)"}\nService: ${svc}\n\nWhat we discussed:\n${transcript()}`;
+    if(byEmail){
+      const subj=`Zoom call request: ${st.day}, ${st.slot} with ${t.name}`;
+      const btns=c.querySelectorAll(".cg-go"); btns.forEach(x=>x.disabled=true); c.querySelector(".em-go").textContent="Sending…";
+      try{ await window.postLead({subject:subj,name:nm,email:em,site:ws,message:msg});
+        if(window.fbq) try{fbq("track","Schedule")}catch(e){}
+        c.querySelectorAll("button,input").forEach(x=>x.disabled=true); c.querySelector(".em-go").textContent="Sent ✓";
+        user(`${st.day}, ${st.slot}`);
+        bot(`Sent. Jyoti will confirm the exact time and email the Zoom link to <b>${esc(em)}</b>${t.name!=="Jyoti"?`, with ${t.name} on the call`:""}.`,["Ask another question","See packages"]);
+      }catch(e){ btns.forEach(x=>x.disabled=false); c.querySelector(".em-go").textContent="Request by email";
+        window.sendByEmail&&window.sendByEmail({subject:subj,message:msg,name:nm,email:em,site:ws,event:"Schedule"}); }
+      return;
+    }
     if(window.fbq) try{fbq("track","Schedule")}catch(e){}
     window.open(window.waLink?window.waLink(msg):"https://wa.me/?text="+encodeURIComponent(msg),"_blank","noopener");
     c.querySelectorAll("button,input").forEach(x=>x.disabled=true);
     user(`${st.day}, ${st.slot}`);
     bot(`Your request is ready in WhatsApp. Press send, and Jyoti will confirm the exact time and email the Zoom link to <b>${esc(em)}</b>${t.name!=="Jyoti"?`, with ${t.name} on the call`:""}.`,["Ask another question","See packages"]);
   };
+  c.querySelectorAll(".cg-go").forEach(b=>b.onclick=()=>go(b.classList.contains("em-go")));
   setChips(["Talk on WhatsApp instead"]);
 }
 
@@ -233,6 +256,7 @@ async function handle(text){
   if(L==="talk to a person"||L==="someone else"||L==="not sure, you choose"){ if(L==="not sure, you choose"){ offerExpert(expertFor()); } else pickExpert(); return; }
   if(/book a zoom|zoom call|book a call|schedule/.test(L)){ zoomFlow(); return; }
   if(L==="talk on whatsapp instead"){ handoffWA(expertFor()); return; }
+  if(L==="send by email instead"||L==="email instead"||/^email (sam|sakshi|manav|jyoti)/.test(L)){ handoffEmail(/^email (sam|sakshi|manav|jyoti)/.test(L)?L.split(" ")[1]:expertFor()); return; }
   if(L==="answer 4 quick questions"){ close(); document.getElementById("guideOpen").click(); return; }
   if(L==="see packages"||L==="get my free review"){ close(); if(ctx.svc!=null&&window.chooseService) window.chooseService(ctx.svc); else document.getElementById("order").scrollIntoView({behavior:reduce?"auto":"smooth"}); return; }
   if(L==="show me all reviews"||L==="see client reviews"){ close(); document.getElementById("reviews").scrollIntoView({behavior:reduce?"auto":"smooth"}); return; }
