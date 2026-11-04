@@ -161,6 +161,7 @@ const BUSY = [
     did: ["Trust pages with real reviews", "Booking that works on phones", "Google and Maps for every service", "Found in AI answers"],
     feed: [["#ef4444", "▦", "New patient: cleaning", "Monday, 9:00 AM"], ["#34c759", "✆", "New patient calling", "from Google Search"], ["#f59e0b", "★", "New 5-star review", "“Gentle and kind.”"], ["#ef4444", "▦", "New patient: kids checkup", "Tuesday, 4:00 PM"], ["#ef4444", "▦", "New patient: whitening", "Thursday, 11:00 AM"]] }
 ];
+const DE = ["🏬", "🎓", "🥐", "🏖️"];
 const BEFORE = [
   { line: "Before: a beautiful store, and almost no orders.", feed: [["#94a3b8", "0", "No new orders today", "Last order: 3 days ago"], ["#c13584", "♡", "14 likes on your new post", "but nobody bought anything"]] },
   { line: "Before: honest work, and a quiet phone.", feed: [["#94a3b8", "✆", "No calls today", "Quiet since Monday"], ["#94a3b8", "▦", "3 open days on the calendar", "this week"]] },
@@ -189,11 +190,11 @@ const iconFor = f => { if (f[1] === "▦") return calIcon(); const k = f[0] === 
 const AGO = ["now", "2m ago", "6m ago", "14m ago", "31m ago", "1h ago"];
 const ntItem = (f, q) => `<div class="nt${q ? " q" : ""}"><span class="ic">${iconFor(f)}</span><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>${q ? "2h ago" : "now"}</small></div>`;
 const ages = () => { if (busySec.classList.contains("before")) return; [...bzFeed.children].forEach((n, k) => { const t = n.querySelector("small"); if (t) t.textContent = AGO[Math.min(k, AGO.length - 1)]; }); bzFeed.classList.toggle("many", bzFeed.children.length > 4); };
-function setMode(w) { seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
+function setMode(w) { $("#bzMode").textContent = w ? "With Business Santa" : "Before us"; seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
 async function showBefore(i, id, fast) {
   const d = BUSY[i], b = BEFORE[i], alive = () => id === bzRun;
   setMode(false); ["--w1", "--w2", "--w3", "--w4"].forEach((v, k) => bzLock.style.setProperty(v, d.w[k]));
-  bzS.classList.add("sw"); $("#bzDream").parentElement.classList.remove("on"); $$(".dlt").forEach(x => x.classList.remove("on"));
+  bzS.classList.add("sw"); $("#bzDreamBox").classList.remove("on"); $("#bzDreamE").textContent = DE[i]; $$(".dlt").forEach(x => x.classList.remove("on"));
   await wait(RM || fast ? 0 : 300); if (!alive()) return false;
   $("#bzL1").textContent = d.l1; $("#bzL2").textContent = d.l2; $("#bzLine").textContent = b.line; $("#bzDream").textContent = d.dream;
   $("#bzN1").textContent = fmt(d.a1); $("#bzN2").textContent = fmt(d.a2);
@@ -204,7 +205,7 @@ async function showBefore(i, id, fast) {
 async function showWith(i, id) {
   const d = BUSY[i], alive = () => id === bzRun, lis = $$("#bzDid li");
   setMode(true); bzFeed.innerHTML = ""; bzFeed.classList.remove("many"); $("#bzLine").textContent = d.line;
-  if (RM) { bzFeed.innerHTML = d.feed.slice().reverse().map(f => ntItem(f)).join(""); lis.forEach(l => l.classList.add("on")); $("#bzN1").textContent = fmt(d.b1); $("#bzN2").textContent = fmt(d.b2); $("#bzDream").parentElement.classList.add("on"); return true; }
+  if (RM) { bzFeed.innerHTML = d.feed.slice().reverse().map(f => ntItem(f)).join(""); lis.forEach(l => l.classList.add("on")); $("#bzN1").textContent = fmt(d.b1); $("#bzN2").textContent = fmt(d.b2); $("#bzDreamBox").classList.add("on"); return true; }
   tween(4800, p => { if (alive()) { $("#bzN1").textContent = fmt(d.a1 + (d.b1 - d.a1) * p); $("#bzN2").textContent = fmt(d.a2 + (d.b2 - d.a2) * p); } });
   for (let k = 0; k < d.feed.length; k++) {
     await wait(k ? 950 : 350); if (!alive()) return false;
@@ -212,7 +213,7 @@ async function showWith(i, id) {
   }
   await wait(500); if (!alive()) return false;
   $("#bzD1").textContent = "+" + fmt(d.b1 - d.a1); $("#bzD2").textContent = "+" + fmt(d.b2 - d.a2); $$(".dlt").forEach(x => x.classList.add("on"));
-  $("#bzDream").parentElement.classList.add("on");
+  $("#bzDreamBox").classList.add("on");
   return true;
 }
 async function busy(i) {
