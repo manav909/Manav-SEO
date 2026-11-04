@@ -697,14 +697,14 @@ const trackC=(ev,data)=>{try{window.fbq&&fbq("trackCustom",ev,data||{});}catch(e
 
 /* business types */
 const TYPES={
- plumbing:{l:"Plumbing",sign:"YOUR PLUMBING CO.",n:"Your Plumbing Co.",q:"plumber near me",qs:["plumber near me","emergency plumber open now","water heater repair","who fixes leaky pipes"],c:["Mike's Plumbing","FastFlow Pipe Co.","City Rooter Pros"],a:"plumber"},
- restaurant:{l:"Restaurant",sign:"YOUR RESTAURANT",n:"Your Restaurant",q:"best restaurant near me",qs:["best restaurant near me","dinner open late","takeout near me","good spot for date night"],c:["Tony's Grill","Main Street Diner","The Corner Kitchen"],a:"restaurant"},
- dental:{l:"Dental",sign:"YOUR DENTAL OFFICE",n:"Your Dental Office",q:"dentist near me",qs:["dentist near me","emergency dentist today","teeth cleaning near me","dentist taking new patients"],c:["Bright Smile Dental","Family Dental Care","Downtown Dentistry"],a:"dentist"},
- roofing:{l:"Roofing",sign:"YOUR ROOFING CO.",n:"Your Roofing Co.",q:"roofer near me",qs:["roofer near me","roof leak repair","storm damage roof","new roof cost"],c:["Top Notch Roofing","Peak Roof Pros","All Weather Roofing"],a:"roofer"},
- salon:{l:"Salon or spa",sign:"YOUR SALON",n:"Your Salon",q:"hair salon near me",qs:["hair salon near me","haircut open now","nail salon walk in","best massage nearby"],c:["Glow Studio","Main Street Cuts","Luxe Hair Bar"],a:"salon"},
- law:{l:"Law office",sign:"YOUR LAW OFFICE",n:"Your Law Office",q:"lawyer near me",qs:["lawyer near me","car accident lawyer","free consultation attorney","family lawyer near me"],c:["Smith and Cole Law","Justice Legal Group","Parker Law Office"],a:"lawyer"},
- store:{l:"Shop or store",sign:"YOUR STORE",n:"Your Store",q:"gift shop near me",qs:["gift shop near me","store open Sunday","local boutique","unique gifts nearby"],c:["The Gift Box","Maple and Co.","Corner Boutique"],a:"shop"},
- other:{l:"Something else",sign:"YOUR BUSINESS",n:"Your Business",q:"best service near me",qs:["best service near me","open now near me","top rated near me","who can help with this"],c:["Main Street Pros","Hometown Experts","City Service Co."],a:"local business"}
+ plumbing:{pn:"Rivera Plumbing",pw:"riveraplumbing.com",l:"Plumbing",sign:"YOUR PLUMBING CO.",n:"Your Plumbing Co.",q:"plumber near me",qs:["plumber near me","emergency plumber open now","water heater repair","who fixes leaky pipes"],c:["Mike's Plumbing","FastFlow Pipe Co.","City Rooter Pros"],a:"plumber"},
+ restaurant:{pn:"Rosa's Kitchen",pw:"rosaskitchen.com",l:"Restaurant",sign:"YOUR RESTAURANT",n:"Your Restaurant",q:"best restaurant near me",qs:["best restaurant near me","dinner open late","takeout near me","good spot for date night"],c:["Tony's Grill","Main Street Diner","The Corner Kitchen"],a:"restaurant"},
+ dental:{pn:"Lakeside Dental",pw:"lakesidedental.com",l:"Dental",sign:"YOUR DENTAL OFFICE",n:"Your Dental Office",q:"dentist near me",qs:["dentist near me","emergency dentist today","teeth cleaning near me","dentist taking new patients"],c:["Bright Smile Dental","Family Dental Care","Downtown Dentistry"],a:"dentist"},
+ roofing:{pn:"Summit Roofing",pw:"summitroofing.com",l:"Roofing",sign:"YOUR ROOFING CO.",n:"Your Roofing Co.",q:"roofer near me",qs:["roofer near me","roof leak repair","storm damage roof","new roof cost"],c:["Top Notch Roofing","Peak Roof Pros","All Weather Roofing"],a:"roofer"},
+ salon:{pn:"Bella Hair Studio",pw:"bellahairstudio.com",l:"Salon or spa",sign:"YOUR SALON",n:"Your Salon",q:"hair salon near me",qs:["hair salon near me","haircut open now","nail salon walk in","best massage nearby"],c:["Glow Studio","Main Street Cuts","Luxe Hair Bar"],a:"salon"},
+ law:{pn:"Carter Law Firm",pw:"carterlawfirm.com",l:"Law office",sign:"YOUR LAW OFFICE",n:"Your Law Office",q:"lawyer near me",qs:["lawyer near me","car accident lawyer","free consultation attorney","family lawyer near me"],c:["Smith and Cole Law","Justice Legal Group","Parker Law Office"],a:"lawyer"},
+ store:{pn:"Willow Gift Shop",pw:"willowgiftshop.com",l:"Shop or store",sign:"YOUR STORE",n:"Your Store",q:"gift shop near me",qs:["gift shop near me","store open Sunday","local boutique","unique gifts nearby"],c:["The Gift Box","Maple and Co.","Corner Boutique"],a:"shop"},
+ other:{pn:"Rivera and Sons",pw:"riveraandsons.com",l:"Something else",sign:"YOUR BUSINESS",n:"Your Business",q:"best service near me",qs:["best service near me","open now near me","top rated near me","who can help with this"],c:["Main Street Pros","Hometown Experts","City Service Co."],a:"local business"}
 };
 let T="plumbing";
 const chips=$("#chips"), fType=$("#fType");
@@ -720,6 +720,7 @@ function setType(k){
   T=k;const v=TYPES[k];
   $$("#chips button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.k===k));
   fType.value=k;
+  $("#fName").placeholder=v.pn;$("#fSite").placeholder=v.pw;$("#eMail").placeholder="maria@"+v.pw;
   $("#signTxt").textContent=v.sign;fitSign($("#signTxt"),30,248);
   $("#miniSign").textContent=v.sign;fitSign($("#miniSign"),22,272);
   $$(".qtxt").forEach(e=>e.textContent=v.q);
