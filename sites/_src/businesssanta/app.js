@@ -66,7 +66,6 @@ function hwVideo() {
   try { const g = document.createElement("canvas").getContext("webgl", { failIfMajorPerformanceCaveat: true }); if (!g) return false; const d = g.getExtension("WEBGL_debug_renderer_info"); return !/swiftshader|llvmpipe|software|softpipe/i.test(String(d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER))); } catch (e) { return false; }
 }
 const portrait = () => innerHeight > innerWidth;
-bgv.style.backgroundImage = `url(/assets/video/${TOD}-${portrait() ? "mq" : "dq"}.jpg)`;
 let vidAsked = false;
 function startVideo() {
   if (vidAsked) return; vidAsked = true;
@@ -167,10 +166,28 @@ const BEFORE = [
   { line: "Before: fresh bread every morning, and trays left over.", feed: [["#94a3b8", "$", "2 orders today", "3 trays of croissants unsold"], ["#94a3b8", "◉", "Not on Google Maps", "People nearby can't find you"]] },
   { line: "Before: a great practice, and empty chairs.", feed: [["#94a3b8", "▦", "4 open slots tomorrow", "No new patients booked"], ["#94a3b8", "✆", "No new patient calls", "this week"]] }
 ];
+$("#bzDay").textContent = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
 const bzTabs = $$("#bzt button"), bzFeed = $("#bzFeed"), bzS = $("#bzs"), bzLock = $("#bzLock"), seg = $("#seg"), segB = $$("#seg button"), busySec = $("#stories");
 let bzI = 0, bzRun = 0, bzAuto = !RM, bzVis = false;
 const fmt = n => Math.round(n).toLocaleString("en-US");
-const ntItem = (f, q) => `<div class="nt${q ? " q" : ""}"><i style="background:${f[0]}">${f[1]}</i><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>${q ? "2h ago" : "now"}</small></div>`;
+/* iOS-style app icons, drawn here (no brand logos) */
+const DAYN = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const ICON = {
+  order: '<svg viewBox="0 0 38 38"><defs><linearGradient id="io" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#0369a1"/></linearGradient></defs><rect width="38" height="38" fill="url(#io)"/><path d="M11 15h16l-1.4 13H12.4z" fill="#fff"/><path d="M15 15v-2a4 4 0 0 1 8 0v2" fill="none" stroke="#fff" stroke-width="2"/></svg>',
+  review: '<svg viewBox="0 0 38 38"><defs><linearGradient id="ir" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fcd34d"/><stop offset="1" stop-color="#f59e0b"/></linearGradient></defs><rect width="38" height="38" fill="url(#ir)"/><path d="M19 8.5l3.2 6.6 7.3 1-5.3 5.1 1.3 7.2L19 25l-6.5 3.4 1.3-7.2-5.3-5.1 7.3-1z" fill="#fff"/></svg>',
+  maps: '<svg viewBox="0 0 38 38"><rect width="38" height="38" fill="#e8f0e2"/><path d="M0 26 38 12" stroke="#fde68a" stroke-width="6"/><path d="M0 15h38M14 0v38" stroke="#fff" stroke-width="3"/><path d="M19 29c-1-4-7-6-7-12a7 7 0 0 1 14 0c0 6-6 8-7 12z" fill="#ef4444"/><circle cx="19" cy="17" r="2.6" fill="#fff"/></svg>',
+  phone: '<svg viewBox="0 0 38 38"><defs><linearGradient id="ip" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ef27a"/><stop offset="1" stop-color="#1fb83f"/></linearGradient></defs><rect width="38" height="38" fill="url(#ip)"/><path d="M13.5 10.5c1 0 1.6.5 2 1.4l1 2.6c.3.8 0 1.6-.6 2.1l-1.3 1c1 2.2 2.8 4 5 5l1-1.3c.6-.6 1.4-.9 2.1-.6l2.6 1c.9.4 1.4 1 1.4 2v2.2c0 1.2-1 2.1-2.2 2.1C16.6 28 10 21.4 10 13.2c0-1.2.9-2.2 2.1-2.2z" fill="#fff"/></svg>',
+  message: '<svg viewBox="0 0 38 38"><defs><linearGradient id="im" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5ef27a"/><stop offset="1" stop-color="#1fb83f"/></linearGradient></defs><rect width="38" height="38" fill="url(#im)"/><path d="M19 9c6.1 0 11 4 11 9s-4.9 9-11 9c-1.2 0-2.4-.2-3.5-.5L10 28.5l1.7-4.4C9.9 22.5 8 20.4 8 18c0-5 4.9-9 11-9z" fill="#fff"/></svg>',
+  ai: '<svg viewBox="0 0 38 38"><rect width="38" height="38" fill="#111"/><path d="M19 8l2.4 7.1L29 17.5l-7.6 2.4L19 27l-2.4-7.1L9 17.5l7.6-2.4z" fill="#fff"/></svg>',
+  social: '<svg viewBox="0 0 38 38"><defs><linearGradient id="is" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#f59e0b"/><stop offset=".5" stop-color="#ec4899"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><rect width="38" height="38" fill="url(#is)"/><path d="M19 28s-9-5.4-9-11.2A4.8 4.8 0 0 1 19 14a4.8 4.8 0 0 1 9 2.8C28 22.6 19 28 19 28z" fill="#fff"/></svg>',
+  quiet: '<svg viewBox="0 0 38 38"><rect width="38" height="38" fill="#9ca3af"/><path d="M11 15h16l-1.4 13H12.4z" fill="#fff" opacity=".9"/><path d="M15 15v-2a4 4 0 0 1 8 0v2" fill="none" stroke="#fff" stroke-width="2"/></svg>'
+};
+const calIcon = () => { const d = new Date(); return `<svg viewBox="0 0 38 38"><rect width="38" height="38" fill="#fff"/><text x="19" y="12" font-size="7.5" font-weight="700" text-anchor="middle" fill="#ef4444" font-family="-apple-system,Arial">${DAYN[d.getDay()]}</text><text x="19" y="30" font-size="17" font-weight="400" text-anchor="middle" fill="#111" font-family="-apple-system,Arial">${d.getDate()}</text></svg>`; };
+const KIND = { "$": "order", "★": "review", "➚": "maps", "◉": "maps", "✆": "phone", "✉": "message", "✳": "ai", "♡": "social", "0": "quiet" };
+const iconFor = f => { if (f[1] === "▦") return calIcon(); const k = f[0] === "#94a3b8" && f[1] !== "♡" ? (f[1] === "✆" ? "phone" : f[1] === "◉" ? "maps" : "quiet") : KIND[f[1]] || "order"; return ICON[k]; };
+const AGO = ["now", "2m ago", "6m ago", "14m ago", "31m ago", "1h ago"];
+const ntItem = (f, q) => `<div class="nt${q ? " q" : ""}"><span class="ic">${iconFor(f)}</span><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>${q ? "2h ago" : "now"}</small></div>`;
+const ages = () => { if (busySec.classList.contains("before")) return; [...bzFeed.children].forEach((n, k) => { const t = n.querySelector("small"); if (t) t.textContent = AGO[Math.min(k, AGO.length - 1)]; }); bzFeed.classList.toggle("many", bzFeed.children.length > 4); };
 function setMode(w) { seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
 async function showBefore(i, id, fast) {
   const d = BUSY[i], b = BEFORE[i], alive = () => id === bzRun;
@@ -185,12 +202,12 @@ async function showBefore(i, id, fast) {
 }
 async function showWith(i, id) {
   const d = BUSY[i], alive = () => id === bzRun, lis = $$("#bzDid li");
-  setMode(true); bzFeed.innerHTML = ""; $("#bzLine").textContent = d.line;
+  setMode(true); bzFeed.innerHTML = ""; bzFeed.classList.remove("many"); $("#bzLine").textContent = d.line;
   if (RM) { bzFeed.innerHTML = d.feed.slice().reverse().map(f => ntItem(f)).join(""); lis.forEach(l => l.classList.add("on")); $("#bzN1").textContent = fmt(d.b1); $("#bzN2").textContent = fmt(d.b2); $("#bzDream").parentElement.classList.add("on"); return true; }
   tween(4800, p => { if (alive()) { $("#bzN1").textContent = fmt(d.a1 + (d.b1 - d.a1) * p); $("#bzN2").textContent = fmt(d.a2 + (d.b2 - d.a2) * p); } });
   for (let k = 0; k < d.feed.length; k++) {
     await wait(k ? 950 : 350); if (!alive()) return false;
-    bzFeed.insertAdjacentHTML("afterbegin", ntItem(d.feed[k])); if (lis[k]) lis[k].classList.add("on");
+    bzFeed.insertAdjacentHTML("afterbegin", ntItem(d.feed[k])); ages(); if (lis[k]) lis[k].classList.add("on");
   }
   await wait(500); if (!alive()) return false;
   $("#bzD1").textContent = "+" + fmt(d.b1 - d.a1); $("#bzD2").textContent = "+" + fmt(d.b2 - d.a2); $$(".dlt").forEach(x => x.classList.add("on"));
