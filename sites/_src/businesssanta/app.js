@@ -91,21 +91,23 @@ let heroRun = 0, heroVis = true;
 new IntersectionObserver(es => heroVis = es[0].isIntersecting).observe($(".hstage"));
 async function heroLoop() {
   const id = ++heroRun, v = TYPES[T], alive = () => id === heroRun;
-  const q = $("#hpQ"), box = $("#hpRes"), note = $("#hpNote"), fl = $$(".hstage .float");
-  box.innerHTML = `<div class="rwrap" id="hpMe"><div>${res(v.n, "4.9", 86, true)}</div></div>` + v.c.map((c, i) => res(c, (4.7 - i * .1).toFixed(1), 164 - i * 31, false)).join("");
-  const me = $("#hpMe"), comps = [...box.querySelectorAll(":scope > .res")];
-  const all = on => { me.classList.toggle("on", on); comps.forEach(c => c.classList.toggle("on", on)); note.classList.toggle("on", on); fl.forEach(f => f.classList.toggle("on", on)); };
+  const q = $("#hpQ"), card = $("#hpMe"), ai = $("#hpAi"), aiT = $("#hpAiT"), note = $("#hpNote"), fl = $$(".hstage .float");
+  $("#hpSvc").textContent = v.svc;
+  const say = `For "${v.q}", try <em>${esc(v.n)}</em>. People mention fast replies and fair prices.`;
+  const all = on => { card.classList.toggle("on", on); card.classList.toggle("st", on); card.classList.toggle("calling", on); ai.classList.toggle("on", on); note.classList.toggle("on", on); fl.forEach(f => f.classList.toggle("on", on)); if (on) aiT.innerHTML = say; };
   if (RM) { q.textContent = v.q; all(true); return; }
   while (alive()) {
     while (!heroVis && alive()) await wait(400);
-    all(false); q.textContent = ""; await wait(700); if (!alive()) return;
+    all(false); aiT.innerHTML = ""; q.textContent = ""; await wait(700); if (!alive()) return;
     for (let i = 1; i <= v.q.length; i++) { if (!alive()) return; q.textContent = v.q.slice(0, i); await wait(50 + Math.random() * 45); }
-    await wait(250); comps.forEach((c, i) => setTimeout(() => c.classList.add("on"), i * 120));
-    await wait(1400); if (!alive()) return; me.classList.add("on");
-    await wait(1000); if (!alive()) return; note.classList.add("on");
+    await wait(350); card.classList.add("on");
+    await wait(700); if (!alive()) return; card.classList.add("st");
+    await wait(700); if (!alive()) return; ai.classList.add("on");
+    const words = say.split(" "); for (let k = 1; k <= words.length; k++) { if (!alive()) return; aiT.innerHTML = words.slice(0, k).join(" "); await wait(55); }
+    await wait(500); if (!alive()) return; note.classList.add("on"); card.classList.add("calling");
     for (const f of fl) { await wait(420); if (!alive()) return; f.classList.add("on"); }
-    await wait(3400); if (!alive()) return;
-    note.classList.remove("on"); fl.forEach(f => f.classList.remove("on")); await wait(500);
+    await wait(3600); if (!alive()) return;
+    note.classList.remove("on"); card.classList.remove("calling"); fl.forEach(f => f.classList.remove("on")); await wait(500);
   }
 }
 
@@ -168,7 +170,9 @@ const BEFORE = [
   { line: "Before: fresh bread every morning, and trays left over.", feed: [["#94a3b8", "$", "2 orders today", "3 trays of croissants unsold"], ["#94a3b8", "◉", "Not on Google Maps", "People nearby can't find you"]] },
   { line: "Before: a great practice, and empty chairs.", feed: [["#94a3b8", "▦", "4 open slots tomorrow", "No new patients booked"], ["#94a3b8", "✆", "No new patient calls", "this week"]] }
 ];
-$("#bzDay").textContent = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+$("#bzDay").textContent = "Today, " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+const BZN = [["🛍️", "Your boutique"], ["🔧", "Your plumbing business"], ["🥐", "Your bakery"], ["🦷", "Your dental office"]], BARS = [[.62, .7, .78, .86, .92, 1, .95], [.6, .74, .7, .88, .95, .8, .55], [.7, .66, .78, .84, .95, 1, .98], [.66, .8, .74, .9, .96, .6, .4]], LOW = [.2, .15, .25, .18, .22, .12, .2];
+const bars = h => $$("#bzBars i").forEach((b, k) => b.style.setProperty("--h", h[k]));
 const bzTabs = $$("#bzt button"), bzFeed = $("#bzFeed"), bzS = $("#bzs"), bzLock = $("#bzLock"), seg = $("#seg"), segB = $$("#seg button"), busySec = $("#stories");
 let bzI = 0, bzRun = 0, bzAuto = !RM, bzVis = false;
 const fmt = n => Math.round(n).toLocaleString("en-US");
@@ -190,11 +194,11 @@ const iconFor = f => { if (f[1] === "▦") return calIcon(); const k = f[0] === 
 const AGO = ["now", "2m ago", "6m ago", "14m ago", "31m ago", "1h ago"];
 const ntItem = (f, q) => `<div class="nt${q ? " q" : ""}"><span class="ic">${iconFor(f)}</span><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>${q ? "2h ago" : "now"}</small></div>`;
 const ages = () => { if (busySec.classList.contains("before")) return; [...bzFeed.children].forEach((n, k) => { const t = n.querySelector("small"); if (t) t.textContent = AGO[Math.min(k, AGO.length - 1)]; }); bzFeed.classList.toggle("many", bzFeed.children.length > 4); };
-function setMode(w) { $("#bzMode").textContent = w ? "With Business Santa" : "Before us"; seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
+function setMode(w) { $("#bzMode").textContent = w ? "With Business Santa" : "Before us"; $("#bzLive").textContent = w ? "Busy" : "Quiet"; bars(w ? BARS[bzI] : LOW); seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
 async function showBefore(i, id, fast) {
   const d = BUSY[i], b = BEFORE[i], alive = () => id === bzRun;
   setMode(false); ["--w1", "--w2", "--w3", "--w4"].forEach((v, k) => bzLock.style.setProperty(v, d.w[k]));
-  bzS.classList.add("sw"); $("#bzDreamBox").classList.remove("on"); $("#bzDreamE").textContent = DE[i]; $$(".dlt").forEach(x => x.classList.remove("on"));
+  bzS.classList.add("sw"); $("#bzDreamBox").classList.remove("on"); $("#bzDreamE").textContent = DE[i]; $("#bzIc").textContent = BZN[i][0]; $("#bzBiz").textContent = BZN[i][1]; $$(".dlt").forEach(x => x.classList.remove("on"));
   await wait(RM || fast ? 0 : 300); if (!alive()) return false;
   $("#bzL1").textContent = d.l1; $("#bzL2").textContent = d.l2; $("#bzLine").textContent = b.line; $("#bzDream").textContent = d.dream;
   $("#bzN1").textContent = fmt(d.a1); $("#bzN2").textContent = fmt(d.a2);
@@ -341,20 +345,18 @@ new IntersectionObserver(es => { const on = es[0].isIntersecting; clearInterval(
 showCrew(0);
 
 /* ---------- the big reveal: words light up, the phone rises, rewinds to today, takes its place ---------- */
-const bws = $$(".bw"), pst = $(".pstage"), rwc = $("#rwc"), rwcT = $("#rwcT");
+const bws = $$(".bw"), pst = $(".pstage");
 let dx = 0, lastPb = -1;
 function measureBridge() { const r = pst.getBoundingClientRect(); dx = MOB() ? 0 : innerWidth / 2 - (r.left + r.width / 2); }
 function bridge(pb, vh) {
   if (Math.abs(pb - lastPb) < .0005) return; lastPb = pb;
   const lit = clamp(pb / .42, 0, 1) * bws.length;
   bws.forEach((w, k) => w.classList.toggle("l", k < lit));
-  const bt = pb < .46 ? clamp(pb / .06, 0, 1) : 1 - clamp((pb - .46) / .12, 0, 1);
+  const bt = pb < .46 ? 1 : 1 - clamp((pb - .46) / .12, 0, 1);
   stage.style.setProperty("--bt", bt.toFixed(3)); stage.style.setProperty("--bs", clamp((pb - .38) / .1, 0, 1).toFixed(3));
   const r = clamp((pb - .56) / .2, 0, 1), m = clamp((pb - .76) / .22, 0, 1), e = t => 1 - Math.pow(1 - t, 3);
   pst.style.setProperty("--px", (dx * (1 - e(m))).toFixed(1) + "px");
   pst.style.setProperty("--py", ((1 - e(r)) * vh * .95).toFixed(1) + "px");
-  rwc.classList.toggle("on", pb > .58 && pb < .9); rwc.classList.toggle("rew", pb >= .66);
-  rwcT.textContent = pb >= .66 ? "↺ Rewind. This is you today." : "This could be you";
 }
 
 /* ---------- one scroll handler, read then write ---------- */
@@ -365,7 +367,7 @@ function onScroll() {
   const run = -sr.top, B = vh * 1.6, total = sr.height - vh;
   const pb = clamp(run / B, 0, 1), q = clamp((run - B) / (total - B), 0, 1);
   bridge(pb, vh);
-  if (pb < 1) setChapter(pb < .66 ? 3 : 0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
+  if (pb < 1) setChapter(0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
   revealFrame(vh);
   const s = y > 40; if (s !== solid) { solid = s; hd.classList.toggle("solid", s); }
   const b = y > vh * .9 && !inCk; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
@@ -374,8 +376,8 @@ addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimat
 
 /* phone size follows the screen */
 function sizePhone() {
-  const ps = MOB() ? Math.min(.74, innerHeight * .44 / 620, innerWidth * .86 / 300) : Math.min(1.1, (innerHeight - 150) / 620);
-  $(".pstage").style.setProperty("--ps", ps.toFixed(3));
+  const m = MOB(), h = m ? 470 : 560, ps = m ? Math.min(1, innerHeight * .46 / h, innerWidth * .9 / 340) : Math.min(1.08, (innerHeight - 150) / h);
+  const el = $(".pstage"); el.style.setProperty("--ps", ps.toFixed(3)); el.style.setProperty("--bh", h + "px");
 }
 let lastW = innerWidth, rT = 0;
 addEventListener("resize", () => {
@@ -390,21 +392,10 @@ const rio = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersectin
 $$(".rv,.split,.berg").forEach(e => rio.observe(e));
 new IntersectionObserver((es, ob) => es.forEach(e => {
   if (!e.isIntersecting) return; ob.disconnect();
-  $$(".num b").forEach(el => { const n = +el.dataset.n, d = +(el.dataset.d || 0), s = el.dataset.s || ""; tween(1600, p => el.textContent = (d ? (n * p).toFixed(d) : Math.round(n * p).toLocaleString("en-US")) + s); });
-}), { threshold: .3 }).observe($(".nums"));
+  $$(".rsum [data-n]").forEach(el => { const n = +el.dataset.n, d = +(el.dataset.d || 0), s = el.dataset.s || ""; tween(1600, p => el.textContent = (d ? (n * p).toFixed(d) : Math.round(n * p).toLocaleString("en-US")) + s); });
+}), { threshold: .3 }).observe($(".rsum"));
 
-/* ---------- work history strip ---------- */
-const JOBS = [
-  { u: "thecini07", svc: "Technical fixes", d: 7, q: "I'm not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me." },
-  { u: "metablazetoken", svc: "Online store SEO", d: 4, q: "The team was professional, polite, well-spoken, and highly knowledgeable." },
-  { u: "jahlisa", svc: "Online store SEO", d: 6, q: "They provided a very detailed report that went above and beyond what we were expecting." },
-  { u: "concord79", svc: "Full SEO package", d: 4, q: "Working with Manav was one of the best decisions I made during the launch of my business." },
-  { u: "vkannan09", svc: "Technical fixes", d: 3, q: "Manav and team were exceptional." },
-  { u: "lightcommittee", svc: "Google-readable pages", d: 3, q: "Hired to fix my schema across main service pages and blog pages." }
-];
 const flag = '<svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg>';
-const jobHTML = j => `<article class="job"><div class="top"><span class="svc">${esc(j.svc)}</span><span class="s5" aria-label="5 out of 5 stars">★★★★★</span></div><blockquote>“${esc(j.q)}”</blockquote><div class="meta"><span>${flag} United States</span><span>Done in ${j.d} days</span><span>${esc(j.u)}</span></div></article>`;
-new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); $("#track").innerHTML = JOBS.map(jobHTML).join("") + JOBS.map(jobHTML).join(""); $$("#track .job").slice(JOBS.length).forEach(e => e.setAttribute("aria-hidden", "true")); }, { rootMargin: "600px" }).observe($("#reviews"));
 
 /* ---------- footer: pick your business, go straight to the free check ---------- */
 $$(".ftrack button").forEach(b => b.addEventListener("click", () => { setType(b.dataset.k); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "footer" }); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => ckGo(Math.max(ck, 1)), 900); }));
