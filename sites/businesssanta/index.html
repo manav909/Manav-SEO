@@ -335,6 +335,58 @@ html[data-t=day] .bzn b{background:linear-gradient(180deg,#f2b01e,#a86b00);-webk
 .bzdream.on{opacity:1;transform:none}
 .bzdream small{margin-bottom:4px}
 .bzdream b{display:block;font:800 1.35rem/1.25 var(--h);letter-spacing:-.02em;color:var(--txt)}
+/* iceberg chips gather into four plans */
+.ugt{margin:-4px auto 22px;max-width:22ch;font:800 clamp(1.4rem,2.8vw,2.2rem)/1.15 var(--h);letter-spacing:-.03em;color:#fff;opacity:0;transform:translateY(10px);transition:opacity .8s var(--ease) .9s,transform .9s var(--ease) .9s}
+.berg.grouped .ugt{opacity:1;transform:none}
+.berg.grouped #ugLbl{color:var(--y)}
+.under span{transition:opacity .6s,transform .7s var(--ease)}
+.berg:not(.grouped) .under span{transform:rotate(calc((var(--i) * 37 % 13 - 6) * 1deg)) translateY(calc((var(--i) * 29 % 9 - 4) * 2px))}
+.berg.grouped .under{display:none}
+.ugs{display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;text-align:left}
+.berg.grouped .ugs{display:grid}
+.ug{display:flex;flex-direction:column;gap:12px;padding:18px;border-radius:22px;background:rgba(255,255,255,0);box-shadow:inset 0 0 0 1px rgba(255,255,255,0);color:#fff;text-decoration:none;transition:background .9s var(--ease) .5s,box-shadow .9s var(--ease) .5s}
+.berg.grouped .ug{background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+.ugh,.ugf{opacity:0;transform:translateY(8px);transition:opacity .7s var(--ease) .8s,transform .8s var(--ease) .8s}
+.berg.grouped .ugh,.berg.grouped .ugf{opacity:1;transform:none}
+.ug:hover{background:rgba(253,185,19,.12);box-shadow:inset 0 0 0 1px rgba(253,185,19,.5)}
+.ugh b{display:block;font:800 1.15rem/1.2 var(--h);letter-spacing:-.02em}
+.ugh small{display:block;margin:4px 0 0!important;font:500 .86rem var(--b)!important;letter-spacing:0!important;text-transform:none!important;color:#a9c3ea!important}
+.ugl{display:flex;flex-direction:column;gap:6px;flex:1}
+.ugl span{display:block;padding:8px 11px;border-radius:12px;background:rgba(255,255,255,.07);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);color:#e2ecfb;font:500 .82rem var(--b)}
+.ugf{display:flex;flex-direction:column;gap:2px;padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
+.ugf em{font-style:normal;font:800 .8rem var(--b);color:#4ade80}
+.ugf em::before{content:"✓ "}
+.ugf i{font-style:normal;font:600 .82rem var(--b);color:var(--y)}
+html:not(.js) .ugt{opacity:1;transform:none}
+
+/* is it worth it */
+.wth{text-align:center;max-width:760px;margin:0 auto}.wth .lead{margin:0 auto}
+.wt{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:40px}
+.wtc{padding:clamp(22px,3vw,36px);border-radius:32px;background:#fff;box-shadow:var(--sh2);display:grid;gap:30px;align-content:center}
+.wq>span{display:block;font:600 1.05rem var(--b);color:var(--sub);text-align:center}
+.wv{display:flex;align-items:center;justify-content:center;gap:16px;margin:10px 0 12px}
+.wv output{min-width:5ch;text-align:center;font:800 clamp(2.6rem,5vw,3.6rem)/1 var(--h);letter-spacing:-.04em;color:#0f172a;font-variant-numeric:tabular-nums}
+.wb,.wn{width:46px;height:46px;border-radius:50%;border:0;background:#f1f5f9;color:#0f172a;font:700 1.5rem/1 var(--b);display:grid;place-items:center;transition:background .2s}
+.wb:hover,.wn:hover{background:var(--y)}
+.wq input[type=range]{width:100%;accent-color:#e0a100;height:28px}
+.ppl{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin-top:10px;min-height:28px}
+.ppl i{width:16px;height:26px;opacity:.18;transition:opacity .4s,transform .5s var(--ease);background:#0f172a;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 26'%3E%3Ccircle cx='8' cy='5' r='4.5'/%3E%3Cpath d='M1 26v-9a7 7 0 0 1 14 0v9z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 26'%3E%3Ccircle cx='8' cy='5' r='4.5'/%3E%3Cpath d='M1 26v-9a7 7 0 0 1 14 0v9z'/%3E%3C/svg%3E") center/contain no-repeat}
+.ppl i.on{opacity:1;background:#e0a100;transform:translateY(-2px)}
+.wto{padding:clamp(22px,3vw,40px);border-radius:32px;background:radial-gradient(120% 90% at 100% 0%,rgba(253,185,19,.22),transparent 55%),#0b0d16;color:#fff;box-shadow:var(--sh2)}
+.wto small{display:block;font:700 .76rem var(--b);letter-spacing:.1em;text-transform:uppercase;color:#9aa2b4}
+.wbig{display:block;margin:12px 0 2px;font:800 clamp(3.4rem,7vw,5.8rem)/1 var(--h);letter-spacing:-.05em;background:linear-gradient(180deg,#fff1c4,#FDB913 70%,#e69500);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+.wper{font:600 1.1rem var(--b);color:#d6dbe5}
+.wyr{margin:18px 0 22px;font:600 1.12rem/1.45 var(--b);color:#d6dbe5}
+.wyr span{color:#fff;font-weight:800}.wyr b{color:var(--y)}
+.wbars{display:grid;gap:12px}
+.wbars div{display:grid;grid-template-columns:1fr auto;align-items:center;gap:4px 12px}
+.wbars span{grid-column:1/3;font:600 .82rem var(--b);color:#9aa2b4}
+.wbars i{height:14px;border-radius:999px}
+.bar1{width:6%;background:#64748b}
+.bar2{width:60%;background:linear-gradient(90deg,#ffd970,#FDB913,#f59e0b);transition:width .8s var(--ease);box-shadow:0 0 20px rgba(253,185,19,.35)}
+.wbars b{font:800 1rem var(--h);font-variant-numeric:tabular-nums}
+.wx{margin:18px 0 0;font:600 1rem var(--b);color:#d6dbe5}.wx b{color:#4ade80;font-size:1.15rem}
+
 /* how it works path */
 .howh{text-align:center}
 .path{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(18px,3vw,40px);margin-top:54px}
@@ -476,6 +528,42 @@ html:not(.js) .reveal{height:auto}
 html:not(.js) .rvs{position:relative;height:auto;padding-top:120px}
 html:not(.js) .rvhead{position:relative;top:auto}
 html:not(.js) .cur,html:not(.js) .psst{display:none}
+
+.rvbg{position:absolute;inset:0;z-index:0;opacity:var(--open);transform:scale(calc(1.08 - var(--open) * .08))}
+.rvbg img{width:100%;height:100%;object-fit:cover}
+.rvbg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(var(--ov),.9),rgba(var(--ov),.5) 36%,rgba(var(--ov),.42) 66%,rgba(var(--ov),.94))}
+.rvs .bigw,.rvs .rvhead,.rvs .crewstage{z-index:1}
+.rvs .cur{z-index:2}.rvs .crewstage{z-index:3}
+/* how we work */
+.hww{margin-top:110px}
+.hwh{text-align:center}.hwh .h3{margin:10px 0 0}
+.hwg{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:36px}
+.hwc{padding:22px;border-radius:28px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb2)}
+.hwc h4{margin:20px 4px 6px;font:800 1.3rem/1.2 var(--h);letter-spacing:-.02em;color:var(--txt)}
+.hwc p{margin:0 4px;color:var(--sub);font-size:.98rem}
+.hwv{height:220px;border-radius:20px;background:#fff;color:#0f172a;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden}
+.plan small{display:block;font:700 .7rem var(--b);letter-spacing:.08em;text-transform:uppercase;color:#8b94a5}
+.plan b{display:block;font:800 1.1rem var(--h);margin:4px 0 10px}
+.plan ul{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:.88rem;color:#334155}
+.plan li::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--y);margin-right:8px;vertical-align:1px}
+.pr{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid #eef0f3}
+.pr span{font:800 1.4rem var(--h)}
+.apv{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:999px;background:#0f172a;color:#fff;font:700 .85rem var(--b);font-style:normal;transition:background .5s 1s}
+.apv i{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 2px rgba(255,255,255,.6);transition:background .5s 1s,box-shadow .5s 1s}
+.in .apv{background:#16a34a}
+.in .apv i{background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2316a34a' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/11px no-repeat;box-shadow:none}
+.tl{list-style:none;margin:0;padding:0 0 0 16px;position:relative;display:grid;gap:13px;font-size:.9rem;color:#334155}
+.tl::before{content:"";position:absolute;left:4px;top:6px;bottom:6px;width:2px;background:#e5e7eb}
+.tl li{position:relative;opacity:0;transform:translateX(-8px);transition:opacity .6s var(--ease),transform .7s var(--ease)}
+.tl li::before{content:"";position:absolute;left:-17px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--y);box-shadow:0 0 0 3px #fff}
+.tl li b{display:block;font:700 .68rem var(--b);letter-spacing:.08em;text-transform:uppercase;color:#8b94a5}
+.in .tl li{opacity:1;transform:none}
+.in .tl li:nth-child(2){transition-delay:.35s}.in .tl li:nth-child(3){transition-delay:.7s}.in .tl li:nth-child(4){transition-delay:1.05s}
+.own{display:grid;gap:10px}
+.own div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 14px;border-radius:14px;background:#f8fafc;font-size:.86rem;color:#334155}
+.own b{display:inline-flex;align-items:center;gap:6px;flex:none;font:700 .8rem var(--b);color:#0f172a}
+.own b::before{content:"";width:16px;height:16px;border-radius:50%;background:var(--y) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/10px no-repeat}
+#founder .fnd{margin-top:60px}
 
 /* founder */
 .fnd{position:relative;margin-top:150px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);align-items:end;border-radius:36px;background:radial-gradient(120% 120% at 85% 100%,#ffd35a,#FDB913 45%,#eea300);color:#0f172a;min-height:440px;box-shadow:0 50px 120px rgba(0,0,0,.35)}
@@ -824,10 +912,14 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   .pstage{order:-1}
   .tag{font-size:.74rem;padding:6px 10px 6px 7px;gap:6px}.tag i{width:7px;height:7px}
   .tagcard{position:absolute;left:8px;right:8px;bottom:8px;max-width:none;padding:12px 14px;gap:10px}.tagcard img{width:44px;height:44px}.tagcard b{font-size:1.05rem}.tagcard span{font-size:.82rem}
-  .rvs .crewstage{width:100vw;margin-bottom:96px}
+  .rvs .crewstage{width:132vw;max-width:none;margin:0 0 150px -16vw;align-self:flex-start}
+  .rvs .tagcard{left:calc(16vw + 8px);right:calc(16vw + 8px);bottom:-138px}
   .rvhead .lead{font-size:.98rem}
   .bigw{top:4%}
   .fnd{grid-template-columns:1fr;margin-top:120px;min-height:0}
+  .hwg{grid-template-columns:1fr}
+  .wt{grid-template-columns:1fr}
+  #founder .fnd{margin-top:80px}
   .fndi{margin:-10px auto 0;max-width:78%;order:2}
   .fndt{padding:26px 22px 8px}
   .ftg{grid-template-columns:1fr 1fr;gap:28px 18px;padding-top:40px}.ftb{grid-column:1/3}
@@ -866,6 +958,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   .crow span:first-child{grid-column:1/4;padding-bottom:2px;background:var(--gl)}
   .crow.head span:first-child{display:none}
   .under span{font-size:.8rem;padding:8px 11px}
+  .ugs{grid-template-columns:1fr 1fr;gap:10px}.ug{padding:14px}.ugh b{font-size:1rem}.ugl span{font-size:.76rem;padding:7px 9px}
   .faq{padding:4px 18px}
   .bar{display:flex}
 }
@@ -992,18 +1085,18 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <section class="blk lt" id="worth">
   <div class="wrap">
-    <span class="eyb rv">Is it worth it?</span>
-    <h2 class="h2 split"><span class="w"><span style="--i:0">What</span></span> <span class="w"><span style="--i:1">is</span></span> <span class="w"><span style="--i:2">one</span></span> <span class="w"><span style="--i:3">new</span></span> <span class="w"><span style="--i:4">customer</span></span> <span class="w"><span style="--i:5">worth</span></span> <span class="w"><span style="--i:6">to</span></span> <span class="w"><span style="--i:7">you?</span></span></h2>
-    <p class="lead rv">Move the sliders with your own numbers. This is the money that is walking past your door right now.</p>
-    <div class="worth rv">
-      <div>
-        <div class="sl"><label for="wVal">One new customer is worth <b id="wValO">$350</b></label><input type="range" id="wVal" min="20" max="3000" step="10" value="350"></div>
-        <div class="sl"><label for="wNum">Extra customers a month <b id="wNumO">3</b></label><input type="range" id="wNum" min="1" max="30" step="1" value="3"></div>
+    <div class="wth"><span class="eyb rv">Is it worth it?</span><h2 class="h2 split">What is one new customer worth to you?</h2><p class="lead rv">Use your own numbers. This is the money walking past your door right now.</p></div>
+    <div class="wt rv">
+      <div class="wtc">
+        <div class="wq"><span>One new customer is worth about</span><div class="wv"><button type="button" class="wb" data-d="-1" aria-label="Less">−</button><output id="wValO">$350</output><button type="button" class="wb" data-d="1" aria-label="More">+</button></div><input type="range" id="wVal" min="20" max="3000" step="10" value="350" aria-label="What one new customer is worth"></div>
+        <div class="wq"><span>Extra customers a month</span><div class="wv"><button type="button" class="wn" data-d="-1" aria-label="Fewer">−</button><output id="wNumO">3</output><button type="button" class="wn" data-d="1" aria-label="More">+</button></div><input type="range" id="wNum" min="1" max="30" step="1" value="3" aria-label="Extra customers a month"><div class="ppl" id="ppl" aria-hidden="true"></div></div>
       </div>
-      <div class="out">
-        <small>That is</small><span class="big" id="wMo">$1,050</span><span class="yr">more a month, <span id="wYr">$12,600</span> a year</span>
-        <div class="vs">Our plans start at <b>$120</b>. For many local businesses, a single new customer covers that.</div>
-        
+      <div class="wto">
+        <small>Extra money for you</small>
+        <b class="wbig" id="wMo">$1,050</b><span class="wper">every month</span>
+        <div class="wyr"><span id="wYr">$12,600</span> a year. That's <b id="wEq">a real family vacation</b>.</div>
+        <div class="wbars"><div><span>Our plans start at</span><i class="bar1"></i><b>$120</b></div><div><span>Your extra money a month</span><i class="bar2" id="wBar"></i><b id="wMo2">$1,050</b></div></div>
+        <p class="wx" id="wX">That's <b>8.8x</b> what a plan starts at.</p>
       </div>
     </div>
   </div>
@@ -1016,7 +1109,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
     <p class="lead rv">From the outside it looks like one simple result. Underneath, dozens of technical pieces have to be right, and they keep changing every month.</p>
     <div class="berg rv">
       <div class="top"><div class="tip"><small>What your customer sees</small><b>"Your business, top of Google, open now, 4.9 stars."</b></div></div>
-      <div class="bot"><small>What it takes underneath</small><div class="under" id="under"><span>Google Search Console setup</span><span>Fixing pages Google can't index</span><span>Site speed on phones</span><span>Schema markup Google reads</span><span>Google Business Profile verification</span><span>Map pin, hours and categories</span><span>Local directory listings</span><span>Review requests and replies</span><span>Pages written for real searches</span><span>Internal links between pages</span><span>Tracking calls and leads</span><span>Checking what ChatGPT says about you</span><span>Watching every Google update</span><span>Fixing what competitors exploit</span><span>Monthly reports you can verify</span><span>Security and safe access</span></div></div>
+      <div class="bot"><small id="ugLbl">What it takes underneath</small><h3 class="ugt" id="ugT">16 technical jobs. 4 simple plans. All done for you.</h3><div class="under" id="under"><span data-g="0" style="--i:0">Google Search Console setup</span><span data-g="0" style="--i:1">Fixing pages Google can't index</span><span data-g="0" style="--i:2">Site speed on phones</span><span data-g="0" style="--i:3">Schema markup Google reads</span><span data-g="1" style="--i:4">Google Business Profile verification</span><span data-g="1" style="--i:5">Map pin, hours and categories</span><span data-g="1" style="--i:6">Local directory listings</span><span data-g="1" style="--i:7">Review requests and replies</span><span data-g="2" style="--i:8">Pages written for real searches</span><span data-g="2" style="--i:9">Internal links between pages</span><span data-g="3" style="--i:10">Tracking calls and leads</span><span data-g="2" style="--i:11">Checking what ChatGPT says about you</span><span data-g="3" style="--i:12">Watching every Google update</span><span data-g="3" style="--i:13">Fixing what competitors exploit</span><span data-g="3" style="--i:14">Monthly reports you can verify</span><span data-g="0" style="--i:15">Security and safe access</span></div><div class="ugs" id="ugs"><a class="ug" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=plans" data-hand="1" data-g="0"><span class="ugh"><b>Website fix-up</b><small>So Google can read you</small></span><span class="ugl"></span><span class="ugf"><em>Done for you</em><i>See plans and prices →</i></span></a><a class="ug" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=plans" data-hand="1" data-g="1"><span class="ugh"><b>Google Maps and reviews</b><small>So locals find and trust you</small></span><span class="ugl"></span><span class="ugf"><em>Done for you</em><i>See plans and prices →</i></span></a><a class="ug" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=plans" data-hand="1" data-g="2"><span class="ugh"><b>Words that get found</b><small>So people and ChatGPT pick you</small></span><span class="ugl"></span><span class="ugf"><em>Done for you</em><i>See plans and prices →</i></span></a><a class="ug" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=plans" data-hand="1" data-g="3"><span class="ugh"><b>Watched every month</b><small>So it keeps working</small></span><span class="ugl"></span><span class="ugf"><em>Done for you</em><i>See plans and prices →</i></span></a></div></div>
     </div>
     <h3 class="h3 split"><span class="w"><span style="--i:0">Can't</span></span> <span class="w"><span style="--i:1">AI</span></span> <span class="w"><span style="--i:2">just</span></span> <span class="w"><span style="--i:3">do</span></span> <span class="w"><span style="--i:4">this?</span></span></h3>
     <p class="lead rv">AI can write words and give tips. It can't log into your Google account, fix your website or answer for the result. And your passwords and customer data should never be pasted into a public AI chat.</p>
@@ -1091,6 +1184,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 <section class="crew see" id="team">
   <div class="reveal" id="reveal">
     <div class="rvs">
+      <div class="rvbg" aria-hidden="true"><img src="/assets/img/room-1600.webp" srcset="/assets/img/room-900.webp 900w, /assets/img/room-1600.webp 1600w" sizes="100vw" alt="" width="1600" height="931" loading="lazy" decoding="async"></div>
       <div class="bigw" aria-hidden="true">TEAM</div>
       <div class="rvhead"><span class="eyb">You are not doing this alone</span><h2 class="h2">Meet the people who will grow <em>your business</em></h2><p class="lead">Real people in a real office, who will know your name. Tap anyone to see what they do for you.</p></div>
       <div class="cur l" aria-hidden="true"><div class="ct">So who's actually<br><em>behind all this?</em></div></div>
@@ -1107,16 +1201,14 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
     </div>
   </div>
   <div class="wrap">
-    <div class="work">
-      <div class="rv"><span class="eyb">How we work</span><h3 class="h3" style="margin-top:12px">Your project, on our screen, every week</h3><div class="promise"><div><b>You approve everything first</b><span>The plan and the price, before anything starts.</span></div><div><b>You see every change</b><span>Nothing happens to your business behind your back.</span></div><div><b>It stays yours</b><span>You keep full ownership of your website and accounts.</span></div></div></div>
-      <img class="rv" src="/assets/img/laptop-1080.webp" srcset="/assets/img/laptop-720.webp 720w, /assets/img/laptop-1080.webp 1080w, /assets/img/laptop-1440.webp 1440w, /assets/img/laptop-2000.webp 2000w" sizes="(max-width:980px) 92vw, 580px" alt="The team working together on a client project" width="2000" height="1333" loading="lazy" decoding="async">
+    <div class="hww">
+      <div class="hwh rv"><span class="eyb">How we work with you</span><h3 class="h3">No surprises. Ever.</h3></div>
+      <div class="hwg">
+        <div class="hwc rv"><div class="hwv"><div class="plan"><small>Your plan</small><b>Get found on Google</b><ul><li>Fix 4 website problems</li><li>Google Maps listing</li><li>Weekly updates</li></ul><div class="pr"><span>$120</span><em class="apv"><i></i>Approve</em></div></div></div><h4>You approve everything first</h4><p>You see the plan and the price before anything starts.</p></div>
+        <div class="hwc rv"><div class="hwv"><ol class="tl"><li><b>Mon</b>Fixed 4 broken pages</li><li><b>Wed</b>Google Maps hours updated</li><li><b>Thu</b>New photos added</li><li><b>Fri</b>Weekly update sent to you</li></ol></div><h4>You see every change</h4><p>Nothing happens to your business behind your back.</p></div>
+        <div class="hwc rv"><div class="hwv"><div class="own"><div><span>Website</span><b>Owner: You</b></div><div><span>Google Business Profile</span><b>Owner: You</b></div><div><span>Domain name</span><b>Owner: You</b></div></div></div><h4>It stays yours</h4><p>You keep full ownership of your website and accounts. Always.</p></div>
+      </div>
     </div>
-    <div class="fnd rv">
-      <div class="fndw" aria-hidden="true">MANAV</div>
-      <div class="fndt"><span class="eyb">From the founder</span><blockquote>"My name is on this work. If something isn't right, we fix it."</blockquote><p>Over ten years of helping businesses get found. Business Santa runs on SEO Season, the platform we built ourselves, so nothing about your business is left to guesswork.</p><div class="sig"><b>Manav</b><span>Founder, Business Santa</span></div></div>
-      <img class="fndi" src="/assets/img/manav-cut-860.webp" srcset="/assets/img/manav-cut-560.webp 560w, /assets/img/manav-cut-860.webp 860w, /assets/img/manav-cut-1180.webp 1180w" sizes="(max-width:760px) 80vw, 460px" alt="Manav, founder of Business Santa" width="1203" height="1711" loading="lazy" decoding="async">
-    </div>
-  </div>
 </section>
 
 <section class="blk lt" id="faq">
@@ -1132,6 +1224,17 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
       <details><summary>I already have a website. Do I need a new one?</summary><p>Usually not. Most of the time we improve the one you have. If it really needs replacing, we'll tell you honestly.</p></details>
       <details><summary>Where can I see your full services and prices?</summary><p>Everything is on our services page, with each package and what's included: <a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=faq" data-hand="1">see services and prices</a>.</p></details>
     </div>
+  </div>
+</section>
+
+<section class="blk lt2" id="founder">
+  <div class="wrap">
+    <div class="fnd rv">
+      <div class="fndw" aria-hidden="true">MANAV</div>
+      <div class="fndt"><span class="eyb">From the founder</span><blockquote>"My name is on this work. If something isn't right, we fix it."</blockquote><p>Over ten years of helping businesses get found. Business Santa runs on SEO Season, the platform we built ourselves, so nothing about your business is left to guesswork.</p><div class="sig"><b>Manav</b><span>Founder, Business Santa</span></div></div>
+      <img class="fndi" src="/assets/img/manav-cut-860.webp" srcset="/assets/img/manav-cut-560.webp 560w, /assets/img/manav-cut-860.webp 860w, /assets/img/manav-cut-1180.webp 1180w" sizes="(max-width:760px) 80vw, 460px" alt="Manav, founder of Business Santa" width="1203" height="1711" loading="lazy" decoding="async">
+    </div>
+  </div>
   </div>
 </section>
 
@@ -1169,6 +1272,6 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.660c249689.js"></script>
+<script type="module" src="/assets/js/app.839161d557.js"></script>
 </body>
 </html>

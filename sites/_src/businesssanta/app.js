@@ -214,6 +214,22 @@ const alive2 = id => id === bzRun;
 bzTabs.forEach((t, k) => t.addEventListener("click", () => { bzAuto = false; bzTabs.forEach(x => x.style.setProperty("--pg", 0)); busy(k); }));
 new IntersectionObserver(es => { const was = bzVis; bzVis = es[0].isIntersecting; if (bzVis && !was) busy(bzI); if (!bzVis) bzRun++; }, { threshold: .35 }).observe($(".bzg"));
 
+/* ---------- the technical jobs gather into four simple plans ---------- */
+const berg = $(".berg"), chipsU = $$("#under span"), ugl = $$("#ugs .ugl");
+function gather() {
+  if (berg.classList.contains("grouped")) return;
+  const first = chipsU.map(c => c.getBoundingClientRect());
+  chipsU.forEach(c => ugl[+c.dataset.g].appendChild(c));
+  berg.classList.add("grouped"); $("#ugLbl").textContent = "We take care of all of it";
+  if (RM) return;
+  chipsU.forEach((c, k) => {
+    const l = c.getBoundingClientRect(), f = first[k];
+    c.style.transition = "none"; c.style.transform = `translate(${f.left - l.left}px,${f.top - l.top}px) rotate(${(k * 37 % 13 - 6)}deg)`;
+  });
+  requestAnimationFrame(() => requestAnimationFrame(() => chipsU.forEach((c, k) => { c.style.transition = `transform 1.1s cubic-bezier(.22,1,.36,1) ${k * 35}ms`; c.style.transform = ""; })));
+}
+new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); setTimeout(gather, RM ? 0 : 1800); }, { threshold: .55 }).observe(berg);
+
 /* ---------- grow with us: the service bar and the business grow together ---------- */
 const GROW = [
   ["Where you start", "A great idea, and a lot of hope.", 3],
@@ -327,7 +343,6 @@ addEventListener("resize", () => {
 /* ---------- reveals ---------- */
 const rio = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add("in"); rio.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px", threshold: .12 });
 $$(".rv,.split,.berg").forEach(e => rio.observe(e));
-$$("#under span").forEach((e, i) => e.style.setProperty("--i", i));
 new IntersectionObserver((es, ob) => es.forEach(e => {
   if (!e.isIntersecting) return; ob.disconnect();
   $$(".num b").forEach(el => { const n = +el.dataset.n, d = +(el.dataset.d || 0), s = el.dataset.s || ""; tween(1600, p => el.textContent = (d ? (n * p).toFixed(d) : Math.round(n * p).toLocaleString("en-US")) + s); });
@@ -373,13 +388,25 @@ $$("#dchips button").forEach(b => b.addEventListener("click", () => {
   trackC("ChoseDream", { dream: d[2] });
 }));
 
-/* ---------- worth calculator ---------- */
+/* ---------- worth calculator: their numbers, a real-life picture, and the plan next to it ---------- */
+const money = x => "$" + Math.round(x).toLocaleString("en-US");
+const EQ = [[1000, "a nice dinner out every month"], [3000, "a long weekend away with the family"], [7000, "a real family vacation"], [15000, "your first part-time hire"], [40000, "a new work truck"], [80000, "a full-time employee"], [1e12, "a second location"]];
+const ppl = $("#ppl"); ppl.innerHTML = "<i></i>".repeat(30);
+let wShown = 0, wStop = null;
 function worth() {
-  const val = +$("#wVal").value, n = +$("#wNum").value, f = x => "$" + Math.round(x).toLocaleString("en-US");
-  $("#wValO").textContent = f(val); $("#wNumO").textContent = n; $("#wMo").textContent = f(val * n); $("#wYr").textContent = f(val * n * 12);
+  const val = +$("#wVal").value, n = +$("#wNum").value, mo = val * n, yr = mo * 12;
+  $("#wValO").textContent = money(val); $("#wNumO").textContent = n;
+  [...ppl.children].forEach((p, k) => p.classList.toggle("on", k < n));
+  const from = wShown; wStop && wStop(); wStop = tween(600, p => { wShown = from + (mo - from) * p; $("#wMo").textContent = money(wShown); });
+  $("#wMo2").textContent = money(mo); $("#wYr").textContent = money(yr);
+  $("#wEq").textContent = EQ.find(e => yr < e[0])[1];
+  $("#wBar").style.width = Math.max(8, Math.min(100, mo / 120 * 6)).toFixed(1) + "%";
+  $("#wX").innerHTML = mo >= 120 ? `That's <b>${(mo / 120).toFixed(1)}x</b> what a plan starts at.` : "Even one extra customer a month gets you close.";
 }
 ["#wVal", "#wNum"].forEach(s => $(s).addEventListener("input", worth));
 $("#wNum").addEventListener("change", () => trackC("UsedCalculator"));
+$$(".wb").forEach(b => b.addEventListener("click", () => { const r = $("#wVal"), v = +r.value, st = v < 200 ? 10 : v < 1000 ? 50 : 100; r.value = clamp(v + st * b.dataset.d, 20, 3000); worth(); }));
+$$(".wn").forEach(b => b.addEventListener("click", () => { const r = $("#wNum"); r.value = clamp(+r.value + +b.dataset.d, 1, 30); worth(); trackC("UsedCalculator"); }));
 
 /* ---------- leads ---------- */
 const wa = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
