@@ -71,7 +71,7 @@ main,.ft{position:relative;z-index:1}
 .split.in .w>span{transform:none}
 section{position:relative}
 section.blk{padding:clamp(80px,10vw,140px) 0}
-#worth,#why,#how,#check,#reviews,#faq,#dream{content-visibility:auto;contain-intrinsic-size:auto 1000px}
+#stories,#grow,#worth,#why,#how,#check,#reviews,#faq,#dream{content-visibility:auto;contain-intrinsic-size:auto 1000px}
 .dk{background:linear-gradient(180deg,rgba(var(--ov),.7),rgba(var(--ov),.9) 18%,rgba(var(--ov),.9) 82%,rgba(var(--ov),.7))}
 .dk2{background:radial-gradient(800px 420px at 50% 0%,rgba(253,185,19,.12),transparent 70%),rgba(var(--ov),.8)}
 .lt,.lt2{--yt:#9a6a00;--gl:#fff;--gl2:#fff;--gb:#d7dbe3;--txt:#0f172a;--sub:#4b5563;--mut:#8b94a5;--card:#fff;--cline:#e6e8ec;--sh:0 1px 2px rgba(15,23,42,.05),0 14px 40px rgba(15,23,42,.08);--sh2:0 30px 80px rgba(15,23,42,.16);background:#f5f5f7;color:var(--txt)}
@@ -175,7 +175,7 @@ section.blk{padding:clamp(80px,10vw,140px) 0}
 .f1{left:-6%;top:15%}.f2{right:-8%;top:42%}.f3{left:0;bottom:11%}
 
 /* story */
-#stage{height:560vh;height:560svh}
+#stage{height:740vh;height:740svh}
 .stick{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden}
 .stick::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(var(--ov),.9) 0%,rgba(var(--ov),.66) 42%,rgba(var(--ov),.12) 70%,transparent)}
 #stage .wrap{position:relative;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:clamp(20px,4vw,60px);align-items:center}
@@ -399,6 +399,42 @@ html[data-t=day] .grmeter b{background:linear-gradient(180deg,#f2b01e,#a86b00);-
 .grsteps li.on button{color:var(--txt)}
 .grsteps li.on em{background:var(--y);color:#111;box-shadow:none}
 .grsteps li.on span{color:var(--yt)}
+
+/* video background */
+#bgv{position:fixed;inset:0;z-index:0;overflow:hidden;background:transparent center/cover no-repeat}
+#bgv video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.8s ease}
+#bgv.on video{opacity:1}
+#bgv::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(var(--ov),.35),rgba(var(--ov),.15) 40%,rgba(var(--ov),.55))}
+html[data-t=day] #bgv::after{background:linear-gradient(180deg,rgba(var(--ov),.45),rgba(var(--ov),.2) 40%,rgba(var(--ov),.6))}
+/* the big reveal */
+.bridge{position:absolute;inset:0;z-index:4;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 24px;pointer-events:none;opacity:var(--bt,0);transform:translate3d(0,calc((1 - var(--bt,0)) * -50px),0)}
+.bridge p{margin:0;max-width:15ch;font:800 clamp(2.6rem,6vw,5.6rem)/1.04 var(--h);letter-spacing:-.045em;text-wrap:balance}
+.bw{color:var(--txt);opacity:.14;transition:opacity .25s}
+.bw.l{opacity:1}
+.bw.g.l{background:linear-gradient(180deg,#ffe08a,#FDB913);-webkit-background-clip:text;background-clip:text;color:transparent}
+html[data-t=day] .bw.g.l{background:linear-gradient(transparent 62%,rgba(253,185,19,.6) 62%);-webkit-background-clip:border-box;background-clip:border-box;color:inherit}
+.bridge small{display:block;margin-top:24px;font:600 clamp(1rem,1.5vw,1.2rem) var(--b);color:var(--sub2);opacity:var(--bs,0)}
+#stage .chs,#stage .steps6{transition:opacity .6s var(--ease),visibility .6s}
+#stage.inb .chs,#stage.inb .steps6{opacity:0;visibility:hidden}
+.pstage .dev{transform:translate3d(var(--px,0px),var(--py,0px),0) scale(var(--ps,1))}
+.rwc{position:absolute;left:50%;top:58px;z-index:11;transform:translate(-50%,-8px);padding:7px 13px;border-radius:999px;background:#0f172a;color:#fff;font:700 .74rem var(--b);white-space:nowrap;opacity:0;transition:opacity .5s,transform .6s var(--ease);box-shadow:0 8px 20px rgba(0,0,0,.25)}
+.rwc.on{opacity:1;transform:translate(-50%,0)}
+.rwc.rew{background:var(--y);color:#111}
+.gloc{margin:-2px 4px 6px;font-size:11px;color:#5f6368}.gloc b{color:#202124;font-weight:600}
+/* before / with switch */
+.seg{position:relative;display:flex;width:min(440px,100%);margin:22px auto 0;padding:5px;border-radius:999px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb)}
+.seg button{flex:1;position:relative;z-index:1;border:0;background:none;padding:12px 10px;white-space:nowrap;border-radius:999px;font:700 1rem var(--b);color:var(--sub2);transition:color .4s}
+.seg button[aria-selected="true"]{color:#111}
+.seg i{position:absolute;z-index:0;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:999px;background:#e5e7eb;transition:transform .6s var(--ease),background .5s}
+.seg.with i{transform:translateX(100%);background:var(--y)}
+.seg.with button[data-m="0"]{color:var(--sub2)}
+.busy.before .lock{filter:grayscale(.9) brightness(.82)}
+.lock{transition:filter 1s var(--ease)}
+.dlt{display:inline-block;margin-top:8px;padding:4px 10px;border-radius:999px;background:rgba(34,197,94,.16);color:#4ade80;font:800 .9rem var(--h);font-style:normal;opacity:0;transform:translateY(6px);transition:opacity .6s var(--ease),transform .7s var(--ease)}
+html[data-t=day] .dlt{color:#15803d}
+.dlt.on{opacity:1;transform:none}
+.busy.before .bzn b{background:linear-gradient(180deg,#cbd5e1,#94a3b8);-webkit-background-clip:text;background-clip:text}
+.nt.q{background:rgba(230,230,234,.7)}
 
 /* team stage */
 .crew{background:radial-gradient(1000px 560px at 50% 70%,rgba(253,185,19,.13),transparent 70%),linear-gradient(180deg,rgba(var(--ov),.9),rgba(var(--ov),.97) 30%)}
@@ -781,7 +817,8 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   .chips button{padding:8px 13px;font-size:.85rem}
   .hstage{min-height:580px;transform:scale(.86);margin:-30px 0 -50px}
   .f1{left:-4%;top:9%}.f2{right:-6%;top:46%}.f3{left:-2%;bottom:7%}
-  #stage{height:620svh}
+  #stage{height:800svh}
+  .bridge p{font-size:2.5rem}
   .stick::before{background:linear-gradient(180deg,rgba(var(--ov),.3),rgba(var(--ov),.5) 45%,rgba(var(--ov),.94) 60%)}
   #stage .wrap{grid-template-columns:1fr;grid-template-rows:auto 1fr;align-content:start;padding-top:70px;gap:4px}
   .pstage{order:-1}
@@ -838,7 +875,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 </head>
 <body>
-<canvas id="night" aria-hidden="true"></canvas><div class="vig" aria-hidden="true"></div>
+<div id="bgv" aria-hidden="true"><video id="bgvid" muted playsinline loop preload="none" disablepictureinpicture></video></div><div class="vig" aria-hidden="true"></div>
 
 <header class="hd" id="hd"><div class="wrap">
   <a class="brand" href="/" aria-label="Business Santa home"><img src="/assets/img/logo-96.webp" alt="" width="40" height="40"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a>
@@ -850,7 +887,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 <section class="hero see" id="top">
   <div class="wrap">
     <div>
-      <span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg>For small businesses across the US</span>
+      <span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg>For small businesses across <b id="geoState">the US</b></span>
       <h1 class="h1">People near you are searching for what you sell. <em>Can they find you?</em></h1>
       <p class="lead">We get your business seen on Google, Google Maps and ChatGPT, so more of those searches turn into calls, bookings and customers at your door.</p>
       <div class="pick"><span>What kind of business do you run?</span><div class="chips" id="chips"><button type="button" data-k="plumbing" aria-pressed="true">Plumbing</button><button type="button" data-k="restaurant" aria-pressed="false">Restaurant</button><button type="button" data-k="dental" aria-pressed="false">Dental</button><button type="button" data-k="roofing" aria-pressed="false">Roofing</button><button type="button" data-k="salon" aria-pressed="false">Salon or spa</button><button type="button" data-k="law" aria-pressed="false">Law office</button><button type="button" data-k="store" aria-pressed="false">Shop or store</button><button type="button" data-k="other" aria-pressed="false">Something else</button></div></div>
@@ -876,7 +913,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 </section>
 
 <section id="stage" class="see" aria-label="How we help customers find your business">
-  <div class="stick"><div class="wrap">
+  <div class="stick"><div class="bridge" id="bridge" aria-hidden="true"><p><span class="bw">Everyone</span> <span class="bw">wants</span> <span class="bw">to</span> <span class="bw">be</span> <span class="bw">the</span> <span class="bw">business</span> <span class="bw">people</span> <span class="bw">find</span> <span class="bw">first.</span> <span class="bw">So</span> <span class="bw g">how</span> <span class="bw">do</span> <span class="bw">we</span> <span class="bw g">get</span> <span class="bw g">you</span> <span class="bw g">there?</span></p><small>Watch it happen, step by step, on a real Google search.</small></div><div class="wrap">
     <div class="chs">
       <div class="steps6" id="steps6"><span>The problem</span><span>1 &middot; Fix</span><span>2 &middot; Words</span><span>3 &middot; Map</span><span>4 &middot; Updates</span><span>The result</span></div>
       <div class="ch" id="c0"><span class="kick">The problem</span><h2>When people nearby search for you, <em>you're not on the list.</em></h2><p>They choose from what Google shows them. If you are not there, they call someone else. Every single day.</p><div class="get"><small>Look at the phone</small>This is a search for "<span class="qtxt"></span>". Your business is missing.</div></div>
@@ -887,10 +924,10 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
       <div class="ch" id="c5"><span class="kick">The result</span><h2>The phone rings. <em>It's a new customer.</em></h2><p>The people who used to call someone else now find you first. That moment is what we work for.</p><div class="cta"><a class="btn y" href="#check" data-go="check">Get my free check</a></div></div>
     </div>
     <div class="pstage" aria-hidden="true">
-      <div class="dev"><div class="scr" id="ps">
+      <div class="dev"><div class="scr" id="ps"><div class="rwc" id="rwc"><span id="rwcT">This could be you</span></div>
         <div class="sbt"><span>9:41</span><span class="sic"><i></i><i></i><i></i><i></i><b></b></span></div>
         <div class="gsearch"><div class="gbar"><svg viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="qtxt"></span></div>
-          <div class="gtabs"><b>All</b><span>Maps</span><span>Images</span><span>News</span></div>
+          <div class="gloc">Results near <b class="geoCity">you</b></div>
           <div class="spot" id="spot"><span>Where you show up</span><b id="spotV">Not found</b></div>
           <div class="fold" id="mpack"><div><div class="mpk"><div class="gmap"><svg viewBox="0 0 300 150" preserveAspectRatio="none"><rect width="300" height="150" fill="#e8efe3"/><path d="M0 95h300M110 0v150M0 40h300M220 0v150" stroke="#fff" stroke-width="10"/><path d="M0 135L300 60" stroke="#ffd27a" stroke-width="12"/><rect x="18" y="52" width="80" height="30" fill="#cfe3c4"/></svg><i class="gp" style="left:24%;top:58%"></i><i class="gp" style="left:78%;top:30%"></i><i class="mp"></i></div><div class="lst"><b class="bName">Your Plumbing Co.</b><div class="st">★★★★★ 4.9 <span>(86 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Closes 8 PM</span></div></div></div></div></div>
           <div class="fold" id="aic"><div><div class="aic"><i></i><span><b>ChatGPT:</b> <span id="aicT"></span></span></div></div></div>
@@ -907,17 +944,18 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <section id="stories" class="blk busy see" aria-label="What busy looks like for a local business">
   <div class="wrap">
-    <div class="bzh"><span class="eyb rv">See it working</span><h2 class="h2 split">This is what busy looks like</h2><p class="lead rv">Pick a business. Watch an ordinary Tuesday, once the right people can find it.</p></div>
+    <div class="bzh"><span class="eyb rv">See it working</span><h2 class="h2 split">This is what busy looks like</h2><p class="lead rv">Pick a business. See the same Tuesday in <span class="geoCity">your town</span>, before us and with us.</p></div>
     <div class="bzt rv" role="tablist" id="bzt">
       <button type="button" role="tab" data-b="0" aria-selected="true"><span>Boutique</span><i></i></button>
       <button type="button" role="tab" data-b="1"><span>Plumber</span><i></i></button>
       <button type="button" role="tab" data-b="2"><span>Bakery</span><i></i></button>
       <button type="button" role="tab" data-b="3"><span>Dental office</span><i></i></button>
     </div>
+    <div class="seg rv" id="seg" role="tablist" aria-label="Compare before and with Business Santa"><button type="button" role="tab" data-m="0" aria-selected="true">Before us</button><button type="button" role="tab" data-m="1" aria-selected="false">With Business Santa</button><i></i></div>
     <div class="bzg rv">
       <div class="bzs" id="bzs">
-        <div class="bzn"><b id="bzN1">0</b><span id="bzL1">orders today</span></div>
-        <div class="bzn"><b id="bzN2">0</b><span id="bzL2">5-star reviews this month</span></div>
+        <div class="bzn"><b id="bzN1">0</b><span id="bzL1">orders today</span><em class="dlt" id="bzD1"></em></div>
+        <div class="bzn"><b id="bzN2">0</b><span id="bzL2">5-star reviews this month</span><em class="dlt" id="bzD2"></em></div>
         <p class="bzline" id="bzLine">Orders coming in faster than they can pack them.</p>
       </div>
       <div class="bzp" aria-hidden="true"><div class="dev"><div class="scr lock" id="bzLock">
@@ -1085,6 +1123,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   <div class="wrap">
     <div style="text-align:center"><span class="eyb rv">Questions</span><h2 class="h2 split"><span class="w"><span style="--i:0">Straight</span></span> <span class="w"><span style="--i:1">answers</span></span></h2></div>
     <div class="faq rv">
+      <details><summary>Do you work with businesses in <span class="geoStateName">my state</span>?</summary><p>Yes. We work with small businesses across all 50 states, including <span class="geoStateName">yours</span>. Everything happens over WhatsApp, email or a phone call, so you never have to go anywhere.</p></details>
       <details><summary>I don't know anything about websites or Google. Is that okay?</summary><p>Completely. Most of our clients don't. You tell us about your business, and we explain everything in plain English. No tech words, no homework.</p></details>
       <details><summary>How much does it cost?</summary><p>The free check costs nothing. One-time fixes start at $120, and bigger or monthly plans are priced after the check, so you only pay for what your business needs. You see the price before anything starts.</p></details>
       <details><summary>Do you promise I'll be #1 on Google?</summary><p>No, and be careful with anyone who does. Nobody controls Google. What we promise is honest work, every change shown to you, and results you can check yourself.</p></details>
@@ -1130,6 +1169,6 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.a7f7e67598.js"></script>
+<script type="module" src="/assets/js/app.660c249689.js"></script>
 </body>
 </html>

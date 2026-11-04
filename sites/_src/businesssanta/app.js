@@ -1,5 +1,4 @@
 /* Business Santa landing page. Native scrolling, compositor-only animations, no libraries. */
-import { createNight } from "./wall.js";
 import { buildGrow } from "./grow.js";
 
 const CONFIG = { whatsapp: "917009775189", email: "seo@businesssanta.com", metaPixelId: "28943176985310116" };
@@ -58,32 +57,34 @@ function setType(k) {
   buildList(); setChapter(Math.max(cur, 0), true);
 }
 
-/* ---------- the street behind the page ---------- */
-const NS = { lit: .15, warm: 0, focus: 24, cz: 0 }, NT = { lit: .55, warm: 0, focus: 24, cz: 0 };
-let night = null, seeVis = 1, lastF = 0;
-const cv = $("#night");
-function frame(now) {
-  requestAnimationFrame(frame);
-  if (document.hidden || !seeVis) return;
-  if (MOB() && now - lastF < 31) return; lastF = now;
-  for (const k in NT) NS[k] += (NT[k] - NS[k]) * .05;
-  night.render(now);
+/* ---------- real aerial video behind the page, picked by the visitor's time of day ---------- */
+const NT = {};
+const TOD = document.documentElement.dataset.t, bgv = $("#bgv"), vid = $("#bgvid");
+let seeVis = 1;
+function hwVideo() {
+  if (RM || (navigator.connection && (navigator.connection.saveData || /2g/.test(navigator.connection.effectiveType || "")))) return false;
+  try { const g = document.createElement("canvas").getContext("webgl", { failIfMajorPerformanceCaveat: true }); if (!g) return false; const d = g.getExtension("WEBGL_debug_renderer_info"); return !/swiftshader|llvmpipe|software|softpipe/i.test(String(d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : g.getParameter(g.RENDERER))); } catch (e) { return false; }
 }
-function startNight() {
-  try { night = createNight(cv, NS, document.documentElement.dataset.t); } catch (e) { return; }
-  cv.classList.add("on");
-  if (RM) { Object.assign(NS, NT, { lit: .8, warm: .6 }); night.render(performance.now(), true); return; }
-  requestAnimationFrame(frame);
+const portrait = () => innerHeight > innerWidth;
+bgv.style.backgroundImage = `url(/assets/video/${TOD}-${portrait() ? "mq" : "dq"}.jpg)`;
+let vidAsked = false;
+function startVideo() {
+  if (vidAsked) return; vidAsked = true;
+  if (!/[?&]video=1/.test(location.search) && !hwVideo()) return;
+  const c = navigator.connection, fast = !c || (c.downlink || 10) >= 6, kind = portrait() ? "m" : "d";
+  vid.src = `/assets/video/${TOD}-${kind}${fast ? "1080" : "720"}.mp4`;
+  vid.addEventListener("playing", () => bgv.classList.add("on"), { once: true });
+  const pl = vid.play(); if (pl && pl.catch) pl.catch(() => { });
 }
-/* the street starts after the page has settled, or as soon as the visitor moves */
-let nightAsked = false;
-const askNight = () => { if (nightAsked) return; nightAsked = true; (window.requestIdleCallback || setTimeout)(startNight, { timeout: 600 }); };
-["scroll", "pointerdown", "pointermove", "touchstart", "keydown"].forEach(e => addEventListener(e, askNight, { once: true, passive: true }));
-addEventListener("load", () => setTimeout(askNight, 2500));
+["scroll", "pointerdown", "touchstart", "keydown"].forEach(e => addEventListener(e, () => (window.requestIdleCallback || setTimeout)(startVideo, { timeout: 500 }), { once: true, passive: true }));
+addEventListener("load", () => {
+  const im = new Image(), u = `/assets/video/${TOD}-${portrait() ? "mp" : "dp"}.webp`; im.onload = () => { if (!bgv.classList.contains("on")) bgv.style.backgroundImage = `url(${u})`; }; im.src = u;
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(startVideo, { timeout: 800 }), 2200);
+});
 const seen = new Set();
-const seeIO = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); seeVis = seen.size; });
+const seeIO = new IntersectionObserver(es => { es.forEach(e => e.isIntersecting ? seen.add(e.target) : seen.delete(e.target)); seeVis = seen.size; if (vid.src) { if (seeVis && !document.hidden) { const pl = vid.play(); if (pl && pl.catch) pl.catch(() => { }); } else vid.pause(); } });
 $$(".see").forEach(e => seeIO.observe(e));
-if (matchMedia("(pointer:fine)").matches) addEventListener("pointermove", e => night && night.look(e.clientX / innerWidth - .5, e.clientY / innerHeight - .5), { passive: true });
+document.addEventListener("visibilitychange", () => { if (!vid.src) return; if (document.hidden) vid.pause(); else if (seeVis) vid.play().catch(() => { }); });
 
 /* ---------- hero phone: a search that ends with your phone ringing ---------- */
 let heroRun = 0, heroVis = true;
@@ -127,12 +128,12 @@ function reorder(ids) {
   els.forEach(e => { const d = first.get(e) - e.getBoundingClientRect().top; if (d) { e.style.transition = "none"; e.style.transform = `translateY(${d}px)`; } });
   requestAnimationFrame(() => requestAnimationFrame(() => els.forEach(e => { e.style.transition = ""; e.style.transform = ""; })));
 }
-function setChapter(i, force) {
+function setChapter(i, force, inBridge) {
+  stage.classList.toggle("inb", !!inBridge);
   if (i === cur && !force) return; cur = i;
   const v = TYPES[T];
   chs.forEach((c, k) => { c.classList.toggle("on", k === i); c.classList.toggle("past", k < i); });
   steps.forEach((s, k) => { s.classList.toggle("on", k === i); s.classList.toggle("pass", k < i); });
-  if (!stage.dataset.left) { NT.lit = LIT[i]; NT.warm = WARM[i]; NT.focus = FOC[i]; }
   const me = rl.querySelector('[data-id="me"]');
   me.classList.toggle("on", i >= 1);
   $("#meT").textContent = i >= 2 ? `${v.n} · ${v.svc} Near You, Open Now` : v.n;
@@ -140,7 +141,8 @@ function setChapter(i, force) {
   $("#miss").classList.toggle("off", i >= 1);
   $("#spotV").textContent = SPOT[i]; $("#spot").classList.toggle("up", i >= 1);
   $("#mpack").classList.toggle("on", i >= 3); $("#aic").classList.toggle("on", i >= 3);
-  $("#n1").classList.toggle("on", i === 1); $("#n4").classList.toggle("on", i === 4); $("#n5").classList.toggle("on", i === 5);
+  const ib = stage.classList.contains("inb");
+  $("#n1").classList.toggle("on", !ib && i === 1); $("#n4").classList.toggle("on", !ib && i === 4); $("#n5").classList.toggle("on", !ib && i === 5);
   reorder(ORDER[Math.min(i, 3)]);
 }
 
@@ -159,32 +161,56 @@ const BUSY = [
     did: ["Trust pages with real reviews", "Booking that works on phones", "Google and Maps for every service", "Found in AI answers"],
     feed: [["#ef4444", "▦", "New patient: cleaning", "Monday, 9:00 AM"], ["#34c759", "✆", "New patient calling", "from Google Search"], ["#f59e0b", "★", "New 5-star review", "“Gentle and kind.”"], ["#ef4444", "▦", "New patient: kids checkup", "Tuesday, 4:00 PM"], ["#ef4444", "▦", "New patient: whitening", "Thursday, 11:00 AM"]] }
 ];
-const bzTabs = $$("#bzt button"), bzFeed = $("#bzFeed"), bzS = $("#bzs"), bzLock = $("#bzLock");
+const BEFORE = [
+  { line: "Before: a beautiful store, and almost no orders.", feed: [["#94a3b8", "0", "No new orders today", "Last order: 3 days ago"], ["#c13584", "♡", "14 likes on your new post", "but nobody bought anything"]] },
+  { line: "Before: honest work, and a quiet phone.", feed: [["#94a3b8", "✆", "No calls today", "Quiet since Monday"], ["#94a3b8", "▦", "3 open days on the calendar", "this week"]] },
+  { line: "Before: fresh bread every morning, and trays left over.", feed: [["#94a3b8", "$", "2 orders today", "3 trays of croissants unsold"], ["#94a3b8", "◉", "Not on Google Maps", "People nearby can't find you"]] },
+  { line: "Before: a great practice, and empty chairs.", feed: [["#94a3b8", "▦", "4 open slots tomorrow", "No new patients booked"], ["#94a3b8", "✆", "No new patient calls", "this week"]] }
+];
+const bzTabs = $$("#bzt button"), bzFeed = $("#bzFeed"), bzS = $("#bzs"), bzLock = $("#bzLock"), seg = $("#seg"), segB = $$("#seg button"), busySec = $("#stories");
 let bzI = 0, bzRun = 0, bzAuto = !RM, bzVis = false;
 const fmt = n => Math.round(n).toLocaleString("en-US");
-async function busy(i) {
-  const id = ++bzRun, d = BUSY[i], alive = () => id === bzRun; bzI = i;
-  bzTabs.forEach((t, k) => { t.setAttribute("aria-selected", k === i); t.style.setProperty("--pg", 0); });
-  ["--w1", "--w2", "--w3", "--w4"].forEach((v, k) => bzLock.style.setProperty(v, d.w[k]));
-  bzS.classList.add("sw"); $("#bzDream").parentElement.classList.remove("on");
-  await wait(RM ? 0 : 350); if (!alive()) return;
-  $("#bzL1").textContent = d.l1; $("#bzL2").textContent = d.l2; $("#bzLine").textContent = d.line; $("#bzDream").textContent = d.dream;
+const ntItem = (f, q) => `<div class="nt${q ? " q" : ""}"><i style="background:${f[0]}">${f[1]}</i><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>${q ? "2h ago" : "now"}</small></div>`;
+function setMode(w) { seg.classList.toggle("with", w); segB.forEach((b, k) => b.setAttribute("aria-selected", (k === 1) === w)); busySec.classList.toggle("before", !w); }
+async function showBefore(i, id, fast) {
+  const d = BUSY[i], b = BEFORE[i], alive = () => id === bzRun;
+  setMode(false); ["--w1", "--w2", "--w3", "--w4"].forEach((v, k) => bzLock.style.setProperty(v, d.w[k]));
+  bzS.classList.add("sw"); $("#bzDream").parentElement.classList.remove("on"); $$(".dlt").forEach(x => x.classList.remove("on"));
+  await wait(RM || fast ? 0 : 300); if (!alive()) return false;
+  $("#bzL1").textContent = d.l1; $("#bzL2").textContent = d.l2; $("#bzLine").textContent = b.line; $("#bzDream").textContent = d.dream;
   $("#bzN1").textContent = fmt(d.a1); $("#bzN2").textContent = fmt(d.a2);
   $("#bzDid").innerHTML = d.did.map(x => `<li>${esc(x)}</li>`).join(""); bzFeed.innerHTML = ""; bzS.classList.remove("sw");
-  const lis = $$("#bzDid li"), item = f => `<div class="nt"><i style="background:${f[0]}">${f[1]}</i><div><b>${esc(f[2])}</b><span>${esc(f[3])}</span></div><small>now</small></div>`;
-  if (RM) { bzFeed.innerHTML = d.feed.slice().reverse().map(item).join(""); lis.forEach(l => l.classList.add("on")); $("#bzN1").textContent = fmt(d.b1); $("#bzN2").textContent = fmt(d.b2); $("#bzDream").parentElement.classList.add("on"); return; }
-  const T = 9000, t0 = performance.now();
+  for (const f of b.feed) { await wait(RM || fast ? 0 : 450); if (!alive()) return false; bzFeed.insertAdjacentHTML("afterbegin", ntItem(f, true)); }
+  return true;
+}
+async function showWith(i, id) {
+  const d = BUSY[i], alive = () => id === bzRun, lis = $$("#bzDid li");
+  setMode(true); bzFeed.innerHTML = ""; $("#bzLine").textContent = d.line;
+  if (RM) { bzFeed.innerHTML = d.feed.slice().reverse().map(f => ntItem(f)).join(""); lis.forEach(l => l.classList.add("on")); $("#bzN1").textContent = fmt(d.b1); $("#bzN2").textContent = fmt(d.b2); $("#bzDream").parentElement.classList.add("on"); return true; }
+  tween(4800, p => { if (alive()) { $("#bzN1").textContent = fmt(d.a1 + (d.b1 - d.a1) * p); $("#bzN2").textContent = fmt(d.a2 + (d.b2 - d.a2) * p); } });
+  for (let k = 0; k < d.feed.length; k++) {
+    await wait(k ? 950 : 350); if (!alive()) return false;
+    bzFeed.insertAdjacentHTML("afterbegin", ntItem(d.feed[k])); if (lis[k]) lis[k].classList.add("on");
+  }
+  await wait(500); if (!alive()) return false;
+  $("#bzD1").textContent = "+" + fmt(d.b1 - d.a1); $("#bzD2").textContent = "+" + fmt(d.b2 - d.a2); $$(".dlt").forEach(x => x.classList.add("on"));
+  $("#bzDream").parentElement.classList.add("on");
+  return true;
+}
+async function busy(i) {
+  const id = ++bzRun, alive = () => id === bzRun; bzI = i;
+  bzTabs.forEach((t, k) => { t.setAttribute("aria-selected", k === i); t.style.setProperty("--pg", 0); });
+  const T = 13500, t0 = performance.now();
   const bar = () => { if (!alive()) return; const p = Math.min(1, (performance.now() - t0) / T); bzTabs[i].style.setProperty("--pg", p.toFixed(3)); if (p < 1) requestAnimationFrame(bar); };
   if (bzAuto) requestAnimationFrame(bar);
-  tween(5200, p => { if (alive()) { $("#bzN1").textContent = fmt(d.a1 + (d.b1 - d.a1) * p); $("#bzN2").textContent = fmt(d.a2 + (d.b2 - d.a2) * p); } });
-  for (let k = 0; k < d.feed.length; k++) {
-    await wait(k ? 1050 : 400); if (!alive()) return;
-    bzFeed.insertAdjacentHTML("afterbegin", item(d.feed[k])); if (lis[k]) lis[k].classList.add("on");
-  }
-  await wait(700); if (!alive()) return; $("#bzDream").parentElement.classList.add("on");
+  if (!await showBefore(i, id)) return;
+  await wait(RM ? 0 : 2400); if (!alive()) return;
+  if (!await showWith(i, id)) return;
   await wait(Math.max(0, T - (performance.now() - t0))); if (!alive()) return;
   if (bzAuto && bzVis) busy((i + 1) % BUSY.length);
 }
+segB.forEach(b => b.addEventListener("click", () => { bzAuto = false; bzTabs.forEach(x => x.style.setProperty("--pg", 0)); const id = ++bzRun; if (b.dataset.m === "1") { showBefore(bzI, id, true).then(ok => ok && alive2(id) && showWith(bzI, id)); } else showBefore(bzI, id); }));
+const alive2 = id => id === bzRun;
 bzTabs.forEach((t, k) => t.addEventListener("click", () => { bzAuto = false; bzTabs.forEach(x => x.style.setProperty("--pg", 0)); busy(k); }));
 new IntersectionObserver(es => { const was = bzVis; bzVis = es[0].isIntersecting; if (bzVis && !was) busy(bzI); if (!bzVis) bzRun++; }, { threshold: .35 }).observe($(".bzg"));
 
@@ -253,17 +279,32 @@ tags.forEach((t, n) => t.addEventListener("click", () => { crewTouched = true; c
 new IntersectionObserver(es => { const on = es[0].isIntersecting; clearInterval(crewAuto); if (on && !crewTouched && !RM) crewAuto = setInterval(() => showCrew((crewI + 1) % 4), 3800); }, { threshold: .4 }).observe($("#crew"));
 showCrew(0);
 
+/* ---------- the big reveal: words light up, the phone rises, rewinds to today, takes its place ---------- */
+const bws = $$(".bw"), pst = $(".pstage"), rwc = $("#rwc"), rwcT = $("#rwcT");
+let dx = 0, lastPb = -1;
+function measureBridge() { const r = pst.getBoundingClientRect(); dx = MOB() ? 0 : innerWidth / 2 - (r.left + r.width / 2); }
+function bridge(pb, vh) {
+  if (Math.abs(pb - lastPb) < .0005) return; lastPb = pb;
+  const lit = clamp(pb / .42, 0, 1) * bws.length;
+  bws.forEach((w, k) => w.classList.toggle("l", k < lit));
+  const bt = pb < .46 ? clamp(pb / .06, 0, 1) : 1 - clamp((pb - .46) / .12, 0, 1);
+  stage.style.setProperty("--bt", bt.toFixed(3)); stage.style.setProperty("--bs", clamp((pb - .38) / .1, 0, 1).toFixed(3));
+  const r = clamp((pb - .56) / .2, 0, 1), m = clamp((pb - .76) / .22, 0, 1), e = t => 1 - Math.pow(1 - t, 3);
+  pst.style.setProperty("--px", (dx * (1 - e(m))).toFixed(1) + "px");
+  pst.style.setProperty("--py", ((1 - e(r)) * vh * .95).toFixed(1) + "px");
+  rwc.classList.toggle("on", pb > .58 && pb < .9); rwc.classList.toggle("rew", pb >= .66);
+  rwcT.textContent = pb >= .66 ? "↺ Rewind. This is you today." : "This could be you";
+}
+
 /* ---------- one scroll handler, read then write ---------- */
 const hd = $("#hd"), bar = $("#bar"); let ticking = false, solid = null, barOn = null;
 function onScroll() {
   ticking = false;
   const y = scrollY, vh = innerHeight, sr = stage.getBoundingClientRect();
-  const p = clamp(-sr.top / (sr.height - vh), 0, 1);
-  stage.dataset.left = sr.bottom < vh * .6 ? 1 : "";
-  if (stage.dataset.left) { NT.lit = 1; NT.warm = 1; NT.focus = 20; }
-  setChapter(Math.min(5, Math.floor(p * 6)));
-  if (stage.dataset.left && cur === 5) { NT.lit = 1; NT.warm = 1; }
-  NT.cz = clamp(y / (vh * 9), 0, 1) * 7;
+  const run = -sr.top, B = vh * 1.6, total = sr.height - vh;
+  const pb = clamp(run / B, 0, 1), q = clamp((run - B) / (total - B), 0, 1);
+  bridge(pb, vh);
+  if (pb < 1) setChapter(pb < .66 ? 3 : 0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
   revealFrame(vh);
   const s = y > 40; if (s !== solid) { solid = s; hd.classList.toggle("solid", s); }
   const b = y > vh * .9; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
@@ -278,8 +319,7 @@ function sizePhone() {
 let lastW = innerWidth, rT = 0;
 addEventListener("resize", () => {
   clearTimeout(rT); rT = setTimeout(() => {
-    sizePhone();
-    if (night && Math.abs(innerWidth - lastW) > 2) { lastW = innerWidth; night.resize(); }
+    sizePhone(); measureBridge(); lastPb = -1;
     onScroll();
   }, 150);
 });
@@ -376,7 +416,26 @@ $("#emSend").addEventListener("click", async () => {
   }
 });
 
+/* ---------- local */
+/* ---------- local to the visitor: their state and city, from Vercel's edge (approximate, never stored) ---------- */
+const STATES = { AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware", DC: "Washington, D.C.", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming" };
+let GEO = null;
+function applyGeo() {
+  if (!GEO) return;
+  const st = STATES[GEO.region], city = GEO.city && GEO.city.length < 28 ? GEO.city : "";
+  if (!st) return;
+  $("#geoState").textContent = st;
+  $$(".geoStateName").forEach(e => e.textContent = st);
+  if (city) {
+    $$(".geoCity").forEach(e => e.textContent = city + (e.closest(".gloc") ? ", " + GEO.region : ""));
+    $("#fCity").placeholder = `${city}, ${GEO.region}`;
+    if (!dream) $("#fEyb").textContent = `Imagine next month in ${city}`;
+  }
+}
+fetch("/api/geo", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(g => { if (g && g.country === "US") { GEO = g; applyGeo(); } }).catch(() => { });
+
 /* ---------- start: what is on screen first, the rest when the browser is idle ---------- */
-sizePhone(); setType(T); onScroll();
+sizePhone(); setType(T);
+if (scrollY > 0) { measureBridge(); onScroll(); } else (window.requestIdleCallback || setTimeout)(() => { measureBridge(); onScroll(); }, { timeout: 1200 });
 
 window.__bs = 1;
