@@ -231,20 +231,34 @@ const alive2 = id => id === bzRun;
 bzTabs.forEach((t, k) => t.addEventListener("click", () => { bzAuto = false; bzTabs.forEach(x => x.style.setProperty("--pg", 0)); busy(k); }));
 new IntersectionObserver(es => { const was = bzVis; bzVis = es[0].isIntersecting; if (bzVis && !was) busy(bzI); if (!bzVis) bzRun++; }, { threshold: .35 }).observe($(".bzg"));
 
-/* ---------- the technical jobs gather into four simple plans ---------- */
-const berg = $(".berg"), chipsU = $$("#under span"), ugl = $$("#ugs .ugl");
-function gather() {
-  if (berg.classList.contains("grouped")) return;
+/* ---------- the technical jobs gather into four simple plans (and can be replayed) ---------- */
+const berg = $(".berg"), cloud = $("#under"), chipsU = $$("#under span"), ugl = $$("#ugs .ugl");
+const EASE = "cubic-bezier(.22,1,.36,1)";
+function flipChips(move, dur, stagger) {
   const first = chipsU.map(c => c.getBoundingClientRect());
-  chipsU.forEach(c => ugl[+c.dataset.g].appendChild(c));
-  berg.classList.add("grouped"); $("#ugLbl").textContent = "We take care of all of it";
+  move();
   if (RM) return;
   chipsU.forEach((c, k) => {
     const l = c.getBoundingClientRect(), f = first[k];
-    c.style.transition = "none"; c.style.transform = `translate(${f.left - l.left}px,${f.top - l.top}px) rotate(${(k * 37 % 13 - 6)}deg)`;
+    const sx = f.width / Math.max(1, l.width), sy = f.height / Math.max(1, l.height);
+    c.style.transition = "none"; c.style.transformOrigin = "0 0";
+    c.style.transform = `translate(${f.left - l.left}px,${f.top - l.top}px) scale(${sx.toFixed(3)},${sy.toFixed(3)})`;
   });
-  requestAnimationFrame(() => requestAnimationFrame(() => chipsU.forEach((c, k) => { c.style.transition = `transform 1.1s cubic-bezier(.22,1,.36,1) ${k * 35}ms`; c.style.transform = ""; })));
+  requestAnimationFrame(() => requestAnimationFrame(() => chipsU.forEach((c, k) => {
+    c.style.transition = `transform ${dur}ms ${EASE} ${k * stagger}ms`; c.style.transform = "";
+  })));
 }
+let gathered = false;
+function gather() {
+  if (gathered) return; gathered = true;
+  flipChips(() => { chipsU.forEach(c => ugl[+c.dataset.g].appendChild(c)); berg.classList.add("grouped"); $("#ugLbl").textContent = "We take care of all of it"; }, 1300, 45);
+  setTimeout(() => berg.classList.remove("busy"), 1300 + chipsU.length * 45);
+}
+function scatter() {
+  gathered = false;
+  flipChips(() => { chipsU.forEach(c => cloud.appendChild(c)); berg.classList.remove("grouped"); $("#ugLbl").textContent = "What it takes underneath"; }, 900, 20);
+}
+$("#ugReplay").addEventListener("click", () => { berg.classList.add("busy"); scatter(); setTimeout(gather, RM ? 0 : 1900); trackC("ReplayedPlans"); });
 new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); setTimeout(gather, RM ? 0 : 1800); }, { threshold: .55 }).observe(berg);
 
 /* ---------- grow with us: the service bar and the business grow together ---------- */
