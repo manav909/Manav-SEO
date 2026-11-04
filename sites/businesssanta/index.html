@@ -36,6 +36,9 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;background:var(--bg0);scroll-behavior:smooth}
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(60% 55% at 78% 28%,#1a3a8c 0,transparent 70%),radial-gradient(55% 50% at 18% 82%,#4a2a8e 0,transparent 70%),radial-gradient(38% 34% at 66% 86%,rgba(242,165,31,.32) 0,transparent 70%),#040716}
+html[data-t=dusk] body::before{background:radial-gradient(60% 55% at 78% 28%,#5a2a78 0,transparent 70%),radial-gradient(55% 50% at 18% 82%,#c24c78 0,transparent 70%),radial-gradient(38% 34% at 66% 86%,rgba(255,164,94,.45) 0,transparent 70%),#160b24}
+html[data-t=day] body::before{background:radial-gradient(60% 55% at 78% 28%,#c3dbff 0,transparent 70%),radial-gradient(55% 50% at 18% 82%,#ffd7aa 0,transparent 70%),radial-gradient(38% 34% at 66% 86%,rgba(255,199,71,.45) 0,transparent 70%),#fbf4e8}
 html.lenis,html.lenis body{height:auto}
 .lenis.lenis-smooth{scroll-behavior:auto!important}
 body{margin:0;background:transparent;color:var(--txt);font:400 17px/1.6 var(--b);overflow-x:hidden;overflow-x:clip;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
@@ -43,7 +46,7 @@ img{display:block;max-width:100%;height:auto}
 a{color:inherit}
 button{font:inherit;cursor:pointer;color:inherit}
 :focus-visible{outline:3px solid var(--y);outline-offset:3px;border-radius:10px}
-#night{position:fixed;left:0;top:0;width:100%;height:100vh;height:100lvh;z-index:0;display:block;background:var(--bg0);opacity:0;transition:opacity 1.2s}
+#night{position:fixed;left:0;top:0;width:100%;height:100vh;height:100lvh;z-index:0;display:block;opacity:0;transition:opacity 1.6s}
 #night.on{opacity:1}
 .vig{position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 90% at 60% 55%,transparent 45%,rgba(var(--ov),.7) 100%)}
 .grain{position:fixed;inset:-50%;z-index:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
@@ -68,6 +71,7 @@ main,.ft{position:relative;z-index:1}
 .split.in .w>span{transform:none}
 section{position:relative}
 section.blk{padding:clamp(80px,10vw,140px) 0}
+#worth,#why,#how,#check,#reviews,#faq,#dream{content-visibility:auto;contain-intrinsic-size:auto 1000px}
 .dk{background:linear-gradient(180deg,rgba(var(--ov),.7),rgba(var(--ov),.9) 18%,rgba(var(--ov),.9) 82%,rgba(var(--ov),.7))}
 .dk2{background:radial-gradient(800px 420px at 50% 0%,rgba(253,185,19,.12),transparent 70%),rgba(var(--ov),.8)}
 .lt,.lt2{--yt:#9a6a00;--gl:#fff;--gl2:#fff;--gb:#d7dbe3;--txt:#0f172a;--sub:#4b5563;--mut:#8b94a5;--card:#fff;--cline:#e6e8ec;--sh:0 1px 2px rgba(15,23,42,.05),0 14px 40px rgba(15,23,42,.08);--sh2:0 30px 80px rgba(15,23,42,.16);background:#f5f5f7;color:var(--txt)}
@@ -90,7 +94,7 @@ section.blk{padding:clamp(80px,10vw,140px) 0}
 
 /* hero */
 .hero{min-height:100vh;min-height:100svh;display:flex;align-items:center;padding:96px 0 40px}
-.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(var(--ov),.92) 0%,rgba(var(--ov),.72) 40%,rgba(var(--ov),.1) 72%,transparent),linear-gradient(0deg,rgba(var(--ov),.85),transparent 30%);pointer-events:none}
+.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(var(--ov),.82) 0%,rgba(var(--ov),.55) 38%,rgba(var(--ov),0) 64%,transparent),linear-gradient(0deg,rgba(var(--ov),.85),transparent 30%);pointer-events:none}
 .hero .wrap{position:relative;width:100%;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);gap:clamp(24px,4vw,60px);align-items:center}
 .pill{display:inline-flex;align-items:center;gap:9px;padding:7px 15px 7px 9px;border-radius:999px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb);font:500 .86rem var(--b);color:var(--sub2)}
 .pill .flag{width:22px;height:12px;border-radius:2px}
@@ -293,6 +297,109 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .ibn img{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none}
 .ibn div{flex:1;min-width:0}.ibn b{display:block;font:600 .8rem var(--b);color:#111}.ibn span{display:block;font-size:.74rem;color:#333;line-height:1.3}
 .ibn small{align-self:flex-start;color:#777;font-size:.66rem}
+/* busy preview */
+.busy{background:linear-gradient(180deg,rgba(var(--ov),.55),rgba(var(--ov),.82) 22%,rgba(var(--ov),.82) 80%,rgba(var(--ov),.6))}
+.bzh{text-align:center;max-width:760px;margin:0 auto}.bzh .lead{margin:0 auto}
+.bzt{display:flex;justify-content:center;gap:8px;margin:34px auto 0;flex-wrap:wrap}
+.bzt button{position:relative;overflow:hidden;border:0;border-radius:999px;padding:12px 22px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb);color:var(--sub2);font:600 1rem var(--b);transition:background .4s,color .4s}
+.bzt button[aria-selected="true"]{background:var(--inv);color:var(--invt)}
+.bzt button i{position:absolute;left:0;bottom:0;height:3px;width:100%;background:var(--y);transform:scaleX(0);transform-origin:0 50%}
+.bzt button[aria-selected="true"] i{transform:scaleX(var(--pg,0))}
+.bzt button span{position:relative}
+.bzg{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:center;margin-top:44px}
+.bzn{margin-bottom:30px}
+.bzn b{display:block;font:800 clamp(3.6rem,7vw,6.2rem)/.95 var(--h);letter-spacing:-.05em;background:linear-gradient(180deg,#fff1c4,#FDB913 70%,#e69500);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+html[data-t=day] .bzn b{background:linear-gradient(180deg,#f2b01e,#a86b00);-webkit-background-clip:text;background-clip:text}
+.bzn span{display:block;margin-top:8px;font:600 1.05rem var(--b);color:var(--sub2)}
+.bzline{margin:0;font:700 clamp(1.3rem,2.2vw,1.75rem)/1.25 var(--h);letter-spacing:-.025em;color:var(--txt);max-width:18ch;transition:opacity .5s,transform .6s var(--ease)}
+.bzs.sw .bzline,.bzs.sw .bzn{opacity:0;transform:translateY(8px)}
+.bzn{transition:opacity .5s,transform .6s var(--ease)}
+.bzp .dev{width:300px;height:620px}
+.lock{background:radial-gradient(120% 70% at 20% 0%,var(--w1,#f6a96b),transparent 60%),radial-gradient(100% 70% at 100% 100%,var(--w2,#3b4fa8),transparent 60%),linear-gradient(180deg,var(--w3,#24285a),var(--w4,#5b3a6e));transition:background .8s;color:#fff}
+.sbt.light{color:#fff}.sbt.light .sic i,.sbt.light .sic b::before{background:#fff}.sbt.light .sic b{border-color:rgba(255,255,255,.6)}
+.lkd{text-align:center;margin-top:26px;font:600 .9rem var(--b);color:rgba(255,255,255,.88)}
+.lkt{text-align:center;font:700 4.6rem/1 -apple-system,var(--h);letter-spacing:-.03em;color:rgba(255,255,255,.95);margin:2px 0 16px}
+.lkn{display:flex;flex-direction:column;gap:8px;padding:0 10px}
+.nt{display:flex;gap:10px;align-items:center;padding:10px 12px;border-radius:20px;background:rgba(245,245,247,.74);backdrop-filter:blur(16px) saturate(180%);-webkit-backdrop-filter:blur(16px) saturate(180%);color:#111;animation:ntin .8s var(--ease) both;transform-origin:50% 0}
+@keyframes ntin{from{opacity:0;transform:translateY(-16px) scale(.96)}to{opacity:1;transform:none}}
+.nt i{width:34px;height:34px;border-radius:9px;flex:none;display:grid;place-items:center;color:#fff;font:700 .9rem var(--h);font-style:normal}
+.nt div{flex:1;min-width:0}.nt b{display:block;font:600 .8rem var(--b)}.nt span{display:block;font-size:.76rem;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nt small{align-self:flex-start;font-size:.64rem;color:#666}
+.bzd small{display:block;font:700 .74rem var(--b);letter-spacing:.09em;text-transform:uppercase;color:var(--yt);margin-bottom:14px}
+.bzd ul{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.bzd li{display:flex;gap:12px;align-items:center;font:600 1.05rem var(--b);color:var(--mut);transition:color .5s}
+.bzd li::before{content:"";flex:none;width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--gb);transition:background .5s,box-shadow .5s}
+.bzd li.on{color:var(--txt)}
+.bzd li.on::before{box-shadow:none;background:var(--y) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/14px no-repeat}
+.bzdream{margin-top:28px;padding:18px 20px;border-radius:20px;background:linear-gradient(135deg,rgba(253,185,19,.18),rgba(253,185,19,.05));box-shadow:inset 0 0 0 1px rgba(253,185,19,.35);opacity:0;transform:translateY(10px);transition:opacity .8s var(--ease),transform .9s var(--ease)}
+.bzdream.on{opacity:1;transform:none}
+.bzdream small{margin-bottom:4px}
+.bzdream b{display:block;font:800 1.35rem/1.25 var(--h);letter-spacing:-.02em;color:var(--txt)}
+/* how it works path */
+.howh{text-align:center}
+.path{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(18px,3vw,40px);margin-top:54px}
+.pline{position:absolute;left:8%;right:8%;top:27px;width:84%;height:20px;overflow:visible}
+.pline path{fill:none;stroke:var(--y);stroke-width:3;stroke-linecap:round;stroke-dasharray:1000;stroke-dashoffset:1000;transition:stroke-dashoffset 2.2s var(--ease) .3s}
+.path.in .pline path{stroke-dashoffset:0}
+.pst{position:relative;text-align:center}
+.pn{position:relative;display:grid;place-items:center;width:58px;height:58px;margin:0 auto 22px;border-radius:50%;background:#0b0d16;color:var(--y);font:800 1.4rem var(--h);box-shadow:0 0 0 8px #f5f5f7,0 14px 30px rgba(15,23,42,.25);transform:scale(.8);opacity:0;transition:transform .8s var(--ease),opacity .6s}
+.path.in .pn{transform:none;opacity:1}
+.path.in .pst:nth-child(3) .pn{transition-delay:.9s}.path.in .pst:nth-child(4) .pn{transition-delay:1.7s}
+.path.in .pst:nth-child(2) .pn{transition-delay:.2s}
+.pv{height:170px;margin:0 auto 22px;max-width:300px;border-radius:24px;background:#fff;box-shadow:var(--sh);display:grid;place-items:center;padding:18px}
+.pvf{width:100%;display:grid;gap:8px}
+.pvf i{display:block;height:12px;border-radius:6px;background:#eef0f3}
+.pvf b{justify-self:start;margin-top:4px;padding:8px 18px;border-radius:999px;background:#25d366;color:#062a15;font:700 .85rem var(--b)}
+.pvr{width:100%;text-align:left}
+.pvr small{display:block;font:700 .7rem var(--b);letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin-bottom:8px}
+.pvr div{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-top:1px solid #eef0f3;font:600 .88rem var(--b)}
+.pvr em{font-style:normal;font:700 .7rem var(--b);padding:4px 9px;border-radius:999px}
+.pvr .bad{background:var(--badb);color:#dc2626}.pvr .mid{background:#fef3c7;color:#92400e}
+.pvd{text-align:center}.pvd b{display:block;font:800 1.15rem var(--h);margin-bottom:14px}
+.pvd span{display:flex;gap:8px;justify-content:center}.pvd i{font-style:normal;padding:10px 16px;border-radius:999px;font:700 .85rem var(--b);background:#f1f5f9;color:#334155}.pvd i:first-child{background:var(--y);color:#111}
+.pst h3{font:800 1.35rem/1.2 var(--h);letter-spacing:-.02em;margin:0 0 8px}
+.pst p{margin:0 auto;color:var(--sub);max-width:34ch}
+
+/* grow with us */
+.grow{background:linear-gradient(180deg,rgba(var(--ov),.6),rgba(var(--ov),.86) 20%,rgba(var(--ov),.86) 85%,rgba(var(--ov),.6))}
+.grh{text-align:center;max-width:760px;margin:0 auto}.grh .lead{margin:0 auto}
+.grg{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.65fr);gap:clamp(20px,4vw,56px);align-items:center;margin-top:36px}
+.grstage{position:relative;border-radius:32px;background:radial-gradient(70% 65% at 50% 30%,#fffaf0,#f1e5cf 62%,#e3d3b7);box-shadow:inset 0 -60px 80px -40px rgba(120,80,20,.18),0 40px 90px rgba(0,0,0,.35);overflow:hidden}
+.grstage::after{content:"";position:absolute;left:0;right:0;bottom:0;height:16%;background:linear-gradient(180deg,rgba(150,110,50,.0),rgba(150,110,50,.12));pointer-events:none}
+.grstage svg{display:block;width:100%;height:auto}
+.gs{opacity:0;transform:translateY(18px) scale(.94);transform-box:view-box;transform-origin:50% 92%;transition:opacity .7s var(--ease),transform 1s var(--ease)}
+.gs.on{opacity:1;transform:none}
+.walker>g{animation:sway 3.4s ease-in-out infinite;animation-delay:calc(var(--d) * -1)}
+@keyframes sway{50%{transform:translateY(-4px)}}
+.bob{animation:bob 4s ease-in-out infinite}
+@keyframes bob{50%{transform:translateY(-8px)}}
+.drive{animation:drive 6s var(--ease) infinite alternate}
+@keyframes drive{from{transform:translateX(-14px)}to{transform:translateX(10px)}}
+.spk{opacity:0;transform-box:view-box;transform-origin:400px 250px}
+#grSpark.go .spk{animation:spk 1s var(--ease)}
+@keyframes spk{0%{opacity:1;transform:rotate(var(--a)) translateX(0)}100%{opacity:0;transform:rotate(var(--a)) translateX(190px)}}
+.grside small{display:block;font:700 .78rem var(--b);letter-spacing:.09em;text-transform:uppercase;color:var(--yt)}
+.grbig{display:block;margin:10px 0 26px;font:800 clamp(1.7rem,3vw,2.6rem)/1.1 var(--h);letter-spacing:-.035em;color:var(--txt);transition:opacity .35s,transform .5s var(--ease)}
+.grside.sw .grbig{opacity:0;transform:translateY(8px)}
+.grmeter b{display:block;font:800 clamp(3.4rem,6vw,5.4rem)/.95 var(--h);letter-spacing:-.05em;background:linear-gradient(180deg,#fff1c4,#FDB913 70%,#e69500);-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums}
+html[data-t=day] .grmeter b{background:linear-gradient(180deg,#f2b01e,#a86b00);-webkit-background-clip:text;background-clip:text}
+.grmeter span{display:block;margin-top:6px;font:600 1rem var(--b);color:var(--sub2)}
+.grbar{margin-top:34px}
+.grtrack{position:relative;height:14px;border-radius:999px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb);margin:0 calc(100% / 12);cursor:pointer;touch-action:none}
+.grtrack i{position:absolute;left:0;top:0;bottom:0;width:calc(var(--g,0) * 100%);border-radius:999px;background:linear-gradient(90deg,#ffd970,#FDB913,#f59e0b);box-shadow:0 0 24px rgba(253,185,19,.45)}
+.grknob{position:absolute;top:50%;left:calc(var(--g,0) * 100%);width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:#fff;box-shadow:0 0 0 5px rgba(253,185,19,.45),0 10px 24px rgba(0,0,0,.35);cursor:grab;outline:0}
+.grknob:focus-visible{box-shadow:0 0 0 6px rgba(253,185,19,.8),0 10px 24px rgba(0,0,0,.35)}
+.grtrack.anim i,.grtrack.anim .grknob{transition:width .9s var(--ease),left .9s var(--ease)}
+.grsteps{list-style:none;margin:18px 0 0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.grsteps button{width:100%;height:100%;border:0;background:none;padding:10px 6px;border-radius:16px;text-align:center;color:var(--mut);transition:background .4s,color .4s}
+.grsteps button:hover{background:var(--gl)}
+.grsteps em{display:grid;place-items:center;width:26px;height:26px;margin:0 auto 8px;border-radius:50%;font:800 .8rem var(--h);font-style:normal;box-shadow:inset 0 0 0 2px var(--gb);transition:background .4s,color .4s,box-shadow .4s}
+.grsteps b{display:block;font:700 .92rem/1.25 var(--h);letter-spacing:-.01em}
+.grsteps span{display:block;margin-top:4px;font-size:.82rem;line-height:1.3}
+.grsteps li.on button{color:var(--txt)}
+.grsteps li.on em{background:var(--y);color:#111;box-shadow:none}
+.grsteps li.on span{color:var(--yt)}
+
 /* team stage */
 .crew{background:radial-gradient(1000px 560px at 50% 70%,rgba(253,185,19,.13),transparent 70%),linear-gradient(180deg,rgba(var(--ov),.9),rgba(var(--ov),.97) 30%)}
 .crewhead{text-align:center;max-width:780px;margin:0 auto}
@@ -302,7 +409,7 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .crewstage::after{content:"";position:absolute;left:6%;right:6%;bottom:2%;height:30%;background:radial-gradient(closest-side,rgba(253,185,19,.22),transparent);pointer-events:none}
 .crewimg{position:relative;z-index:1;width:100%;height:auto}
 .tag{position:absolute;z-index:3;left:var(--x);top:var(--y);transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;padding:8px 14px 8px 9px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#0f172a;font:700 .88rem var(--b);box-shadow:0 10px 30px rgba(0,0,0,.28);transition:transform .6s var(--ease),background .4s,color .4s}
-.tag i{width:10px;height:10px;border-radius:50%;background:var(--y);animation:ping 2.6s var(--ease) infinite}
+.tag i{display:block;flex:none;width:9px;height:9px;border-radius:50%;background:var(--y);box-shadow:0 0 0 3px rgba(253,185,19,.28)}
 .tag:hover{transform:translate(-50%,-50%) scale(1.06)}
 .tag.on{background:#0f172a;color:#fff}
 @keyframes ping{0%{box-shadow:0 0 0 0 rgba(253,185,19,.6)}70%,100%{box-shadow:0 0 0 11px rgba(253,185,19,0)}}
@@ -312,6 +419,28 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .tagcard em{font-style:normal;font:700 .72rem var(--b);letter-spacing:.06em;text-transform:uppercase;color:var(--yt)}
 .tagcard b{display:block;font:800 1.3rem/1.2 var(--h);letter-spacing:-.02em}
 .tagcard span{display:block;color:var(--psub);font-size:.92rem;line-height:1.4;margin-top:2px}
+/* team curtain reveal */
+.crew{padding-bottom:clamp(80px,10vw,140px)}
+.reveal{position:relative;height:280vh;height:280svh;--rise:1;--open:1}
+.rvs{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
+.rvs .bigw{top:auto;bottom:22%;opacity:calc(var(--open) * .9)}
+.rvhead{position:absolute;left:0;right:0;top:clamp(84px,11vh,120px);text-align:center;padding:0 20px;opacity:var(--open);transform:translateY(calc((1 - var(--open)) * 24px))}
+.rvhead .lead{margin:0 auto;max-width:56ch}
+.cur{position:absolute;top:0;bottom:0;width:50.4%;overflow:hidden;z-index:2;background:radial-gradient(140% 80% at 50% 100%,rgba(253,185,19,.18),transparent 55%),repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,transparent 1px 22px,rgba(0,0,0,.18) 22px 40px,transparent 40px 64px),linear-gradient(180deg,#0b1030,#060818)}
+.cur.l{left:0;transform:translate3d(calc(var(--open) * -101%),0,0);box-shadow:inset -2px 0 0 rgba(253,185,19,.55)}
+.cur.r{right:0;transform:translate3d(calc(var(--open) * 101%),0,0);box-shadow:inset 2px 0 0 rgba(253,185,19,.55)}
+.ct{position:absolute;top:20%;width:100vw;text-align:center;font:800 clamp(2.4rem,6.4vw,5.8rem)/1.02 var(--h);letter-spacing:-.045em;color:#fff;opacity:calc(1 - var(--open) * 1.6)}
+.ct em{font-style:normal;background:linear-gradient(180deg,#ffe08a,#FDB913);-webkit-background-clip:text;background-clip:text;color:transparent}
+.cur.l .ct{left:0}.cur.r .ct{right:0}
+.rvs .crewstage{z-index:3;width:min(1120px,calc((100svh - 300px) * 1.49),100vw);margin:0 auto;transform:translate3d(0,calc((1 - var(--rise)) * 58%),0)}
+.psst{position:absolute;z-index:4;left:50%;top:-14px;transform:translate(-50%,-100%);padding:10px 16px;border-radius:18px 18px 18px 4px;background:#fff;color:#0f172a;font:700 .95rem var(--b);white-space:nowrap;box-shadow:0 14px 30px rgba(0,0,0,.3);opacity:calc(1 - var(--rise) * 2.2)}
+.rvs .tag,.rvs .tagcard{opacity:calc(var(--open) * 1.4 - .2)}
+.reveal.opened .cur{visibility:hidden}
+html:not(.js) .reveal{height:auto}
+html:not(.js) .rvs{position:relative;height:auto;padding-top:120px}
+html:not(.js) .rvhead{position:relative;top:auto}
+html:not(.js) .cur,html:not(.js) .psst{display:none}
+
 /* founder */
 .fnd{position:relative;margin-top:150px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);align-items:end;border-radius:36px;background:radial-gradient(120% 120% at 85% 100%,#ffd35a,#FDB913 45%,#eea300);color:#0f172a;min-height:440px;box-shadow:0 50px 120px rgba(0,0,0,.35)}
 .fndw{position:absolute;left:0;right:0;bottom:0;height:100%;overflow:hidden;border-radius:36px;display:flex;align-items:flex-end;justify-content:center;font:900 clamp(6rem,18vw,16rem)/.74 var(--h);letter-spacing:-.06em;color:rgba(15,23,42,.08);pointer-events:none;user-select:none;white-space:nowrap}
@@ -656,14 +785,25 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   .stick::before{background:linear-gradient(180deg,rgba(var(--ov),.3),rgba(var(--ov),.5) 45%,rgba(var(--ov),.94) 60%)}
   #stage .wrap{grid-template-columns:1fr;grid-template-rows:auto 1fr;align-content:start;padding-top:70px;gap:4px}
   .pstage{order:-1}
-  .tag{font-size:.74rem;padding:6px 10px 6px 7px;gap:6px}.tag i{width:8px;height:8px}
-  .tagcard{position:relative;left:auto;bottom:auto;margin:-6px auto 0;max-width:none}
+  .tag{font-size:.74rem;padding:6px 10px 6px 7px;gap:6px}.tag i{width:7px;height:7px}
+  .tagcard{position:absolute;left:8px;right:8px;bottom:8px;max-width:none;padding:12px 14px;gap:10px}.tagcard img{width:44px;height:44px}.tagcard b{font-size:1.05rem}.tagcard span{font-size:.82rem}
+  .rvs .crewstage{width:100vw;margin-bottom:96px}
+  .rvhead .lead{font-size:.98rem}
   .bigw{top:4%}
   .fnd{grid-template-columns:1fr;margin-top:120px;min-height:0}
   .fndi{margin:-10px auto 0;max-width:78%;order:2}
   .fndt{padding:26px 22px 8px}
   .ftg{grid-template-columns:1fr 1fr;gap:28px 18px;padding-top:40px}.ftb{grid-column:1/3}
   .ftword{margin-top:30px}
+  .bzg{grid-template-columns:1fr;gap:26px;margin-top:30px}
+  .bzp{order:-1;height:calc(620px * .82);display:flex;justify-content:center}.bzp .dev{transform:scale(.82);transform-origin:50% 0}
+  .bzs{text-align:center}.bzline{margin:0 auto}.bzn{margin-bottom:18px}
+  .bzt{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none;margin-left:-18px;margin-right:-18px;padding:0 18px}.bzt::-webkit-scrollbar{display:none}.bzt button{flex:none;padding:10px 16px;font-size:.92rem}
+  .path{grid-template-columns:1fr;gap:42px}.pline{display:none}
+  .grg{grid-template-columns:1fr;gap:18px}.grside{text-align:center}.grbig{margin:8px 0 14px}
+  .grtrack{margin:0 12px}
+  .grsteps{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;gap:6px;margin-left:-18px;margin-right:-18px;padding:0 18px}.grsteps::-webkit-scrollbar{display:none}
+  .grsteps li{flex:0 0 46%;scroll-snap-align:start}
   .ctxt{display:none}
   .chs{height:auto;min-height:42vh}
   .ch{justify-content:flex-start}
@@ -698,11 +838,11 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 </head>
 <body>
-<canvas id="night" aria-hidden="true"></canvas><div class="vig" aria-hidden="true"></div><div class="grain" aria-hidden="true"></div>
+<canvas id="night" aria-hidden="true"></canvas><div class="vig" aria-hidden="true"></div>
 
 <header class="hd" id="hd"><div class="wrap">
   <a class="brand" href="/" aria-label="Business Santa home"><img src="/assets/img/logo-96.webp" alt="" width="40" height="40"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a>
-  <nav class="nav"><a href="#stage" data-jump>How it works</a><a href="#stories" data-jump>Success stories</a><a href="#team" data-jump>Our team</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=nav" data-hand="1">Pricing</a></nav>
+  <nav class="nav"><a href="#stage" data-jump>How it works</a><a href="#stories" data-jump>See it working</a><a href="#team" data-jump>Our team</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=nav" data-hand="1">Pricing</a></nav>
   <a class="btn y sm" href="#check" data-go="check" aria-label="Get my free check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Get my free check</span></a>
 </div></header>
 
@@ -765,75 +905,49 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   </div></div>
 </section>
 
-<section id="stories" class="dk see" aria-label="What can change for a local business">
-  <div class="spin">
-    <div class="wrap shead">
-      <span class="eyb">Picture your business here</span>
-      <h2 class="h2">Every business starts with <em>a dream</em></h2>
-      <p class="lead">Four kinds of local business, and what can change when the right people finally find them.</p>
+<section id="stories" class="blk busy see" aria-label="What busy looks like for a local business">
+  <div class="wrap">
+    <div class="bzh"><span class="eyb rv">See it working</span><h2 class="h2 split">This is what busy looks like</h2><p class="lead rv">Pick a business. Watch an ordinary Tuesday, once the right people can find it.</p></div>
+    <div class="bzt rv" role="tablist" id="bzt">
+      <button type="button" role="tab" data-b="0" aria-selected="true"><span>Boutique</span><i></i></button>
+      <button type="button" role="tab" data-b="1"><span>Plumber</span><i></i></button>
+      <button type="button" role="tab" data-b="2"><span>Bakery</span><i></i></button>
+      <button type="button" role="tab" data-b="3"><span>Dental office</span><i></i></button>
     </div>
-    <div class="strack" id="strack">
-      <article class="sto" data-k="shop">
-        <div class="scn"><div class="s-shop"><div class="mph"><div class="mscr"><div class="mbar"><b>Willow and Thread</b><span>Orders</span></div><div class="kpi"><small>Orders today</small><b class="cnt" data-a="2" data-b="46">2</b></div><div class="feed"></div></div></div><div class="toast"><i style="background:#fef3c7;color:#b45309">!</i><div>Almost sold out<small>Linen wrap dress, 2 left</small></div></div></div></div>
-        <div class="stx"><span class="snum">01 &middot; Boutique</span>
-          <div class="bl"><small>Why Elena opened it</small><p>Elena wanted every woman in her town to find clothes that make her feel beautiful.</p></div>
-          <div class="bl"><small>What held her back</small><p>A gorgeous online store nobody could find. Plenty of likes on Instagram, almost no sales.</p></div>
-          <div class="bl"><small>What we did</small><ul class="did"><li>Store pages Google can read</li><li>Product pages in shoppers' words</li><li>Shopify listings fixed</li><li>Google Maps listing</li><li>Reviews flowing in</li></ul></div>
-          <div class="bl now"><small>Now</small><p>Orders coming in faster than she can pack them. She hired two people, and finally has time to design again.</p></div>
-          <div class="bl dreamc"><small>The dream that came true</small><p>She just signed the lease on her second store.</p></div></div>
-      </article>
-      <article class="sto" data-k="plum">
-        <div class="scn"><div class="s-cal"><div class="calh"><b>Reyes and Son &middot; this week</b><span class="booked">Booked out</span></div><div class="cal"><div class="d"><small>Mon</small></div><div class="d"><small>Tue</small></div><div class="d"><small>Wed</small></div><div class="d"><small>Thu</small></div><div class="d"><small>Fri</small></div></div></div></div>
-        <div class="stx"><span class="snum">02 &middot; Family plumber</span>
-          <div class="bl"><small>Why Marco opened it</small><p>Marco took over his father's business and promised to keep the family name proud.</p></div>
-          <div class="bl"><small>What held him back</small><p>Honest work and fair prices, but the phone stayed quiet while bigger names took every search.</p></div>
-          <div class="bl"><small>What we did</small><ul class="did"><li>Website fixed and faster</li><li>A page for every town he serves</li><li>Google Maps listing</li><li>Review requests after every job</li><li>Named in ChatGPT answers</li></ul></div>
-          <div class="bl now"><small>Now</small><p>Booked out two weeks ahead. He took his first Saturday off in two years.</p></div>
-          <div class="bl dreamc"><small>The dream that came true</small><p>He is putting his kids through college with the family business.</p></div></div>
-      </article>
-      <article class="sto" data-k="bake">
-        <div class="scn"><div class="s-bake"><div class="mapcard"><div class="gmap"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><rect width="300" height="110" fill="#e8efe3"/><path d="M0 70h300M120 0v110M0 28h300M230 0v110" stroke="#fff" stroke-width="9"/><path d="M0 100L300 40" stroke="#ffd27a" stroke-width="10"/></svg><i class="mp"></i></div><div class="lst"><b>Rosa's Corner Bakery<span class="sold">Sold out by 11 AM</span></b><div class="st">★★★★★ 4.9 <span>(312 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Popular times: busy</span></div></div></div><div class="aib"><small><i></i>Ask AI: best croissants near me?</small><p>Locals love <b>Rosa's Corner Bakery</b>. Get there early, they sell out.</p></div></div></div>
-        <div class="stx"><span class="snum">03 &middot; Neighborhood bakery</span>
-          <div class="bl"><small>Why Rosa opened it</small><p>Rosa bakes her grandmother's recipes at 4 AM, every single day.</p></div>
-          <div class="bl"><small>What held her back</small><p>People two streets away had no idea she existed.</p></div>
-          <div class="bl"><small>What we did</small><ul class="did"><li>Menu pages people can find</li><li>Maps photos and hours</li><li>Recommended by AI assistants</li><li>Listed on local directories</li><li>Plain-English monthly report</li></ul></div>
-          <div class="bl now"><small>Now</small><p>Sold out by 11 AM most days, and a line out the door on Saturdays.</p></div>
-          <div class="bl dreamc"><small>The dream that came true</small><p>She opened a second shop across town, with Grandma's photo by the register.</p></div></div>
-      </article>
-      <article class="sto" data-k="dent">
-        <div class="scn"><div class="s-dent"><div class="card"><div class="kpi"><small>New patients this month</small><b class="cnt" data-a="4" data-b="29">4</b></div><svg viewBox="0 0 320 110" class="ch2"><defs><linearGradient id="dg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2563eb" stop-opacity=".25"/><stop offset="1" stop-color="#2563eb" stop-opacity="0"/></linearGradient></defs><path class="gl" d="M0 95 H320 M0 55 H320 M0 15 H320"/><path class="ar" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10 V110 H0Z"/><path class="ln" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10"/></svg></div>
-          <div class="reqs"><div><b>New patient</b> &middot; Cleaning &middot; Mon 9 AM</div><div><b>New patient</b> &middot; Kids checkup &middot; Tue 4 PM</div><div><b>New patient</b> &middot; Whitening &middot; Thu 11 AM</div></div></div></div>
-        <div class="stx"><span class="snum">04 &middot; Family dental practice</span>
-          <div class="bl"><small>Why Dr. Kim opened it</small><p>Dr. Kim opened her practice to be the dentist families actually trust.</p></div>
-          <div class="bl"><small>What held her back</small><p>New patients kept going to big chains with bigger ad budgets.</p></div>
-          <div class="bl"><small>What we did</small><ul class="did"><li>Trust pages with real reviews</li><li>Booking that works on phones</li><li>A fast, secure website</li><li>Google and Maps for every service</li><li>Found in AI answers</li></ul></div>
-          <div class="bl now"><small>Now</small><p>New patient requests every single day. She knows half of them by name now.</p></div>
-          <div class="bl dreamc"><small>The dream that came true</small><p>She hired a second dentist and took her family on their first real vacation.</p></div></div>
-      </article>
-      <article class="sto next"><div class="nx"><span class="eyb">Story 05</span><h3>Your business could be the next one</h3><p>Tell us why you started. We will help the right people find you.</p><a class="btn y" href="#check" data-go="check">Get my free check</a></div></article>
+    <div class="bzg rv">
+      <div class="bzs" id="bzs">
+        <div class="bzn"><b id="bzN1">0</b><span id="bzL1">orders today</span></div>
+        <div class="bzn"><b id="bzN2">0</b><span id="bzL2">5-star reviews this month</span></div>
+        <p class="bzline" id="bzLine">Orders coming in faster than they can pack them.</p>
+      </div>
+      <div class="bzp" aria-hidden="true"><div class="dev"><div class="scr lock" id="bzLock">
+        <div class="sbt light"><span>9:41</span><span class="sic"><i></i><i></i><i></i><i></i><b></b></span></div>
+        <div class="lkd" id="bzDay">Tuesday, November 10</div><div class="lkt">9:41</div>
+        <div class="lkn" id="bzFeed"></div>
+      </div></div></div>
+      <div class="bzd">
+        <small>What we did</small>
+        <ul id="bzDid"></ul>
+        <div class="bzdream"><small>What it made possible</small><b id="bzDream">A second store across town.</b></div>
+      </div>
     </div>
   </div>
 </section>
 
-<section class="blk dk see" id="get">
+<section class="blk grow see" id="grow">
   <div class="wrap">
-    <span class="eyb rv">Picture this</span>
-    <h2 class="h2 split"><span class="w"><span style="--i:0">This</span></span> <span class="w"><span style="--i:1">is</span></span> <span class="w"><span style="--i:2">what</span></span> <span class="w"><span style="--i:3">it</span></span> <span class="w"><span style="--i:4">looks</span></span> <span class="w"><span style="--i:5">like</span></span> <span class="w"><span style="--i:6">when</span></span> <span class="w"><span style="--i:7">it</span></span> <span class="w"><span style="--i:8">works</span></span></h2>
-    <p class="lead rv">Your business, found by the people who are already looking for it. No tech words, no homework. Here is what changes.</p>
-    <div class="bento">
-      <div class="tile a rv"><h3>Show up on Google</h3><p>When people search for what you sell, you're on the first screen, not page 3.</p>
-        <div class="mock"><div class="gbar"><svg viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="qtxt"></span></div><div id="bResults"></div></div></div>
-      <div class="tile b rv"><h3>Show up on the map</h3><p>Your listing on Google Maps, with the right hours, photos and reviews.</p>
-        <div class="mock" style="padding:0;overflow:hidden"><div class="gmap" style="margin:0;border-radius:0"><svg viewBox="0 0 400 150" preserveAspectRatio="none"><rect width="400" height="150" fill="#e6efe0"/><path d="M0 90h400M150 0v150M0 38h400M290 0v150" stroke="#fff" stroke-width="11"/><path d="M0 130L400 60" stroke="#ffd27a" stroke-width="13"/><rect x="26" y="50" width="100" height="28" fill="#cfe3c4"/><rect x="310" y="100" width="70" height="40" fill="#cfe3c4"/></svg><i class="mp"></i></div>
-          <div class="lst"><b class="bName">Your Plumbing Co.</b><div class="st">★★★★★ 4.9 <span>(86 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Closes 8 PM</span></div><div class="acts2"><span>Call</span><span>Directions</span><span>Website</span></div></div></div></div>
-      <div class="tile c rv"><h3>Get recommended by AI</h3><p>When someone asks ChatGPT or Google's AI for a good business nearby, it names you.</p>
-        <div class="mock aiw"><div class="q" id="bAiQ"></div><div class="a"><i></i><div id="bAiA"></div></div></div></div>
-      <div class="tile d rv"><h3>Your phone starts ringing</h3><p>That's the whole point: more calls, bookings and people walking in.</p>
-        <div class="lock"><div class="tm">9:41</div>
-          <div class="ntf"><i style="background:#34c759">✆</i><div><b>Incoming call</b><span>New customer, from your Google listing</span></div></div>
-          <div class="ntf"><i style="background:#1a73e8">▦</i><div><b>New booking request</b><span id="bBook">Tomorrow, 10:00 AM</span></div></div>
-          <div class="ntf"><i style="background:#f59e0b">★</i><div><b>New 5-star review</b><span>"Fast, friendly and fair. Found them on Google."</span></div></div>
-        </div></div>
+    <div class="grh"><span class="eyb rv">Grow with us</span><h2 class="h2 split">Your business grows as we work</h2><p class="lead rv">Every step we take shows up in your business. Drag the bar and watch it grow.</p></div>
+    <div class="grg rv">
+      <div class="grstage" aria-hidden="true"><svg id="grSvg" viewBox="0 0 800 440" role="presentation"></svg></div>
+      <div class="grside" aria-live="polite">
+        <small id="grStep">Where you start</small>
+        <b class="grbig" id="grWhat">A great idea, and a lot of hope.</b>
+        <div class="grmeter"><b id="grNum">3</b><span>new customers a month</span></div>
+      </div>
+    </div>
+    <div class="grbar rv">
+      <div class="grtrack" id="grTrack"><i id="grFill"></i><span class="grknob" id="grKnob" role="slider" tabindex="0" aria-label="How far we have grown your business" aria-valuemin="0" aria-valuemax="6" aria-valuenow="0"></span></div>
+      <ol class="grsteps" id="grSteps"><li><button type="button" data-s="1"><em>1</em><b>We fix your website</b><span>People can find you</span></button></li><li><button type="button" data-s="2"><em>2</em><b>We use your customers' words</b><span>More people choose you</span></button></li><li><button type="button" data-s="3"><em>3</em><b>We put you on Google Maps</b><span>Customers walk in</span></button></li><li><button type="button" data-s="4"><em>4</em><b>We bring in reviews</b><span>People trust you</span></button></li><li><button type="button" data-s="5"><em>5</em><b>We get you into ChatGPT's answers</b><span>You get recommended</span></button></li><li><button type="button" data-s="6"><em>6</em><b>We keep you growing</b><span>You're a brand now</span></button></li></ol>
     </div>
   </div>
 </section>
@@ -882,12 +996,12 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <section class="blk lt" id="how">
   <div class="wrap">
-    <span class="eyb rv">How it works</span>
-    <h2 class="h2 split"><span class="w"><span style="--i:0">Three</span></span> <span class="w"><span style="--i:1">simple</span></span> <span class="w"><span style="--i:2">steps.</span></span> <span class="w"><span style="--i:3">No</span></span> <span class="w"><span style="--i:4">pressure.</span></span></h2>
-    <div class="steps">
-      <div class="step rv"><b>1</b><h3>Tell us about your business</h3><p>Takes about a minute. Your website if you have one, and your town.</p></div>
-      <div class="step rv"><b>2</b><h3>Get your free check</h3><p>Our team looks at how customers see you today and sends a short, plain-English summary.</p></div>
-      <div class="step rv"><b>3</b><h3>You decide</h3><p>If you like what you see, we agree a plan and a price. Nothing starts and nothing is charged until you say yes.</p></div>
+    <div class="howh"><span class="eyb rv">How it works</span><h2 class="h2 split">Three simple steps. No pressure.</h2></div>
+    <div class="path rv" id="path">
+      <svg class="pline" viewBox="0 0 1000 20" preserveAspectRatio="none" aria-hidden="true"><path d="M30 10 H970"/></svg>
+      <div class="pst"><span class="pn">1</span><div class="pv"><div class="pvf"><i></i><i></i><i style="width:60%"></i><b>Send</b></div></div><h3>Tell us about your business</h3><p>About a minute. Your business name, your town, and your website if you have one.</p></div>
+      <div class="pst"><span class="pn">2</span><div class="pv"><div class="pvr"><small>Your free check</small><div><span>Google</span><em class="bad">Hard to find</em></div><div><span>Google Maps</span><em class="mid">Missing details</em></div><div><span>ChatGPT</span><em class="bad">Doesn't know you</em></div></div></div><h3>Get your free check</h3><p>A real person on our team looks at how customers see you today and sends a plain-English summary.</p></div>
+      <div class="pst"><span class="pn">3</span><div class="pv"><div class="pvd"><b>Ready to start?</b><span><i>Yes, let's go</i><i>Not yet</i></span></div></div><h3>You decide</h3><p>Like what you see? We agree a plan and a price. Nothing starts and nothing is charged until you say yes.</p></div>
     </div>
   </div>
 </section>
@@ -936,18 +1050,25 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   </div>
 </section>
 
-<section class="blk crew see" id="team">
-  <div class="wrap">
-    <div class="crewhead"><span class="eyb rv">You are not doing this alone</span><h2 class="h2 split">Meet the people who will grow your business</h2><p class="lead rv">Real people in a real office, who will know your name. Tap anyone to see what they do for you.</p></div>
-    <div class="crewstage rv" id="crew">
+<section class="crew see" id="team">
+  <div class="reveal" id="reveal">
+    <div class="rvs">
       <div class="bigw" aria-hidden="true">TEAM</div>
-      <img class="crewimg" src="/assets/img/crew-1200.webp" srcset="/assets/img/crew-800.webp 800w, /assets/img/crew-1200.webp 1200w, /assets/img/crew-1700.webp 1700w" sizes="(max-width:760px) 100vw, 1120px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1900" height="1275" loading="lazy" decoding="async">
+      <div class="rvhead"><span class="eyb">You are not doing this alone</span><h2 class="h2">Meet the people who will grow <em>your business</em></h2><p class="lead">Real people in a real office, who will know your name. Tap anyone to see what they do for you.</p></div>
+      <div class="cur l" aria-hidden="true"><div class="ct">So who's actually<br><em>behind all this?</em></div></div>
+      <div class="cur r" aria-hidden="true"><div class="ct">So who's actually<br><em>behind all this?</em></div></div>
+      <div class="crewstage" id="crew">
+        <span class="psst" aria-hidden="true">Psst. We're right here.</span>
+        <img class="crewimg" src="/assets/img/crew-1200.webp" srcset="/assets/img/crew-800.webp 800w, /assets/img/crew-1200.webp 1200w, /assets/img/crew-1700.webp 1700w" sizes="(max-width:760px) 100vw, 1120px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1900" height="1275" loading="lazy" decoding="async">
       <button type="button" class="tag" style="--x:18%;--y:38%" data-i="0"><i></i>Jyoti</button>
       <button type="button" class="tag" style="--x:44%;--y:58%" data-i="1"><i></i>Manav</button>
       <button type="button" class="tag" style="--x:57%;--y:26%" data-i="2"><i></i>Sam</button>
       <button type="button" class="tag" style="--x:80%;--y:42%" data-i="3"><i></i>Sakshi</button>
-      <div class="tagcard" id="tagcard" aria-live="polite"><img id="tcImg" src="/assets/img/face-jyoti.webp" alt="" width="56" height="56" loading="lazy"><div><em id="tcRole">Your main contact</em><b id="tcName">Jyoti</b><span id="tcTxt">Answers your messages and sends your weekly update in plain English.</span></div></div>
+        <div class="tagcard" id="tagcard" aria-live="polite"><img id="tcImg" src="/assets/img/face-jyoti.webp" alt="" width="56" height="56" loading="lazy"><div><em id="tcRole">Your main contact</em><b id="tcName">Jyoti</b><span id="tcTxt">Answers your messages and sends your weekly update in plain English.</span></div></div>
+      </div>
     </div>
+  </div>
+  <div class="wrap">
     <div class="work">
       <div class="rv"><span class="eyb">How we work</span><h3 class="h3" style="margin-top:12px">Your project, on our screen, every week</h3><div class="promise"><div><b>You approve everything first</b><span>The plan and the price, before anything starts.</span></div><div><b>You see every change</b><span>Nothing happens to your business behind your back.</span></div><div><b>It stays yours</b><span>You keep full ownership of your website and accounts.</span></div></div></div>
       <img class="rv" src="/assets/img/laptop-1080.webp" srcset="/assets/img/laptop-720.webp 720w, /assets/img/laptop-1080.webp 1080w, /assets/img/laptop-1440.webp 1440w, /assets/img/laptop-2000.webp 2000w" sizes="(max-width:980px) 92vw, 580px" alt="The team working together on a client project" width="2000" height="1333" loading="lazy" decoding="async">
@@ -999,7 +1120,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   <div class="ftm"><p class="wrap">Built for every kind of local business. Pick yours:</p><div class="ftrack"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i><span aria-hidden="true" class="dup"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i></span></div></div>
   <div class="wrap ftg">
     <div class="ftb"><a class="brand" href="#top" aria-label="Business Santa, back to top"><img src="/assets/img/logo-96.webp" alt="" width="44" height="44" loading="lazy"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a><p>We help small businesses across the US get found on Google, Google Maps and ChatGPT, so the phone rings.</p><div class="ftc"><a href="#" id="ftWa">WhatsApp us</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></div>
-    <nav aria-label="Explore"><b>Explore</b><a href="#stage">How it works</a><a href="#stories">Success stories</a><a href="#team">Our team</a><a href="#faq">Questions</a></nav>
+    <nav aria-label="Explore"><b>Explore</b><a href="#stage">How it works</a><a href="#stories">See it working</a><a href="#grow">Grow with us</a><a href="#team">Our team</a><a href="#faq">Questions</a></nav>
     <nav aria-label="Get started"><b>Get started</b><a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>
     <nav aria-label="Company"><b>Company</b><a href="https://seoseason.com/" rel="noopener">SEO Season</a><a href="https://www.instagram.com/businesssanta" rel="noopener">Instagram</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
   </div>
@@ -1009,6 +1130,6 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.66506946c9.js"></script>
+<script type="module" src="/assets/js/app.a7f7e67598.js"></script>
 </body>
 </html>
