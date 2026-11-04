@@ -32,7 +32,7 @@
   --txt:#f5f5f7;--sub:#b3bacb;--mut:#7d8597;--card:rgba(255,255,255,.055);--cline:rgba(255,255,255,.1);--sh:0 24px 70px rgba(0,0,0,.4);--sh2:0 40px 110px rgba(0,0,0,.55);
   --ink:#0f172a;--ink2:#1e293b;--line:#e5e7eb;--line2:#d7dbe3;
   --h:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--b:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --ease:cubic-bezier(.2,.8,.2,1);
+  --ease:cubic-bezier(.22,1,.36,1);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;background:var(--bg0);scroll-behavior:smooth}
@@ -61,7 +61,7 @@ main,.ft{position:relative;z-index:1}
 .btn.o:hover{background:var(--gl2)}
 .btn.sm{padding:11px 18px;font-size:.94rem}
 .btn svg{width:19px;height:19px}
-.rv{opacity:0;transform:translateY(28px);transition:opacity .9s var(--ease),transform 1s var(--ease)}
+.rv{opacity:0;transform:translateY(18px);transition:opacity 1.1s var(--ease),transform 1.3s var(--ease)}
 .rv.in{opacity:1;transform:none}
 .split .w{display:inline-block;overflow:hidden;vertical-align:top;padding-bottom:.12em;margin-bottom:-.12em}
 .split .w>span{display:inline-block;transform:translateY(105%);transition:transform .9s var(--ease) calc(var(--i,0)*45ms)}
@@ -154,7 +154,7 @@ section.blk{padding:clamp(80px,10vw,140px) 0}
 #hpRes>.res.on{opacity:1;transform:none}
 .miss{margin-top:10px;border:1.5px dashed #ef4444;border-radius:14px;padding:10px 12px;color:#991b1b;font-size:12px;background:#fef2f2}
 .miss b{display:block;font-size:13px}
-.ibanner{position:absolute;left:9px;right:9px;top:9px;z-index:10;display:flex;align-items:center;gap:10px;padding:9px 9px 9px 10px;border-radius:30px;background:rgba(28,28,30,.86);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 14px 34px rgba(0,0,0,.35);color:#fff;transform:translateY(-150%);transition:transform .6s cubic-bezier(.3,1.35,.5,1)}
+.ibanner{position:absolute;left:9px;right:9px;top:9px;z-index:10;display:flex;align-items:center;gap:10px;padding:9px 9px 9px 10px;border-radius:30px;background:rgba(28,28,30,.86);backdrop-filter:blur(24px) saturate(180%);-webkit-backdrop-filter:blur(24px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 14px 34px rgba(0,0,0,.35);color:#fff;transform:translateY(-150%);transition:transform .9s cubic-bezier(.22,1,.36,1)}
 .ibanner.on{transform:none}
 .ibanner .iav{width:38px;height:38px;border-radius:50%;flex:none;display:grid;place-items:center;font:700 1rem var(--b);background:linear-gradient(180deg,#a5a9b4,#6d717c)}
 .ibanner div{flex:1;min-width:0}
@@ -163,7 +163,7 @@ section.blk{padding:clamp(80px,10vw,140px) 0}
 .ibanner i{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:none}
 .ibanner i svg{width:17px;height:17px}
 .ibanner .dn{background:#ff3b30}.ibanner .up{background:#34c759}
-.float{position:absolute;z-index:3;display:flex;align-items:center;gap:11px;padding:11px 15px 11px 11px;border-radius:20px;background:var(--panel);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 0 0 1px var(--gb),0 20px 50px rgba(0,0,0,.3);font:600 .88rem var(--b);color:var(--ptxt);white-space:nowrap;opacity:0;transform:translateY(14px) scale(.96);transition:opacity .6s var(--ease),transform .7s var(--ease)}
+.float{position:absolute;z-index:3;display:flex;align-items:center;gap:11px;padding:11px 15px 11px 11px;border-radius:20px;background:var(--panel);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 0 0 1px var(--gb),0 20px 50px rgba(0,0,0,.3);font:600 .88rem var(--b);color:var(--ptxt);white-space:nowrap;opacity:0;transform:translateY(10px);transition:opacity .9s var(--ease),transform 1.1s var(--ease)}
 .float.on{opacity:1;transform:none}
 .float i{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-style:normal;font:800 1rem var(--h);flex:none}
 .float small{display:block;color:var(--psub);font-weight:500;font-size:.76rem}
@@ -176,9 +176,9 @@ section.blk{padding:clamp(80px,10vw,140px) 0}
 .stick::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(var(--ov),.9) 0%,rgba(var(--ov),.66) 42%,rgba(var(--ov),.12) 70%,transparent)}
 #stage .wrap{position:relative;height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.9fr);gap:clamp(20px,4vw,60px);align-items:center}
 .chs{position:relative;height:min(560px,70vh)}
-.ch{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;opacity:0;visibility:hidden;transform:translateY(30px);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s .6s}
+.ch{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;opacity:0;visibility:hidden;transform:translateY(18px);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s .6s}
 .ch.on{opacity:1;visibility:visible;transform:none;transition:opacity .6s var(--ease) .12s,transform .8s var(--ease) .12s,visibility 0s}
-.ch.past{transform:translateY(-30px)}
+.ch.past{transform:translateY(-18px)}
 .ch .get,.ch .by,.ch .cta,.ch .fine{opacity:0;transform:translateY(14px);transition:opacity .5s,transform .6s var(--ease)}
 .ch.on .get,.ch.on .by,.ch.on .cta,.ch.on .fine{opacity:1;transform:none}
 .ch.on .get{transition-delay:.35s}.ch.on .by{transition-delay:.5s}.ch.on .cta{transition-delay:.35s}.ch.on .fine{transition-delay:.5s}
@@ -200,10 +200,10 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .pstage .dev{transform:scale(var(--ps,1))}
 .sv{position:absolute;inset:0;opacity:0;visibility:hidden;transform:scale(1.03);transition:opacity .5s,transform .7s var(--ease),visibility 0s .5s}
 .sv.on{opacity:1;visibility:visible;transform:none;transition:opacity .5s,transform .7s var(--ease),visibility 0s}
-.sv.on .mpw{animation:drop .9s cubic-bezier(.3,1.5,.5,1) .3s both}
-@keyframes drop{from{transform:translateY(-70px);opacity:0}to{transform:none;opacity:1}}
-.sv.on .av2{animation:popin .6s cubic-bezier(.3,1.6,.5,1) .2s both}
-@keyframes popin{from{transform:scale(.6)}}
+.sv.on .mpw{animation:drop 1.1s cubic-bezier(.22,1,.36,1) .35s both}
+@keyframes drop{from{transform:translateY(-26px);opacity:0}to{transform:none;opacity:1}}
+.sv.on .av2{animation:popin .9s cubic-bezier(.22,1,.36,1) .2s both}
+@keyframes popin{from{transform:scale(.9);opacity:0}}
 .sv.pad{padding:56px 14px 14px;background:#f6f7f9}
 .apph{display:flex;align-items:center;gap:10px;padding:0 4px 12px;margin-bottom:12px}
 .apph i{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;font-style:normal;font:800 .9rem var(--h);color:#fff;flex:none}
@@ -264,7 +264,88 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .call .acts i:first-child{background:#ff3b30}.call .acts i:last-child{background:#34c759;animation:pulse 1.4s infinite}
 .call .acts svg{width:28px;height:28px}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,199,89,.6)}100%{box-shadow:0 0 0 24px rgba(52,199,89,0)}}
-.ctxt{right:-10%;bottom:16%}
+.pstage{height:calc(620px * var(--ps,1))}
+.pstage .dev{position:absolute;top:0;left:50%;margin-left:-150px;transform:scale(var(--ps,1));transform-origin:50% 0}
+.spot{display:flex;justify-content:space-between;align-items:center;margin:4px 2px 9px;padding:8px 12px;border-radius:12px;background:#fef2f2;color:#991b1b;font-size:11.5px;transition:background .8s,color .8s}
+.spot b{font:700 12.5px var(--b)}
+.spot.up{background:#f0fdf4;color:#166534}
+.fold{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows 1s var(--ease),opacity .8s var(--ease)}
+.fold>div{overflow:hidden;min-height:0}
+.fold.on{grid-template-rows:1fr;opacity:1}
+.mpk{border-radius:14px;overflow:hidden;box-shadow:0 0 0 1px #ececec;margin-bottom:8px}
+.mpk .gmap{height:92px}
+.mpk .lst{padding:8px 11px;border:0}
+.gp{position:absolute;width:12px;height:12px;margin:-6px 0 0 -6px;border-radius:50%;background:#9aa0a6;border:2px solid #fff}
+.mpk .mp{left:52%;top:24%;width:24px;height:24px;margin-left:-12px}
+.mpk .mp::after{inset:8px}
+.aic{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:14px;background:#f4f4f5;font-size:11.5px;line-height:1.4;margin-bottom:8px;color:#111}
+.aic>i{width:16px;height:16px;border-radius:50%;flex:none;margin-top:1px;background:#0d0d0d url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.2'%3E%3Cpath d='M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6L5.6 18.4'/%3E%3C/svg%3E") center/62% no-repeat}
+.rl .res{position:relative;transition:transform 1s var(--ease),background .8s,box-shadow .8s}
+.rl .rme{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows 1s var(--ease),opacity .8s var(--ease),transform 1s var(--ease)}
+.rl .rme>div{overflow:hidden;min-height:0}
+.rl .rme.on{grid-template-rows:1fr;opacity:1}
+.rl .rme .t{transition:color .6s}
+#miss{transition:opacity .6s}
+#miss.off{display:none}
+.ibn{position:absolute;left:9px;right:9px;top:9px;z-index:10;display:flex;gap:10px;align-items:center;padding:11px 12px;border-radius:24px;background:rgba(246,246,248,.88);backdrop-filter:blur(20px) saturate(180%);-webkit-backdrop-filter:blur(20px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 12px 30px rgba(0,0,0,.18);transform:translateY(-150%);opacity:0;transition:transform 1s var(--ease),opacity .7s}
+.ibn.on{transform:none;opacity:1}
+.ibn .ai{width:34px;height:34px;border-radius:9px;background:#0f172a;color:var(--y);display:grid;place-items:center;font:800 .76rem var(--h);font-style:normal;flex:none}
+.ibn img{width:34px;height:34px;border-radius:50%;object-fit:cover;flex:none}
+.ibn div{flex:1;min-width:0}.ibn b{display:block;font:600 .8rem var(--b);color:#111}.ibn span{display:block;font-size:.74rem;color:#333;line-height:1.3}
+.ibn small{align-self:flex-start;color:#777;font-size:.66rem}
+/* team stage */
+.crew{background:radial-gradient(1000px 560px at 50% 70%,rgba(253,185,19,.13),transparent 70%),linear-gradient(180deg,rgba(var(--ov),.9),rgba(var(--ov),.97) 30%)}
+.crewhead{text-align:center;max-width:780px;margin:0 auto}
+.crewhead .lead{margin:0 auto}
+.crewstage{position:relative;margin:34px auto 0;max-width:1120px}
+.bigw{position:absolute;left:50%;top:-2%;transform:translateX(-50%);font:900 clamp(7rem,25vw,23rem)/.8 var(--h);letter-spacing:-.06em;color:transparent;-webkit-text-stroke:2px var(--gb);white-space:nowrap;pointer-events:none;user-select:none}
+.crewstage::after{content:"";position:absolute;left:6%;right:6%;bottom:2%;height:30%;background:radial-gradient(closest-side,rgba(253,185,19,.22),transparent);pointer-events:none}
+.crewimg{position:relative;z-index:1;width:100%;height:auto}
+.tag{position:absolute;z-index:3;left:var(--x);top:var(--y);transform:translate(-50%,-50%);display:inline-flex;align-items:center;gap:8px;padding:8px 14px 8px 9px;border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#0f172a;font:700 .88rem var(--b);box-shadow:0 10px 30px rgba(0,0,0,.28);transition:transform .6s var(--ease),background .4s,color .4s}
+.tag i{width:10px;height:10px;border-radius:50%;background:var(--y);animation:ping 2.6s var(--ease) infinite}
+.tag:hover{transform:translate(-50%,-50%) scale(1.06)}
+.tag.on{background:#0f172a;color:#fff}
+@keyframes ping{0%{box-shadow:0 0 0 0 rgba(253,185,19,.6)}70%,100%{box-shadow:0 0 0 11px rgba(253,185,19,0)}}
+.tagcard{position:absolute;z-index:4;left:0;bottom:5%;display:flex;gap:14px;align-items:center;max-width:380px;padding:16px 20px 16px 16px;border-radius:24px;background:var(--panel);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);box-shadow:inset 0 0 0 1px var(--gb),0 24px 60px rgba(0,0,0,.35);color:var(--ptxt);transition:opacity .45s var(--ease),transform .6s var(--ease)}
+.tagcard.sw{opacity:0;transform:translateY(8px)}
+.tagcard img{width:56px;height:56px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 3px var(--y)}
+.tagcard em{font-style:normal;font:700 .72rem var(--b);letter-spacing:.06em;text-transform:uppercase;color:var(--yt)}
+.tagcard b{display:block;font:800 1.3rem/1.2 var(--h);letter-spacing:-.02em}
+.tagcard span{display:block;color:var(--psub);font-size:.92rem;line-height:1.4;margin-top:2px}
+/* founder */
+.fnd{position:relative;margin-top:150px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);align-items:end;border-radius:36px;background:radial-gradient(120% 120% at 85% 100%,#ffd35a,#FDB913 45%,#eea300);color:#0f172a;min-height:440px;box-shadow:0 50px 120px rgba(0,0,0,.35)}
+.fndw{position:absolute;left:0;right:0;bottom:0;height:100%;overflow:hidden;border-radius:36px;display:flex;align-items:flex-end;justify-content:center;font:900 clamp(6rem,18vw,16rem)/.74 var(--h);letter-spacing:-.06em;color:rgba(15,23,42,.08);pointer-events:none;user-select:none;white-space:nowrap}
+.fndt{position:relative;padding:clamp(28px,4.5vw,60px);align-self:center}
+.fndt .eyb{color:#5c3d00}
+.fndt blockquote{margin:12px 0 0;font:800 clamp(1.6rem,3vw,2.6rem)/1.15 var(--h);letter-spacing:-.03em}
+.fndt p{color:#3d2c00;margin:16px 0 0;max-width:46ch}
+.fndt .sig{display:block;margin-top:22px}
+.fndt .sig b{display:block;font:italic 700 1.9rem/1 Georgia,"Times New Roman",serif;letter-spacing:-.01em}
+.fndt .sig span{color:#5c3d00;font-size:.9rem}
+.fndi{position:relative;width:100%;max-width:440px;height:auto;justify-self:center;margin-top:-120px;border-radius:0 0 36px 36px;filter:drop-shadow(0 30px 40px rgba(0,0,0,.25))}
+/* footer */
+.ft{position:relative;z-index:1;background:#04050a;color:#9aa3b5;padding:0 0 calc(96px + env(safe-area-inset-bottom));overflow:hidden;border-top:1px solid rgba(255,255,255,.06);font-size:.95rem}
+.ftm{padding:46px 0 34px;border-bottom:1px solid rgba(255,255,255,.07);overflow:hidden}
+.ftm p{margin:0 auto 18px;font:600 .78rem var(--b);letter-spacing:.09em;text-transform:uppercase;color:#7d8597}
+.ftrack{display:flex;align-items:center;gap:30px;width:max-content;animation:marq 60s linear infinite}
+.ftm:hover .ftrack{animation-play-state:paused}
+.ftrack .dup{display:contents}
+.ftrack button{border:0;background:none;padding:0;font:800 clamp(2.2rem,5vw,4.4rem)/1.1 var(--h);letter-spacing:-.035em;color:transparent;-webkit-text-stroke:1.4px rgba(255,255,255,.4);transition:color .4s,-webkit-text-stroke-color .4s;white-space:nowrap}
+.ftrack button:hover,.ftrack button:focus-visible{color:var(--y);-webkit-text-stroke-color:var(--y)}
+.ftrack i{font-style:normal;color:var(--y);font-size:1.3rem}
+.ftg{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:32px;padding-top:56px;padding-bottom:10px}
+.ftb .brand b{color:#fff}
+.ftb p{margin:16px 0 18px;max-width:38ch}
+.ftc{display:flex;flex-wrap:wrap;gap:10px}
+.ftc a{display:inline-flex;padding:11px 17px;border-radius:999px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);color:#fff;text-decoration:none;font:600 .9rem var(--b)}
+.ftc a:first-child{background:#25d366;color:#062a15;box-shadow:none}
+.ftg nav{display:flex;flex-direction:column;gap:11px}
+.ftg nav b{color:#fff;font:700 .95rem var(--h);margin-bottom:4px}
+.ftg nav a{color:#a4adbf;text-decoration:none;transition:color .2s}
+.ftg nav a:hover{color:#fff}
+.ftword{font:900 clamp(3.4rem,13.4vw,15rem)/.8 var(--h);letter-spacing:-.06em;text-align:center;white-space:nowrap;margin:40px 0 -.1em;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,0) 88%);-webkit-background-clip:text;background-clip:text;color:transparent;user-select:none}
+.ftbase{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-top:18px;border-top:1px solid rgba(255,255,255,.07);font-size:.86rem}
+.ftbase a{color:#c4cad6;text-decoration:none}
 .spin{position:sticky;top:0}
 
 /* stories */
@@ -272,12 +353,18 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .shead{width:100%;margin-bottom:24px}
 .strack{display:flex;gap:26px;padding:0 clamp(18px,4vw,40px);width:max-content;will-change:transform}
 .sto{flex:none;width:min(1080px,86vw);height:min(560px,64vh);display:grid;grid-template-columns:minmax(0,1.02fr) minmax(0,1fr);border-radius:30px;overflow:hidden;background:#fff;color:#0f172a;box-shadow:0 40px 100px rgba(0,0,0,.5)}
-.scn{position:relative;overflow:hidden;background:linear-gradient(160deg,#eef2ff,#f8fafc 60%,#fff7e6);transition:filter 1.1s var(--ease)}
-.scn.before{filter:grayscale(1) contrast(.9) brightness(.97)}
-.ba{position:absolute;left:16px;top:16px;z-index:4;display:flex;padding:4px;border-radius:999px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.08);font:700 .72rem var(--b);letter-spacing:.05em;text-transform:uppercase}
-.ba i{font-style:normal;padding:6px 12px;border-radius:999px;color:#5b6474;transition:all .5s}
-.scn.before .ba i:first-child{background:#e5e7eb;color:#0f172a}
-.scn:not(.before) .ba i:last-child{background:var(--y);color:#111}
+.scn{position:relative;overflow:hidden;--p:100%;touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:ew-resize}
+.lay{position:absolute;inset:0;background:linear-gradient(160deg,#eef2ff,#f8fafc 60%,#fff7e6)}
+.lay.bef{clip-path:inset(0 calc(100% - var(--p)) 0 0);filter:grayscale(1) contrast(.92) brightness(.98);background:linear-gradient(160deg,#eef0f3,#f6f7f8 60%,#f1efea)}
+.cmpbar{position:absolute;top:0;bottom:0;left:var(--p);width:2px;margin-left:-1px;background:#fff;z-index:5;box-shadow:0 0 0 1px rgba(15,23,42,.06),0 0 24px rgba(15,23,42,.15)}
+.knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:#fff;box-shadow:0 8px 24px rgba(15,23,42,.22),0 0 0 1px rgba(15,23,42,.06);display:grid;place-items:center;outline:0}
+.knob svg{width:22px;height:22px}
+.knob:focus-visible{box-shadow:0 0 0 4px rgba(253,185,19,.6),0 8px 24px rgba(15,23,42,.22)}
+.hint{position:absolute;left:50%;top:calc(50% + 34px);transform:translateX(-50%);white-space:nowrap;padding:5px 10px;border-radius:999px;background:rgba(15,23,42,.78);color:#fff;font:600 .7rem var(--b);transition:opacity .5s}
+.scn.touched .hint{opacity:0}
+.bal{position:absolute;top:14px;z-index:6;border:0;padding:7px 13px;border-radius:999px;font:700 .72rem var(--b);letter-spacing:.05em;text-transform:uppercase;background:#fff;color:#0f172a;box-shadow:0 4px 16px rgba(15,23,42,.1);transition:background .4s,color .4s,opacity .4s}
+.bal.l{left:14px}.bal.r{right:14px}
+.bal.on.l{background:#0f172a;color:#fff}.bal.on.r{background:var(--y);color:#111}
 .stx{padding:clamp(20px,2.6vw,32px);display:flex;flex-direction:column;gap:11px;overflow:hidden}
 .snum{font:700 .76rem var(--b);letter-spacing:.08em;text-transform:uppercase;color:var(--yd)}
 .bl small{display:block;font:700 .68rem var(--b);letter-spacing:.1em;text-transform:uppercase;color:#5b6474;margin-bottom:2px}
@@ -314,11 +401,11 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .toast{position:absolute;right:7%;bottom:12%;display:flex;gap:10px;align-items:center;padding:12px 14px;border-radius:18px;background:rgba(255,255,255,.92);backdrop-filter:blur(10px);box-shadow:0 20px 50px rgba(15,23,42,.18);font:600 .8rem var(--b);opacity:0;transform:translateY(12px);transition:all .6s var(--ease) .9s}
 .toast i{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-style:normal;font:800 .85rem var(--h);flex:none}
 .toast small{display:block;color:#4b5563;font-weight:500;font-size:.72rem}
-.sto.go .toast{opacity:1;transform:none}
+.aft .toast{opacity:1;transform:none;transition:none}
 .s-cal{position:absolute;inset:0;padding:60px 20px 20px;display:flex;flex-direction:column;gap:10px}
 .calh{display:flex;justify-content:space-between;align-items:center}.calh b{font:700 .95rem var(--h)}
 .booked{padding:6px 12px;border-radius:999px;background:#16a34a;color:#fff;font:800 .76rem var(--b);opacity:0;transform:scale(.6);transition:all .6s cubic-bezier(.3,1.6,.5,1)}
-.sto.go .booked{opacity:1;transform:none}
+.aft .booked{opacity:1;transform:none;transition:none}
 .cal{flex:1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;padding:10px;border-radius:18px;background:#fff;box-shadow:0 14px 40px rgba(15,23,42,.08)}
 .cal .d{display:flex;flex-direction:column;gap:5px}
 .cal .d small{color:#4b5563;font:700 .7rem var(--b);text-align:center}
@@ -329,23 +416,22 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .mapcard .gmap{height:110px}
 .mapcard .lst{border:0}
 .sold{display:inline-block;margin-left:6px;padding:2px 7px;border-radius:6px;background:var(--badb);color:#dc2626;font:700 .66rem var(--b);opacity:0;transition:opacity .5s .6s}
-.sto.go .sold{opacity:1}
+.aft .sold{opacity:1;transition:none}
 .aib{width:min(300px,86%);background:#fff;border-radius:16px;padding:11px 13px;font-size:.8rem;box-shadow:0 14px 40px rgba(15,23,42,.1);opacity:0;transform:translateY(10px);transition:all .7s var(--ease) .5s}
 .aib small{display:flex;align-items:center;gap:6px;color:#6b7280;margin-bottom:4px}
 .aib p{margin:0}
-.sto.go .aib{opacity:1;transform:none}
+.aft .aib{opacity:1;transform:none;transition:none}
 .s-dent{position:absolute;inset:0;padding:60px 22px 20px;display:flex;flex-direction:column;gap:10px}
 .s-dent .card{border-radius:18px;background:#fff;box-shadow:0 14px 40px rgba(15,23,42,.08);padding:14px}
 .ch2{width:100%;height:auto;display:block}
 .ch2 .gl{stroke:#eef0f3;stroke-width:1;fill:none}
 .ch2 .ln{stroke:#2563eb;stroke-width:3.5;fill:none;stroke-linecap:round;stroke-dasharray:420;stroke-dashoffset:420;transition:stroke-dashoffset 1.8s var(--ease) .3s}
 .ch2 .ar{fill:url(#dg);opacity:0;transition:opacity 1s 1.2s}
-.sto.go .ch2 .ln{stroke-dashoffset:0}.sto.go .ch2 .ar{opacity:1}
+.aft .ch2 .ln{stroke-dashoffset:0;transition:none}.aft .ch2 .ar{opacity:1;transition:none}
 .reqs{display:grid;gap:6px}
 .reqs div{padding:9px 12px;border-radius:12px;background:#fff;box-shadow:inset 0 0 0 1px #e5e7eb;font:600 .74rem var(--b);opacity:0;transform:translateX(-14px);transition:all .5s var(--ease)}
 .reqs div b{color:#16a34a}
-.sto.go .reqs div{opacity:1;transform:none}
-.sto.go .reqs div:nth-child(1){transition-delay:1.1s}.sto.go .reqs div:nth-child(2){transition-delay:1.4s}.sto.go .reqs div:nth-child(3){transition-delay:1.7s}
+.aft .reqs div{opacity:1;transform:none;transition:none}
 
 /* bento */
 .bento{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:18px;margin-top:48px}
@@ -466,7 +552,7 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 
 /* team */
 .promise{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:22px}
-.promise div{padding:22px 24px;border-radius:22px;background:#f5f5f7}
+.promise div{padding:20px 22px;border-radius:22px;background:var(--gl);box-shadow:inset 0 0 0 1px var(--gb2)}
 .promise b{display:block;font:700 1.08rem var(--h);letter-spacing:-.01em;margin-bottom:4px}
 .promise b::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--y);margin-right:9px;vertical-align:1px}
 .promise span{color:var(--sub);font-size:.95rem}
@@ -481,8 +567,9 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .pp b{display:block;font:700 1.08rem var(--h);letter-spacing:-.01em}
 .pp em{font-style:normal;font:600 .78rem var(--b);color:var(--yd);letter-spacing:.02em}
 .pp span{display:block;color:var(--sub);font-size:.9rem;line-height:1.4;margin-top:2px}
-.work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(24px,4vw,56px);align-items:center;margin-top:90px}
-.work img{width:100%;border-radius:30px;aspect-ratio:3/2;object-fit:cover;box-shadow:var(--sh2)}
+.work{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:clamp(24px,4vw,64px);align-items:center;margin-top:110px}
+.work img{width:100%;height:auto;border-radius:30px;aspect-ratio:3/2;object-fit:cover;box-shadow:0 40px 90px rgba(0,0,0,.35)}
+.work .promise{grid-template-columns:1fr;margin-top:20px}
 .founder{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,4vw,60px);align-items:center;margin-top:90px}
 .fimg{border-radius:30px;overflow:hidden;background:linear-gradient(180deg,#f3f3f3,#dedede);box-shadow:var(--sh2)}
 .fimg img{width:100%;aspect-ratio:4/5;object-fit:cover;object-position:50% 20%}
@@ -517,10 +604,6 @@ html[data-t=day] .steps6 span.pass{color:#15803d}
 .final .h2{font-size:clamp(2.4rem,6vw,4.8rem)}
 .final .lead{color:var(--sub2);margin:0 auto}
 .final .row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:30px}
-.ft{background:#04050a;color:#8790a3;padding:30px 0 calc(100px + env(safe-area-inset-bottom));font-size:.9rem;border-top:1px solid rgba(255,255,255,.06)}
-.ft .wrap{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:center}
-.ft nav{display:flex;gap:20px;flex-wrap:wrap}
-.ft a{color:#c4cad6;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(196,202,214,.4)}
 .bar{position:fixed;z-index:70;left:10px;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));display:none;gap:8px;padding:8px;border-radius:999px;background:rgba(var(--ov),.72);backdrop-filter:blur(20px) saturate(170%);-webkit-backdrop-filter:blur(20px) saturate(170%);box-shadow:inset 0 0 0 1px var(--gb),0 16px 40px rgba(0,0,0,.3);transform:translateY(140%);transition:transform .45s var(--ease)}
 .bar.on{transform:none}
 .bar .btn{flex:1;height:54px;padding:0 10px}
@@ -547,7 +630,7 @@ html:not(.js) .ch .get,html:not(.js) .ch .by,html:not(.js) .ch .cta,html:not(.js
 html:not(.js) #stories{height:auto!important}
 html:not(.js) .spin{position:relative;height:auto;padding:80px 0 40px}
 html:not(.js) .strack{width:auto;overflow-x:auto;scroll-snap-type:x mandatory}
-html:not(.js) .scn.before{filter:none}
+html:not(.js) .scn{height:auto}
 html:not(.js) .bl.dreamc{opacity:1;transform:none}
 @media (max-width:980px){
   .hero .wrap{grid-template-columns:1fr}
@@ -572,8 +655,15 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   #stage{height:620svh}
   .stick::before{background:linear-gradient(180deg,rgba(var(--ov),.3),rgba(var(--ov),.5) 45%,rgba(var(--ov),.94) 60%)}
   #stage .wrap{grid-template-columns:1fr;grid-template-rows:auto 1fr;align-content:start;padding-top:70px;gap:4px}
-  .pstage{order:-1;height:calc(620px * var(--ps,.66))}
-  .pstage .dev{transform-origin:50% 0;position:absolute;top:0;left:50%;margin-left:-150px}
+  .pstage{order:-1}
+  .tag{font-size:.74rem;padding:6px 10px 6px 7px;gap:6px}.tag i{width:8px;height:8px}
+  .tagcard{position:relative;left:auto;bottom:auto;margin:-6px auto 0;max-width:none}
+  .bigw{top:4%}
+  .fnd{grid-template-columns:1fr;margin-top:120px;min-height:0}
+  .fndi{margin:-10px auto 0;max-width:78%;order:2}
+  .fndt{padding:26px 22px 8px}
+  .ftg{grid-template-columns:1fr 1fr;gap:28px 18px;padding-top:40px}.ftb{grid-column:1/3}
+  .ftword{margin-top:30px}
   .ctxt{display:none}
   .chs{height:auto;min-height:42vh}
   .ch{justify-content:flex-start}
@@ -645,37 +735,35 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   </div>
 </section>
 
-<section id="stage" class="see" aria-label="How Business Santa helps customers find your business">
+<section id="stage" class="see" aria-label="How we help customers find your business">
   <div class="stick"><div class="wrap">
     <div class="chs">
-      <div class="steps6" id="steps6"><span>The problem</span><span>Get seen</span><span>Get chosen</span><span>Get recommended</span><span>Never alone</span><span>Get calls</span></div>
-      <div class="ch" id="c0"><span class="kick">The problem</span><h2>Every day, customers who wanted you <em>are calling someone else.</em></h2><p>Not because they are better than you. Because they are easier to find when someone nearby picks up their phone and searches.</p><div class="get"><small>The cost</small>Every search you miss is a customer who never knew you existed.</div></div>
-      <div class="ch" id="c1"><span class="kick">Get seen</span><h2>Google can finally <em>see</em> your business</h2><p>Hidden problems on most small business websites stop Google from showing them. We find every one and fix it.</p><div class="get"><small>What you get</small>A fast, healthy website that Google trusts and shows to customers.</div><div class="by"><img src="/assets/img/face-sam.webp" alt="" width="46" height="46" loading="lazy"><span><b>Sam</b>, our technical expert, takes care of this for you</span></div></div>
-      <div class="ch" id="c2"><span class="kick">Get chosen</span><h2>Your business says exactly <em>what people search</em></h2><p><span id="sakWhy">People type "plumber near me", not fancy business words.</span> We rewrite your pages and listings in their words.</p><div class="get"><small>What you get</small>You match the searches that bring in customers.</div><div class="by"><img src="/assets/img/face-sakshi.webp" alt="" width="46" height="46" loading="lazy"><span><b>Sakshi</b>, our content expert, writes it for you</span></div></div>
-      <div class="ch" id="c3"><span class="kick">Get recommended</span><h2>You show up <em>on the map</em>, and in ChatGPT's answers</h2><p>More people now ask Google Maps or an AI assistant where to go. We make sure your name comes up.</p><div class="get"><small>What you get</small>Your name in front of people nearby who are ready to buy.</div><div class="by"><img src="/assets/img/face-manav.webp" alt="" width="46" height="46" loading="lazy"><span><b>Manav</b>, our founder, leads this for you personally</span></div></div>
-      <div class="ch" id="c4"><span class="kick">Never alone</span><h2>You always know <em>what's happening</em></h2><p>No tech talk and no chasing anyone. One person sends you plain-English updates every week.</p><div class="get"><small>What you get</small>A real person who replies, every time.</div><div class="by"><img src="/assets/img/face-jyoti.webp" alt="" width="46" height="46" loading="lazy"><span><b>Jyoti</b> is your person, from the first hello</span></div></div>
-      <div class="ch" id="c5"><span class="kick">Get calls</span><h2>More calls. More bookings. <em>More people walking in.</em></h2><p>The searches that used to go to other businesses start coming to you. That feeling when the phone rings again? That is what we work for.</p><div class="cta"><a class="btn y" href="#check" data-go="check">Get my free check</a></div><div class="fine">Illustration. Real results depend on your town and competition. We never promise a #1 spot.</div></div>
+      <div class="steps6" id="steps6"><span>The problem</span><span>1 &middot; Fix</span><span>2 &middot; Words</span><span>3 &middot; Map</span><span>4 &middot; Updates</span><span>The result</span></div>
+      <div class="ch" id="c0"><span class="kick">The problem</span><h2>When people nearby search for you, <em>you're not on the list.</em></h2><p>They choose from what Google shows them. If you are not there, they call someone else. Every single day.</p><div class="get"><small>Look at the phone</small>This is a search for "<span class="qtxt"></span>". Your business is missing.</div></div>
+      <div class="ch" id="c1"><span class="kick">Step 1 &middot; We fix your website</span><h2>Google can't show what it <em>can't read</em></h2><p>Most small business websites have hidden problems that stop Google from reading them. We find every one and fix it.</p><div class="get"><small>What changes on the phone</small>Your business shows up in the search for the first time.</div><div class="by"><img src="/assets/img/face-sam.webp" alt="" width="46" height="46" loading="lazy"><span><b>Sam</b>, our technical expert, does this for you</span></div></div>
+      <div class="ch" id="c2"><span class="kick">Step 2 &middot; We use your customers' words</span><h2>Say what people <em>actually type</em></h2><p>People search "<span class="qtxt"></span>", not fancy business words. We rewrite your website and Google listing in their words.</p><div class="get"><small>What changes on the phone</small>Google sees you as a better match, so you move up the list.</div><div class="by"><img src="/assets/img/face-sakshi.webp" alt="" width="46" height="46" loading="lazy"><span><b>Sakshi</b>, our content expert, writes it for you</span></div></div>
+      <div class="ch" id="c3"><span class="kick">Step 3 &middot; We put you on the map</span><h2>First on the map. <em>Named by ChatGPT.</em></h2><p>We set up your Google Maps listing with the right hours, photos and reviews, and make sure AI assistants know your business.</p><div class="get"><small>What changes on the phone</small>You show up first on the map, and ChatGPT recommends you.</div><div class="by"><img src="/assets/img/face-manav.webp" alt="" width="46" height="46" loading="lazy"><span><b>Manav</b>, our founder, leads this for you</span></div></div>
+      <div class="ch" id="c4"><span class="kick">Step 4 &middot; You always know what's happening</span><h2>One person. <em>Plain English.</em> Every week.</h2><p>No tech talk and no chasing anyone. You get a short update on WhatsApp, like the one on the phone.</p><div class="get"><small>What you get</small>A real person who replies, every time.</div><div class="by"><img src="/assets/img/face-jyoti.webp" alt="" width="46" height="46" loading="lazy"><span><b>Jyoti</b> is your person, from the first hello</span></div></div>
+      <div class="ch" id="c5"><span class="kick">The result</span><h2>The phone rings. <em>It's a new customer.</em></h2><p>The people who used to call someone else now find you first. That moment is what we work for.</p><div class="cta"><a class="btn y" href="#check" data-go="check">Get my free check</a></div><div class="fine">Illustration. Real results depend on your town and competition. We never promise a #1 spot.</div></div>
     </div>
     <div class="pstage" aria-hidden="true">
-      <div class="dev"><div class="scr">
-        <div class="sv" id="s0"><div class="sbt"><span>9:41</span><span class="sic"><i></i><i></i><i></i><i></i><b></b></span></div><div class="gsearch"><div class="gbar"><svg viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="qtxt"></span></div><div class="gtabs"><b>All</b><span>Maps</span><span>Images</span><span>News</span></div><div id="resBefore"></div><div class="miss"><b>Your business: not here</b>Buried on page 3. Almost nobody looks that far.</div></div></div>
-        <div class="sv pad" id="s1"><div class="apph"><i style="background:#0f172a">BS</i><div><b>Website check</b><span id="sakUrl2">yourplumbingco.com</span></div></div>
-          <div class="meter"><div class="ringm" id="samRing"><b id="samNum">54</b></div><div><strong id="samLbl">Needs work</strong><span id="samTxt">Google has trouble reading this site.</span></div></div>
-          <div class="chk" id="samList"><div>Broken pages<em>Problem</em></div><div>Speed on phones<em>Problem</em></div><div>Google can read pages<em>Problem</em></div><div>Secure connection<em>Problem</em></div></div></div>
-        <div class="sv pad" id="s2"><div class="apph"><i style="background:#1a73e8">G</i><div><b>How you show on Google</b><span>Search result preview</span></div></div>
-          <div class="snip"><div class="u" id="sakUrl">yourplumbingco.com</div><div class="t" id="sakTitle"></div><div class="d" id="sakDesc"></div></div>
-          <div class="kwl" id="sakKw"><small>Words your customers actually type</small></div></div>
-        <div class="sv" id="s3"><div class="gmap"><svg viewBox="0 0 300 150" preserveAspectRatio="none"><rect width="300" height="150" fill="#e8efe3"/><path d="M0 95h300M110 0v150M0 40h300M220 0v150" stroke="#fff" stroke-width="10"/><path d="M0 135L300 60" stroke="#ffd27a" stroke-width="12"/><rect x="18" y="52" width="80" height="30" fill="#cfe3c4"/><rect x="232" y="104" width="56" height="36" fill="#cfe3c4"/></svg><i class="mp"></i></div>
-          <div class="lst"><b id="mapName">Your Plumbing Co.</b><div class="st">★★★★★ 4.9 <span>(86 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Closes 8 PM</span></div><div class="acts2"><span>Call</span><span>Directions</span><span>Website</span></div></div>
-          <div class="aibox"><small><i></i><span id="aiQ">Ask AI</span></small><div id="aiA"></div></div></div>
-        <div class="sv" id="s4"><div class="wa"><div class="wah"><img src="/assets/img/face-jyoti.webp" alt="" width="36" height="36" loading="lazy"><div><b>Jyoti, Business Santa</b><span>online</span></div></div>
-          <div class="wab"><div class="msg" id="m1">Hi Maria! Here's your weekly update.<small>9:02 AM</small></div><div class="msg" id="m2"><b>38 pages</b> are back on Google this week.<small>9:02 AM</small></div><div class="msg" id="m3">Your Maps listing is live, and <b>6 new calls</b> came from search.<small>9:03 AM</small></div><div class="msg" id="m4">Any questions? I'm right here.<small>9:03 AM</small></div></div></div></div>
-        <div class="sv" id="s5"><div class="call"><div class="av2">?</div><h4>New customer</h4><p>Calling from your Google listing</p><div class="acts"><i><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.39.39.39 1.02 0 1.41l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1A15.9 15.9 0 0 0 12 9z"/></svg></i><i><svg viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg></i></div></div></div>
+      <div class="dev"><div class="scr" id="ps">
+        <div class="sbt"><span>9:41</span><span class="sic"><i></i><i></i><i></i><i></i><b></b></span></div>
+        <div class="gsearch"><div class="gbar"><svg viewBox="0 0 24 24" fill="none" stroke="#5f6368" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span class="qtxt"></span></div>
+          <div class="gtabs"><b>All</b><span>Maps</span><span>Images</span><span>News</span></div>
+          <div class="spot" id="spot"><span>Where you show up</span><b id="spotV">Not found</b></div>
+          <div class="fold" id="mpack"><div><div class="mpk"><div class="gmap"><svg viewBox="0 0 300 150" preserveAspectRatio="none"><rect width="300" height="150" fill="#e8efe3"/><path d="M0 95h300M110 0v150M0 40h300M220 0v150" stroke="#fff" stroke-width="10"/><path d="M0 135L300 60" stroke="#ffd27a" stroke-width="12"/><rect x="18" y="52" width="80" height="30" fill="#cfe3c4"/></svg><i class="gp" style="left:24%;top:58%"></i><i class="gp" style="left:78%;top:30%"></i><i class="mp"></i></div><div class="lst"><b class="bName">Your Plumbing Co.</b><div class="st">★★★★★ 4.9 <span>(86 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Closes 8 PM</span></div></div></div></div></div>
+          <div class="fold" id="aic"><div><div class="aic"><i></i><span><b>ChatGPT:</b> <span id="aicT"></span></span></div></div></div>
+          <div class="rl" id="rl"></div>
+          <div class="miss" id="miss"><b>Your business: not here</b>Not on the first page. Almost nobody looks further.</div>
+        </div>
+        <div class="ibn" id="n1"><i class="ai">BS</i><div><b>Business Santa</b><span>Website fixed. Google can now read your site.</span></div><small>now</small></div>
+        <div class="ibn" id="n4"><img src="/assets/img/face-jyoti.webp" alt="" width="34" height="34" loading="lazy"><div><b>Jyoti &middot; WhatsApp</b><span id="n4T">You're #1 on Google Maps now. 6 new calls this week!</span></div><small>now</small></div>
+        <div class="ibanner" id="n5"><span class="iav">G</span><div><b>New customer</b><span>Calling from Google Maps</span></div><i class="dn"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a1 1 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.39.39.39 1.02 0 1.41l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1A15.9 15.9 0 0 0 12 9z"/></svg></i><i class="up"><svg viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.3 0 .7-.2 1z"/></svg></i></div>
       </div></div>
-      <div class="float ctxt" id="ctx"><i style="background:#dcfce7;color:#15803d">✓</i><div id="ctxT">Fixed<small>by our team</small></div></div>
     </div>
-  </div>
-</div></section>
+  </div></div>
+</section>
 
 <section id="stories" class="dk see" aria-label="Example stories of small businesses we work for">
   <div class="spin">
@@ -686,7 +774,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
     </div>
     <div class="strack" id="strack">
       <article class="sto" data-k="shop">
-        <div class="scn before"><div class="s-shop"><div class="mph"><div class="mscr"><div class="mbar"><b>Willow and Thread</b><span>Orders</span></div><div class="kpi"><small>Orders today</small><b class="cnt" data-a="2" data-b="46">2</b></div><div class="feed"></div></div></div><div class="toast"><i style="background:#fef3c7;color:#b45309">!</i><div>Almost sold out<small>Linen wrap dress, 2 left</small></div></div></div><span class="ba"><i>Before</i><i>After</i></span></div>
+        <div class="scn"><div class="s-shop"><div class="mph"><div class="mscr"><div class="mbar"><b>Willow and Thread</b><span>Orders</span></div><div class="kpi"><small>Orders today</small><b class="cnt" data-a="2" data-b="46">2</b></div><div class="feed"></div></div></div><div class="toast"><i style="background:#fef3c7;color:#b45309">!</i><div>Almost sold out<small>Linen wrap dress, 2 left</small></div></div></div></div>
         <div class="stx"><span class="snum">01 &middot; Boutique</span>
           <div class="bl"><small>Why Elena opened it</small><p>Elena wanted every woman in her town to find clothes that make her feel beautiful.</p></div>
           <div class="bl"><small>What held her back</small><p>A gorgeous online store nobody could find. Plenty of likes on Instagram, almost no sales.</p></div>
@@ -695,7 +783,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
           <div class="bl dreamc"><small>The dream that came true</small><p>She just signed the lease on her second store.</p></div></div>
       </article>
       <article class="sto" data-k="plum">
-        <div class="scn before"><div class="s-cal"><div class="calh"><b>Reyes and Son &middot; this week</b><span class="booked">Booked out</span></div><div class="cal"><div class="d"><small>Mon</small></div><div class="d"><small>Tue</small></div><div class="d"><small>Wed</small></div><div class="d"><small>Thu</small></div><div class="d"><small>Fri</small></div></div></div><span class="ba"><i>Before</i><i>After</i></span></div>
+        <div class="scn"><div class="s-cal"><div class="calh"><b>Reyes and Son &middot; this week</b><span class="booked">Booked out</span></div><div class="cal"><div class="d"><small>Mon</small></div><div class="d"><small>Tue</small></div><div class="d"><small>Wed</small></div><div class="d"><small>Thu</small></div><div class="d"><small>Fri</small></div></div></div></div>
         <div class="stx"><span class="snum">02 &middot; Family plumber</span>
           <div class="bl"><small>Why Marco opened it</small><p>Marco took over his father's business and promised to keep the family name proud.</p></div>
           <div class="bl"><small>What held him back</small><p>Honest work and fair prices, but the phone stayed quiet while bigger names took every search.</p></div>
@@ -704,7 +792,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
           <div class="bl dreamc"><small>The dream that came true</small><p>He is putting his kids through college with the family business.</p></div></div>
       </article>
       <article class="sto" data-k="bake">
-        <div class="scn before"><div class="s-bake"><div class="mapcard"><div class="gmap"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><rect width="300" height="110" fill="#e8efe3"/><path d="M0 70h300M120 0v110M0 28h300M230 0v110" stroke="#fff" stroke-width="9"/><path d="M0 100L300 40" stroke="#ffd27a" stroke-width="10"/></svg><i class="mp"></i></div><div class="lst"><b>Rosa's Corner Bakery<span class="sold">Sold out by 11 AM</span></b><div class="st">★★★★★ 4.9 <span>(312 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Popular times: busy</span></div></div></div><div class="aib"><small><i></i>Ask AI: best croissants near me?</small><p>Locals love <b>Rosa's Corner Bakery</b>. Get there early, they sell out.</p></div></div><span class="ba"><i>Before</i><i>After</i></span></div>
+        <div class="scn"><div class="s-bake"><div class="mapcard"><div class="gmap"><svg viewBox="0 0 300 110" preserveAspectRatio="none"><rect width="300" height="110" fill="#e8efe3"/><path d="M0 70h300M120 0v110M0 28h300M230 0v110" stroke="#fff" stroke-width="9"/><path d="M0 100L300 40" stroke="#ffd27a" stroke-width="10"/></svg><i class="mp"></i></div><div class="lst"><b>Rosa's Corner Bakery<span class="sold">Sold out by 11 AM</span></b><div class="st">★★★★★ 4.9 <span>(312 reviews)</span></div><div class="oh">Open now <span style="color:#5f6368">· Popular times: busy</span></div></div></div><div class="aib"><small><i></i>Ask AI: best croissants near me?</small><p>Locals love <b>Rosa's Corner Bakery</b>. Get there early, they sell out.</p></div></div></div>
         <div class="stx"><span class="snum">03 &middot; Neighborhood bakery</span>
           <div class="bl"><small>Why Rosa opened it</small><p>Rosa bakes her grandmother's recipes at 4 AM, every single day.</p></div>
           <div class="bl"><small>What held her back</small><p>People two streets away had no idea she existed.</p></div>
@@ -713,8 +801,8 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
           <div class="bl dreamc"><small>The dream that came true</small><p>She opened a second shop across town, with Grandma's photo by the register.</p></div></div>
       </article>
       <article class="sto" data-k="dent">
-        <div class="scn before"><div class="s-dent"><div class="card"><div class="kpi"><small>New patients this month</small><b class="cnt" data-a="4" data-b="29">4</b></div><svg viewBox="0 0 320 110" class="ch2"><defs><linearGradient id="dg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2563eb" stop-opacity=".25"/><stop offset="1" stop-color="#2563eb" stop-opacity="0"/></linearGradient></defs><path class="gl" d="M0 95 H320 M0 55 H320 M0 15 H320"/><path class="ar" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10 V110 H0Z"/><path class="ln" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10"/></svg></div>
-          <div class="reqs"><div><b>New patient</b> &middot; Cleaning &middot; Mon 9 AM</div><div><b>New patient</b> &middot; Kids checkup &middot; Tue 4 PM</div><div><b>New patient</b> &middot; Whitening &middot; Thu 11 AM</div></div></div><span class="ba"><i>Before</i><i>After</i></span></div>
+        <div class="scn"><div class="s-dent"><div class="card"><div class="kpi"><small>New patients this month</small><b class="cnt" data-a="4" data-b="29">4</b></div><svg viewBox="0 0 320 110" class="ch2"><defs><linearGradient id="dg" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2563eb" stop-opacity=".25"/><stop offset="1" stop-color="#2563eb" stop-opacity="0"/></linearGradient></defs><path class="gl" d="M0 95 H320 M0 55 H320 M0 15 H320"/><path class="ar" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10 V110 H0Z"/><path class="ln" d="M0 100 C40 98 70 96 100 92 S160 76 190 58 S250 26 320 10"/></svg></div>
+          <div class="reqs"><div><b>New patient</b> &middot; Cleaning &middot; Mon 9 AM</div><div><b>New patient</b> &middot; Kids checkup &middot; Tue 4 PM</div><div><b>New patient</b> &middot; Whitening &middot; Thu 11 AM</div></div></div></div>
         <div class="stx"><span class="snum">04 &middot; Family dental practice</span>
           <div class="bl"><small>Why Dr. Kim opened it</small><p>Dr. Kim opened her practice to be the dentist families actually trust.</p></div>
           <div class="bl"><small>What held her back</small><p>New patients kept going to big chains with bigger ad budgets.</p></div>
@@ -849,27 +937,26 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   </div>
 </section>
 
-<section class="blk lt2" id="team">
+<section class="blk crew see" id="team">
   <div class="wrap">
-    <span class="eyb rv">You are not doing this alone</span>
-    <h2 class="h2 split"><span class="w"><span style="--i:0">People</span></span> <span class="w"><span style="--i:1">you</span></span> <span class="w"><span style="--i:2">can</span></span> <span class="w"><span style="--i:3">trust</span></span> <span class="w"><span style="--i:4">with</span></span> <span class="w"><span style="--i:5">your</span></span> <span class="w"><span style="--i:6">business</span></span></h2>
-    <p class="lead rv">You have built something real, and we treat it that way. You talk to people who know your name, not a call center.</p>
-    <div class="tgrid">
-      <figure class="tphoto rv"><picture><source media="(max-width:760px)" srcset="/assets/img/team-group-m.webp"><img src="/assets/img/team-group.webp" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team in their office" width="1800" height="1200" loading="lazy" decoding="async"></picture><figcaption><i></i>Jyoti, Manav, Sam and Sakshi</figcaption></figure>
-      <div class="people">
-        <div class="pp rv"><img src="/assets/img/face-jyoti.webp" alt="" width="64" height="64" loading="lazy"><div><em>Your main contact</em><b>Jyoti</b><span>Answers your messages and sends your weekly update in plain English.</span></div></div>
-        <div class="pp rv"><img src="/assets/img/face-manav.webp" alt="" width="64" height="64" loading="lazy"><div><em>Founder</em><b>Manav</b><span>Plans your growth on Google, Maps and AI answers, and signs off the work.</span></div></div>
-        <div class="pp rv"><img src="/assets/img/face-sam.webp" alt="" width="64" height="64" loading="lazy"><div><em>Technical expert</em><b>Sam</b><span>Fixes what stops Google from showing your website.</span></div></div>
-        <div class="pp rv"><img src="/assets/img/face-sakshi.webp" alt="" width="64" height="64" loading="lazy"><div><em>Content and listings</em><b>Sakshi</b><span>Writes your pages and listings in your customers' words.</span></div></div>
-      </div>
+    <div class="crewhead"><span class="eyb rv">You are not doing this alone</span><h2 class="h2 split">Meet the people who will grow your business</h2><p class="lead rv">Real people in a real office, who will know your name. Tap anyone to see what they do for you.</p></div>
+    <div class="crewstage rv" id="crew">
+      <div class="bigw" aria-hidden="true">TEAM</div>
+      <img class="crewimg" src="/assets/img/crew-1200.webp" srcset="/assets/img/crew-800.webp 800w, /assets/img/crew-1200.webp 1200w, /assets/img/crew-1700.webp 1700w" sizes="(max-width:760px) 100vw, 1120px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1900" height="1275" loading="lazy" decoding="async">
+      <button type="button" class="tag" style="--x:18%;--y:38%" data-i="0"><i></i>Jyoti</button>
+      <button type="button" class="tag" style="--x:44%;--y:58%" data-i="1"><i></i>Manav</button>
+      <button type="button" class="tag" style="--x:57%;--y:26%" data-i="2"><i></i>Sam</button>
+      <button type="button" class="tag" style="--x:80%;--y:42%" data-i="3"><i></i>Sakshi</button>
+      <div class="tagcard" id="tagcard" aria-live="polite"><img id="tcImg" src="/assets/img/face-jyoti.webp" alt="" width="56" height="56" loading="lazy"><div><em id="tcRole">Your main contact</em><b id="tcName">Jyoti</b><span id="tcTxt">Answers your messages and sends your weekly update in plain English.</span></div></div>
     </div>
     <div class="work">
-      <div class="rv"><span class="eyb">How we work</span><h3 class="h3" style="margin-top:12px">Your project, on our screen, every week</h3><div class="promise" style="grid-template-columns:1fr"><div><b>You approve everything first</b><span>The plan and the price, before anything starts.</span></div><div><b>You see every change</b><span>Nothing happens to your business behind your back.</span></div><div><b>It stays yours</b><span>You keep full ownership of your website and accounts.</span></div></div></div>
-      <picture class="rv"><source media="(max-width:760px)" srcset="/assets/img/team-laptop-m.webp"><img src="/assets/img/team-laptop.webp" alt="The team working together on a client project" width="1400" height="933" loading="lazy" decoding="async"></picture>
+      <div class="rv"><span class="eyb">How we work</span><h3 class="h3" style="margin-top:12px">Your project, on our screen, every week</h3><div class="promise"><div><b>You approve everything first</b><span>The plan and the price, before anything starts.</span></div><div><b>You see every change</b><span>Nothing happens to your business behind your back.</span></div><div><b>It stays yours</b><span>You keep full ownership of your website and accounts.</span></div></div></div>
+      <img class="rv" src="/assets/img/laptop-1080.webp" srcset="/assets/img/laptop-720.webp 720w, /assets/img/laptop-1080.webp 1080w, /assets/img/laptop-1440.webp 1440w, /assets/img/laptop-2000.webp 2000w" sizes="(max-width:980px) 92vw, 580px" alt="The team working together on a client project" width="2000" height="1333" loading="lazy" decoding="async">
     </div>
-    <div class="founder">
-      <div class="fimg rv"><picture><source media="(max-width:760px)" srcset="/assets/img/manav-studio-m.webp"><img src="/assets/img/manav-studio.webp" alt="Manav, founder of Business Santa" width="900" height="1125" loading="lazy" decoding="async"></picture></div>
-      <div class="rv"><span class="eyb">From the founder</span><blockquote>"My name is on this work. <em>If something isn't right, we fix it.</em>"</blockquote><p>Over ten years of helping businesses get found. Business Santa runs on SEO Season, the platform we built ourselves, so nothing about your business depends on guesswork.</p><div class="sig"><img src="/assets/img/face-manav.webp" alt="" width="48" height="48" loading="lazy"><div><b>Manav</b><span>Founder, Business Santa</span></div></div></div>
+    <div class="fnd rv">
+      <div class="fndw" aria-hidden="true">MANAV</div>
+      <div class="fndt"><span class="eyb">From the founder</span><blockquote>"My name is on this work. If something isn't right, we fix it."</blockquote><p>Over ten years of helping businesses get found. Business Santa runs on SEO Season, the platform we built ourselves, so nothing about your business is left to guesswork.</p><div class="sig"><b>Manav</b><span>Founder, Business Santa</span></div></div>
+      <img class="fndi" src="/assets/img/manav-cut-860.webp" srcset="/assets/img/manav-cut-560.webp 560w, /assets/img/manav-cut-860.webp 860w, /assets/img/manav-cut-1180.webp 1180w" sizes="(max-width:760px) 80vw, 460px" alt="Manav, founder of Business Santa" width="1203" height="1711" loading="lazy" decoding="async">
     </div>
   </div>
 </section>
@@ -909,13 +996,20 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 </section>
 </main>
 
-<footer class="ft"><div class="wrap">
-  <span>© <span id="yr">2026</span> Business Santa, powered by <a href="https://seoseason.com/" rel="noopener">SEO Season</a></span>
-  <nav><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://www.instagram.com/businesssanta" rel="noopener">Instagram</a></nav>
-</div></footer>
+<footer class="ft">
+  <div class="ftm"><p class="wrap">Built for every kind of local business. Pick yours:</p><div class="ftrack"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i><span aria-hidden="true" class="dup"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i></span></div></div>
+  <div class="wrap ftg">
+    <div class="ftb"><a class="brand" href="#top" aria-label="Business Santa, back to top"><img src="/assets/img/logo-96.webp" alt="" width="44" height="44" loading="lazy"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a><p>We help small businesses across the US get found on Google, Google Maps and ChatGPT, so the phone rings.</p><div class="ftc"><a href="#" id="ftWa">WhatsApp us</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></div>
+    <nav aria-label="Explore"><b>Explore</b><a href="#stage">How it works</a><a href="#stories">Success stories</a><a href="#team">Our team</a><a href="#faq">Questions</a></nav>
+    <nav aria-label="Get started"><b>Get started</b><a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>
+    <nav aria-label="Company"><b>Company</b><a href="https://seoseason.com/" rel="noopener">SEO Season</a><a href="https://www.instagram.com/businesssanta" rel="noopener">Instagram</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+  </div>
+  <div class="ftword" aria-hidden="true">Business Santa</div>
+  <div class="wrap ftbase"><span>© <span id="yr">2026</span> Business Santa. Made for Main Street, USA.</span><a href="#top">Back to top ↑</a></div>
+</footer>
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.4a1943cd02.js"></script>
+<script type="module" src="/assets/js/app.66506946c9.js"></script>
 </body>
 </html>

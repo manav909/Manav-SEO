@@ -42,28 +42,22 @@ $$("#chips button").forEach(b => b.addEventListener("click", () => { setType(b.d
 fType.addEventListener("change", () => setType(fType.value));
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const res = (name, rating, count, me) => `<div class="res${me ? " me" : ""}">${me ? '<span class="tg">You</span>' : ""}<div class="u">${slug(name)}.com</div><div class="t">${esc(name)}</div><div class="st">★★★★★ ${rating} <span>(${count}) · Open now</span></div></div>`;
-let sakTitle = "", sakDesc = "", aiAnswer = "";
 function setType(k) {
   T = k; const v = TYPES[k];
   $$("#chips button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k));
   fType.value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
   $$(".qtxt").forEach(e => e.textContent = v.q);
-  $("#resBefore").innerHTML = v.c.map((c, i) => res(c, (4.6 + i * .1).toFixed(1), 120 + i * 47, false)).join("");
   $("#bResults").innerHTML = res(v.n, "4.9", 86, true) + res(v.c[0], "4.7", 164, false) + res(v.c[1], "4.6", 97, false);
-  $$(".bName").forEach(e => e.textContent = v.n); $("#mapName").textContent = v.n;
-  $("#aiQ").textContent = `Who's a good ${v.a} near me?`;
-  aiAnswer = `A great option nearby is <b>${esc(v.n)}</b>. People mention fast replies, fair prices and friendly service.`;
+  $$(".bName").forEach(e => e.textContent = v.n);
+  $("#aicT").innerHTML = `Try <b>${esc(v.n)}</b>. People mention fast replies and fair prices.`;
+  $("#n4T").textContent = `You're #1 on Google Maps for "${v.q}" now. 6 new calls this week!`;
   $("#bAiQ").textContent = `Who's a good ${v.a} near me?`;
   $("#bAiA").innerHTML = `A great option nearby is <b>${esc(v.n)}</b>, and customers mention:<ul><li>Fast replies</li><li>Fair, upfront prices</li><li>Friendly service</li></ul>`;
   $("#bBook").textContent = v.book; $("#hpBook").textContent = v.book;
-  $("#sakWhy").textContent = `People type ${v.why}, not fancy business words.`;
-  $("#sakUrl").textContent = $("#sakUrl2").textContent = slug(v.n) + ".com";
-  $("#sakKw").innerHTML = "<small>Words your customers actually type</small>" + v.qs.map(q => `<span>${esc(q)}</span>`).join("");
-  sakTitle = `${v.n} | ${v.svc} in Your Town`; sakDesc = `Open now. Fast, friendly ${v.a} service with upfront prices. Call today or book online.`;
   $("#wVal").value = v.worth; worth();
   heroLoop();
-  if (cur >= 0) { const c = cur; cur = -1; setChapter(c); }
+  buildList(); setChapter(Math.max(cur, 0), true);
 }
 
 /* ---------- the street behind the page ---------- */
@@ -116,70 +110,83 @@ async function heroLoop() {
   }
 }
 
-/* ---------- story: sticky scenes that play themselves as you scroll ---------- */
-const stage = $("#stage"), chs = $$(".ch"), svs = $$(".sv"), steps = $$("#steps6 span");
+/* ---------- story: one search, one phone, your business climbing step by step ---------- */
+const stage = $("#stage"), chs = $$(".ch"), steps = $$("#steps6 span"), rl = $("#rl");
 const LIT = [.55, .62, .72, .82, .92, 1], WARM = [0, .1, .25, .5, .75, 1], FOC = [24, 30, 26, 18, 22, 16];
-const CTX = [null, ["Website fixed", "by Sam, our technical expert"], ["Written in your customers' words", "by Sakshi"], ["On the map and in AI answers", "led by Manav"], ["Weekly update sent", "by Jyoti"], ["New call from Google", "while you work"]];
-let cur = -1, stops = [], ctxT = 0;
-const stopAll = () => { stops.forEach(f => f()); stops = []; clearTimeout(ctxT); };
-function setChapter(i) {
-  if (i === cur) return; cur = i; stopAll();
+const SPOT = ["Not found", "Bottom of page 1", "#2 on Google", "#1 on Google Maps", "#1 on Google Maps", "#1 on Google Maps"];
+let cur = -1;
+function buildList() {
+  const v = TYPES[T];
+  rl.innerHTML = `<div class="rme" data-id="me"><div><div class="res me"><span class="tg">You</span><div class="u">${slug(v.n)}.com</div><div class="t" id="meT">${esc(v.n)}</div><div class="st" id="meS">No reviews yet</div></div></div></div>` +
+    v.c.concat(["Quick Fix " + v.svc]).map((c, i) => `<div class="res" data-id="c${i}"><div class="u">${slug(c)}.com</div><div class="t">${esc(c)}</div><div class="st">★★★★★ ${(4.8 - i * .1).toFixed(1)} <span>(${214 - i * 41}) · Open now</span></div></div>`).join("");
+}
+const ORDER = [["c0", "c1", "c2", "c3", "me"], ["c0", "c1", "c2", "me", "c3"], ["c0", "me", "c1", "c2", "c3"], ["me", "c0", "c1", "c2", "c3"]];
+function reorder(ids) {
+  const els = [...rl.children], first = new Map(els.map(e => [e, e.getBoundingClientRect().top]));
+  ids.forEach(id => rl.appendChild(rl.querySelector(`[data-id="${id}"]`)));
+  if (RM) return;
+  els.forEach(e => { const d = first.get(e) - e.getBoundingClientRect().top; if (d) { e.style.transition = "none"; e.style.transform = `translateY(${d}px)`; } });
+  requestAnimationFrame(() => requestAnimationFrame(() => els.forEach(e => { e.style.transition = ""; e.style.transform = ""; })));
+}
+function setChapter(i, force) {
+  if (i === cur && !force) return; cur = i;
+  const v = TYPES[T];
   chs.forEach((c, k) => { c.classList.toggle("on", k === i); c.classList.toggle("past", k < i); });
-  svs.forEach((c, k) => c.classList.toggle("on", k === i));
   steps.forEach((s, k) => { s.classList.toggle("on", k === i); s.classList.toggle("pass", k < i); });
   if (!stage.dataset.left) { NT.lit = LIT[i]; NT.warm = WARM[i]; NT.focus = FOC[i]; }
-  const cx = $("#ctx"); cx.classList.remove("on");
-  if (CTX[i]) ctxT = setTimeout(() => { $("#ctxT").innerHTML = `${CTX[i][0]}<small>${CTX[i][1]}</small>`; cx.classList.add("on"); }, 1500);
-  play(i);
-}
-function play(i) {
-  const v = TYPES[T], d = RM ? 1 : 1;
-  if (i === 1) {
-    const ring = $("#samRing"), rows = $$("#samList div");
-    rows.forEach(r => r.classList.remove("ok"));
-    const set = p => {
-      const sv = Math.round(54 + 42 * p); $("#samNum").textContent = sv; ring.style.setProperty("--v", sv);
-      ring.style.setProperty("--c", sv < 70 ? "#ef4444" : sv < 88 ? "#f59e0b" : "#22c55e");
-      $("#samLbl").textContent = sv < 70 ? "Needs work" : sv < 88 ? "Getting better" : "Healthy";
-      $("#samTxt").textContent = sv < 70 ? "Google has trouble reading this site." : sv < 88 ? "Problems are being fixed." : "Google can read and trust this site.";
-      rows.forEach((r, k) => { r.classList.toggle("ok", p > .2 + k * .22); r.querySelector("em").textContent = p > .2 + k * .22 ? "Fixed" : "Problem"; });
-    };
-    set(0); if (RM) set(1); else stops.push(tween(2400 * d, set));
-  }
-  if (i === 2) {
-    const t = $("#sakTitle"), ds = $("#sakDesc"), kw = $$("#sakKw span");
-    kw.forEach(k => k.classList.remove("on")); t.innerHTML = ""; ds.textContent = "";
-    const fin = () => { t.textContent = sakTitle; ds.textContent = sakDesc; kw.forEach((k, j) => setTimeout(() => k.classList.add("on"), j * 180)); };
-    if (RM) fin(); else stops.push(tween(1500, p => { const n = Math.round(p * sakTitle.length); t.innerHTML = esc(sakTitle.slice(0, n)) + '<span class="caret"></span>'; }, fin));
-  }
-  if (i === 3) {
-    const a = $("#aiA"), plain = aiAnswer.replace(/<[^>]+>/g, ""); a.innerHTML = "";
-    if (RM) a.innerHTML = aiAnswer; else { const t0 = setTimeout(() => stops.push(tween(1800, p => { a.innerHTML = esc(plain.slice(0, Math.round(p * plain.length))) + '<span class="caret" style="background:#111"></span>'; }, () => a.innerHTML = aiAnswer)), 900); stops.push(() => clearTimeout(t0)); }
-  }
-  if (i === 4) {
-    const m = $$(".msg"); m.forEach(x => x.classList.remove("on"));
-    m.forEach((x, k) => { const t = setTimeout(() => x.classList.add("on"), RM ? 0 : 400 + k * 650); stops.push(() => clearTimeout(t)); });
-  }
+  const me = rl.querySelector('[data-id="me"]');
+  me.classList.toggle("on", i >= 1);
+  $("#meT").textContent = i >= 2 ? `${v.n} · ${v.svc} Near You, Open Now` : v.n;
+  $("#meS").innerHTML = i >= 2 ? `★★★★★ 4.9 <span>(86) · Open now</span>` : "No reviews yet";
+  $("#miss").classList.toggle("off", i >= 1);
+  $("#spotV").textContent = SPOT[i]; $("#spot").classList.toggle("up", i >= 1);
+  $("#mpack").classList.toggle("on", i >= 3); $("#aic").classList.toggle("on", i >= 3);
+  $("#n1").classList.toggle("on", i === 1); $("#n4").classList.toggle("on", i === 4); $("#n5").classList.toggle("on", i === 5);
+  reorder(ORDER[Math.min(i, 3)]);
 }
 
-/* ---------- example stories ---------- */
-function playStory(card) {
-  if (card.dataset.played) return; card.dataset.played = 1;
-  const scn = card.querySelector(".scn"), lis = card.querySelectorAll(".did li");
-  lis.forEach((li, i) => setTimeout(() => li.classList.add("on"), 250 + i * 260));
-  setTimeout(() => {
-    scn.classList.remove("before"); card.classList.add("go");
-    card.querySelectorAll(".cnt").forEach(el => { const a = +el.dataset.a, b = +el.dataset.b; tween(2200, p => el.textContent = Math.round(a + (b - a) * p)); });
-    const k = card.dataset.k;
-    if (k === "shop") {
-      const feed = card.querySelector(".feed"), items = [["#2041", "$86", "Linen wrap dress"], ["#2042", "$142", "2 items"], ["#2043", "$64", "Silk scarf"], ["#2044", "$210", "3 items"], ["#2045", "$98", "Summer blouse"]];
-      items.forEach((it, i) => setTimeout(() => { feed.insertAdjacentHTML("afterbegin", `<div><i>$</i><span><b>New order ${it[0]} &middot; ${it[1]}</b><span>${it[2]}</span></span></div>`); if (feed.children.length > 4) feed.lastElementChild.remove(); }, i * 520));
-    }
-    if (k === "plum") card.querySelectorAll(".cal .j").forEach((j, i) => setTimeout(() => j.classList.add("on"), i * 90));
-  }, 250 + lis.length * 260 + 150);
+/* ---------- example stories: drag to compare before and after ---------- */
+$$(".cal .d").forEach((d, di) => { for (let i = 0; i < 4; i++) d.insertAdjacentHTML("beforeend", `<div class="j">${["Leak repair", "Water heater", "Drain clean", "Pipe fix"][i]}</div>`); });
+const KNOB = '<svg viewBox="0 0 24 24" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l-5 6 5 6M15 6l5 6-5 6"/></svg>';
+const ORDERS = [["#2041", "$86", "Linen wrap dress"], ["#2042", "$142", "2 items"], ["#2043", "$64", "Silk scarf"], ["#2044", "$210", "3 items"]];
+function setupCompare(card) {
+  const scn = card.querySelector(".scn"), inner = scn.firstElementChild, k = card.dataset.k;
+  const bef = document.createElement("div"), aft = document.createElement("div");
+  bef.className = "lay bef"; aft.className = "lay aft";
+  aft.appendChild(inner.cloneNode(true)); bef.appendChild(inner); scn.prepend(aft); scn.appendChild(bef);
+  /* the "after" picture: the business when it works */
+  aft.querySelectorAll(".cnt").forEach(e => e.textContent = e.dataset.b);
+  if (k === "shop") aft.querySelector(".feed").innerHTML = ORDERS.map(o => `<div><i>$</i><span><b>New order ${o[0]} &middot; ${o[1]}</b><span>${o[2]}</span></span></div>`).join("");
+  if (k === "plum") aft.querySelectorAll(".cal .j").forEach(j => j.classList.add("on"));
+  if (k === "bake") bef.querySelector(".st").innerHTML = '★★★★☆ 4.2 <span>(9 reviews)</span>';
+  /* the "before" picture: a quiet week */
+  if (k === "shop") bef.querySelector(".feed").innerHTML = '<div><i style="background:#f1f5f9;color:#94a3b8">0</i><span><b>No new orders yet today</b><span>Last order: 3 days ago</span></span></div>';
+  if (k === "plum") bef.querySelectorAll(".cal .j").forEach((j, n) => j.classList.toggle("on", n === 1 || n === 14));
+  scn.insertAdjacentHTML("beforeend", `<div class="cmpbar"><div class="knob" role="slider" tabindex="0" aria-label="Compare before and after" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">${KNOB}</div><span class="hint">Drag to compare</span></div><button type="button" class="bal l on">Before</button><button type="button" class="bal r">After</button>`);
+  const lis = [...card.querySelectorAll(".did li")], dream = card.querySelector(".bl.dreamc"), knob = scn.querySelector(".knob"), bl = scn.querySelector(".bal.l"), br = scn.querySelector(".bal.r");
+  let p = 100, stop = null;
+  const set = v => {
+    p = clamp(v, 0, 100); scn.style.setProperty("--p", p + "%");
+    const t = 1 - p / 100; knob.setAttribute("aria-valuenow", Math.round(t * 100));
+    lis.forEach((li, n) => li.classList.toggle("on", t > (n + 1) / (lis.length + 1)));
+    card.classList.toggle("go", t > .86); bl.classList.toggle("on", t < .5); br.classList.toggle("on", t >= .5);
+  };
+  const glide = (to, d) => { stop && stop(); const from = p; stop = tween(d, e => set(from + (to - from) * e)); };
+  const touch = () => { scn.classList.add("touched"); stop && stop(); };
+  const at = x => { const r = scn.getBoundingClientRect(); set((x - r.left) / r.width * 100); };
+  let drag = false;
+  scn.addEventListener("pointerdown", e => { if (e.target.closest(".bal")) return; drag = true; touch(); scn.setPointerCapture(e.pointerId); at(e.clientX); });
+  scn.addEventListener("pointermove", e => { if (drag) at(e.clientX); });
+  ["pointerup", "pointercancel"].forEach(n => scn.addEventListener(n, () => drag = false));
+  knob.addEventListener("keydown", e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); touch(); set(p + (e.key === "ArrowLeft" ? -10 : 10)); } });
+  bl.addEventListener("click", () => { touch(); glide(100, 900); });
+  br.addEventListener("click", () => { touch(); glide(0, 900); });
+  set(100);
+  card.play = () => { if (card.dataset.played) return; card.dataset.played = 1; if (scn.classList.contains("touched") || RM) { set(RM ? 0 : p); return; } setTimeout(() => { if (scn.classList.contains("touched")) return; glide(8, 2600); setTimeout(() => { if (!scn.classList.contains("touched")) glide(50, 1200); }, 3300); }, 500); };
 }
-$$(".cal .d").forEach((d, di) => { for (let i = 0; i < 4; i++) d.insertAdjacentHTML("beforeend", `<div class="j${(di * 4 + i) % 7 === 0 ? " on" : ""}">${["Leak repair", "Water heater", "Drain clean", "Pipe fix"][i]}</div>`); });
 const stories = $("#stories"), strack = $("#strack"), cards = $$(".sto[data-k]");
+cards.forEach(setupCompare);
+const playStory = c => c.play && c.play();
 let hz = false, hzDist = 0, cardX = [];
 function layoutStories() {
   hz = innerWidth > 900;
@@ -189,8 +196,24 @@ function layoutStories() {
   stories.style.height = (hzDist + innerHeight) + "px";
   cardX = cards.map(c => c.offsetLeft);
 }
-const storyIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && !hz) playStory(e.target); }), { threshold: .5 });
+const storyIO = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && !hz) playStory(e.target); }), { threshold: .6 });
 cards.forEach(c => storyIO.observe(c));
+
+/* ---------- team: tap a person in the photo ---------- */
+const CREW = [
+  ["jyoti", "Your main contact", "Jyoti", "Answers your messages and sends your weekly update in plain English."],
+  ["manav", "Founder", "Manav", "Plans how you grow on Google, Maps and AI answers, and signs off every plan."],
+  ["sam", "Technical expert", "Sam", "Fixes what stops Google from reading and showing your website."],
+  ["sakshi", "Content and listings", "Sakshi", "Writes your pages and listings in the words your customers use."]
+];
+const tags = $$(".tag"), tc = $("#tagcard"); let crewI = 0, crewAuto = null, crewTouched = false;
+function showCrew(i) {
+  crewI = i; tags.forEach((t, n) => t.classList.toggle("on", n === i)); tc.classList.add("sw");
+  setTimeout(() => { const c = CREW[i]; $("#tcImg").src = `/assets/img/face-${c[0]}.webp`; $("#tcRole").textContent = c[1]; $("#tcName").textContent = c[2]; $("#tcTxt").textContent = c[3]; tc.classList.remove("sw"); }, 220);
+}
+tags.forEach((t, n) => t.addEventListener("click", () => { crewTouched = true; clearInterval(crewAuto); showCrew(n); }));
+new IntersectionObserver(es => { const on = es[0].isIntersecting; clearInterval(crewAuto); if (on && !crewTouched && !RM) crewAuto = setInterval(() => showCrew((crewI + 1) % 4), 3800); }, { threshold: .4 }).observe($("#crew"));
+showCrew(0);
 
 /* ---------- one scroll handler, read then write ---------- */
 const hd = $("#hd"), bar = $("#bar"); let ticking = false, solid = null, barOn = null;
@@ -206,7 +229,7 @@ function onScroll() {
   if (tr) {
     const x = clamp(-tr.top, 0, hzDist);
     strack.style.transform = `translate3d(${-x}px,0,0)`;
-    cards.forEach((c, i) => { if (cardX[i] - x < innerWidth * .62) playStory(c); });
+    if (tr.top < vh * .3) cards.forEach((c, i) => { const l = cardX[i] - x; if (l > -40 && l < innerWidth * .45) playStory(c); });
   }
   const s = y > 40; if (s !== solid) { solid = s; hd.classList.toggle("solid", s); }
   const b = y > vh * .9; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
@@ -215,7 +238,7 @@ addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimat
 
 /* phone size follows the screen */
 function sizePhone() {
-  const ps = MOB() ? Math.min(.74, innerHeight * .44 / 620, innerWidth * .86 / 300) : Math.min(1, innerHeight * .82 / 620);
+  const ps = MOB() ? Math.min(.74, innerHeight * .44 / 620, innerWidth * .86 / 300) : Math.min(1.1, (innerHeight - 150) / 620);
   $(".pstage").style.setProperty("--ps", ps.toFixed(3));
 }
 let lastW = innerWidth, rT = 0;
@@ -249,6 +272,10 @@ const JOBS = [
 const flag = '<svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg>';
 const jobHTML = j => `<article class="job"><div class="top"><span class="svc">${esc(j.svc)}</span><span class="s5" aria-label="5 out of 5 stars">★★★★★</span></div><blockquote>“${esc(j.q)}”</blockquote><div class="meta"><span>${flag} United States</span><span>Done in ${j.d} days</span><span>${esc(j.u)}</span></div></article>`;
 new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); $("#track").innerHTML = JOBS.map(jobHTML).join("") + JOBS.map(jobHTML).join(""); $$("#track .job").slice(JOBS.length).forEach(e => e.setAttribute("aria-hidden", "true")); }, { rootMargin: "600px" }).observe($("#reviews"));
+
+/* ---------- footer: pick your business, go straight to the free check ---------- */
+$$(".ftrack button").forEach(b => b.addEventListener("click", () => { setType(b.dataset.k); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "footer" }); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => $("#fName").focus({ preventScroll: true }), 1100); }));
+$("#ftWa").addEventListener("click", e => { e.preventDefault(); track("Lead", { content_name: "WhatsApp footer", method: "WhatsApp" }); window.open(wa("Hi Business Santa! I'd like a free check of my business."), "_blank", "noopener"); });
 
 /* ---------- links ---------- */
 $$('[data-go="check"]').forEach(a => a.addEventListener("click", e => { e.preventDefault(); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => $("#fName").focus({ preventScroll: true }), 1100); trackC("OpenedFreeCheck"); }));
