@@ -306,17 +306,21 @@ new IntersectionObserver((es, ob) => {
 let inCk = false; new IntersectionObserver(e => { inCk = e[0].isIntersecting; onScroll(); }, { rootMargin: "-30% 0px -30% 0px" }).observe($("#formBox"));
 const rvl = $("#reveal");
 if (rvl) { const nio = new IntersectionObserver((e) => { if (!e[0].isIntersecting) return; nio.disconnect(); const im = $(".rvbg img"), go = () => rvl.classList.add("near"); im.loading = "eager"; (im.decode ? im.decode() : Promise.resolve()).then(go, go); }, { rootMargin: "200% 0px" }); nio.observe(rvl); }
-/* words that take turns behind Manav while he plans, then TEAM when everyone stands up */
-const BW = ["GOOGLE", "MAPS", "REVIEWS", "AI", "GROWTH"], bwE = $("#bwT"); let bwI = 0, bwTm = 0;
-function bwSet(t) { if (!bwE || bwE.textContent === t) return; bwE.textContent = t; bwE.parentNode.style.setProperty("--n", t.length); bwE.classList.remove("sw"); void bwE.offsetWidth; bwE.classList.add("sw"); }
+/* a slow word reel beside Manav while he plans: what the plan covers */
+const RW = ["Google search", "Google Maps", "Your reviews", "ChatGPT", "AI answers"], rwBox = $("#rw"); let rwI = 0, rwTm = 0;
+function rwNext() {
+  if (!rwBox) return; rwI = (rwI + 1) % RW.length;
+  const old = rwBox.querySelector("span:not(.out)"), n = document.createElement("span"); n.className = "nx"; n.textContent = RW[rwI]; rwBox.appendChild(n);
+  requestAnimationFrame(() => requestAnimationFrame(() => { n.classList.remove("nx"); if (old) { old.classList.add("out"); setTimeout(() => old.remove(), 800); } }));
+}
 function revealFrame(vh) {
   if (!rvl) return;
   const r = rvl.getBoundingClientRect(), p = clamp(-r.top / (r.height - vh), 0, 1);
   const o = clamp((p - .03) / .3, 0, 1), u = clamp((p - .5) / .3, 0, 1);
   rvl.style.setProperty("--open", o.toFixed(4)); rvl.style.setProperty("--rise", u.toFixed(4));
   rvl.classList.toggle("opened", o > .995); rvl.classList.toggle("up", u > .04);
-  if (u > .04 || o < .3 || RM) { clearInterval(bwTm); bwTm = 0; bwSet(u > .04 || RM ? "TEAM" : BW[0]); }
-  else if (!bwTm) { bwI = 0; bwSet(BW[0]); bwTm = setInterval(() => { bwI = (bwI + 1) % BW.length; bwSet(BW[bwI]); }, 1350); }
+  if (u > .04 || o < .5 || RM) { clearInterval(rwTm); rwTm = 0; }
+  else if (!rwTm) rwTm = setInterval(rwNext, 1900);
 }
 
 /* ---------- team: tap a person in the photo ---------- */
