@@ -319,3 +319,4 @@ $("#emSend").addEventListener("click", async () => {
 /* ---------- start: what is on screen first, the rest when the browser is idle ---------- */
 sizePhone(); setType(T); onScroll();
 (window.requestIdleCallback || setTimeout)(() => { layoutStories(); onScroll(); }, { timeout: 1500 });
+window.__bs = 1;

@@ -1,4 +1,13 @@
 #!/bin/sh
-# Builds the Business Santa page script (no dependencies, plain JS bundled and minified).
-# Usage: NODE_PATH=/path/to/node_modules sh build.sh
-cd "$(dirname "$0")" && npx --yes esbuild@0.21.5 app.js --bundle --minify --format=esm --target=es2020 --legal-comments=none --outfile=../../businesssanta/assets/js/app.js
+# Builds the Business Santa page script (plain JS, no dependencies), bundled and minified.
+# Each build gets its own file name (app.<hash>.js) so no browser can ever pair a cached old script with a new page.
+# Usage: sh build.sh
+set -e
+cd "$(dirname "$0")"
+OUT=../../businesssanta/assets/js
+npx --yes esbuild@0.21.5 app.js --bundle --minify --format=esm --target=es2020 --legal-comments=none --outfile=/tmp/bs-app.js
+H=$(sha1sum /tmp/bs-app.js | cut -c1-10)
+rm -f $OUT/app*.js
+cp /tmp/bs-app.js $OUT/app.$H.js
+sed -i -E "s#/assets/js/app[^\"]*\.js#/assets/js/app.$H.js#" ../../businesssanta/index.html
+echo "built app.$H.js"
