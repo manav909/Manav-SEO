@@ -303,11 +303,13 @@ new IntersectionObserver((es, ob) => {
 
 /* ---------- team: the curtain, the peek, the reveal ---------- */
 const rvl = $("#reveal");
+if (rvl) { const nio = new IntersectionObserver((e) => { if (!e[0].isIntersecting) return; nio.disconnect(); const im = $(".rvbg img"), go = () => rvl.classList.add("near"); im.loading = "eager"; (im.decode ? im.decode() : Promise.resolve()).then(go, go); }, { rootMargin: "200% 0px" }); nio.observe(rvl); }
 function revealFrame(vh) {
   if (!rvl) return;
   const r = rvl.getBoundingClientRect(), p = clamp(-r.top / (r.height - vh), 0, 1);
-  rvl.style.setProperty("--rise", clamp(p / .5, 0, 1).toFixed(4));
-  const o = clamp((p - .4) / .38, 0, 1); rvl.style.setProperty("--open", o.toFixed(4)); rvl.classList.toggle("opened", o > .995);
+  const o = clamp((p - .03) / .3, 0, 1), u = clamp((p - .5) / .3, 0, 1);
+  rvl.style.setProperty("--open", o.toFixed(4)); rvl.style.setProperty("--rise", u.toFixed(4));
+  rvl.classList.toggle("opened", o > .995); rvl.classList.toggle("up", u > .04);
 }
 
 /* ---------- team: tap a person in the photo ---------- */
