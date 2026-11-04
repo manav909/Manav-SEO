@@ -542,8 +542,13 @@ html:not([data-t=day]) :is(.h1 em,.h2 em,.ch h2 em,.bw.g){text-shadow:none;filte
 .reveal{position:relative;height:330vh;height:330svh;--rise:1;--open:1}
 .rvs{position:sticky;top:0;height:100vh;height:100svh;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:flex-end}
 .rvs{--fs:min(17rem,19vw,31svh);--mt:clamp(170px,22svh,230px);--hy:calc(var(--mt) + var(--fs) * .3);--ih:max(92svh,calc(106vw / 1.7185));--rt:calc(var(--hy) - var(--ih) * .181)}
-.rvs .bigw{top:var(--mt);bottom:auto;font-size:var(--fs);line-height:.8;letter-spacing:-.055em;-webkit-text-stroke:0;color:#fff;background:linear-gradient(180deg,#fff 35%,rgba(255,255,255,.62));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 10px 40px rgba(0,0,0,.35));opacity:var(--open);transform:translate3d(-50%,calc((1 - var(--open)) * 40px),0)}
-html[data-t=day] .rvs .bigw{background:linear-gradient(180deg,#0b1533 30%,rgba(11,21,51,.7));-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 10px 34px rgba(255,255,255,.6))}
+.rvs .bigw{--dy:calc(var(--rt) + var(--ih) * .375 - var(--mt));top:var(--mt);bottom:auto;font-size:min(calc(var(--fs) * var(--k,.78)),calc(76vw / var(--n,4) / .74));line-height:.8;letter-spacing:-.055em;-webkit-text-stroke:0;filter:drop-shadow(0 10px 40px rgba(0,0,0,.35));opacity:var(--open);transform:translate3d(-50%,calc(var(--dy) + (1 - var(--open)) * 40px),0);transition:transform .9s var(--ease),font-size .5s var(--ease)}
+.reveal.up .bigw{--dy:0px;--k:1}
+.rvs .bigw span{display:inline-block;color:#fff;background:linear-gradient(180deg,#fff 35%,rgba(255,255,255,.66));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+html[data-t=day] .rvs .bigw{filter:drop-shadow(0 10px 34px rgba(255,255,255,.6))}
+html[data-t=day] .rvs .bigw span{background:linear-gradient(180deg,#0b1533 30%,rgba(11,21,51,.74));-webkit-background-clip:text;background-clip:text}
+#bwT.sw{animation:bwIn .6s var(--ease)}
+@keyframes bwIn{from{opacity:0;transform:translateY(16%) scale(.94);filter:blur(10px)}}
 .rvhead{position:absolute;left:0;right:0;top:clamp(78px,10.5svh,108px);text-align:center;padding:0 20px;opacity:var(--open);transform:translateY(calc((1 - var(--open)) * 24px))}
 .rvhead .h2{font-size:clamp(1.5rem,2.3vw,2.1rem);margin:8px 0 0}
 .cur{position:absolute;top:0;bottom:0;width:50.4%;overflow:hidden;z-index:2;background:radial-gradient(140% 80% at 50% 100%,rgba(253,185,19,.18),transparent 55%),repeating-linear-gradient(90deg,rgba(255,255,255,.035) 0 1px,transparent 1px 22px,rgba(0,0,0,.18) 22px 40px,transparent 40px 64px),linear-gradient(180deg,#0b1030,#060818)}
@@ -572,6 +577,12 @@ html:not(.js) .cur,html:not(.js) .psst{display:none}
 .rvbg{z-index:0;-webkit-mask-image:linear-gradient(180deg,transparent,#000 9%,#000 86%,transparent);mask-image:linear-gradient(180deg,transparent,#000 9%,#000 86%,transparent)}
 .rvbg img{width:100%;height:100%}
 .rvbg::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(var(--ov),.8) 0%,rgba(var(--ov),.5) 16%,rgba(var(--ov),.42) 34%,rgba(var(--ov),.22) 58%,rgba(var(--ov),.75) 92%)}
+.trs{position:absolute;inset:0;z-index:2;margin:0;padding:0;list-style:none;pointer-events:none}
+.trs li{position:absolute;left:var(--tx);top:var(--ty);display:flex;align-items:center;gap:9px;padding:10px 16px 10px 12px;border-radius:999px;background:rgba(8,12,28,.62);box-shadow:inset 0 0 0 1px rgba(255,255,255,.14),0 14px 34px rgba(0,0,0,.3);color:#fff;font:650 clamp(.8rem,1vw,.95rem)/1.2 var(--b);white-space:nowrap;opacity:0;transform:translateY(18px) scale(.96);transition:opacity .6s var(--ease),transform .8s var(--ease)}
+.trs li::before{content:"";flex:none;width:18px;height:18px;border-radius:50%;background:var(--y) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/10px no-repeat}
+.trs li.r{left:auto;right:var(--tx)}
+html[data-t=day] .trs li{background:rgba(255,255,255,.82);color:#0f172a;box-shadow:inset 0 0 0 1px rgba(15,23,42,.08),0 14px 34px rgba(15,23,42,.14)}
+.reveal.opened:not(.up) .trs li{opacity:1;transform:none;transition-delay:calc(.25s + var(--i) * .12s)}
 .rvfg{z-index:1;pointer-events:none;visibility:hidden}.reveal.near .rvfg{visibility:visible}
 .reveal.near .rvfg{background:linear-gradient(rgba(var(--ov),.08),rgba(var(--ov),.08)),url(/assets/img/room-fg.webp) 0 0/100% 100%;-webkit-mask:url(/assets/img/room-fg.webp) 0 0/100% 100%;mask:url(/assets/img/room-fg.webp) 0 0/100% 100%}
 html:not(.js) .rvfg,html:not(.js) .bigw{display:none}
@@ -812,10 +823,155 @@ html:not(.js) .rvfg,html:not(.js) .bigw{display:none}
 .step p{color:var(--sub);margin:0}
 
 /* check */
-.ck{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:clamp(28px,5vw,72px);align-items:start}
-.tk{list-style:none;padding:0;margin:26px 0 0;display:grid;gap:12px}
-.tk li{display:flex;gap:12px;color:var(--sub2)}
-.tk li::before{content:"";flex:none;width:24px;height:24px;border-radius:50%;background:var(--y) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23141414' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12l5 5 9-10'/%3E%3C/svg%3E") center/14px no-repeat}
+.ckh{text-align:center;max-width:760px;margin:0 auto}.ckh .lead{margin:0 auto}
+.ckx{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:clamp(24px,4vw,56px);align-items:center;margin-top:clamp(30px,4vw,54px)}
+.shopw{position:relative;--spr:cubic-bezier(.34,1.56,.64,1)}
+.shop{--aw:#2563eb;position:relative;aspect-ratio:5/4;border-radius:32px;overflow:hidden;background:linear-gradient(180deg,#7cc4ff,#c9e8ff 70%);box-shadow:0 40px 90px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.12);transition:background 1s}
+html[data-t=night] .shop{background:linear-gradient(180deg,#0b1a3a,#273b6b 75%)}
+html[data-t=dusk] .shop{background:linear-gradient(180deg,#ff9a76,#ffd2a1 75%)}
+.sky{position:absolute;inset:0}
+.sun{position:absolute;right:9%;top:8%;width:12%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,#fff6c9,#ffd75e 60%,#ffb703);box-shadow:0 0 50px rgba(255,214,94,.8);animation:sunp 5s ease-in-out infinite}
+html[data-t=night] .sun{background:radial-gradient(circle at 35% 35%,#fffbe8,#e6e1c8);box-shadow:0 0 40px rgba(255,255,230,.45);width:9%}
+@keyframes sunp{50%{transform:scale(1.06)}}
+.cl{position:absolute;height:8%;border-radius:999px;background:rgba(255,255,255,.85);animation:cl 22s ease-in-out infinite}
+.cl::before{content:"";position:absolute;left:22%;bottom:40%;width:42%;height:150%;border-radius:50%;background:inherit}
+.c1{left:6%;top:10%;width:18%}.c2{left:52%;top:20%;width:13%;animation-duration:30s;opacity:.7}
+html[data-t=night] .cl{opacity:.12}
+@keyframes cl{50%{transform:translateX(16%)}}
+.city{position:absolute;left:0;right:0;bottom:15%;height:62%;pointer-events:none}
+.city i{position:absolute;bottom:0;left:var(--x);width:var(--w);height:var(--h);border-radius:6px 6px 0 0;background:linear-gradient(180deg,rgba(40,72,120,.32),rgba(40,72,120,.18));transform:scaleY(0);transform-origin:bottom;transition:transform .9s var(--spr) var(--d)}
+.city i::after{content:"";position:absolute;inset:12% 18% 10%;background:repeating-linear-gradient(180deg,rgba(255,255,255,.35) 0 6%,transparent 6% 14%);-webkit-mask:repeating-linear-gradient(90deg,#000 0 30%,transparent 30% 50%);mask:repeating-linear-gradient(90deg,#000 0 30%,transparent 30% 50%)}
+html[data-t=night] .city i{background:linear-gradient(180deg,rgba(10,20,45,.85),rgba(16,28,60,.7))}
+html[data-t=night] .city i::after{background:repeating-linear-gradient(180deg,rgba(255,214,120,.55) 0 6%,transparent 6% 14%)}
+.shop.has-city .city i{transform:none}
+.bld{position:absolute;left:14%;right:14%;top:4%;bottom:15%;display:flex;flex-direction:column;justify-content:flex-end;transform-origin:50% 100%}
+.bld.pop{animation:squash .8s var(--spr)}
+@keyframes squash{0%{transform:scale(1.12,.7)}35%{transform:scale(.94,1.1)}60%{transform:scale(1.03,.97)}100%{transform:none}}
+.roof{position:relative;height:0;display:flex;justify-content:center}
+.bigpin{position:absolute;bottom:4px;width:15%;aspect-ratio:1;border-radius:50% 50% 50% 0;background:radial-gradient(circle at 35% 35%,#ff6b5e,#ea4335 55%,#b3261e);box-shadow:-4px 6px 10px rgba(0,0,0,.25);transform:rotate(-45deg) translate(30px,-140px) scale(.4);opacity:0;transition:transform .8s var(--spr),opacity .3s}
+.bigpin::after{content:"";position:absolute;left:32%;top:32%;width:36%;height:36%;border-radius:50%;background:#fff}
+.shop.has-maps .bigpin{opacity:1;transform:rotate(-45deg);animation:pinb 2.6s ease-in-out .9s infinite}
+@keyframes pinb{50%{transform:rotate(-45deg) translate(5px,-5px)}}
+.flr{display:flex;gap:8%;padding:0 9%;height:0;overflow:hidden;background:linear-gradient(180deg,#e9d8c0,#dcc6a6);box-shadow:inset 0 -3px 0 rgba(0,0,0,.08);border-radius:10px 10px 0 0;transition:height .85s var(--spr),padding .85s var(--spr)}
+html[data-t=night] .flr{background:linear-gradient(180deg,#56483b,#4a3d31)}
+.flr i{flex:1;align-self:center;height:58%;margin:0;border-radius:6px 6px 2px 2px;background:linear-gradient(160deg,#cfe9ff,#9cc9f0);box-shadow:inset 0 0 0 3px #fff}
+html[data-t=night] .flr i{background:linear-gradient(160deg,#ffd98a,#f2a93b);box-shadow:inset 0 0 0 3px #3a2e22,0 0 14px rgba(255,190,80,.5)}
+.shop.fl1 .fla,.shop.fl2 .fla,.shop.fl2 .flb{height:15%}
+.gfl{position:relative;height:56%;display:flex;flex-direction:column;flex:none}
+.mtx .stars{display:flex;align-items:center;gap:1px;height:0;overflow:hidden;transition:height .5s var(--spr)}
+.stars i{font-style:normal;font-size:.95rem;line-height:1;color:#fbbc04;transform:scale(0);transition:transform .5s var(--spr)}
+.stars em{font-style:normal;margin-left:6px;font:700 .72rem var(--b);color:#16a34a;opacity:0;transition:opacity .4s .5s}
+.shop.has-rev~.mcard .stars{height:18px}.shop.has-rev~.mcard .stars i{transform:none}.shop.has-rev~.mcard .stars em{opacity:1}
+.stars i:nth-child(2){transition-delay:.08s}.stars i:nth-child(3){transition-delay:.16s}.stars i:nth-child(4){transition-delay:.24s}.stars i:nth-child(5){transition-delay:.32s}
+.sign{position:relative;z-index:2;align-self:center;max-width:94%;margin-bottom:-2px;padding:2.4% 6%;border-radius:12px 12px 4px 4px;background:#14110f;box-shadow:0 10px 24px rgba(0,0,0,.35),inset 0 0 0 3px #3a2e22;color:#ffe9b0;font:800 clamp(.85rem,2.2vw,1.5rem)/1.1 var(--h);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 0 14px rgba(255,201,80,.55);transform-origin:50% 0;animation:swing 4.5s ease-in-out infinite}
+@keyframes swing{50%{transform:rotate(1.2deg)}}
+.sign span{display:inline-block}
+.sign.ph span{opacity:.45}
+.sign .sgl{display:inline-block;white-space:pre}
+.sign .sgl.nw{animation:drop .5s var(--spr)}
+@keyframes drop{0%{transform:translateY(-120%) scale(.6);opacity:0}100%{transform:none;opacity:1}}
+.sign.pop{animation:signpop .6s var(--spr),swing 4.5s ease-in-out .6s infinite}
+@keyframes signpop{30%{transform:scale(1.14) rotate(-2deg)}}
+.awn{position:relative;z-index:1;height:19%;flex:none;background:repeating-linear-gradient(90deg,var(--aw) 0 12.5%,#fff 12.5% 25%);border-radius:8px 8px 0 0;box-shadow:0 12px 18px rgba(0,0,0,.18);transform-origin:50% 0;transition:background .6s;-webkit-mask:radial-gradient(circle at 50% 100%,transparent 6.3%,#000 6.6%) 0 0/12.5% 100% repeat-x;mask:radial-gradient(circle at 50% 100%,transparent 6.3%,#000 6.6%) 0 0/12.5% 100% repeat-x}
+.awn.unroll{animation:unroll .7s var(--spr)}
+@keyframes unroll{from{transform:scaleY(0)}}
+.fac{flex:1;display:flex;gap:6%;padding:5% 7% 0;background:linear-gradient(180deg,#f3e6d3,#e7d3b6);box-shadow:inset 0 -6px 0 rgba(0,0,0,.08)}
+html[data-t=night] .fac{background:linear-gradient(180deg,#5b4c3e,#4a3d31)}
+.win{position:relative;flex:1.6;border-radius:10px 10px 0 0;background:linear-gradient(160deg,#cfe9ff,#9cc9f0);box-shadow:inset 0 0 0 5px #fff,inset 0 0 0 7px rgba(0,0,0,.08);display:grid;place-items:center;overflow:hidden}
+html[data-t=night] .win{background:linear-gradient(160deg,#1f2c48,#141d33)}
+.wem{position:relative;z-index:1;font-size:clamp(2rem,5vw,4rem);line-height:1;filter:drop-shadow(0 6px 10px rgba(0,0,0,.2))}
+.wem.sw{animation:bob .7s var(--spr)}
+@keyframes bob{0%{transform:scale(.3) rotate(-16deg);opacity:0}100%{transform:none;opacity:1}}
+.glow{position:absolute;inset:0;background:radial-gradient(circle at 50% 60%,rgba(255,214,120,.95),rgba(255,180,60,.25) 60%,transparent);opacity:0;transition:opacity .8s}
+.door{position:relative;flex:1;border-radius:10px 10px 0 0;background:linear-gradient(180deg,#6b4a2e,#563a22);box-shadow:inset 0 0 0 5px #4a3220}
+.door::after{content:"";position:absolute;right:14%;top:52%;width:9%;aspect-ratio:1;border-radius:50%;background:#ffd166}
+.opn{position:absolute;left:50%;top:16%;width:76%;aspect-ratio:2/1;transform:translateX(-50%);perspective:300px}
+.opn b{position:absolute;inset:0;display:grid;place-items:center;border-radius:6px;font:800 clamp(.5rem,1.2vw,.85rem) var(--b);letter-spacing:.06em;text-transform:uppercase;backface-visibility:hidden;transition:transform .9s var(--spr)}
+.cs{background:#fff;color:#b91c1c}.os{background:#16a34a;color:#fff;transform:rotateY(180deg)}
+.shop.open .cs{transform:rotateY(-180deg)}.shop.open .os{transform:none}.shop.open .glow{opacity:1}
+.bub{position:absolute;z-index:4;display:flex;align-items:center;gap:7px;padding:7px 12px 7px 8px;border-radius:16px;background:#fff;color:#0f172a;font:700 clamp(.62rem,1.2vw,.82rem)/1.2 var(--b);box-shadow:0 12px 26px rgba(0,0,0,.22);opacity:0;transform:scale(.3) translateY(20px);transition:transform .7s var(--spr),opacity .3s;white-space:nowrap}
+.bub span{display:grid;place-items:center;width:1.9em;height:1.9em;border-radius:50%;font-size:1.05em}
+.bub em{font-style:normal;color:#b7791f}
+.b-calls{right:3%;top:34%;border-radius:16px 16px 4px 16px}.b-calls span{background:#dcfce7}
+.b-ai{left:3%;top:18%;border-radius:16px 16px 16px 4px;max-width:44%}.b-ai span{background:#111;color:#fff}.b-ai b{overflow:hidden;text-overflow:ellipsis}
+.shop.has-calls .b-calls,.shop.has-ai .b-ai{opacity:1;transform:none}
+.shop.has-calls .b-calls{animation:float 3s ease-in-out .8s infinite}.shop.has-ai .b-ai{animation:float 3.4s ease-in-out 1s infinite}
+@keyframes float{50%{transform:translateY(-6px)}}
+.ring{animation:ring 1.4s ease-in-out infinite}
+@keyframes ring{0%,40%,100%{transform:none}5%,15%,25%{transform:rotate(-16deg)}10%,20%,30%{transform:rotate(16deg)}}
+.webc{position:absolute;z-index:4;left:3%;bottom:19%;width:30%;padding:7% 6% 5%;border-radius:10px;background:#fff;box-shadow:0 12px 26px rgba(0,0,0,.22);opacity:0;transform:scale(.3) rotate(-8deg);transition:transform .7s var(--spr),opacity .3s}
+.webc i{position:absolute;top:5%;width:5%;aspect-ratio:1;border-radius:50%;background:#ef4444}.webc i:nth-child(1){left:5%}.webc i:nth-child(2){left:13%;background:#f59e0b}.webc i:nth-child(3){left:21%;background:#22c55e}
+.webc b{display:block;font:700 clamp(.5rem,1vw,.72rem) var(--b);color:#1a73e8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.webc::after{content:"";display:block;height:14px;margin-top:6%;border-radius:4px;background:linear-gradient(90deg,#e2e8f0 60%,#fde68a 60%)}
+.shop.has-web .webc{opacity:1;transform:rotate(-3deg)}
+.walk{position:absolute;left:0;right:0;bottom:0;height:15%;background:linear-gradient(180deg,#b9c0c9,#9aa3ae)}
+html[data-t=night] .walk{background:linear-gradient(180deg,#3b4352,#2d3442)}
+.pl{position:absolute;bottom:62%;width:8%;aspect-ratio:1;border-radius:50% 50% 20% 20%;background:radial-gradient(circle at 40% 35%,#4ade80,#15803d)}
+.pl::after{content:"";position:absolute;left:20%;right:20%;top:78%;height:60%;border-radius:3px;background:#c2410c}
+.p1{left:6%}.p2{right:6%}
+.wkrs{position:absolute;inset:0;opacity:0;transition:opacity .4s}
+.shop.has-walk .wkrs,.shop.open .wkrs{opacity:1}
+.wkr{position:absolute;bottom:55%;left:100%;width:4.2%;aspect-ratio:1/2.3;animation:walkin 4.8s linear var(--t) infinite}
+.wkr::before{content:"";position:absolute;left:12%;right:12%;top:0;aspect-ratio:1;border-radius:50%;background:#f2c7a5;box-shadow:inset 0 3px 0 #3b2a20}
+.wkr::after{content:"";position:absolute;left:0;right:0;top:38%;bottom:0;border-radius:40% 40% 20% 20%;background:var(--c);animation:bobw .4s ease-in-out infinite alternate}
+@keyframes walkin{0%{left:100%;opacity:1}70%{left:58%;opacity:1;transform:none}82%{left:56%;opacity:0;transform:scale(.8)}100%{left:56%;opacity:0}}
+@keyframes bobw{to{transform:translateY(-6%)}}
+.cf{position:absolute;inset:0;pointer-events:none;z-index:6}
+.cf i{position:absolute;left:50%;top:38%;width:9px;height:14px;border-radius:2px;opacity:0;animation:cf 1.8s cubic-bezier(.2,.7,.3,1) forwards}
+@keyframes cf{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--r))}}
+.mcard{position:relative;z-index:2;margin:-46px auto 0;display:flex;gap:12px;align-items:center;width:min(84%,380px);padding:10px 14px 10px 10px;border-radius:20px;background:#fff;color:#0f172a;box-shadow:0 24px 60px rgba(0,0,0,.35);transition:opacity .6s var(--ease)}
+.shopw:not(.s1) .mcard{opacity:.6}
+.mmap{position:relative;flex:none;width:74px;height:74px;border-radius:14px;overflow:hidden;background:#e8eef3}
+.road{position:absolute;background:#fff}.r1{left:-10%;right:-10%;top:42%;height:14%;transform:rotate(-14deg)}.r2{top:-10%;bottom:-10%;left:58%;width:12%;transform:rotate(10deg)}
+.pin{position:absolute;left:50%;top:42%;width:26px;height:26px;margin:-26px 0 0 -13px;border-radius:50% 50% 50% 0;background:#ea4335;transform:rotate(-45deg) translate(0,-60px);opacity:0;box-shadow:-2px 2px 6px rgba(0,0,0,.25);transition:transform .7s var(--spr),opacity .2s}
+.pin::after{content:"";position:absolute;left:30%;top:30%;width:40%;height:40%;border-radius:50%;background:#fff}
+.shop.has-city~.mcard .pin{transform:rotate(-45deg);opacity:1}
+.mtx{min-width:0}.mtx b{display:block;font:800 1.02rem/1.2 var(--h);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mtx span{display:block;font-size:.8rem;color:#4b5563;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mtx .mweb{color:#1a73e8}
+.gchs{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px}
+.gch{position:relative;display:flex;align-items:center;gap:9px;padding:12px;border-radius:16px;background:#f6f8fb;box-shadow:inset 0 0 0 1.5px #e5e9f0;font:600 .88rem/1.2 var(--b);color:#1f2937;cursor:pointer;transition:transform .3s var(--spr),box-shadow .25s,background .25s}
+.gch input{position:absolute;opacity:0;pointer-events:none}
+.gch span{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:#fff;font-size:1.1rem;box-shadow:0 2px 6px rgba(15,23,42,.08);transition:transform .4s var(--spr)}
+.gch:has(input:checked){background:#fff8e6;box-shadow:inset 0 0 0 2.5px var(--y),0 10px 22px rgba(253,185,19,.2);transform:translateY(-2px)}
+.gch:has(input:checked) span{transform:scale(1.15) rotate(-8deg)}
+.gch:has(input:focus-visible){outline:3px solid #0f172a;outline-offset:2px}
+@media (prefers-reduced-motion:reduce){.shop *,.shop{animation:none!important;transition-duration:.01s!important}}
+.fh{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.stc{flex:none;margin-top:6px;padding:6px 11px;border-radius:999px;background:#f1f5f9;font:600 .78rem var(--b);color:#475569}.stc b{color:#0f172a}
+.pbar{position:relative;height:8px;border-radius:999px;background:#eef1f5;margin:2px 0 22px}
+.pbar i{position:absolute;left:0;top:0;bottom:0;width:4%;border-radius:inherit;background:linear-gradient(90deg,#fdb913,#f59e0b);transition:width .7s var(--ease)}
+#ckGift{position:absolute;top:50%;left:4%;transform:translate(-50%,-50%);font-size:1.25rem;transition:left .7s var(--ease);filter:drop-shadow(0 3px 4px rgba(0,0,0,.2))}
+.stps{display:grid}
+.stp{grid-area:1/1;border:0;margin:0;padding:0;min-width:0;opacity:0;visibility:hidden;transform:translateX(28px);transition:opacity .45s var(--ease),transform .6s var(--ease),visibility 0s .6s}
+.stp.past{transform:translateX(-28px)}
+.stp.on{opacity:1;visibility:visible;transform:none;transition:opacity .5s var(--ease) .08s,transform .6s var(--ease) .08s,visibility 0s}
+.stp legend{padding:0;font:800 clamp(1.25rem,2vw,1.5rem)/1.2 var(--h);letter-spacing:-.02em;color:#0f172a}
+.hn{margin:6px 0 16px;color:#4b5563;font-size:.94rem}
+.btiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.btl{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:14px 6px 12px;border-radius:18px;background:#f6f8fb;box-shadow:inset 0 0 0 1.5px #e5e9f0;cursor:pointer;text-align:center;transition:transform .25s var(--ease),box-shadow .25s,background .25s}
+.btl:hover{transform:translateY(-2px);box-shadow:inset 0 0 0 1.5px #cbd3df,0 10px 20px rgba(15,23,42,.08)}
+.btl input{position:absolute;opacity:0;pointer-events:none}
+.te{font-size:1.9rem;line-height:1;transition:transform .35s var(--ease)}
+.tn{font:600 .8rem/1.15 var(--b);color:#334155}
+.btl:has(input:checked){background:#fff8e6;box-shadow:inset 0 0 0 2.5px var(--y),0 12px 24px rgba(253,185,19,.22)}
+.btl:has(input:checked) .te{transform:scale(1.18) rotate(-6deg)}
+.btl:has(input:focus-visible){outline:3px solid #0f172a;outline-offset:2px}
+.fl.big input{padding:17px 16px;font-size:1.12rem;border-radius:16px}
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.sug{display:inline-flex;align-items:center;gap:8px;margin:0 0 12px;padding:9px 14px;border:0;border-radius:999px;background:#eaf2ff;color:#1d4ed8;font:600 .9rem var(--b);cursor:pointer}
+.sug::before{content:"📍"}
+.two2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btn.o2{background:#f1f5f9;color:#0f172a;box-shadow:inset 0 0 0 1.5px #e2e8f0}
+.sum{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 16px}
+.sum button{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:0;border-radius:12px;background:#f6f8fb;box-shadow:inset 0 0 0 1px #e5e9f0;color:#0f172a;font:600 .86rem var(--b);cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sum button::after{content:"✎";color:#94a3b8;font-size:.8rem}
+.fnav{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:18px}
+.fnav .priv{margin:0;text-align:right;flex:1}
+.bk{border:0;background:none;color:#334155;font:600 .92rem var(--b);padding:8px 4px;cursor:pointer}
+.serr{margin:-4px 0 12px}
+.form .btn.nxt{width:100%}
+@media (max-width:760px){.ckx{grid-template-columns:1fr;align-items:start}.shopw{position:sticky;top:62px;z-index:3}.shop{aspect-ratio:16/9;border-radius:24px}.mcard .mweb{display:none}.mcard{width:86%;margin-top:-14px;padding:6px 12px 6px 6px;gap:9px;border-radius:16px}.mmap{width:42px;height:42px;border-radius:11px}.mmap .pin{width:18px;height:18px;margin:-18px 0 0 -9px}.mtx b{font-size:.9rem}.mtx span{font-size:.72rem}.stars i{font-size:.8rem}.shop.has-rev~.mcard .stars{height:15px}.gchs{grid-template-columns:1fr 1fr;gap:7px}.gch{padding:10px 9px;font-size:.8rem;gap:7px}.gch span{width:28px;height:28px}.fh h3{font-size:1.3rem}.form .sub{font-size:.86rem}.btiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}.btl{padding:11px 3px 9px;border-radius:15px}.te{font-size:1.6rem}.tn{font-size:.7rem}.fnav{flex-direction:column-reverse;align-items:stretch}.fnav .priv{text-align:center}}
+@media (prefers-reduced-motion:reduce){.stp,.stp.on{transition:none}.cl{animation:none}}
 .form{background:#fff;color:#0f172a;border-radius:28px;padding:clamp(22px,3vw,34px);box-shadow:0 40px 100px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.06)}
 .form h3{font:800 1.6rem/1.15 var(--h);letter-spacing:-.025em;margin:0 0 4px}
 .form .sub{color:#4b5563;margin:0 0 20px;font-size:.95rem}
@@ -828,7 +984,7 @@ html:not(.js) .rvfg,html:not(.js) .bigw{display:none}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .err{color:#dc2626;font-size:.86rem;margin:-6px 0 10px;min-height:1em}
 .form .btn{width:100%;padding:18px}
-.btn.wa{background:#25d366;color:#062a15;box-shadow:0 10px 28px rgba(37,211,102,.3)}
+.btn.wa{height:auto;background:#25d366;color:#062a15;box-shadow:0 10px 28px rgba(37,211,102,.3)}
 .btn.wa:hover{background:#3be078}
 .alt{display:block;width:100%;margin-top:12px;background:none;border:0;color:#4b5563;text-decoration:underline;font:500 .94rem var(--b)}
 .em{display:none;margin-top:16px;padding-top:16px;border-top:1px dashed var(--line2)}
@@ -970,6 +1126,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   .rvs .tagcard{left:calc(11vw + 10px);right:calc(11vw + 10px);bottom:-102px}
   .rvs{--cdrop:calc(100% + 96px);--fs:30vw;--mt:clamp(176px,23svh,200px);--ih:max(72svh,calc(106vw / 1.7185))}
   .rvhead .h2{font-size:1.32rem;max-width:21ch;margin:6px auto 0}
+  .trs{inset:auto 0 calc(118px + 4svh) 0;display:flex;flex-wrap:wrap;justify-content:center;gap:7px;padding:0 12px}.trs li,.trs li.r{position:relative;left:auto;right:auto;top:auto;padding:7px 11px 7px 8px;font-size:.72rem;gap:6px}.trs li::before{width:14px;height:14px;background-size:8px}.trs li:nth-child(3),.trs li:nth-child(6){display:none}
   .rvhead .eyb{font-size:.66rem}
   .bigw{top:4%}
   .fnd{grid-template-columns:1fr;margin-top:120px;min-height:0}
@@ -1027,7 +1184,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 <div id="bgv" aria-hidden="true"><video id="bgvid" muted playsinline loop preload="none" disablepictureinpicture></video></div><div class="vig" aria-hidden="true"></div>
 
 <header class="hd" id="hd"><div class="wrap">
-  <a class="brand" href="/" aria-label="Business Santa home"><img src="/assets/img/logo-96.webp" alt="" width="40" height="40"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a>
+  <a class="brand" href="/" aria-label="Business Santa, powered by SEO Season, home"><img src="/assets/img/logo-96.webp" alt="" width="40" height="40"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a>
   <nav class="nav"><a href="#stage" data-jump>How it works</a><a href="#stories" data-jump>See it working</a><a href="#team" data-jump>Our team</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=nav" data-hand="1">Pricing</a></nav>
   <a class="btn y sm" href="#check" data-go="check" aria-label="Get my free check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Get my free check</span></a>
 </div></header>
@@ -1197,33 +1354,69 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 </section>
 
 <section class="blk dk see" id="check">
-  <div class="wrap ck">
-    <div>
+  <div class="wrap">
+    <div class="ckh">
       <span class="eyb rv">Free check</span>
       <h2 class="h2 split"><span class="w"><span style="--i:0">See</span></span> <span class="w"><span style="--i:1">how</span></span> <span class="w"><span style="--i:2">customers</span></span> <span class="w"><span style="--i:3">find</span></span> <span class="w"><span style="--i:4">you</span></span> <span class="w"><span style="--i:5">today</span></span></h2>
-      <p class="lead rv">A real person on our team looks at your business and tells you, in plain English, what's working and what's holding you back.</p>
-      <ul class="tk rv"><li>Can people find you on Google?</li><li>Are you on Google Maps, with the right details?</li><li>Does ChatGPT know your business?</li><li>What are nearby competitors doing that you're not?</li></ul>
+      <p class="lead rv">Answer a few quick questions and watch your business grow on screen. Then a real person on our team checks your business and tells you, in plain English, what's working and what's holding you back.</p>
     </div>
-    <div class="form rv" id="formBox">
-      <form id="ckForm" novalidate>
-        <h3>Get my free check</h3>
-        <p class="sub">About a minute. No card, no contract, no spam.</p>
-        <label class="fl"><span>What kind of business?</span><select id="fType"><option value="plumbing">Plumbing</option><option value="restaurant">Restaurant</option><option value="dental">Dental</option><option value="roofing">Roofing</option><option value="salon">Salon or spa</option><option value="law">Law office</option><option value="store">Shop or store</option><option value="other">Something else</option></select></label>
-        <label class="fl"><span>Business name</span><input id="fName" autocomplete="organization"></label>
-        <label class="fl"><span>Website <small>(no website? leave it blank)</small></span><input id="fSite" inputmode="url" autocomplete="url"></label>
-        <label class="fl"><span>City and state</span><input id="fCity" autocomplete="address-level2" placeholder="Austin, TX"></label>
-        <div class="err" id="fErr" role="alert"></div>
-        <button class="btn wa" type="submit" id="waBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg>Send on WhatsApp</button>
-        <button class="alt" type="button" id="altBtn">Don't use WhatsApp? Get it by email or text instead</button>
-        <div class="em" id="emBox">
-          <div class="two"><label class="fl"><span>Your name</span><input id="eName" autocomplete="name" placeholder="Maria Rivera"></label><label class="fl"><span>Email</span><input id="eMail" type="email" autocomplete="email"></label></div>
-          <label class="fl"><span>Phone for texts <small>(optional)</small></span><input id="ePhone" type="tel" autocomplete="tel" placeholder="(512) 555 0147"></label>
-          <div class="err" id="eErr" role="alert"></div>
-          <button class="btn dk" type="button" id="emSend">Send my request</button>
+    <div class="ckx">
+      <div class="shopw rv" aria-hidden="true">
+        <div class="shop" id="shop" data-k="plumbing">
+          <div class="sky"><i class="sun"></i><i class="cl c1"></i><i class="cl c2"></i></div>
+          <div class="city"><i style="--x:0%;--w:12%;--h:46%;--d:0ms"></i><i style="--x:10%;--w:9%;--h:62%;--d:80ms"></i><i style="--x:18%;--w:13%;--h:38%;--d:160ms"></i><i style="--x:68%;--w:12%;--h:56%;--d:120ms"></i><i style="--x:79%;--w:10%;--h:72%;--d:40ms"></i><i style="--x:88%;--w:12%;--h:44%;--d:200ms"></i><i style="--x:30%;--w:8%;--h:30%;--d:240ms"></i><i style="--x:60%;--w:9%;--h:34%;--d:280ms"></i></div>
+          <div class="bld" id="shBld">
+            <div class="roof"><i class="bigpin"></i></div>
+            <div class="flr flb"><i></i><i></i><i></i></div>
+            <div class="flr fla"><i></i><i></i><i></i></div>
+            <div class="gfl">
+                            <div class="sign"><span id="shSign">Your Business</span></div>
+              <div class="awn"></div>
+              <div class="fac">
+                <div class="win"><span class="wem" id="shEm">🔧</span><i class="glow"></i></div>
+                <div class="door"><div class="opn"><b class="cs">Closed</b><b class="os">Open</b></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="bub b-calls"><span class="ring">📞</span><b>New call!</b></div>
+          <div class="bub b-ai"><span>✳</span><b>Try <em class="aiN">Your Business</em></b></div>
+          <div class="webc"><i></i><i></i><i></i><b id="shWeb">New website</b></div>
+          <div class="walk"><i class="pl p1"></i><i class="pl p2"></i><div class="wkrs"><i class="wkr" style="--c:#ef4444;--t:0s"></i><i class="wkr" style="--c:#3b82f6;--t:1.6s"></i><i class="wkr" style="--c:#a855f7;--t:3.2s"></i></div></div>
+          <div class="cf" id="shCf"></div>
         </div>
-        <p class="priv">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p>
-      </form>
-      <div class="done" id="done" role="status"><i>✓</i><h3>Got it, thank you!</h3><p class="sub" style="margin:6px 0 0">Jyoti from our team will reach out soon with your free check.</p></div>
+        <div class="mcard" id="mcard">
+          <div class="mmap"><i class="road r1"></i><i class="road r2"></i><i class="pin" id="shPin"></i></div>
+          <div class="mtx"><b id="mName">Your Business</b><span class="stars"><i>★</i><i>★</i><i>★</i><i>★</i><i>★</i><em>New 5-star review!</em></span><span id="mMeta">Plumber</span><span class="mweb" id="mWeb">Website: not added yet</span></div>
+        </div>
+      </div>
+      <div class="form rv" id="formBox">
+        <form id="ckForm" novalidate>
+          <div class="fh"><div><h3>Get my free check</h3><p class="sub">About a minute. No card, no contract, no spam.</p></div><span class="stc" aria-live="polite">Step <b id="ckN">1</b> of 6</span></div>
+          <div class="pbar"><i id="ckBar"></i><span id="ckGift" aria-hidden="true">🎁</span></div>
+          <select id="fType" hidden aria-hidden="true" tabindex="-1"><option value="plumbing">Plumbing</option><option value="restaurant">Restaurant</option><option value="dental">Dental</option><option value="roofing">Roofing</option><option value="salon">Salon or spa</option><option value="law">Law office</option><option value="store">Shop or store</option><option value="other">Something else</option></select>
+          <div class="stps">
+            <fieldset class="stp on" data-s="0"><legend>First, what kind of business do you run?</legend><p class="hn">Tap one. You can change it anytime.</p><div class="btiles"><label class="btl"><input type="radio" name="bt" value="plumbing"><span class="te" aria-hidden="true">🔧</span><span class="tn">Plumbing</span></label><label class="btl"><input type="radio" name="bt" value="restaurant"><span class="te" aria-hidden="true">🍝</span><span class="tn">Restaurant</span></label><label class="btl"><input type="radio" name="bt" value="dental"><span class="te" aria-hidden="true">🦷</span><span class="tn">Dental</span></label><label class="btl"><input type="radio" name="bt" value="roofing"><span class="te" aria-hidden="true">🏠</span><span class="tn">Roofing</span></label><label class="btl"><input type="radio" name="bt" value="salon"><span class="te" aria-hidden="true">💇</span><span class="tn">Salon or spa</span></label><label class="btl"><input type="radio" name="bt" value="law"><span class="te" aria-hidden="true">⚖️</span><span class="tn">Law office</span></label><label class="btl"><input type="radio" name="bt" value="store"><span class="te" aria-hidden="true">🛍️</span><span class="tn">Shop or store</span></label><label class="btl"><input type="radio" name="bt" value="other"><span class="te" aria-hidden="true">✨</span><span class="tn">Something else</span></label></div></fieldset>
+            <fieldset class="stp" data-s="1"><legend>What's the name on your sign?</legend><p class="hn">Type it in and watch it go up.</p><label class="fl big"><span class="vh">Business name</span><input id="fName" autocomplete="organization" enterkeyhint="next"></label><div class="err serr" role="alert"></div><button class="btn dk nxt" type="button" data-next>Looks good</button></fieldset>
+            <fieldset class="stp" data-s="2"><legend>Where are you located?</legend><p class="hn">City and state, so we check the competition on your actual block.</p><button type="button" class="sug" id="citySug" hidden></button><label class="fl big"><span class="vh">City and state</span><input id="fCity" autocomplete="address-level2" placeholder="Austin, TX" enterkeyhint="next"></label><div class="err serr" role="alert"></div><button class="btn dk nxt" type="button" data-next>Drop the pin</button></fieldset>
+            <fieldset class="stp" data-s="3"><legend>What do you want more of?</legend><p class="hn">Pick as many as you like, and watch your business grow.</p><div class="gchs"><label class="gch"><input type="checkbox" name="gl" value="calls"><span aria-hidden="true">📞</span>More phone calls</label><label class="gch"><input type="checkbox" name="gl" value="maps"><span aria-hidden="true">📍</span>Top of Google Maps</label><label class="gch"><input type="checkbox" name="gl" value="rev"><span aria-hidden="true">⭐</span>More 5-star reviews</label><label class="gch"><input type="checkbox" name="gl" value="ai"><span aria-hidden="true">✳️</span>Show up on ChatGPT</label><label class="gch"><input type="checkbox" name="gl" value="walk"><span aria-hidden="true">🚶</span>More customers in the door</label><label class="gch"><input type="checkbox" name="gl" value="web"><span aria-hidden="true">💻</span>A website that brings customers</label></div><button class="btn dk nxt" type="button" data-next id="glNext">Grow my business</button></fieldset>
+            <fieldset class="stp" data-s="4"><legend>Do you have a website?</legend><p class="hn">No website? Totally fine. We'll check Google and Maps for you.</p><label class="fl big"><span class="vh">Website</span><input id="fSite" inputmode="url" autocomplete="url" enterkeyhint="next"></label><div class="two2"><button class="btn o2" type="button" id="noSite">No website yet</button><button class="btn dk nxt" type="button" data-next>Next</button></div></fieldset>
+            <fieldset class="stp" data-s="5"><legend>Last step. Where should we send your check?</legend>
+              <div class="sum" id="ckSum"></div>
+              <div class="err" id="fErr" role="alert"></div>
+              <button class="btn wa" type="submit" id="waBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg>Send on WhatsApp</button>
+              <button class="alt" type="button" id="altBtn">Don't use WhatsApp? Get it by email or text instead</button>
+              <div class="em" id="emBox">
+                <div class="two"><label class="fl"><span>Your name</span><input id="eName" autocomplete="name" placeholder="Maria Rivera"></label><label class="fl"><span>Email</span><input id="eMail" type="email" autocomplete="email"></label></div>
+                <label class="fl"><span>Phone for texts <small>(optional)</small></span><input id="ePhone" type="tel" autocomplete="tel" placeholder="(512) 555 0147"></label>
+                <div class="err" id="eErr" role="alert"></div>
+                <button class="btn dk" type="button" id="emSend">Send my request</button>
+              </div>
+            </fieldset>
+          </div>
+          <div class="fnav"><button type="button" class="bk" id="ckBack" hidden>← Back</button><p class="priv">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p></div>
+        </form>
+        <div class="done" id="done" role="status"><i>✓</i><h3 id="doneH">Got it, thank you!</h3><p class="sub" id="doneP" style="margin:6px 0 0">Jyoti from our team will reach out soon with your free check.</p></div>
+      </div>
     </div>
   </div>
 </section>
@@ -1244,8 +1437,9 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   <div class="reveal" id="reveal">
     <div class="rvs">
       <div class="rvbg" aria-hidden="true"><img src="/assets/img/room-1600.webp" srcset="/assets/img/room-900.webp 1000w, /assets/img/room-1600.webp 1920w, /assets/img/room-2400.webp 2576w" sizes="(orientation:portrait) 170vh, 110vw" alt="" width="2576" height="1499" loading="lazy" decoding="async"></div>
-      <div class="bigw" aria-hidden="true">TEAM</div>
+      <div class="bigw" aria-hidden="true"><span id="bwT">TEAM</span></div>
       <div class="rvfg" aria-hidden="true"></div>
+      <ul class="trs"><li style="--i:0;--tx:4%;--ty:26%">★ 4.9 average client rating</li><li style="--i:2;--tx:4%;--ty:34%">2,000+ projects delivered</li><li style="--i:4;--tx:4%;--ty:42%">10+ years helping businesses</li><li class="r" style="--i:1;--tx:4%;--ty:26%">You approve every plan</li><li class="r" style="--i:3;--tx:4%;--ty:34%">Weekly updates in plain English</li><li class="r" style="--i:5;--tx:4%;--ty:42%">No long contracts</li></ul>
       <div class="rvhead"><div class="b1" aria-hidden="true"><span class="eyb">Behind every business we grow</span><p class="h2">Your plan gets made <em>in this room</em></p></div><div class="b2"><span class="eyb">Not a salesperson. The real people.</span><h2 class="h2">Meet the people who will grow <em>your business</em></h2></div></div>
       <div class="cur l" aria-hidden="true"><div class="ct">So who's actually<br><em>behind all this?</em></div></div>
       <div class="cur r" aria-hidden="true"><div class="ct">So who's actually<br><em>behind all this?</em></div></div>
@@ -1324,7 +1518,7 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 <footer class="ft">
   <div class="ftm"><p class="wrap">Built for every kind of local business. Pick yours:</p><div class="ftrack"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i><span aria-hidden="true" class="dup"><button type="button" data-k="plumbing">Plumbers</button><i aria-hidden="true">✦</i><button type="button" data-k="restaurant">Restaurants</button><i aria-hidden="true">✦</i><button type="button" data-k="dental">Dentists</button><i aria-hidden="true">✦</i><button type="button" data-k="roofing">Roofers</button><i aria-hidden="true">✦</i><button type="button" data-k="salon">Salons and spas</button><i aria-hidden="true">✦</i><button type="button" data-k="law">Law offices</button><i aria-hidden="true">✦</i><button type="button" data-k="store">Shops and boutiques</button><i aria-hidden="true">✦</i><button type="button" data-k="other">Every local business</button><i aria-hidden="true">✦</i></span></div></div>
   <div class="wrap ftg">
-    <div class="ftb"><a class="brand" href="#top" aria-label="Business Santa, back to top"><img src="/assets/img/logo-96.webp" alt="" width="44" height="44" loading="lazy"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a><p>We help small businesses across the US get found on Google, Google Maps and ChatGPT, so the phone rings.</p><div class="ftc"><a href="#" id="ftWa">WhatsApp us</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></div>
+    <div class="ftb"><a class="brand" href="#top" aria-label="Business Santa, powered by SEO Season, back to top"><img src="/assets/img/logo-96.webp" alt="" width="44" height="44" loading="lazy"><span><b>Business <i>SANTA</i></b><small>powered by SEO Season</small></span></a><p>We help small businesses across the US get found on Google, Google Maps and ChatGPT, so the phone rings.</p><div class="ftc"><a href="#" id="ftWa">WhatsApp us</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></div>
     <nav aria-label="Explore"><b>Explore</b><a href="#stage">How it works</a><a href="#stories">See it working</a><a href="#grow">Grow with us</a><a href="#team">Our team</a><a href="#faq">Questions</a></nav>
     <nav aria-label="Get started"><b>Get started</b><a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>
     <nav aria-label="Company"><b>Company</b><a href="https://seoseason.com/" rel="noopener">SEO Season</a><a href="https://www.instagram.com/businesssanta" rel="noopener">Instagram</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
@@ -1335,6 +1529,6 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.4fa79f92cb.js"></script>
+<script type="module" src="/assets/js/app.370777122c.js"></script>
 </body>
 </html>

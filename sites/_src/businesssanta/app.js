@@ -47,6 +47,7 @@ function setType(k) {
   $$("#chips button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k));
   fType.value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
+  shopLook(k);
   $$(".qtxt").forEach(e => e.textContent = v.q);
   $$(".bName").forEach(e => e.textContent = v.n);
   $("#aicT").innerHTML = `Try <b>${esc(v.n)}</b>. People mention fast replies and fair prices.`;
@@ -302,14 +303,20 @@ new IntersectionObserver((es, ob) => {
 }, { threshold: .45 }).observe($(".grg"));
 
 /* ---------- team: the curtain, the peek, the reveal ---------- */
+let inCk = false; new IntersectionObserver(e => { inCk = e[0].isIntersecting; onScroll(); }, { rootMargin: "-30% 0px -30% 0px" }).observe($("#formBox"));
 const rvl = $("#reveal");
 if (rvl) { const nio = new IntersectionObserver((e) => { if (!e[0].isIntersecting) return; nio.disconnect(); const im = $(".rvbg img"), go = () => rvl.classList.add("near"); im.loading = "eager"; (im.decode ? im.decode() : Promise.resolve()).then(go, go); }, { rootMargin: "200% 0px" }); nio.observe(rvl); }
+/* words that take turns behind Manav while he plans, then TEAM when everyone stands up */
+const BW = ["GOOGLE", "MAPS", "REVIEWS", "AI", "GROWTH"], bwE = $("#bwT"); let bwI = 0, bwTm = 0;
+function bwSet(t) { if (!bwE || bwE.textContent === t) return; bwE.textContent = t; bwE.parentNode.style.setProperty("--n", t.length); bwE.classList.remove("sw"); void bwE.offsetWidth; bwE.classList.add("sw"); }
 function revealFrame(vh) {
   if (!rvl) return;
   const r = rvl.getBoundingClientRect(), p = clamp(-r.top / (r.height - vh), 0, 1);
   const o = clamp((p - .03) / .3, 0, 1), u = clamp((p - .5) / .3, 0, 1);
   rvl.style.setProperty("--open", o.toFixed(4)); rvl.style.setProperty("--rise", u.toFixed(4));
   rvl.classList.toggle("opened", o > .995); rvl.classList.toggle("up", u > .04);
+  if (u > .04 || o < .3 || RM) { clearInterval(bwTm); bwTm = 0; bwSet(u > .04 || RM ? "TEAM" : BW[0]); }
+  else if (!bwTm) { bwI = 0; bwSet(BW[0]); bwTm = setInterval(() => { bwI = (bwI + 1) % BW.length; bwSet(BW[bwI]); }, 1350); }
 }
 
 /* ---------- team: tap a person in the photo ---------- */
@@ -356,7 +363,7 @@ function onScroll() {
   if (pb < 1) setChapter(pb < .66 ? 3 : 0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
   revealFrame(vh);
   const s = y > 40; if (s !== solid) { solid = s; hd.classList.toggle("solid", s); }
-  const b = y > vh * .9; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
+  const b = y > vh * .9 && !inCk; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
 }
 addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
 
@@ -395,11 +402,11 @@ const jobHTML = j => `<article class="job"><div class="top"><span class="svc">${
 new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); $("#track").innerHTML = JOBS.map(jobHTML).join("") + JOBS.map(jobHTML).join(""); $$("#track .job").slice(JOBS.length).forEach(e => e.setAttribute("aria-hidden", "true")); }, { rootMargin: "600px" }).observe($("#reviews"));
 
 /* ---------- footer: pick your business, go straight to the free check ---------- */
-$$(".ftrack button").forEach(b => b.addEventListener("click", () => { setType(b.dataset.k); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "footer" }); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => $("#fName").focus({ preventScroll: true }), 1100); }));
+$$(".ftrack button").forEach(b => b.addEventListener("click", () => { setType(b.dataset.k); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "footer" }); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => ckGo(Math.max(ck, 1)), 900); }));
 $("#ftWa").addEventListener("click", e => { e.preventDefault(); track("Lead", { content_name: "WhatsApp footer", method: "WhatsApp" }); window.open(wa("Hi Business Santa! I'd like a free check of my business."), "_blank", "noopener"); });
 
 /* ---------- links ---------- */
-$$('[data-go="check"]').forEach(a => a.addEventListener("click", e => { e.preventDefault(); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => $("#fName").focus({ preventScroll: true }), 1100); trackC("OpenedFreeCheck"); }));
+$$('[data-go="check"]').forEach(a => a.addEventListener("click", e => { e.preventDefault(); $("#check").scrollIntoView({ behavior: RM ? "auto" : "smooth" }); setTimeout(() => ckGo(ck), 900); trackC("OpenedFreeCheck"); }));
 $$("[data-hand]").forEach(a => a.addEventListener("click", () => trackC("WentToServices")));
 
 /* ---------- dream picker ---------- */
@@ -443,16 +450,83 @@ $$(".wn").forEach(b => b.addEventListener("click", () => { const r = $("#wNum");
 
 /* ---------- leads ---------- */
 const wa = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
-const details = () => ({ type: TYPES[fType.value].l, name: $("#fName").value.trim(), site: $("#fSite").value.trim(), city: $("#fCity").value.trim() });
-const message = d => `Hi Business Santa! I'd like my free check.\n\nBusiness type: ${d.type}\nBusiness name: ${d.name}\nWebsite: ${d.site || "No website yet"}\nCity: ${d.city}` + (dream ? `\nMy goal: ${DREAMS[dream][2]}` : "");
+const details = () => ({ type: TYPES[fType.value].l, name: $("#fName").value.trim(), site: $("#fSite").value.trim(), city: $("#fCity").value.trim(), wants: $$(".gch input:checked").map(c => c.parentNode.textContent.trim().replace(/^\S+\s*/, "")).join(", ") });
+const message = d => `Hi Business Santa! I'd like my free check.\n\nBusiness type: ${d.type}\nBusiness name: ${d.name}\nWebsite: ${d.site || "No website yet"}\nCity: ${d.city}` + (d.wants ? `\nI want: ${d.wants}` : "") + (dream ? `\nMy goal: ${DREAMS[dream][2]}` : "");
 function check(errEl) {
   const d = details(); let m = "";
   if (!d.name) m = "Add your business name so we know who you are.";
   else if (!d.city) m = "Add your city and state, so we can check your local competition.";
-  errEl.textContent = m; if (m) { $(!d.name ? "#fName" : "#fCity").focus(); return null; } return d;
+  errEl.textContent = m; if (m) { ckGo(!d.name ? 1 : 2); return null; } return d;
 }
 ["#fName", "#fCity"].forEach(s => $(s).addEventListener("input", () => { $("#fErr").textContent = ""; $("#eErr").textContent = ""; }));
-$("#ckForm").addEventListener("submit", e => { e.preventDefault(); const d = check($("#fErr")); if (!d) return; track("Lead", { content_name: "Free check", method: "WhatsApp", business_type: d.type }); window.open(wa(message(d)), "_blank", "noopener"); });
+/* ---------- the free check: one friendly question at a time, while a little shop builds itself ---------- */
+const SHOP = { plumbing: ["🔧", "#2563eb"], restaurant: ["🍝", "#dc2626"], dental: ["🦷", "#0ea5e9"], roofing: ["🏠", "#ea580c"], salon: ["💇", "#db2777"], law: ["⚖️", "#4338ca"], store: ["🛍️", "#16a34a"], other: ["✨", "#f59e0b"] };
+const shop = $("#shop"), shopW = $(".shopw"), stps = $$(".stp"); let ck = 0;
+const GOALS = ["calls", "maps", "rev", "ai", "walk", "web"], GL = { calls: "More phone calls", maps: "Top of Google Maps", rev: "More 5-star reviews", ai: "Show up on ChatGPT", walk: "More customers in the door", web: "A website that brings customers" };
+const goals = () => $$(".gch input:checked").map(c => c.value);
+const replay = (el, c) => { if (!el) return; el.classList.remove(c); void el.offsetWidth; el.classList.add(c); };
+function shopLook(k) {
+  const [em, c] = SHOP[k] || SHOP.other, e = $("#shEm");
+  shop.style.setProperty("--aw", c);
+  if (shop.dataset.k !== k) { shop.dataset.k = k; e.textContent = em; replay(e, "sw"); replay($("#shBld"), "pop"); replay($(".awn"), "unroll"); }
+  const r = $(`.btl input[value="${k}"]`); if (r) r.checked = true;
+  shopText();
+}
+function shopText() {
+  const v = TYPES[T], n = $("#fName").value.trim(), c = $("#fCity").value.trim(), w = $("#fSite").value.trim(), sg = $("#shSign");
+  const t = n || v.n;
+  if (sg.dataset.t !== t) { const old = sg.dataset.t || "", grew = n && t.length > old.length && t.startsWith(old); sg.innerHTML = [...t].map((ch, i) => `<span class="sgl${grew && i >= old.length ? " nw" : ""}">${esc(ch)}</span>`).join(""); sg.dataset.t = t; }
+  sg.parentNode.classList.toggle("ph", !n);
+  $$(".aiN").forEach(x => x.textContent = t);
+  $("#mName").textContent = t;
+  shop.classList.toggle("has-city", !!c && ck > 2);
+  $("#mMeta").textContent = v.svc + (c ? " · " + c : "");
+  $("#mWeb").textContent = w ? w.replace(/^https?:\/\//, "") : ck > 4 ? "No website yet" : "Website: not added yet";
+  const g = goals(); GOALS.forEach(k => shop.classList.toggle("has-" + k, g.includes(k) || (k === "web" && !!w)));
+  shop.classList.toggle("fl1", g.length >= 2 && g.length < 4); shop.classList.toggle("fl2", g.length >= 4);
+  $("#shWeb").textContent = w ? w.replace(/^https?:\/\//, "").replace(/\/$/, "") : "Your new website";
+}
+function ckGo(n, focus = true) {
+  ck = clamp(n, 0, 5);
+  stps.forEach((st, i) => { st.classList.toggle("on", i === ck); st.classList.toggle("past", i < ck); st.inert = i !== ck; });
+  const pc = 4 + ck / 5 * 92; $("#ckBar").style.width = pc + "%"; $("#ckGift").style.left = pc + "%";
+  $("#ckN").textContent = ck + 1; $("#ckBack").hidden = ck === 0;
+  for (let i = 1; i < 6; i++) shopW.classList.toggle("s" + i, ck >= i);
+  if (ck === 5) $("#ckSum").innerHTML = [[0, TYPES[T].l], [1, $("#fName").value.trim()], [2, $("#fCity").value.trim()], [3, goals().length ? goals().map(k => GL[k]).join(", ") : "Not sure yet"], [4, $("#fSite").value.trim() || "No website yet"]].map(([i, t]) => `<button type="button" data-e="${i}" aria-label="Change ${esc(t)}">${esc(t)}</button>`).join("");
+  shopText();
+  if (focus) {
+    const f = stps[ck].querySelector(ck === 0 ? "input:checked, input" : "input, .btn"); f && f.focus({ preventScroll: true });
+    if (MOB()) requestAnimationFrame(() => { const r = stps[ck].getBoundingClientRect(), b = shopW.getBoundingClientRect().bottom; if (r.top < b + 8 || r.top > innerHeight * .55) scrollBy({ top: r.top - b - 14, behavior: RM ? "auto" : "smooth" }); });
+  }
+}
+function ckNext() {
+  const st = stps[ck], er = st.querySelector(".serr");
+  if (ck === 1 && !$("#fName").value.trim()) { er.textContent = "Add your business name. Even a nickname works."; $("#fName").focus(); return; }
+  if (ck === 2 && !$("#fCity").value.trim()) { er.textContent = "Add your city and state, like " + $("#fCity").placeholder + "."; $("#fCity").focus(); return; }
+  if (er) er.textContent = "";
+  if (ck === 1) { const sg = $(".sign"); sg.classList.remove("pop"); void sg.offsetWidth; sg.classList.add("pop"); }
+  if (ck === 1) trackC("CheckStep", { step: "name" }); if (ck === 2) trackC("CheckStep", { step: "city" });
+  ckGo(ck + 1);
+}
+$$(".btl input").forEach(r => r.addEventListener("change", () => { setType(r.value); trackC("ChoseBusinessType", { type: TYPES[r.value].l, from: "form" }); setTimeout(() => { if (ck === 0) ckGo(1); }, 420); }));
+$$(".btl").forEach(t => t.addEventListener("click", () => { if (ck === 0 && t.querySelector("input").checked) setTimeout(() => { if (ck === 0) ckGo(1); }, 420); }));
+$$("[data-next]").forEach(b => b.addEventListener("click", ckNext));
+["#fName", "#fCity", "#fSite"].forEach(sl => { const el = $(sl); el.addEventListener("input", () => { const er = el.closest(".stp").querySelector(".serr"); if (er) er.textContent = ""; shopText(); }); el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); ckNext(); } }); });
+$("#noSite").addEventListener("click", () => { $("#fSite").value = ""; ckGo(5); });
+$$(".gch input").forEach(c => c.addEventListener("change", () => { shopText(); $("#glNext").textContent = goals().length ? "Grow my business" : "Not sure yet, skip"; if (c.checked) trackC("CheckGoal", { goal: c.value }); }));
+$("#ckBack").addEventListener("click", () => ckGo(ck - 1));
+$("#ckSum").addEventListener("click", e => { const b = e.target.closest("button"); if (b) ckGo(+b.dataset.e); });
+$("#citySug").addEventListener("click", () => { $("#fCity").value = $("#citySug").dataset.v; shopText(); ckNext(); });
+function celebrate(how) {
+  shop.classList.add("open");
+  if (!RM) { const cf = $("#shCf"), C = ["#fdb913", "#ef4444", "#22c55e", "#3b82f6", "#ec4899", "#fff"]; cf.innerHTML = Array.from({ length: 34 }, (_, i) => `<i style="background:${C[i % 6]};--dx:${Math.round(Math.cos(i * 2.4) * (90 + (i * 37) % 160))}px;--dy:${Math.round(-60 - (i * 53) % 170 + ((i * 29) % 3) * 60)}px;--r:${(i * 97) % 720 - 360}deg;animation-delay:${(i % 6) * 40}ms"></i>`).join(""); }
+  $("#doneH").textContent = how === "wa" ? "You're open for business!" : "Got it, thank you!";
+  $("#doneP").textContent = how === "wa" ? "WhatsApp just opened with your details filled in. Tap send there, and Jyoti from our team will reply with your free check." : "Jyoti from our team will reach out soon with your free check.";
+  $("#ckForm").style.display = "none"; $("#done").classList.add("on");
+}
+ckGo(0, false);
+new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); replay($("#shBld"), "pop"); replay($(".awn"), "unroll"); } }, { threshold: .5 }).observe(shop);
+$("#ckForm").addEventListener("submit", e => { e.preventDefault(); if (ck < 5) return ckNext(); const d = check($("#fErr")); if (!d) return; track("Lead", { content_name: "Free check", method: "WhatsApp", business_type: d.type }); window.open(wa(message(d)), "_blank", "noopener"); celebrate("wa"); });
 $("#barWa").addEventListener("click", e => { e.preventDefault(); track("Lead", { content_name: "WhatsApp bar", method: "WhatsApp" }); window.open(wa("Hi Business Santa! I'd like a free check of my business."), "_blank", "noopener"); });
 $("#altBtn").addEventListener("click", () => { $("#emBox").classList.add("on"); $("#altBtn").style.display = "none"; $("#eName").focus(); });
 $("#emSend").addEventListener("click", async () => {
@@ -464,12 +538,12 @@ $("#emSend").addEventListener("click", async () => {
   try {
     const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.email), {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
+      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, wants: d.wants || "Not chosen", goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
     track("Lead", { content_name: "Free check", method: "Email", business_type: d.type });
-    $("#ckForm").style.display = "none"; $("#done").classList.add("on");
+    celebrate("em");
   } catch (err) {
     btn.disabled = false; btn.textContent = "Send my request";
     $("#eErr").innerHTML = 'That didn\'t go through. Try again, or email us at <a href="mailto:' + CONFIG.email + '">' + CONFIG.email + "</a>.";
@@ -489,6 +563,7 @@ function applyGeo() {
   if (city) {
     $$(".geoCity").forEach(e => e.textContent = city + (e.closest(".gloc") ? ", " + GEO.region : ""));
     $("#fCity").placeholder = `${city}, ${GEO.region}`;
+    const sg = $("#citySug"); sg.dataset.v = `${city}, ${GEO.region}`; sg.textContent = `${city}, ${GEO.region}`; sg.hidden = false;
     if (!dream) $("#fEyb").textContent = `Imagine next month in ${city}`;
   }
 }
