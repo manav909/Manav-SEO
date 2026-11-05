@@ -52,6 +52,7 @@ P["web"] = '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0
 P["moon"] = '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'
 P["x"] = '<path d="M6 6l12 12M18 6L6 18"/>'
 P["chev"] = '<path d="M9 6l6 6-6 6"/>'
+P["sound"] = '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'
 PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google reads every page", "$120"),
       ("gsc", "Fix Google Search Console", "Indexing errors, sitemaps, pages Google skips", "$160"),
       ("full", "Full SEO package", "Research, on-page, technical and off-page in one plan", None),
@@ -66,9 +67,9 @@ for ln in types.splitlines():
     if not mk: continue
     g = lambda f: re.search(r'\b' + f + r': "([^"]*)"', ln).group(1)
     HT[mk.group(1)] = [g("a"), g("q"), g("n"), BI[mk.group(1)]]
-early = "(function(){try{var k=new URLSearchParams(location.search).get('type'),T=" + json.dumps(HT, separators=(",", ":")) + ",v=T[k];if(!v)return;var h=document.querySelector('.hero');h.querySelector('.tfor').textContent='for a '+v[0];h.querySelectorAll('.q').forEach(function(e){e.textContent=v[1]});h.querySelector('.bn').textContent=v[2];var i=h.querySelector('#hIc');i.innerHTML=v[3];i.dataset.k=k}catch(e){}})()"
+early = "(function(){try{var k=new URLSearchParams(location.search).get('type'),T=" + json.dumps(HT, separators=(",", ":")) + ",v=T[k];if(!v)return;var h=document.querySelector('.hero');h.querySelector('.tfor').textContent='for a '+v[0];h.querySelectorAll('.q').forEach(function(e){e.textContent=v[1]})}catch(e){}})()"
 out = tpl.replace("{PACKS}", packs).replace("{HIC}", BI["plumbing"]).replace("{EARLY}", early).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
-for k in ["WEB", "MOON", "X", "CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
+for k in ["SOUND", "WEB", "MOON", "X", "CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
     out = out.replace("{I_" + k + "}", svg(k.lower()))
 js = main.replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
 open("/tmp/bs-m.js", "w").write(js)

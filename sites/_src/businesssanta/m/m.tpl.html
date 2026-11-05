@@ -10,6 +10,7 @@
 <script>(function(){try{if(innerWidth>=980&&!/[?&]m=1/.test(location.search))location.replace("/?desk=1")}catch(e){}})()</script>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" as="image" href="/assets/img/bs-hero-poster.webp" fetchpriority="high">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Business Santa">
 <meta property="og:title" content="Customers are searching for you. Can they find you?">
@@ -51,10 +52,10 @@ h2{font-size:1.7rem;line-height:1.15}
 .tb{display:inline-flex;align-items:center;padding:9px 14px;border-radius:999px;background:var(--navy);color:#fff;font:700 .88rem var(--f);text-decoration:none}
 
 /* hero */
-.hero{padding:26px 0 34px;background:linear-gradient(180deg,#fff8e1 0%,#fff 70%)}
+.hero{padding:20px 0 30px;background:linear-gradient(180deg,#fff8e1 0%,#fff 70%)}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 8px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);font:600 .82rem var(--f);color:var(--ink2)}
 .flag{width:20px;height:11px;border-radius:2px;flex:none}
-.hero h1{margin-top:14px;font-size:2.1rem;line-height:1.1}
+.hero h1{margin-top:12px;font-size:1.95rem;line-height:1.1}
 .hero h1 em{font-style:normal;background:linear-gradient(transparent 62%,rgba(253,185,19,.55) 62%)}
 .hero .lead{font-size:1.06rem}
 .hcard{margin:22px 0 0;border-radius:18px;background:#fff;box-shadow:0 14px 40px rgba(15,23,42,.12),0 0 0 1px var(--line);overflow:hidden}
@@ -258,6 +259,32 @@ h2{font-size:1.7rem;line-height:1.15}
 .pk em small{display:block;margin:0;font:600 .7rem var(--f);color:var(--mut)}
 .pk svg{flex:none;width:18px;height:18px;color:var(--mut)}
 .pk .pop{box-shadow:inset 0 0 0 2px var(--y)}
+/* video */
+.vid{position:relative;margin:18px 0 0;aspect-ratio:4/5;border-radius:20px;overflow:hidden;background:#0b1220;box-shadow:0 18px 44px rgba(15,23,42,.22)}
+.vid video{display:block;width:100%;height:100%;object-fit:cover}
+.snd{position:absolute;left:12px;bottom:12px;display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:0;border-radius:999px;background:rgba(0,0,0,.7);color:#fff;font:700 .9rem var(--f);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.snd svg{width:18px;height:18px}
+.snd.on{background:var(--y);color:#111}
+.snd.ic{left:12px;top:12px;bottom:auto;width:46px;height:46px;padding:0;justify-content:center}
+.snd.ic span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+.snd.ic:not(.on)::after{content:"";position:absolute;inset:-4px;border-radius:50%;box-shadow:0 0 0 2px rgba(253,185,19,.9);animation:sp 1.8s ease-out infinite}
+@keyframes sp{0%{transform:scale(.85);opacity:1}100%{transform:scale(1.35);opacity:0}}
+@media (prefers-reduced-motion:reduce){.snd.ic::after{animation:none}}
+.vt{position:absolute;right:12px;top:12px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.6);color:#fff;font:700 .74rem var(--f)}
+/* 3 steps, one row */
+.s3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+.s3 div{display:flex;flex-direction:column;align-items:center;text-align:center;padding:14px 6px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.s3 i{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:var(--y);color:#111;font:800 1rem var(--fh);font-style:normal}
+.s3 b{margin-top:8px;font:800 1rem var(--fh)}.s3 span{margin-top:2px;color:var(--mut);font-size:.8rem;line-height:1.3}
+/* reviews: swipe */
+.rv{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;margin:14px -20px 0;padding:2px 20px 6px;scrollbar-width:none}
+.rv::-webkit-scrollbar{display:none}
+.rv .rc{flex:0 0 86%;scroll-snap-align:center}
+.dots{display:flex;justify-content:center;gap:6px;margin-top:10px}.dots i{width:7px;height:7px;border-radius:50%;background:#cbd5e1;transition:width .2s}.dots i.on{width:20px;border-radius:9px;background:var(--y)}
+/* details */
+.dd{padding:0 0 18px}.dd>.pl:first-child,.dd>.pk:first-child,.dd>.vs:first-child{margin-top:4px}
+.dkb{padding:16px;border-radius:18px;background:var(--navy);color:#fff}.dkb .mt{margin-top:0}.dkb .hn{margin-top:14px}
+.team{margin-top:14px}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -275,13 +302,7 @@ h2{font-size:1.7rem;line-height:1.15}
   <div class="w">
     <span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{FLAG}</svg>Helping small businesses in <b class="geoState">the US</b></span>
     <h1>Get more calls from people searching <em><span class="tfor">for your business</span> near you.</em></h1>
-    <p class="lead">When someone nearby searches "<span class="q">plumber near me</span>", we make sure your business shows up on Google, Google Maps and ChatGPT, so they call you instead of the competition.</p>
-    <div class="hcard" aria-hidden="true">
-      <div class="hq">{I_SEARCH}<span class="q">plumber near me</span></div>
-      <div class="hl"><span class="ph" id="hIc" data-k="plumbing">{HIC}</span><div><b class="bn">Your Plumbing Co.</b><small><span class="st">★★★★★</span> 4.9 (86) · <span style="color:#188038;font-weight:600">Open now</span></small></div><span class="rk">#1</span></div>
-      <div class="hb"><span>{I_PHONE}Call</span><span>{I_DIR}Directions</span></div>
-    </div>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
+    <div class="vid" id="v1"><video id="hv" muted playsinline loop preload="none" poster="/assets/img/bs-hero-poster.webp" data-src="/assets/video/bs-hero.mp4" width="720" height="900" aria-label="Short video: three reasons customers pick someone else, and how we fix all three"></video><button class="snd ic" type="button" data-v="hv" aria-label="Turn the sound on">{I_SOUND}<span>Tap for sound</span></button><span class="vt">17 sec</span></div>
     <div class="trust"><span class="faces"><img src="/assets/img/face-jyoti.webp" alt="" width="30" height="30"><img src="/assets/img/face-manav.webp" alt="" width="30" height="30"><img src="/assets/img/face-sam.webp" alt="" width="30" height="30"><img src="/assets/img/face-sakshi.webp" alt="" width="30" height="30"></span><span><span class="st">★★★★★</span> <b>4.9</b> from 2,000+ projects</span></div>
     <div class="chk"><span>{I_OK}Free</span><span>{I_OK}No contract</span><span>{I_OK}No card needed</span></div>
   </div>
@@ -290,24 +311,62 @@ h2{font-size:1.7rem;line-height:1.15}
 
 <section class="sec soft">
   <div class="w">
-    <span class="eyb">Sound familiar?</span>
-    <h2>Good business. Quiet phone.</h2>
-    <p class="lead">You do great work. But online, the best business doesn't win. <b>The easiest one to find does.</b> Usually for one of three reasons:</p>
-    <div class="pl">
-      <div class="bad"><i>{I_SEARCHOFF}</i><span><b>You don't show up when people search</b><span>They type "<span class="q">plumber near me</span>" and see your competitors, not you.</span></span></div>
-      <div class="bad"><i>{I_PIN}</i><span><b>Your Google Maps listing is weak</b><span>Missing hours, photos or reviews, so people pick the business that looks busier.</span></span></div>
-      <div class="bad"><i>{I_PHONEX}</i><span><b>Your website doesn't bring calls</b><span>It's slow on phones, hard to read, or Google can't understand it.</span></span></div>
+    <h2>Your free check, in 3 steps</h2>
+    <div class="s3">
+      <div><i>1</i><b>Tell us</b><span>A 1 minute form</span></div>
+      <div><i>2</i><b>We check</b><span>Google, Maps and AI</span></div>
+      <div><i>3</i><b>You decide</b><span>No pressure</span></div>
     </div>
-    <p class="note"><b>The good news:</b> all three can be fixed, and you don't have to learn any of it. That's our job.</p>
   </div>
 </section>
 
 <section class="sec">
   <div class="w">
-    <span class="eyb">Your free check</span>
-    <h2>What you get, for free</h2>
-    <p class="lead">A real person on our team looks at your business and sends you a short, plain-English report.</p>
-    <div class="pl">
+    <h2>Real results, in their words</h2>
+    <div class="rsum"><b>4.9</b><div><span class="st">★★★★★</span><span>Average rating from 2,000+ projects over 10+ years</span></div></div>
+    <div class="rv" id="rv">{REVIEWS}</div>
+    <div class="dots" id="rvd" aria-hidden="true"></div>
+  </div>
+</section>
+
+<section class="sec soft">
+  <div class="w">
+    <h2>A real team that knows your name</h2>
+    <div class="vid sm" id="v2"><video id="mv" muted playsinline loop preload="none" poster="/assets/img/bs-manav-poster.webp" data-src="/assets/video/bs-manav.mp4" width="576" height="720" aria-label="Manav, founder of Business Santa: let's talk about your goals"></video><button class="snd" type="button" data-v="mv">{I_SOUND}<span>Hear from Manav</span></button><span class="vt">Manav · Founder</span></div>
+    <div class="team"><div class="tw2"><img src="/assets/img/crew-clean-800.webp" srcset="/assets/img/crew-clean-800.webp 800w, /assets/img/crew-clean-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1430" height="941" loading="lazy" decoding="async"></div><div class="tcap"><span>Jyoti<i>Your contact</i></span><span>Manav<i>Founder</i></span><span>Sam<i>Tech expert</i></span><span>Sakshi<i>Content</i></span></div></div>
+  </div>
+</section>
+
+<section class="fsec" id="check">
+  <div class="w">
+    <span class="eyb" style="color:var(--y)">Free check</span>
+    <h2>Get your free check</h2>
+    <p class="lead">You've worked hard to build this. Let's make sure people nearby can find it. It takes about a minute. No card, no contract, no spam.</p>
+    <div class="form" id="formBox">
+      <form id="mForm" novalidate>
+        <label class="fl"><span>What kind of business?</span><select id="fType">{OPTIONS}</select></label>
+        <label class="fl"><span>Business name</span><input id="fName" autocomplete="organization" placeholder="Rivera Plumbing"></label>
+        <label class="fl"><span>City and state</span><input id="fCity" autocomplete="address-level2" placeholder="Austin, TX"></label>
+        <label class="fl"><span>Your name</span><input id="eName" autocomplete="name" placeholder="Maria Rivera"></label>
+        <label class="fl"><span>Email</span><input id="eMail" type="email" inputmode="email" autocomplete="email" placeholder="maria@riveraplumbing.com"></label>
+        <label class="fl"><span>Phone <small>(optional, for texts)</small></span><input id="ePhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(512) 555 0147"></label>
+        <label class="fl"><span>Website <small>(optional)</small></span><input id="fSite" inputmode="url" autocomplete="url" placeholder="riveraplumbing.com"></label>
+        <div class="err" id="fErr" role="alert"></div>
+        <button class="btn" type="submit" id="fSend">Send me my free check</button>
+        <p class="priv">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p>
+      </form>
+      <div class="done" id="done" role="status"><i>{I_OK}</i><h3>Got it, thank you!</h3><p>Jyoti from our team will reach out soon with your free check.</p></div>
+      <div class="or">or</div>
+      <a class="btn wa" href="#" data-wa="form">{WAICO}Message us on WhatsApp</a>
+    </div>
+  </div>
+</section>
+
+<section class="sec">
+  <div class="w">
+    <h2>Want the details?</h2>
+    <div class="faq">
+      <details><summary>What's in my free check?</summary><div class="dd"><div class="pl">
       <div class="good"><i>{I_RANK}</i><span><b>Where you show up today</b><span>On Google, Google Maps and ChatGPT, for the searches your customers use.</span></span></div>
       <div class="good"><i>{I_LIST}</i><span><b>The top things holding you back</b><span>Ranked by what will bring you the most calls first.</span></span></div>
       <div class="good"><i>{I_USERS}</i><span><b>What nearby competitors do better</b><span>So you know exactly how to catch up.</span></span></div>
@@ -344,39 +403,22 @@ h2{font-size:1.7rem;line-height:1.15}
         </ol>
         <p class="rnote"><b>Jyoti's note:</b> The good news? Fix 1 is free and takes about 20 minutes. Start there and you should see more calls from Maps.</p>
         <div class="repp">You approve every fix first · no contract</div></div>
-    </div>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
-  </div>
-</section>
-
-<section class="sec soft" id="ind">
-  <div class="w">
-    <span class="eyb">Built for local businesses</span>
-    <h2>Pick your business</h2>
-    <p class="lead">Tap yours to see what your customers type into Google.</p>
-    <div class="inds" id="inds">{INDS}</div>
-    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn" href="#check" data-go><span id="indcta">Get my free check</span></a></div>
-  </div>
-</section>
-
-<section class="sec">
-  <div class="w">
-    <span class="eyb">How it works</span>
-    <h2>Three easy steps</h2>
-    <div class="steps">
-      <div><i>1</i><span><b>Tell us about your business</b><span>Fill in the short form below. It takes about a minute.</span></span></div>
-      <div><i>2</i><span><b>We check everything</b><span>Your Google listing, your website, your reviews and your local competition.</span></span></div>
-      <div><i>3</i><span><b>You get your plan</b><span>By email or WhatsApp, in plain English. If you like it, we do the work. If not, no hard feelings.</span></span></div>
-    </div>
-  </div>
-</section>
-
-<section class="sec dk" id="results">
-  <div class="w">
-    <span class="eyb">Results, not reports</span>
-    <h2>Check your results yourself, in your own Google account</h2>
-    <p class="lead">A report from us is just our word. Your Google Business Profile counts real customer actions, and only you control it.</p>
-    <div class="mt">
+    </div></div></details>
+      <details><summary>What does it cost?</summary><div class="dd"><div class="pk">{PACKS}</div>
+    <div class="price">
+      <div class="big"><b>$0</b><span>for your free check</span></div>
+      <ul>
+        <li>{I_OK}<span><b>You approve every price</b> before any work starts.</span></li>
+        <li>{I_OK}<span><b>No long contracts.</b> We earn your business every month.</span></li>
+        <li>{I_OK}<span><b>It stays yours.</b> Your website and Google listing belong to you.</span></li>
+        <li>{I_OK}<span><b>Plain-English updates</b> about calls and customers. No tech talk.</span></li>
+      </ul>
+    </div></div></details>
+      <details><summary>How do you compare with a big agency?</summary><div class="dd"><div class="vs"><div class="vh"><span>Typical agency</span><span><b>Business Santa</b></span></div><div class="vr"><small>Cost to start</small><div><span class="vn">{I_X}$1,000 to $3,000 a month</span><span class="vy">{I_OK}Fixes from $120, one time</span></div></div><div class="vr"><small>Contract</small><div><span class="vn">{I_X}Often 6 to 12 months</span><span class="vy">{I_OK}None. Stay because it works</span></div></div><div class="vr"><small>Checking your business</small><div><span class="vn">{I_X}Often a paid audit</span><span class="vy">{I_OK}Free, by a real person</span></div></div><div class="vr"><small>ChatGPT and AI search</small><div><span class="vn">{I_X}Often extra, or missing</span><span class="vy">{I_OK}Included in every check</span></div></div><div class="vr"><small>Who does the work</small><div><span class="vn">{I_X}Sometimes outsourced</span><span class="vy">{I_OK}Our own team, start to finish</span></div></div><div class="vr"><small>How fast</small><div><span class="vn">{I_X}Slow monthly plans</span><span class="vy">{I_OK}Recent projects done in 3 to 7 days</span></div></div></div>
+    <p class="vsrc">Agency figures from 2026 US local SEO pricing guides.</p>
+    <a class="eng" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=engine" data-pk="engine"><span><b>Powered by SEO Season</b><small>Our own SEO and AI search engine, built in house</small></span>{I_CHEV}</a>
+</div></details>
+      <details><summary>How do I check the results myself?</summary><div class="dd"><div class="dkb"><div class="mt">
       <div><i>{I_PHONE}</i><b>Calls</b><span>People who tapped Call on your listing</span></div>
       <div><i>{I_DIR}</i><b>Directions</b><span>People heading to your door</span></div>
       <div><i>{I_WEB}</i><b>Website visits</b><span>People who clicked through to you</span></div>
@@ -387,100 +429,16 @@ h2{font-size:1.7rem;line-height:1.15}
       <div><i>2</i><span><b>Week 1: the work goes live</b><span>Every change is on your listing and website, for you to see.</span></span></div>
       <div><i>3</i><span><b>Every month: the same numbers, side by side</b><span>Where you started, where you are now, and what we do next.</span></span></div>
     </div>
-    <p class="hn"><b>We won't promise you #1 on Google.</b> Google itself says no one can. We promise the work, a clear plan, and numbers you can check any day.</p>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
-  </div>
-</section>
-
-<section class="sec soft">
-  <div class="w">
-    <span class="eyb">Client reviews</span>
-    <h2>Real results, in their words</h2>
-    <div class="rsum"><b>4.9</b><div><span class="st">★★★★★</span><span>Average rating from 2,000+ projects over 10+ years</span></div></div>
-    <div class="rv">{REVIEWS}</div>
-  </div>
-</section>
-
-<section class="sec">
-  <div class="w">
-    <span class="eyb">Why owners pick us</span>
-    <h2>Big agency results, without the big agency bill</h2>
-    <p class="lead">Here is how we compare with a typical US local SEO agency.</p>
-    <div class="vs"><div class="vh"><span>Typical agency</span><span><b>Business Santa</b></span></div><div class="vr"><small>Cost to start</small><div><span class="vn">{I_X}$1,000 to $3,000 a month</span><span class="vy">{I_OK}Fixes from $120, one time</span></div></div><div class="vr"><small>Contract</small><div><span class="vn">{I_X}Often 6 to 12 months</span><span class="vy">{I_OK}None. Stay because it works</span></div></div><div class="vr"><small>Checking your business</small><div><span class="vn">{I_X}Often a paid audit</span><span class="vy">{I_OK}Free, by a real person</span></div></div><div class="vr"><small>ChatGPT and AI search</small><div><span class="vn">{I_X}Often extra, or missing</span><span class="vy">{I_OK}Included in every check</span></div></div><div class="vr"><small>Who does the work</small><div><span class="vn">{I_X}Sometimes outsourced</span><span class="vy">{I_OK}Our own team, start to finish</span></div></div><div class="vr"><small>How fast</small><div><span class="vn">{I_X}Slow monthly plans</span><span class="vy">{I_OK}Recent projects done in 3 to 7 days</span></div></div></div>
-    <p class="vsrc">Agency figures from 2026 US local SEO pricing guides.</p>
-    <a class="eng" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=engine" data-pk="engine"><span><b>Powered by SEO Season</b><small>Our own SEO and AI search engine, built in house</small></span>{I_CHEV}</a>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
-  </div>
-</section>
-
-<section class="sec soft">
-  <div class="w">
-    <span class="eyb">Honest pricing</span>
-    <h2>Pick what you need</h2>
-    <p class="lead">Start with the free check. These are our most popular services.</p>
-    <div class="pk">{PACKS}</div>
-    <div class="price">
-      <div class="big"><b>$0</b><span>for your free check</span></div>
-      <ul>
-        <li>{I_OK}<span><b>You approve every price</b> before any work starts.</span></li>
-        <li>{I_OK}<span><b>No long contracts.</b> We earn your business every month.</span></li>
-        <li>{I_OK}<span><b>It stays yours.</b> Your website and Google listing belong to you.</span></li>
-        <li>{I_OK}<span><b>Plain-English updates</b> about calls and customers. No tech talk.</span></li>
-      </ul>
-    </div>
-  </div>
-</section>
-
-<section class="sec">
-  <div class="w">
-    <span class="eyb">Who you'll work with</span>
-    <h2>Real people who know your name</h2>
-    <p class="lead">A small, experienced team. No call center, no ticket numbers.</p>
-    <div class="team"><div class="tw2"><img src="/assets/img/crew-clean-800.webp" srcset="/assets/img/crew-clean-800.webp 800w, /assets/img/crew-clean-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1430" height="941" loading="lazy" decoding="async"></div><div class="tcap"><span>Jyoti<i>Your contact</i></span><span>Manav<i>Founder</i></span><span>Sam<i>Tech expert</i></span><span>Sakshi<i>Content</i></span></div></div>
-    <div class="jc"><img src="/assets/img/face-jyoti.webp" alt="" width="52" height="52" loading="lazy"><div><small>Your main contact</small><b>Jyoti</b><span>Answers your messages and sends your weekly update.</span></div></div>
-    <div class="trd"><span class="eyb">Not a new idea</span><p class="trq">Walmart's biggest tech hub in the world isn't in America. It's in Bengaluru, India.</p><p>Over a third of the world's 500 biggest companies run teams in India. Big companies have done this for years to get more done for less. Now Main Street can too.</p><small>Sources: Reuters, 2025; ANSR Fortune Global 500 report, 2025</small></div>
-    <div class="inb"><h3>Our team is in India. Here's why that helps you.</h3>
+    <p class="hn"><b>We won't promise you #1 on Google.</b> Google itself says no one can. We promise the work, a clear plan, and numbers you can check any day.</p></div></div></details>
+      <details><summary>Your team is in India. Why does that help me?</summary><div class="dd"><div class="inb"><h3>Our team is in India. Here's why that helps you.</h3>
       <div><i>{I_MOON}</i><span><b>Work gets done while you sleep</b><span>Message us after closing time. Your work is often done by the time you open.</span></span></div>
       <div><i>{I_TAG}</i><span><b>Your budget buys more work</b><span>Experienced people at fair prices, so more gets fixed every month.</span></span></div>
       <div><i>{I_USERS}</i><span><b>A specialist for each job</b><span>Maps, website, content and AI search each have their own expert, not one person doing it all.</span></span></div>
       <div><i>{I_OK}</i><span><b>Proven with US businesses</b><span>2,000+ projects in 10+ years, with reviews from owners like you.</span></span></div>
     </div>
-  </div>
-</section>
-
-<section class="fsec" id="check">
-  <div class="w">
-    <span class="eyb" style="color:var(--y)">Free check</span>
-    <h2>Get your free check</h2>
-    <p class="lead">You've worked hard to build this. Let's make sure people nearby can find it. Tell us a little about your business, and we'll reply with your free report. No card, no contract, no spam.</p>
-    <div class="form" id="formBox">
-      <form id="mForm" novalidate>
-        <label class="fl"><span>What kind of business?</span><select id="fType">{OPTIONS}</select></label>
-        <label class="fl"><span>Business name</span><input id="fName" autocomplete="organization" placeholder="Rivera Plumbing"></label>
-        <label class="fl"><span>City and state</span><input id="fCity" autocomplete="address-level2" placeholder="Austin, TX"></label>
-        <label class="fl"><span>Your name</span><input id="eName" autocomplete="name" placeholder="Maria Rivera"></label>
-        <label class="fl"><span>Email</span><input id="eMail" type="email" inputmode="email" autocomplete="email" placeholder="maria@riveraplumbing.com"></label>
-        <label class="fl"><span>Phone <small>(optional, for texts)</small></span><input id="ePhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(512) 555 0147"></label>
-        <label class="fl"><span>Website <small>(optional)</small></span><input id="fSite" inputmode="url" autocomplete="url" placeholder="riveraplumbing.com"></label>
-        <div class="err" id="fErr" role="alert"></div>
-        <button class="btn" type="submit" id="fSend">Send me my free check</button>
-        <p class="priv">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p>
-      </form>
-      <div class="done" id="done" role="status"><i>{I_OK}</i><h3>Got it, thank you!</h3><p>Jyoti from our team will reach out soon with your free check.</p></div>
-      <div class="or">or</div>
-      <a class="btn wa" href="#" data-wa="form">{WAICO}Message us on WhatsApp</a>
-    </div>
-  </div>
-</section>
-
-<section class="sec">
-  <div class="w">
-    <span class="eyb">Questions</span>
-    <h2>Straight answers</h2>
-    <div class="faq">
+    <div class="trd"><span class="eyb">Not a new idea</span><p class="trq">Walmart's biggest tech hub in the world isn't in America. It's in Bengaluru, India.</p><p>Over a third of the world's 500 biggest companies run teams in India. Big companies have done this for years to get more done for less. Now Main Street can too.</p><small>Sources: Reuters, 2025; ANSR Fortune Global 500 report, 2025</small></div></div></details>
       <details><summary>Is the check really free?</summary><p>Yes. No card, no contract. You get your report either way, and you decide if you want our help.</p></details>
       <details><summary>I don't know anything about websites. Is that okay?</summary><p>Completely. Most of our clients don't. We explain everything in plain English and handle the technical parts.</p></details>
-      <details><summary>Where is your team?</summary><p>In India. That is how we keep prices fair and get work done while you sleep. Jyoti is your main contact, you approve every fix, and you check the results in your own Google account.</p></details>
       <details><summary>Do you promise I'll be #1 on Google?</summary><p>No, and be careful with anyone who does. Nobody controls Google. We promise honest work, every change shown to you, and results you can check yourself.</p></details>
       <details><summary>How soon will I see results?</summary><p>Some fixes, like your Google Maps details, can help within weeks. Showing up higher in search usually builds over a few months.</p></details>
       <details><summary><span>Do you work with businesses in <span class="geoState">my state</span>?</span></summary><p>Yes. We work with small businesses across all 50 states, by email, text and WhatsApp.</p></details>
@@ -491,7 +449,7 @@ h2{font-size:1.7rem;line-height:1.15}
 
 </main>
 <footer class="ft"><div class="w"><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
-<div class="bar pre" id="bar"><a class="btn" href="#check" data-go>Get my free check</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp">{WAICO}</a></div>
+<div class="bar" id="bar"><a class="btn" href="#check" data-go>Get my free check</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp">{WAICO}</a></div>
 <script type="module" src="/assets/js/m.js"></script>
 </body>
 </html>

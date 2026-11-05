@@ -26,13 +26,13 @@ function setType(k, ad) {
   $$(".q").forEach(e => put(e, v.q));
   $$(".bn").forEach(e => put(e, v.n));
   $$(".tfor").forEach(e => put(e, ad ? "for a " + v.a : "for your business"));
-  const hi = $("#hIc"); if (hi.dataset.k !== k) { hi.innerHTML = BI[k]; hi.dataset.k = k; }
+  const hi = $("#hIc"); if (hi && hi.dataset.k !== k) { hi.innerHTML = BI[k]; hi.dataset.k = k; }
   $("#fType").value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
   $$(".pn2").forEach(e => put(e, v.pn)); $$(".cmp").forEach(e => put(e, v.c[0])); $$(".svl").forEach(e => put(e, v.a));
   $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
-  $("#indq").innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
-  $("#indcta").textContent = `Get my free check as a ${v.a}`;
+  const iq = $("#indq"); if (iq) iq.innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
+  const ic = $("#indcta"); if (ic) ic.textContent = `Get my free check as a ${v.a}`;
 }
 let picked = false;
 $$("#inds button").forEach(b => b.addEventListener("click", () => { picked = true; setType(b.dataset.k, true); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "mobile tiles" }); }));
@@ -87,7 +87,7 @@ $("#mForm").addEventListener("submit", async e => {
 
 /* the bottom bar steps aside while the form is on screen */
 const bar = $("#bar");
-const barY = () => bar.classList.toggle("pre", scrollY < 380);
+const barY = () => bar.classList.toggle("pre", false);
 addEventListener("scroll", barY, { passive: true }); barY();
 new IntersectionObserver(es => bar.classList.toggle("hide", es[0].isIntersecting), { rootMargin: "0px 0px -20% 0px" }).observe($("#check"));
 
@@ -100,3 +100,36 @@ fetch("/api/geo", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(
 }).catch(() => { });
 
 setType(T, fromAd);
+
+/* videos: they start loading after the page has loaded (or on the first touch), play muted while on screen, and a tap turns the sound on */
+const VIDS = $$("video[data-src]");
+let vOk = false;
+const onScreen = v => { const r = v.getBoundingClientRect(); return r.bottom > innerHeight * .25 && r.top < innerHeight * .75; };
+const vRun = v => { if (!vOk) return; if (!v.src) v.src = v.dataset.src; v.play().catch(() => { }); };
+const vio = new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? vRun(e.target) : e.target.pause()), { threshold: .5 });
+const vStart = () => { if (vOk) return; vOk = true; VIDS.forEach(v => { if (onScreen(v)) vRun(v); }); };
+VIDS.forEach(v => vio.observe(v));
+addEventListener("load", () => setTimeout(vStart, 900));
+["scroll", "pointerdown", "touchstart"].forEach(e => addEventListener(e, vStart, { once: true, passive: true }));
+const sndSet = (b, on) => { b.classList.toggle("on", on); b.lastElementChild.textContent = on ? "Sound on" : b.dataset.t; };
+$$(".snd").forEach(b => {
+  b.dataset.t = b.lastElementChild.textContent;
+  const v = $("#" + b.dataset.v);
+  const tap = () => {
+    vOk = true;
+    const on = v.muted;
+    VIDS.forEach(o => { if (o !== v && !o.muted) { o.muted = true; sndSet($(`.snd[data-v="${o.id}"]`), false); } });
+    v.muted = !on; sndSet(b, on);
+    if (on) { if (!v.src) v.src = v.dataset.src; v.currentTime = 0; v.play().catch(() => { }); trackC("PlayedVideo", { video: v.id === "hv" ? "hero" : "manav", from: "mobile" }); }
+  };
+  b.addEventListener("click", tap); v.addEventListener("click", tap);
+});
+
+/* reviews: swipe, with dots */
+const rv = $("#rv"), rvd = $("#rvd");
+if (rv && rvd) {
+  const cards = [...rv.children]; rvd.innerHTML = cards.map(() => "<i></i>").join("");
+  const dots = [...rvd.children]; let ci = -1;
+  const mark = () => { const w = cards[0].offsetWidth + 12, i = Math.max(0, Math.min(cards.length - 1, Math.round(rv.scrollLeft / w))); if (i !== ci) { ci = i; dots.forEach((d, k) => d.classList.toggle("on", k === i)); } };
+  rv.addEventListener("scroll", mark, { passive: true }); mark();
+}
