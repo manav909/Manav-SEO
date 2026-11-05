@@ -131,7 +131,7 @@ if (rsw && rtb.length) {
   rtb.forEach(b => b.addEventListener("click", () => { rsw.scrollTo({ left: +b.dataset.i * rsw.clientWidth, behavior: "smooth" }); trackC("SampleReportTab", { tab: b.textContent }); }));
   const pg = [...rsw.children], fit = i => { rsw.style.height = pg[i].offsetHeight + "px"; };
   let ri = 0; addEventListener("load", () => fit(0)); new ResizeObserver(() => fit(ri)).observe(pg[0]);
-  rsw.addEventListener("scroll", () => { const i = Math.round(rsw.scrollLeft / rsw.clientWidth); if (i !== ri) { ri = i; fit(i); rtb.forEach((b, k) => b.classList.toggle("on", k === i)); rtb[i].parentNode.scrollTo({ left: rtb[i].offsetLeft - 12, behavior: "smooth" }); } }, { passive: true });
+  rsw.addEventListener("scroll", () => { const i = Math.round(rsw.scrollLeft / rsw.clientWidth); if (i !== ri) { ri = i; fit(i); rtb.forEach((b, k) => { b.classList.toggle("on", k === i); b.setAttribute("aria-pressed", k === i); }); rtb[i].parentNode.scrollTo({ left: rtb[i].offsetLeft - 12, behavior: "smooth" }); } }, { passive: true });
 }
 
 /* reviews: swipe, with dots */
