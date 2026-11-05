@@ -32,7 +32,6 @@ function setType(k, ad) {
   $$(".pn2").forEach(e => put(e, v.pn)); $$(".cmp").forEach(e => put(e, v.c[0])); $$(".svl").forEach(e => put(e, v.a));
   $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
   const iq = $("#indq"); if (iq) iq.innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
-  const ic = $("#indcta"); if (ic) ic.textContent = `Get my free check as a ${v.a}`;
 }
 let picked = false;
 $$("#inds button").forEach(b => b.addEventListener("click", () => { picked = true; setType(b.dataset.k, true); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "mobile tiles" }); }));
@@ -87,8 +86,9 @@ $("#mForm").addEventListener("submit", async e => {
 
 /* the bottom bar steps aside while the form is on screen */
 const bar = $("#bar");
-const barY = () => bar.classList.toggle("pre", false);
-addEventListener("scroll", barY, { passive: true }); barY();
+/* the bar comes in once the hero button has scrolled away, so one button is on screen at a time */
+const hcta = $(".hero .ctas");
+if (hcta) new IntersectionObserver(es => bar.classList.toggle("pre", es[0].isIntersecting)).observe(hcta); else bar.classList.remove("pre");
 new IntersectionObserver(es => bar.classList.toggle("hide", es[0].isIntersecting), { rootMargin: "0px 0px -20% 0px" }).observe($("#check"));
 
 /* where the visitor is: their state and city (approximate, never stored) */

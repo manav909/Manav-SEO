@@ -10,6 +10,8 @@
 <script>(function(){try{if(innerWidth>=980&&!/[?&]m=1/.test(location.search))location.replace("/?desk=1")}catch(e){}})()</script>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preload" as="font" type="font/woff2" href="/assets/img/bs-head-800.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/img/bs-serif-i.woff2" crossorigin>
 <link rel="preload" as="image" href="/assets/img/bs-hero-poster.webp" fetchpriority="high">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Business Santa">
@@ -20,8 +22,11 @@
 <meta name="twitter:card" content="summary_large_image">
 {LDJSON}
 <style>
+@font-face{font-family:"BS Head";src:url(/assets/img/bs-head-800.woff2) format("woff2");font-weight:600 900;font-display:swap}
+@font-face{font-family:"BS Serif";src:url(/assets/img/bs-serif-i.woff2) format("woff2");font-style:italic;font-weight:400;font-display:swap}
+@font-face{font-family:"BS Head Fallback";src:local("Arial Bold"),local("Arial-BoldMT"),local("Helvetica Neue Bold");size-adjust:96%;ascent-override:94%;descent-override:24%}
 :root{--ink:#0f172a;--ink2:#334155;--mut:#64748b;--line:#e5e9f0;--bg:#ffffff;--soft:#f5f7fb;--navy:#0b1220;--y:#FDB913;--y2:#ffd04d;--yd:#8a5a00;--ok:#16a34a;--blue:#1a73e8;
---f:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--fh:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+--f:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--fh:"BS Head","BS Head Fallback",-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Arial,sans-serif;--fs:"BS Serif",Georgia,"Times New Roman",serif}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scroll-behavior:smooth;scroll-padding-top:64px}
 body{margin:0;background:var(--bg);color:var(--ink);font:400 17px/1.55 var(--f);-webkit-font-smoothing:antialiased;padding-bottom:calc(76px + env(safe-area-inset-bottom))}
@@ -30,13 +35,18 @@ a{color:inherit}
 button,input,select{font:inherit}
 svg.i{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .w{max-width:560px;margin:0 auto;padding:0 20px}
-h1,h2,h3{font-family:var(--fh);letter-spacing:-.025em;margin:0}
-h2{font-size:1.7rem;line-height:1.15}
-.eyb{display:block;margin-bottom:8px;font:700 .78rem var(--f);letter-spacing:.08em;text-transform:uppercase;color:var(--yd)}
+h1,h2,h3{font-family:var(--fh);font-weight:800;letter-spacing:-.03em;margin:0}
+h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
+.ac{font-family:var(--fs);font-style:italic;font-weight:400;letter-spacing:-.01em;font-size:1.12em;line-height:.9;color:var(--yd)}
+.fsec .ac,.sec.dk .ac{color:var(--y)}
+.eyb{display:inline-flex;align-items:center;gap:7px;margin-bottom:12px;padding:6px 12px 6px 10px;border-radius:999px;background:#fff3c4;font:700 .72rem var(--f);letter-spacing:.09em;text-transform:uppercase;color:#7a4f00}
+.eyb::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--y);box-shadow:0 0 0 3px rgba(253,185,19,.3)}
+.sec.soft .eyb{background:#fff}
+.fsec .eyb,.sec.dk .eyb,.trd .eyb{background:rgba(253,185,19,.14)!important;color:var(--y)!important}
 .sec{padding:44px 0}
 .sec,.fsec,.ft{content-visibility:auto;contain-intrinsic-size:auto 900px}.cv0 .sec,.cv0 .fsec,.cv0 .ft{content-visibility:visible}
 .sec.soft{background:var(--soft)}
-.lead{margin:10px 0 0;color:var(--ink2);font-size:1.02rem}
+.lead{margin:12px 0 0;color:var(--ink2);font-size:1.05rem;line-height:1.55}
 .btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:56px;padding:0 20px;border:0;border-radius:14px;background:var(--y);color:#111;font:700 1.08rem var(--fh);text-decoration:none;box-shadow:0 8px 20px rgba(253,185,19,.35);cursor:pointer}
 .btn:active{transform:translateY(1px)}
 .btn.out{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--line)}
@@ -55,8 +65,8 @@ h2{font-size:1.7rem;line-height:1.15}
 .hero{padding:20px 0 30px;background:linear-gradient(180deg,#fff8e1 0%,#fff 70%)}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 8px;border-radius:999px;background:#fff;box-shadow:inset 0 0 0 1px var(--line);font:600 .82rem var(--f);color:var(--ink2)}
 .flag{width:20px;height:11px;border-radius:2px;flex:none}
-.hero h1{margin-top:12px;font-size:1.95rem;line-height:1.1}
-.hero h1 em{font-style:normal;background:linear-gradient(transparent 62%,rgba(253,185,19,.55) 62%)}
+.hero h1{margin-top:14px;font-size:2.4rem;line-height:1.02;letter-spacing:-.035em;word-spacing:.02em}
+.hero h1 .ac{display:inline-block;font-size:1.15em;color:var(--ink);background:linear-gradient(transparent 64%,rgba(253,185,19,.7) 64%,rgba(253,185,19,.7) 92%,transparent 92%);padding:0 .06em}
 .hero .lead{font-size:1.06rem}
 .hcard{margin:22px 0 0;border-radius:18px;background:#fff;box-shadow:0 14px 40px rgba(15,23,42,.12),0 0 0 1px var(--line);overflow:hidden}
 .hq{display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid var(--line);color:#3c4043;font-size:.95rem}
@@ -285,6 +295,9 @@ h2{font-size:1.7rem;line-height:1.15}
 .dd{padding:0 0 18px}.dd>.pl:first-child,.dd>.pk:first-child,.dd>.vs:first-child{margin-top:4px}
 .dkb{padding:16px;border-radius:18px;background:var(--navy);color:#fff}.dkb .mt{margin-top:0}.dkb .hn{margin-top:14px}
 .team{margin-top:14px}
+.lk{margin:18px 0 0;text-align:center;font-size:.95rem}.lk a{color:var(--ink);font-weight:700;text-decoration:underline;text-decoration-color:var(--y);text-decoration-thickness:3px;text-underline-offset:4px}
+.btn{font-family:var(--fh);font-weight:800;letter-spacing:-.01em}
+.rsum>b,.price .big b{font-family:var(--fh)}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -301,8 +314,8 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="hero">
   <div class="w">
     <span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{FLAG}</svg>Helping small businesses in <b class="geoState">the US</b></span>
-    <h1>Get more calls from people searching <em><span class="tfor">for your business</span> near you.</em></h1>
-    <p class="lead">When someone nearby searches "<span class="q">plumber near me</span>", we make sure your business shows up on Google, Google Maps and ChatGPT, so they call you instead of the competition.</p>
+    <h1>Get more calls from people searching <span class="tfor">for your business</span> <em class="ac">near you.</em></h1>
+    <p class="lead">When someone nearby searches "<span class="q">plumber near me</span>", we put your business in front of them on Google, Maps and ChatGPT. So they call you, not the competition.</p>
     <div class="vid" id="v1"><video id="hv" muted playsinline loop preload="none" poster="/assets/img/bs-hero-poster.webp" data-src="/assets/video/bs-hero.mp4" width="720" height="900" aria-label="Short video: three reasons customers pick someone else, and how we fix all three"></video><button class="snd ic" type="button" data-v="hv" aria-label="Turn the sound on">{I_SOUND}<span>Tap for sound</span></button><span class="vt">17 sec</span></div>
     <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
     <div class="trust"><span class="faces"><img src="/assets/img/face-jyoti.webp" alt="" width="30" height="30"><img src="/assets/img/face-manav.webp" alt="" width="30" height="30"><img src="/assets/img/face-sam.webp" alt="" width="30" height="30"><img src="/assets/img/face-sakshi.webp" alt="" width="30" height="30"></span><span><span class="st">★★★★★</span> <b>4.9</b> from 2,000+ projects</span></div>
@@ -314,7 +327,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec soft">
   <div class="w">
     <span class="eyb">Sound familiar?</span>
-    <h2>Good business. Quiet phone.</h2>
+    <h2>Good business. <em class="ac">Quiet phone.</em></h2>
     <p class="lead">You do great work. But online, the best business doesn't win. <b>The easiest one to find does.</b> Usually for one of three reasons:</p>
     <div class="pl">
       <div class="bad"><i>{I_SEARCHOFF}</i><span><b>You don't show up when people search</b><span>They type "<span class="q">plumber near me</span>" and see your competitors, not you.</span></span></div>
@@ -328,7 +341,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec">
   <div class="w">
     <span class="eyb">Your free check</span>
-    <h2>What you get, for free</h2>
+    <h2>What you get, <em class="ac">for free</em></h2>
     <p class="lead">A real person on our team looks at your business and sends you a short, plain-English report.</p>
     <div class="pl">
       <div class="good"><i>{I_RANK}</i><span><b>Where you show up today</b><span>On Google, Google Maps and ChatGPT, for the searches your customers use.</span></span></div>
@@ -368,24 +381,23 @@ h2{font-size:1.7rem;line-height:1.15}
         <p class="rnote"><b>Jyoti's note:</b> The good news? Fix 1 is free and takes about 20 minutes. Start there and you should see more calls from Maps.</p>
         <div class="repp">You approve every fix first · no contract</div></div>
     </div>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
 </section>
 
 <section class="sec soft" id="ind">
   <div class="w">
     <span class="eyb">Built for local businesses</span>
-    <h2>Pick your business</h2>
+    <h2>Pick <em class="ac">your</em> business</h2>
     <p class="lead">Tap yours to see what your customers type into Google.</p>
     <div class="inds" id="inds">{INDS}</div>
-    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn" href="#check" data-go><span id="indcta">Get my free check</span></a></div>
+    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn out" href="#check" data-go><span id="indcta">Check my business, free</span></a></div>
   </div>
 </section>
 
 <section class="sec">
   <div class="w">
     <span class="eyb">How it works</span>
-    <h2>Three easy steps</h2>
+    <h2>Three <em class="ac">easy</em> steps</h2>
     <div class="steps">
       <div><i>1</i><span><b>Tell us about your business</b><span>Fill in the short form below. It takes about a minute.</span></span></div>
       <div><i>2</i><span><b>We check everything</b><span>Your Google listing, your website, your reviews and your local competition.</span></span></div>
@@ -397,7 +409,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec dk" id="results">
   <div class="w">
     <span class="eyb">Results, not reports</span>
-    <h2>Check your results yourself, in your own Google account</h2>
+    <h2>See the results <em class="ac">yourself</em>, in your own Google account</h2>
     <p class="lead">A report from us is just our word. Your Google Business Profile counts real customer actions, and only you control it.</p>
     <div class="mt">
       <div><i>{I_PHONE}</i><b>Calls</b><span>People who tapped Call on your listing</span></div>
@@ -411,14 +423,13 @@ h2{font-size:1.7rem;line-height:1.15}
       <div><i>3</i><span><b>Every month: the same numbers, side by side</b><span>Where you started, where you are now, and what we do next.</span></span></div>
     </div>
     <p class="hn"><b>We won't promise you #1 on Google.</b> Google itself says no one can. We promise the work, a clear plan, and numbers you can check any day.</p>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
 </section>
 
 <section class="sec soft">
   <div class="w">
     <span class="eyb">Client reviews</span>
-    <h2>Real results, in their words</h2>
+    <h2>Real results, <em class="ac">in their words</em></h2>
     <div class="rsum"><b>4.9</b><div><span class="st">★★★★★</span><span>Average rating from 2,000+ projects over 10+ years</span></div></div>
     <div class="rv" id="rv">{REVIEWS}</div>
     <div class="dots" id="rvd" aria-hidden="true"></div>
@@ -428,19 +439,18 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec">
   <div class="w">
     <span class="eyb">Why owners pick us</span>
-    <h2>Big agency results, without the big agency bill</h2>
+    <h2>Big agency results, <em class="ac">without the big agency bill</em></h2>
     <p class="lead">Here is how we compare with a typical US local SEO agency.</p>
     <div class="vs"><div class="vh"><span>Typical agency</span><span><b>Business Santa</b></span></div><div class="vr"><small>Cost to start</small><div><span class="vn">{I_X}$1,000 to $3,000 a month</span><span class="vy">{I_OK}Fixes from $120, one time</span></div></div><div class="vr"><small>Contract</small><div><span class="vn">{I_X}Often 6 to 12 months</span><span class="vy">{I_OK}None. Stay because it works</span></div></div><div class="vr"><small>Checking your business</small><div><span class="vn">{I_X}Often a paid audit</span><span class="vy">{I_OK}Free, by a real person</span></div></div><div class="vr"><small>ChatGPT and AI search</small><div><span class="vn">{I_X}Often extra, or missing</span><span class="vy">{I_OK}Included in every check</span></div></div><div class="vr"><small>Who does the work</small><div><span class="vn">{I_X}Sometimes outsourced</span><span class="vy">{I_OK}Our own team, start to finish</span></div></div><div class="vr"><small>How fast</small><div><span class="vn">{I_X}Slow monthly plans</span><span class="vy">{I_OK}Recent projects done in 3 to 7 days</span></div></div></div>
     <p class="vsrc">Agency figures from 2026 US local SEO pricing guides.</p>
     <a class="eng" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=engine" data-pk="engine"><span><b>Powered by SEO Season</b><small>Our own SEO and AI search engine, built in house</small></span>{I_CHEV}</a>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
 </section>
 
 <section class="sec soft">
   <div class="w">
-    <span class="eyb">Honest pricing</span>
-    <h2>Pick what you need</h2>
+    <span class="eyb">Pricing</span>
+    <h2>Honest prices. <em class="ac">No surprises.</em></h2>
     <p class="lead">Start with the free check. These are our most popular services.</p>
     <div class="pk">{PACKS}</div>
     <div class="price">
@@ -458,7 +468,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec">
   <div class="w">
     <span class="eyb">Who you'll work with</span>
-    <h2>Real people who know your name</h2>
+    <h2>Real people who <em class="ac">know your name</em></h2>
     <p class="lead">A small, experienced team. No call center, no ticket numbers.</p>
     <div class="vid sm" id="v2"><video id="mv" muted playsinline loop preload="none" poster="/assets/img/bs-manav-poster.webp" data-src="/assets/video/bs-manav.mp4" width="576" height="720" aria-label="Manav, founder of Business Santa: let's talk about your goals"></video><button class="snd" type="button" data-v="mv">{I_SOUND}<span>Hear from Manav</span></button><span class="vt">Manav · Founder</span></div>
     <div class="team"><div class="tw2"><img src="/assets/img/crew-clean-800.webp" srcset="/assets/img/crew-clean-800.webp 800w, /assets/img/crew-clean-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1430" height="941" loading="lazy" decoding="async"></div><div class="tcap"><span>Jyoti<i>Your contact</i></span><span>Manav<i>Founder</i></span><span>Sam<i>Tech expert</i></span><span>Sakshi<i>Content</i></span></div></div>
@@ -476,7 +486,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="fsec" id="check">
   <div class="w">
     <span class="eyb" style="color:var(--y)">Free check</span>
-    <h2>Get your free check</h2>
+    <h2>Let's get you <em class="ac">found.</em></h2>
     <p class="lead">You've worked hard to build this. Let's make sure people nearby can find it. Tell us a little about your business, and we'll reply with your free report. No card, no contract, no spam.</p>
     <div class="form" id="formBox">
       <form id="mForm" novalidate>
@@ -501,7 +511,7 @@ h2{font-size:1.7rem;line-height:1.15}
 <section class="sec">
   <div class="w">
     <span class="eyb">Questions</span>
-    <h2>Straight answers</h2>
+    <h2>Straight <em class="ac">answers</em></h2>
     <div class="faq">
       <details><summary>Is the check really free?</summary><p>Yes. No card, no contract. You get your report either way, and you decide if you want our help.</p></details>
       <details><summary>I don't know anything about websites. Is that okay?</summary><p>Completely. Most of our clients don't. We explain everything in plain English and handle the technical parts.</p></details>
@@ -510,13 +520,13 @@ h2{font-size:1.7rem;line-height:1.15}
       <details><summary>How soon will I see results?</summary><p>Some fixes, like your Google Maps details, can help within weeks. Showing up higher in search usually builds over a few months.</p></details>
       <details><summary><span>Do you work with businesses in <span class="geoState">my state</span>?</span></summary><p>Yes. We work with small businesses across all 50 states, by email, text and WhatsApp.</p></details>
     </div>
-    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
+    <p class="lk"><a href="#check" data-go>Still unsure? Ask us anything on WhatsApp or by email</a></p>
   </div>
 </section>
 
 </main>
 <footer class="ft"><div class="w"><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
-<div class="bar" id="bar"><a class="btn" href="#check" data-go>Get my free check</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp">{WAICO}</a></div>
+<div class="bar pre" id="bar"><a class="btn" href="#check" data-go>Check my business, free</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp">{WAICO}</a></div>
 <script type="module" src="/assets/js/m.js"></script>
 </body>
 </html>
