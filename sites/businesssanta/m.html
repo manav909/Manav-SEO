@@ -224,6 +224,19 @@ h2{font-size:1.7rem;line-height:1.15}
 .eng{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:14px 16px;border-radius:16px;background:var(--navy);color:#fff;text-decoration:none}
 .eng b{display:block;font:800 1rem var(--fh)}.eng small{display:block;line-height:1.35;color:#cbd5e1;font-size:.84rem}.eng svg{flex:none;width:20px;height:20px;color:var(--y)}
 .vsrc{margin:10px 0 0;color:var(--mut);font-size:.76rem}
+/* results */
+.sec.dk{background:var(--navy);color:#fff}.sec.dk h2{color:#fff}.sec.dk .lead{color:#cbd5e1}.sec.dk .eyb{color:var(--y)}
+.mt{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}
+.mt>div{padding:14px;border-radius:16px;background:rgba(255,255,255,.06);box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+.mt i{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--y);color:#111}.mt i svg{width:20px;height:20px}
+.mt b{display:block;margin-top:10px;font:800 1rem var(--fh)}.mt>div>span{display:block;margin-top:2px;color:#cbd5e1;font-size:.84rem;line-height:1.35}
+.steps.sl{margin-top:26px}.sl div:not(:last-child)::after{background:rgba(255,255,255,.18)}.sl i{background:var(--y);color:#111}.sl span{color:#cbd5e1}.sl b{color:#fff}
+.hn{margin:6px 0 0;padding:14px 16px;border-radius:14px;background:rgba(253,185,19,.12);box-shadow:inset 0 0 0 1px rgba(253,185,19,.35);color:#e2e8f0;font-size:.92rem}.hn b{color:var(--y)}
+.inb{margin-top:18px;padding:18px 16px;border-radius:18px;background:var(--soft)}
+.inb h3{margin:0 0 6px;font:800 1.12rem/1.3 var(--fh)}
+.inb>div{display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--line)}.inb>div:first-of-type{border-top:0}
+.inb i{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#fff;box-shadow:0 0 0 1px var(--line)}.inb i svg{width:19px;height:19px}
+.inb b{display:block;font:700 .97rem var(--fh)}.inb>div>span>span{display:block;color:var(--ink2);font-size:.9rem;margin-top:2px}
 /* industries */
 .inds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
 .inds button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px 10px;border:0;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line);color:var(--ink);font:600 .74rem/1.15 var(--f);cursor:pointer}
@@ -361,6 +374,27 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
+<section class="sec dk" id="results">
+  <div class="w">
+    <span class="eyb">Results, not reports</span>
+    <h2>Check your results yourself, in your own Google account</h2>
+    <p class="lead">A report from us is just our word. Your Google Business Profile counts real customer actions, and only you control it.</p>
+    <div class="mt">
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg></i><b>Calls</b><span>People who tapped Call on your listing</span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l18-8-8 18-2-8z"/></svg></i><b>Directions</b><span>People heading to your door</span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"/></svg></i><b>Website visits</b><span>People who clicked through to you</span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg></i><b>Your Maps spot</b><span>Where you show up for "<span class="q">plumber near me</span>"</span></div>
+    </div>
+    <div class="steps sl">
+      <div><i>1</i><span><b>Day 1: we write down your starting numbers</b><span>Together, on a short call, from your own Google account.</span></span></div>
+      <div><i>2</i><span><b>Week 1: the work goes live</b><span>Every change is on your listing and website, for you to see.</span></span></div>
+      <div><i>3</i><span><b>Every month: the same numbers, side by side</b><span>Where you started, where you are now, and what we do next.</span></span></div>
+    </div>
+    <p class="hn"><b>We won't promise you #1 on Google.</b> Google itself says no one can. We promise the work, a clear plan, and numbers you can check any day.</p>
+    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
+  </div>
+</section>
+
 <section class="sec soft">
   <div class="w">
     <span class="eyb">Client reviews</span>
@@ -407,6 +441,12 @@ h2{font-size:1.7rem;line-height:1.15}
     <p class="lead">A small, experienced team. No call center, no ticket numbers.</p>
     <div class="team"><div class="tw2"><img src="/assets/img/crew-clean-800.webp" srcset="/assets/img/crew-clean-800.webp 800w, /assets/img/crew-clean-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1430" height="941" loading="lazy" decoding="async"></div><div class="tcap"><span>Jyoti<i>Your contact</i></span><span>Manav<i>Founder</i></span><span>Sam<i>Tech expert</i></span><span>Sakshi<i>Content</i></span></div></div>
     <div class="jc"><img src="/assets/img/face-jyoti.webp" alt="" width="52" height="52" loading="lazy"><div><small>Your main contact</small><b>Jyoti</b><span>Answers your messages and sends your weekly update.</span></div></div>
+    <div class="inb"><h3>Our team is in India. Here's why that helps you.</h3>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></i><span><b>Work gets done while you sleep</b><span>Message us after closing time. Your work is often done by the time you open.</span></span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/></svg></i><span><b>Your budget buys more work</b><span>Experienced people at fair prices, so more gets fixed every month.</span></span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 20a6.5 6.5 0 0 0-3-5.5"/></svg></i><span><b>A specialist for each job</b><span>Maps, website, content and AI search each have their own expert, not one person doing it all.</span></span></div>
+      <div><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></i><span><b>Proven with US businesses</b><span>2,000+ projects in 10+ years, with reviews from owners like you.</span></span></div>
+    </div>
   </div>
 </section>
 
@@ -442,6 +482,7 @@ h2{font-size:1.7rem;line-height:1.15}
     <div class="faq">
       <details><summary>Is the check really free?</summary><p>Yes. No card, no contract. You get your report either way, and you decide if you want our help.</p></details>
       <details><summary>I don't know anything about websites. Is that okay?</summary><p>Completely. Most of our clients don't. We explain everything in plain English and handle the technical parts.</p></details>
+      <details><summary>Where is your team?</summary><p>In India. That is how we keep prices fair and get work done while you sleep. Jyoti is your main contact, you approve every fix, and you check the results in your own Google account.</p></details>
       <details><summary>Do you promise I'll be #1 on Google?</summary><p>No, and be careful with anyone who does. Nobody controls Google. We promise honest work, every change shown to you, and results you can check yourself.</p></details>
       <details><summary>How soon will I see results?</summary><p>Some fixes, like your Google Maps details, can help within weeks. Showing up higher in search usually builds over a few months.</p></details>
       <details><summary><span>Do you work with businesses in <span class="geoState">my state</span>?</span></summary><p>Yes. We work with small businesses across all 50 states, by email, text and WhatsApp.</p></details>
