@@ -48,6 +48,7 @@ REV = [("M", "#db2777", "New AI citations within days", "Most importantly, we be
        ("V", "#7c3aed", "Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website…", "Technical SEO", "$200 to $400", 3)]
 fl = f'<svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{flag}</svg>'
 reviews = "".join(f'<article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>{html.escape(h)}</h3><blockquote>“{html.escape(q)}”</blockquote><div class="rw"><span class="ra" style="--c:{c}" aria-hidden="true">{a}</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small>{fl} United States</small></div></div><div class="meta"><span>{sv}</span><span>Paid {pr}</span><span>Done in {d} days</span></div></article>' for a, c, h, q, sv, pr, d in REV)
+P["x"] = '<path d="M6 6l12 12M18 6L6 18"/>'
 P["chev"] = '<path d="M9 6l6 6-6 6"/>'
 PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google reads every page", "$120"),
       ("gsc", "Fix Google Search Console", "Indexing errors, sitemaps, pages Google skips", "$160"),
@@ -58,7 +59,7 @@ PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google 
 packs = "".join(f'<a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content={k}#gig-{k}" data-pk="{k}"><div><b>{n}</b><small>{d}</small></div><em>{("From " + pr) if pr else "Quote"}<small>{"one-time fix" if pr else "after free check"}</small></em>{svg("chev")}</a>' for k, n, d, pr in PK)
 inds = "".join(f'<button type="button" data-k="{k}" aria-pressed="false"><i>{svg(k)}</i>{n}</button>' for k, n in TY)
 out = tpl.replace("{PACKS}", packs).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
-for k in ["CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
+for k in ["X", "CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
     out = out.replace("{I_" + k + "}", svg(k.lower()))
 js = main.replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
 open("/tmp/bs-m.js", "w").write(js)

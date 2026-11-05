@@ -201,7 +201,7 @@ h2{font-size:1.7rem;line-height:1.15}
 .rh{display:flex;align-items:center;gap:8px;margin:0;padding:14px 16px 6px;font:800 .8rem var(--f);letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);border-top:6px solid var(--soft)}
 .rh span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;font-size:.7rem}
 .rcmp th{padding:4px 16px 8px;font:700 .72rem var(--f);color:var(--mut);text-align:right;vertical-align:bottom}
-.rcmp th:nth-child(2){color:#b91c1c}.rcmp td:nth-child(n+2){text-align:right;font-weight:700;width:26%}.rcmp td.w{color:#b91c1c}.rcmp th.cmp{white-space:normal;line-height:1.2}
+.rcmp th:nth-child(2){color:#b91c1c}.rcmp td:nth-child(n+2){text-align:right;font-weight:700;width:26%}.rcmp td.w{color:#b91c1c}.rcmp tbody th{vertical-align:middle;padding:11px 16px;border-bottom:1px solid var(--line);text-align:left;font:400 .92rem var(--f);color:var(--ink)}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.rcmp th.cmp{white-space:normal;line-height:1.2}
 .rfx{list-style:none;counter-reset:f;padding:0!important;margin:10px 0 0;display:grid;gap:8px!important}
 .rfx li{counter-increment:f;position:relative;padding:10px 12px 10px 42px;border-radius:12px;background:var(--soft);color:var(--ink)}
 .rfx li::before{content:counter(f);position:absolute;left:12px;top:10px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--y);font:800 .72rem var(--f)}
@@ -211,6 +211,19 @@ h2{font-size:1.7rem;line-height:1.15}
 .repf b{font:700 .95rem var(--fh)}
 .repf ol{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:.92rem;display:grid;gap:4px}
 .repp{margin-top:12px;padding:10px 12px;border-radius:12px;background:#f0fdf4;color:#166534;font-size:.88rem}
+/* vs agency */
+.vs{margin-top:18px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line);overflow:hidden}
+.vh,.vr>div{display:grid;grid-template-columns:1fr 1fr}
+.vh span{padding:12px 14px;font:700 .8rem var(--f);color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.vh span:last-child{background:var(--y);color:#111}
+.vr{border-top:1px solid var(--line);background:linear-gradient(90deg,transparent 50%,#fffbea 50%)}
+.vr small{display:block;padding:10px 14px 0;font:700 .78rem var(--f);color:var(--ink)}
+.vr>div span{display:flex;gap:6px;align-items:flex-start;padding:4px 14px 12px;font-size:.88rem;line-height:1.35}
+.vr .vn{color:var(--mut)}.vr .vy{color:var(--ink);font-weight:600}
+.vr svg{flex:none;width:16px;height:16px;margin-top:1px}.vn svg{color:#b91c1c}.vy svg{color:var(--ok)}
+.eng{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding:14px 16px;border-radius:16px;background:var(--navy);color:#fff;text-decoration:none}
+.eng b{display:block;font:800 1rem var(--fh)}.eng small{display:block;line-height:1.35;color:#cbd5e1;font-size:.84rem}.eng svg{flex:none;width:20px;height:20px;color:var(--y)}
+.vsrc{margin:10px 0 0;color:var(--mut);font-size:.76rem}
 /* industries */
 .inds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
 .inds button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px 10px;border:0;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line);color:var(--ink);font:600 .74rem/1.15 var(--f);cursor:pointer}
@@ -294,20 +307,20 @@ h2{font-size:1.7rem;line-height:1.15}
       <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small>
         <div class="rsc"><div class="rsn"><b>38</b><small>/100</small></div><div><span class="rsl">How easy you are to find</span><span class="rbar"><i></i></span><small>Customers nearby are finding others first.</small></div></div>
       </div>
-      <h4 class="rh"><span>1</span>Where customers look</h4>
+      <h3 class="rh"><span>1</span>Where customers look</h3>
       <table class="rept"><tbody>
         <tr><td>Google search<small>"<span class="q">plumber near me</span>"</small></td><td><span class="bd r">Not in top 10</span></td></tr>
         <tr><td>Google Maps<small>Most calls go to the top 3</small></td><td><span class="bd a">You are #7</span></td></tr>
         <tr><td>ChatGPT<small>"best <span class="svl">plumber</span> nearby"</small></td><td><span class="bd r">Not mentioned</span></td></tr>
       </tbody></table>
-      <h4 class="rh"><span>2</span>You vs. the top business near you</h4>
-      <table class="rept rcmp"><thead><tr><th></th><th>You</th><th class="cmp">Mike's Plumbing</th></tr></thead><tbody>
-        <tr><td>Google reviews</td><td class="w">12</td><td>214</td></tr>
-        <tr><td>Star rating</td><td class="w">4.2</td><td>4.8</td></tr>
-        <tr><td>Photos</td><td class="w">3</td><td>86</td></tr>
-        <tr><td>Opening hours</td><td class="w">Missing</td><td>Listed</td></tr>
+      <h3 class="rh"><span>2</span>You vs. the top business near you</h3>
+      <table class="rept rcmp"><thead><tr><th><span class="sr">Item</span></th><th>You</th><th class="cmp">Mike's Plumbing</th></tr></thead><tbody>
+        <tr><th scope="row">Google reviews</th><td class="w">12</td><td>214</td></tr>
+        <tr><th scope="row">Star rating</th><td class="w">4.2</td><td>4.8</td></tr>
+        <tr><th scope="row">Photos</th><td class="w">3</td><td>86</td></tr>
+        <tr><th scope="row">Opening hours</th><td class="w">Missing</td><td>Listed</td></tr>
       </tbody></table>
-      <h4 class="rh"><span>3</span>Your website on a phone</h4>
+      <h3 class="rh"><span>3</span>Your website on a phone</h3>
       <table class="rept"><tbody>
         <tr><td>Load time<small>Aim for under 3 seconds</small></td><td><span class="bd r">6.1 sec</span></td></tr>
         <tr><td>Tap to call button<small>Lets people call in one tap</small></td><td><span class="bd r">Missing</span></td></tr>
@@ -359,6 +372,18 @@ h2{font-size:1.7rem;line-height:1.15}
 
 <section class="sec">
   <div class="w">
+    <span class="eyb">Why owners pick us</span>
+    <h2>Big agency results, without the big agency bill</h2>
+    <p class="lead">Here is how we compare with a typical US local SEO agency.</p>
+    <div class="vs"><div class="vh"><span>Typical agency</span><span><b>Business Santa</b></span></div><div class="vr"><small>Cost to start</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>$1,000 to $3,000 a month</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Fixes from $120, one time</span></div></div><div class="vr"><small>Contract</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Often 6 to 12 months</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>None. Stay because it works</span></div></div><div class="vr"><small>Checking your business</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Often a paid audit</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Free, by a real person</span></div></div><div class="vr"><small>ChatGPT and AI search</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Often extra, or missing</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Included in every check</span></div></div><div class="vr"><small>Who does the work</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Sometimes outsourced</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Our own team, start to finish</span></div></div><div class="vr"><small>How fast</small><div><span class="vn"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>Slow monthly plans</span><span class="vy"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Recent projects done in 3 to 7 days</span></div></div></div>
+    <p class="vsrc">Agency figures from 2026 US local SEO pricing guides.</p>
+    <a class="eng" href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=engine" data-pk="engine"><span><b>Powered by SEO Season</b><small>Our own SEO and AI search engine, built in house</small></span><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+    <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
+  </div>
+</section>
+
+<section class="sec soft">
+  <div class="w">
     <span class="eyb">Honest pricing</span>
     <h2>Pick what you need</h2>
     <p class="lead">Start with the free check. These are our most popular services.</p>
@@ -375,7 +400,7 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
-<section class="sec soft">
+<section class="sec">
   <div class="w">
     <span class="eyb">Who you'll work with</span>
     <h2>Real people who know your name</h2>
