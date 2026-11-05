@@ -348,6 +348,13 @@ showCrew(0);
 /* ---------- the big reveal: words light up, the phone rises, rewinds to today, takes its place ---------- */
 const bws = $$(".bw"), pst = $(".pstage");
 let dx = 0, lastPb = -1;
+/* natural scroll: the Google screen and the step pills sit in one sticky column; the pills jump to their step */
+const FLOW = stage.classList.contains("flow");
+let pcol = null;
+if (FLOW) {
+  pcol = document.createElement("div"); pcol.className = "pcol"; pst.parentNode.insertBefore(pcol, pst); pcol.appendChild(pst); pcol.appendChild($("#steps6"));
+  steps.forEach((s, k) => { s.setAttribute("role", "button"); s.tabIndex = 0; const go = () => chs[k].scrollIntoView({ behavior: RM ? "auto" : "smooth", block: "center" }); s.addEventListener("click", go); s.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
+}
 function measureBridge() { const r = pst.getBoundingClientRect(); dx = MOB() ? 0 : innerWidth / 2 - (r.left + r.width / 2); }
 function bridge(pb, vh) {
   if (Math.abs(pb - lastPb) < .0005) return; lastPb = pb;
@@ -365,10 +372,14 @@ const hd = $("#hd"), bar = $("#bar"); let ticking = false, solid = null, barOn =
 function onScroll() {
   ticking = false;
   const y = scrollY, vh = innerHeight, sr = stage.getBoundingClientRect();
-  const run = -sr.top, B = vh * 1.6, total = sr.height - vh;
-  const pb = clamp(run / B, 0, 1), q = clamp((run - B) / (total - B), 0, 1);
-  bridge(pb, vh);
-  if (pb < 1) setChapter(0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
+  if (FLOW) {
+    let i = 0; const mid = vh * .55; chs.forEach((ch, k) => { if (ch.getBoundingClientRect().top < mid) i = k; }); setChapter(i);
+  } else {
+    const run = -sr.top, B = vh * 1.6, total = sr.height - vh;
+    const pb = clamp(run / B, 0, 1), q = clamp((run - B) / (total - B), 0, 1);
+    bridge(pb, vh);
+    if (pb < 1) setChapter(0, false, true); else setChapter(Math.min(5, Math.floor(q * 6)));
+  }
   revealFrame(vh);
   const s = y > 40; if (s !== solid) { solid = s; hd.classList.toggle("solid", s); }
   const b = y > vh * .9 && !inCk; if (b !== barOn) { barOn = b; bar.classList.toggle("on", b); }
@@ -379,6 +390,7 @@ addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimat
 function sizePhone() {
   const m = MOB(), h = m ? 470 : 560, ps = m ? Math.min(1, innerHeight * .46 / h, innerWidth * .9 / 340) : Math.min(1.08, (innerHeight - 150) / h);
   const el = $(".pstage"); el.style.setProperty("--ps", ps.toFixed(3)); el.style.setProperty("--bh", h + "px");
+  if (typeof pcol !== "undefined" && pcol) pcol.style.top = Math.max(84, (innerHeight - h * ps - 60) / 2).toFixed(0) + "px";
 }
 let lastW = innerWidth, rT = 0;
 addEventListener("resize", () => {

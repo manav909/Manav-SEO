@@ -1403,6 +1403,26 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 #report{overflow-x:clip}html,body{overflow-x:clip}@media (max-width:1180px){.xrc,.xrc.in{transform:none!important}}
 @media (max-width:980px){.xrpt{position:static}.xrp,.xgs{grid-template-columns:1fr}.xwhy{grid-template-columns:1fr 1fr}.xev{grid-template-columns:1fr 1fr}.xgm{grid-template-columns:1fr 1fr}.xvr{grid-template-columns:1fr 1fr 1fr}}
 @media (prefers-reduced-motion:reduce){.xrc *,.xvs *,.xnt *,.xgp *{animation:none!important;transition-duration:.01s!important;transition-delay:0s!important}}
+
+/* ---------- the story section, natural scrolling: the text moves with the page, the Google screen stays beside it ---------- */
+#stage.flow{height:auto}
+#stage.flow .stick{position:relative;height:auto;overflow:visible;padding:clamp(90px,10vw,140px) 0 clamp(60px,8vw,110px)}
+#stage.flow .bridge{display:none}
+#stage.flow .sth{display:block;height:auto;text-align:center;max-width:980px;margin:0 auto clamp(10px,3vw,40px)}
+#stage.flow .sth .lead{margin:0 auto}
+#stage.flow .wrap:not(.sth){height:auto;align-items:start}
+#stage.flow .chs{height:auto;min-height:0}
+#stage.flow .ch{position:relative;inset:auto;min-height:72vh;min-height:72svh;visibility:visible;opacity:.22;transform:none;transition:opacity .5s var(--ease)}
+#stage.flow .ch.on{opacity:1}
+#stage.flow .ch:last-child{min-height:60vh;min-height:60svh}
+#stage.flow .pcol{position:sticky;top:110px;display:flex;flex-direction:column;align-items:center;gap:22px}
+#stage.flow .pstage{width:100%}
+#stage.flow .steps6{position:static;justify-content:center;flex-wrap:nowrap;gap:6px;margin:0;padding-top:6px}
+#stage.flow .steps6 span{cursor:pointer;font-size:.78rem;padding:7px 11px;white-space:nowrap}
+#stage.flow .steps6 span:hover{background:var(--gl2)}
+#stage.flow .steps6 span:focus-visible{outline:2px solid var(--y);outline-offset:2px}
+#stage.flow.inb .chs,#stage.flow.inb .steps6{opacity:1;visibility:visible}
+@media (max-width:980px){#stage.flow .wrap:not(.sth){grid-template-columns:1fr}#stage.flow .pcol{position:relative;top:0;order:-1}#stage.flow .ch{min-height:0;padding:30px 0;opacity:1}}
 </style>
 
 </head>
@@ -1447,8 +1467,8 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
   </div>
 </section>
 
-<section id="stage" class="see" aria-label="How we help customers find your business">
-  <div class="stick"><div class="bridge" id="bridge" aria-hidden="true"><p><span class="bw">Everyone</span> <span class="bw">wants</span> <span class="bw">to</span> <span class="bw">be</span> <span class="bw">the</span> <span class="bw">business</span> <span class="bw">people</span> <span class="bw">find</span> <span class="bw">first.</span> <span class="bw">So</span> <span class="bw g">how</span> <span class="bw">do</span> <span class="bw">we</span> <span class="bw g">get</span> <span class="bw g">you</span> <span class="bw g">there?</span></p><small>Watch it happen, step by step, on a real Google search.</small></div><div class="wrap">
+<section id="stage" class="see flow" aria-label="How we help customers find your business">
+  <div class="stick"><div class="wrap sth"><span class="eyb rv">How we get you there</span><h2 class="h2 split"><span class="w"><span style="--i:0">Everyone</span></span> <span class="w"><span style="--i:1">wants</span></span> <span class="w"><span style="--i:2">to</span></span> <span class="w"><span style="--i:3">be</span></span> <span class="w"><span style="--i:4">the</span></span> <span class="w"><span style="--i:5">business</span></span> <span class="w"><span style="--i:6">people</span></span> <span class="w"><span style="--i:7">find</span></span> <span class="w"><span style="--i:8">first.</span></span> <span class="w"><span style="--i:9"><em>So</em></span></span> <span class="w"><span style="--i:10"><em>how</em></span></span> <span class="w"><span style="--i:11"><em>do</em></span></span> <span class="w"><span style="--i:12"><em>we</em></span></span> <span class="w"><span style="--i:13"><em>get</em></span></span> <span class="w"><span style="--i:14"><em>you</em></span></span> <span class="w"><span style="--i:15"><em>there?</em></span></span></h2><p class="lead rv">Scroll through it, step by step, on a real Google search.</p></div><div class="bridge" id="bridge" aria-hidden="true"><p><span class="bw">Everyone</span> <span class="bw">wants</span> <span class="bw">to</span> <span class="bw">be</span> <span class="bw">the</span> <span class="bw">business</span> <span class="bw">people</span> <span class="bw">find</span> <span class="bw">first.</span> <span class="bw">So</span> <span class="bw g">how</span> <span class="bw">do</span> <span class="bw">we</span> <span class="bw g">get</span> <span class="bw g">you</span> <span class="bw g">there?</span></p><small>Watch it happen, step by step, on a real Google search.</small></div><div class="wrap">
     <div class="chs">
       <div class="steps6" id="steps6"><span>The problem</span><span>1 &middot; Fix</span><span>2 &middot; Words</span><span>3 &middot; Map</span><span>4 &middot; Updates</span><span>The result</span></div>
       <div class="ch" id="c0"><span class="kick">The problem</span><h2>When people nearby search for you, <em>you're not on the list.</em></h2><p>You do great work. But online, the best business doesn't win. <b>The easiest one to find does.</b> If you are not on the list, they call someone else. Every single day.</p><div class="get"><small>Look at the search</small>This is a search for "<span class="qtxt"></span>". Your business is missing.</div></div>
@@ -1872,6 +1892,6 @@ html:not(.js) .bl.dreamc{opacity:1;transform:none}
 
 <div class="bar" id="bar"><a class="btn y" href="#check" data-go="check">Get my free check</a><a class="btn wa" href="#" id="barWa" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" style="width:26px;height:26px" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
 
-<script type="module" src="/assets/js/app.93b44ec4fb.js"></script>
+<script type="module" src="/assets/js/app.0e1e6c7311.js"></script>
 </body>
 </html>
