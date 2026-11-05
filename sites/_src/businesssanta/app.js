@@ -50,6 +50,7 @@ function setType(k) {
   shopLook(k);
   $$(".qtxt").forEach(e => e.textContent = v.q);
   $$(".bName").forEach(e => e.textContent = v.n);
+  $$(".pName").forEach(e => e.textContent = v.pn); $$(".tA").forEach(e => e.textContent = v.a); $$(".cmpN").forEach(e => e.textContent = v.c[0]);
   $("#aicT").innerHTML = `Try <b>${esc(v.n)}</b>. People mention fast replies and fair prices.`;
   $("#n4T").textContent = `You're #1 on Google Maps for "${v.q}" now. 6 new calls this week!`;
   $("#hpBook").textContent = v.book; grow.name(v.n);
@@ -395,6 +396,24 @@ new IntersectionObserver((es, ob) => es.forEach(e => {
   $$(".rsum [data-n]").forEach(el => { const n = +el.dataset.n, d = +(el.dataset.d || 0), s = el.dataset.s || ""; tween(1600, p => el.textContent = (d ? (n * p).toFixed(d) : Math.round(n * p).toLocaleString("en-US")) + s); });
 }), { threshold: .3 }).observe($(".rsum"));
 
+/* ---------- sample report: the score fills in as the report "builds" ---------- */
+new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); const r = $("#xsr"), n = $("#xsrN"); tween(RM ? 1 : 1800, p => { const v = 38 * p; r.style.setProperty("--p", v.toFixed(1)); n.textContent = Math.round(v); }); }, { threshold: .35 }).observe($("#xrc"));
+rio.observe($("#xvs"));
+
+/* ---------- results panel: Day 1, then Month 3, counted up from the owner's own Google numbers (example) ---------- */
+{
+  const gp = $("#xgp"), bs = $$("#xgp [data-v]"), tg = $$("#xgp .xtg button");
+  let gm = 0, gStop2;
+  const gSet = m => {
+    gm = m; gp.classList.toggle("m1", m === 1); tg.forEach(b => b.setAttribute("aria-pressed", +b.dataset.m === m));
+    const from = bs.map(b => +b.textContent.replace("#", "")), to = bs.map(b => +b.dataset.v.split(",")[m]);
+    gStop2 && gStop2(); gStop2 = tween(RM ? 1 : 1400, p => bs.forEach((b, i) => b.textContent = (b.dataset.p || "") + Math.round(from[i] + (to[i] - from[i]) * p)));
+  };
+  let gAuto;
+  tg.forEach(b => b.addEventListener("click", () => { clearTimeout(gAuto); gSet(+b.dataset.m); }));
+  new IntersectionObserver((es, ob) => { if (!es[0].isIntersecting) return; ob.disconnect(); gAuto = setTimeout(() => gSet(1), RM ? 0 : 1900); }, { threshold: .45 }).observe(gp);
+}
+
 const flag = '<svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg>';
 
 /* ---------- footer: pick your business, go straight to the free check ---------- */
@@ -559,6 +578,7 @@ function applyGeo() {
   if (city) {
     $$(".geoCity").forEach(e => e.textContent = city + (e.closest(".gloc") ? ", " + GEO.region : ""));
     $("#fCity").placeholder = `${city}, ${GEO.region}`;
+    $$(".xcty").forEach(e => e.textContent = `${city}, ${GEO.region}`);
     const sg = $("#citySug"); sg.dataset.v = `${city}, ${GEO.region}`; sg.textContent = `${city}, ${GEO.region}`; sg.hidden = false;
     if (!dream) $("#fEyb").textContent = `Imagine next month in ${city}`;
   }
