@@ -180,6 +180,47 @@ h2{font-size:1.7rem;line-height:1.15}
 .ft nav{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px}
 .ft a{text-decoration:none;color:var(--ink2)}
 
+
+/* sample report */
+.rep{margin-top:18px;border-radius:18px;background:#fff;box-shadow:0 14px 34px rgba(15,23,42,.1),0 0 0 1px var(--line);overflow:hidden}
+.reph{position:relative;padding:16px 16px 12px;background:var(--navy);color:#fff}
+.reph b{display:block;font:800 1.15rem var(--fh)}.reph small{color:#cbd5e1;font-size:.82rem}
+.rtag{position:absolute;right:12px;top:12px;padding:3px 9px;border-radius:999px;background:var(--y);color:#111;font:800 .66rem var(--f);letter-spacing:.06em;text-transform:uppercase}
+.rept{width:100%;border-collapse:collapse;font-size:.92rem}
+.rept td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
+.rept td small{display:block;color:var(--mut);font-size:.76rem}
+.rept td:last-child{text-align:right;white-space:nowrap}
+.bd{display:inline-block;padding:4px 9px;border-radius:999px;font:700 .78rem var(--f)}
+.bd.r{background:#fee2e2;color:#b91c1c}.bd.a{background:#fef3c7;color:#92400e}
+.repf{padding:14px 16px 16px}
+.repf b{font:700 .95rem var(--fh)}
+.repf ol{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:.92rem;display:grid;gap:4px}
+.repp{margin-top:12px;padding:10px 12px;border-radius:12px;background:#f0fdf4;color:#166534;font-size:.88rem}
+/* industries */
+.inds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
+.inds button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px 10px;border:0;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line);color:var(--ink);font:600 .74rem/1.15 var(--f);cursor:pointer}
+.inds button i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--soft);color:var(--ink)}
+.inds button[aria-pressed=true]{box-shadow:inset 0 0 0 2px var(--y),0 8px 18px rgba(253,185,19,.25);background:#fffbeb}
+.inds button[aria-pressed=true] i{background:var(--y)}
+.indbox{margin-top:14px;padding:16px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.indbox>b{font:700 .95rem var(--fh)}
+.indbox ul{list-style:none;margin:10px 0 14px;padding:0;display:grid;gap:7px}
+.indbox li{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:999px;background:var(--soft);color:var(--ink2);font-size:.92rem}
+.indbox li svg{width:16px;height:16px;color:#5f6368}
+/* results reviews */
+.rc h3{font:800 1.08rem/1.25 var(--fh);margin:6px 0 0}
+.rc .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.rc .meta span{padding:4px 9px;border-radius:999px;background:var(--soft);color:var(--ink2);font:600 .74rem var(--f)}
+/* packages */
+.pk{display:grid;gap:10px;margin-top:18px}
+.pk a{display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line);text-decoration:none}
+.pk a div{flex:1;min-width:0}
+.pk b{display:block;font:700 1rem/1.25 var(--fh)}
+.pk small{display:block;color:var(--mut);font-size:.84rem;line-height:1.35;margin-top:2px}
+.pk em{flex:none;font-style:normal;text-align:right;font:800 1.05rem var(--fh);color:var(--ink)}
+.pk em small{display:block;margin:0;font:600 .7rem var(--f);color:var(--mut)}
+.pk svg{flex:none;width:18px;height:18px;color:var(--mut)}
+.pk .pop{box-shadow:inset 0 0 0 2px var(--y)}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -234,11 +275,31 @@ h2{font-size:1.7rem;line-height:1.15}
       <div class="good"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18.5 20a6.5 6.5 0 0 0-3-5.5"/></svg></i><span><b>What nearby competitors do better</b><span>So you know exactly how to catch up.</span></span></div>
       <div class="good"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/></svg></i><span><b>A simple plan with clear prices</b><span>You decide what to do. No pressure, no obligation.</span></span></div>
     </div>
+    <div class="rep" aria-label="Sample free check report">
+      <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small></div>
+      <table class="rept"><tbody>
+        <tr><td>Google search<small>"<span class="q">plumber near me</span>"</small></td><td><span class="bd r">Not in top 10</span></td></tr>
+        <tr><td>Google Maps<small>3-pack near you</small></td><td><span class="bd a">#7</span></td></tr>
+        <tr><td>ChatGPT<small>"best <span class="svl">plumber</span> nearby"</small></td><td><span class="bd r">Not mentioned</span></td></tr>
+        <tr><td>Google reviews<small>you vs. top competitor</small></td><td><span class="bd a">12 vs 214</span></td></tr>
+      </tbody></table>
+      <div class="repf"><b>Top 3 fixes, in order</b><ol><li>Fill in your Google listing: services, hours, photos</li><li>Fix 4 pages Google can't read</li><li>Ask happy customers for reviews, the easy way</li></ol><div class="repp">Fixes from <b>$120</b> · you approve first</div></div>
+    </div>
     <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
 </section>
 
-<section class="sec soft">
+<section class="sec soft" id="ind">
+  <div class="w">
+    <span class="eyb">Built for local businesses</span>
+    <h2>Pick your business</h2>
+    <p class="lead">Tap yours to see what your customers type into Google.</p>
+    <div class="inds" id="inds"><button type="button" data-k="plumbing" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.2 5.2L3.5 17.5l3 3 6-6a4 4 0 0 0 5.2-5.2l-2.6 2.6-2.4-.6-.6-2.4z"/></svg></i>Plumbing</button><button type="button" data-k="restaurant" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10M17.5 21V3c-2.2 0-3.5 3-3.5 7 0 2.5 1.2 3.5 3.5 3.5"/></svg></i>Restaurant</button><button type="button" data-k="dental" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 3.5C5 3.5 3.5 5.4 3.5 8c0 3 1.6 4.4 2 7.8.4 2.9 1.2 5.2 2.5 5.2s1.6-2.7 2-4.6c.3-1.4.8-2 2-2s1.7.6 2 2c.4 1.9.7 4.6 2 4.6s2.1-2.3 2.5-5.2c.4-3.4 2-4.8 2-7.8 0-2.6-1.5-4.5-4-4.5-1.8 0-2.6 1-4.5 1s-2.7-1-4.5-1z"/></svg></i>Dental</button><button type="button" data-k="roofing" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5L12 4l9 7.5M5.5 9.5V20h13V9.5M10 20v-5.5h4V20"/></svg></i>Roofing</button><button type="button" data-k="salon" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.5" cy="6.5" r="3"/><circle cx="6.5" cy="17.5" r="3"/><path d="M9 8.5L20 19M9 15.5L20 5"/></svg></i>Salon or spa</button><button type="button" data-k="law" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v17M7.5 20.5h9M5 7h14M5 7l-2.5 6.5a2.6 2.6 0 0 0 5 0zM19 7l-2.5 6.5a2.6 2.6 0 0 0 5 0z"/></svg></i>Law office</button><button type="button" data-k="store" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1.2 12.5H6.2z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg></i>Shop or store</button><button type="button" data-k="other" aria-pressed="false"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.6 5.6 1.9-5.6 1.9L12 18l-1.9-5.6-5.6-1.9 5.6-1.9z"/></svg></i>Something else</button></div>
+    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn" href="#check" data-go><span id="indcta">Get my free check</span></a></div>
+  </div>
+</section>
+
+<section class="sec">
   <div class="w">
     <span class="eyb">How it works</span>
     <h2>Three easy steps</h2>
@@ -250,23 +311,24 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
-<section class="sec">
+<section class="sec soft">
   <div class="w">
     <span class="eyb">Client reviews</span>
-    <h2>What business owners say</h2>
+    <h2>Real results, in their words</h2>
     <div class="rsum"><b>4.9</b><div><span class="st">★★★★★</span><span>Average rating from 2,000+ projects over 10+ years</span></div></div>
-    <div class="rv"><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><blockquote>“I&#x27;m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.”</blockquote><div class="rw"><span class="ra" style="--c:#2563eb" aria-hidden="true">T</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States · Technical fixes · 7 days</small></div></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><blockquote>“Working with Manav was one of the best decisions I made during the launch of my business.”</blockquote><div class="rw"><span class="ra" style="--c:#ea580c" aria-hidden="true">C</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States · Full SEO package · 4 days</small></div></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><blockquote>“They provided a very detailed report that went above and beyond what we were expecting.”</blockquote><div class="rw"><span class="ra" style="--c:#16a34a" aria-hidden="true">J</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States · Online store SEO · 6 days</small></div></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><blockquote>“The team was professional, polite, well-spoken, and highly knowledgeable.”</blockquote><div class="rw"><span class="ra" style="--c:#db2777" aria-hidden="true">M</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States · Online store SEO · 4 days</small></div></div></article></div>
+    <div class="rv"><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>New AI citations within days</h3><blockquote>“Most importantly, we began seeing positive results within just days of the work being completed, including new AI citations and increased visibility for our brand.”</blockquote><div class="rw"><span class="ra" style="--c:#db2777" aria-hidden="true">M</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States</small></div></div><div class="meta"><span>Online store SEO</span><span>Paid $400 to $600</span><span>Done in 4 days</span></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>Worth 5 to 10 times what I paid</h3><blockquote>“The quality and depth of research was extraordinary, easily worth 5-10 times what I paid”</blockquote><div class="rw"><span class="ra" style="--c:#ea580c" aria-hidden="true">C</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States</small></div></div><div class="meta"><span>Full SEO package</span><span>Paid $200 to $400</span><span>Done in 4 days</span></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>Quick replies and a detailed report</h3><blockquote>“He was very easy to talk to and their responsiveness was extremely quick. … They provided a very detailed report that went above and beyond what we were expecting”</blockquote><div class="rw"><span class="ra" style="--c:#16a34a" aria-hidden="true">J</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States</small></div></div><div class="meta"><span>Online store SEO</span><span>Paid $100 to $200</span><span>Done in 6 days</span></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>Patient, plain-English help</h3><blockquote>“I’m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.”</blockquote><div class="rw"><span class="ra" style="--c:#2563eb" aria-hidden="true">T</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States</small></div></div><div class="meta"><span>Technical SEO</span><span>Paid $200 to $400</span><span>Done in 7 days</span></div></article><article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>Technical problems, solved</h3><blockquote>“Manav and team were exceptional. I had a lot of technical SEO issues with my new website…”</blockquote><div class="rw"><span class="ra" style="--c:#7c3aed" aria-hidden="true">V</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small><svg class="flag" viewBox="0 0 19 10" aria-hidden="true"><rect width="19" height="10" fill="#B22234"/><g fill="#fff"><rect y=".77" width="19" height=".77"/><rect y="2.31" width="19" height=".77"/><rect y="3.85" width="19" height=".77"/><rect y="5.38" width="19" height=".77"/><rect y="6.92" width="19" height=".77"/><rect y="8.46" width="19" height=".77"/></g><rect width="7.6" height="5.4" fill="#3C3B6E"/></svg> United States</small></div></div><div class="meta"><span>Technical SEO</span><span>Paid $200 to $400</span><span>Done in 3 days</span></div></article></div>
   </div>
 </section>
 
-<section class="sec soft">
+<section class="sec">
   <div class="w">
     <span class="eyb">Honest pricing</span>
-    <h2>No surprises. Ever.</h2>
+    <h2>Pick what you need</h2>
+    <p class="lead">Start with the free check. These are our most popular services.</p>
+    <div class="pk"><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=yoast#gig-yoast" data-pk="yoast"><div><b>WordPress and Yoast SEO</b><small>Titles, content and setup so Google reads every page</small></div><em>From $120<small>one-time fix</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=gsc#gig-gsc" data-pk="gsc"><div><b>Fix Google Search Console</b><small>Indexing errors, sitemaps, pages Google skips</small></div><em>From $160<small>one-time fix</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=full#gig-full" data-pk="full"><div><b>Full SEO package</b><small>Research, on-page, technical and off-page in one plan</small></div><em>Quote<small>after free check</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=monthly#gig-monthly" data-pk="monthly"><div><b>Monthly SEO</b><small>Steady work every month, with plain-English reports</small></div><em>Quote<small>after free check</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=shopify#gig-shopify" data-pk="shopify"><div><b>Shopify store SEO</b><small>Products and collections shoppers can find</small></div><em>Quote<small>after free check</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content=geo#gig-geo" data-pk="geo"><div><b>Get found on ChatGPT</b><small>Show up when people ask AI for a business like yours</small></div><em>Quote<small>after free check</small></em><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a></div>
     <div class="price">
       <div class="big"><b>$0</b><span>for your free check</span></div>
       <ul>
-        <li><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Fixes start at <b>$120</b>. One-time jobs or monthly plans.</span></li>
         <li><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><b>You approve every price</b> before any work starts.</span></li>
         <li><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><b>No long contracts.</b> We earn your business every month.</span></li>
         <li><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span><b>It stays yours.</b> Your website and Google listing belong to you.</span></li>
@@ -276,7 +338,7 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
-<section class="sec">
+<section class="sec soft">
   <div class="w">
     <span class="eyb">Who you'll work with</span>
     <h2>Real people who know your name</h2>
@@ -329,6 +391,6 @@ h2{font-size:1.7rem;line-height:1.15}
 </main>
 <footer class="ft"><div class="w"><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
 <div class="bar pre" id="bar"><a class="btn" href="#check" data-go>Get my free check</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
-<script type="module" src="/assets/js/m.c91f85ee8c.js"></script>
+<script type="module" src="/assets/js/m.8fdbf4af49.js"></script>
 </body>
 </html>

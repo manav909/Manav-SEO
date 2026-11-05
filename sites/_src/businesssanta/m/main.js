@@ -28,8 +28,15 @@ function setType(k, ad) {
   $("#hIc").innerHTML = BI[k];
   $("#fType").value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
+  $$(".pn2").forEach(e => e.textContent = v.pn); $$(".svl").forEach(e => e.textContent = v.a);
+  $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
+  $("#indq").innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
+  $("#indcta").textContent = `Get my free check as a ${v.a}`;
 }
-$("#fType").addEventListener("change", () => { setType($("#fType").value, fromAd); trackC("ChoseBusinessType", { type: TYPES[T].l, from: "mobile form" }); });
+let picked = false;
+$$("#inds button").forEach(b => b.addEventListener("click", () => { picked = true; setType(b.dataset.k, true); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "mobile tiles" }); }));
+$$("[data-pk]").forEach(a => a.addEventListener("click", () => trackC("ViewedPackage", { pkg: a.dataset.pk, from: "mobile" })));
+$("#fType").addEventListener("change", () => { picked = true; setType($("#fType").value, true); trackC("ChoseBusinessType", { type: TYPES[T].l, from: "mobile form" }); });
 
 /* buttons: every "free check" button goes to the form; WhatsApp opens with the business type filled in */
 $$("[data-go]").forEach(a => a.addEventListener("click", e => {
@@ -84,7 +91,7 @@ const STATES = { AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA:
 fetch("/api/geo", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(g => {
   if (!g || g.country !== "US") return; const st = STATES[g.region]; if (!st) return;
   $$(".geoState").forEach(e => e.textContent = st);
-  const city = g.city && g.city.length < 28 ? g.city : ""; if (city) $("#fCity").placeholder = `${city}, ${g.region}`;
+  const city = g.city && g.city.length < 28 ? g.city : ""; if (city) { $("#fCity").placeholder = `${city}, ${g.region}`; $$(".cty").forEach(e => e.textContent = `${city}, ${g.region}`); }
 }).catch(() => { });
 
 setType(T, fromAd);

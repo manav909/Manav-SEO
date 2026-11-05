@@ -173,6 +173,47 @@ h2{font-size:1.7rem;line-height:1.15}
 .ft nav{display:flex;justify-content:center;flex-wrap:wrap;gap:6px 16px;margin-bottom:10px}
 .ft a{text-decoration:none;color:var(--ink2)}
 
+
+/* sample report */
+.rep{margin-top:18px;border-radius:18px;background:#fff;box-shadow:0 14px 34px rgba(15,23,42,.1),0 0 0 1px var(--line);overflow:hidden}
+.reph{position:relative;padding:16px 16px 12px;background:var(--navy);color:#fff}
+.reph b{display:block;font:800 1.15rem var(--fh)}.reph small{color:#cbd5e1;font-size:.82rem}
+.rtag{position:absolute;right:12px;top:12px;padding:3px 9px;border-radius:999px;background:var(--y);color:#111;font:800 .66rem var(--f);letter-spacing:.06em;text-transform:uppercase}
+.rept{width:100%;border-collapse:collapse;font-size:.92rem}
+.rept td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
+.rept td small{display:block;color:var(--mut);font-size:.76rem}
+.rept td:last-child{text-align:right;white-space:nowrap}
+.bd{display:inline-block;padding:4px 9px;border-radius:999px;font:700 .78rem var(--f)}
+.bd.r{background:#fee2e2;color:#b91c1c}.bd.a{background:#fef3c7;color:#92400e}
+.repf{padding:14px 16px 16px}
+.repf b{font:700 .95rem var(--fh)}
+.repf ol{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:.92rem;display:grid;gap:4px}
+.repp{margin-top:12px;padding:10px 12px;border-radius:12px;background:#f0fdf4;color:#166534;font-size:.88rem}
+/* industries */
+.inds{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:18px}
+.inds button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px 10px;border:0;border-radius:14px;background:#fff;box-shadow:0 0 0 1px var(--line);color:var(--ink);font:600 .74rem/1.15 var(--f);cursor:pointer}
+.inds button i{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--soft);color:var(--ink)}
+.inds button[aria-pressed=true]{box-shadow:inset 0 0 0 2px var(--y),0 8px 18px rgba(253,185,19,.25);background:#fffbeb}
+.inds button[aria-pressed=true] i{background:var(--y)}
+.indbox{margin-top:14px;padding:16px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line)}
+.indbox>b{font:700 .95rem var(--fh)}
+.indbox ul{list-style:none;margin:10px 0 14px;padding:0;display:grid;gap:7px}
+.indbox li{display:flex;align-items:center;gap:9px;padding:9px 12px;border-radius:999px;background:var(--soft);color:var(--ink2);font-size:.92rem}
+.indbox li svg{width:16px;height:16px;color:#5f6368}
+/* results reviews */
+.rc h3{font:800 1.08rem/1.25 var(--fh);margin:6px 0 0}
+.rc .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.rc .meta span{padding:4px 9px;border-radius:999px;background:var(--soft);color:var(--ink2);font:600 .74rem var(--f)}
+/* packages */
+.pk{display:grid;gap:10px;margin-top:18px}
+.pk a{display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line);text-decoration:none}
+.pk a div{flex:1;min-width:0}
+.pk b{display:block;font:700 1rem/1.25 var(--fh)}
+.pk small{display:block;color:var(--mut);font-size:.84rem;line-height:1.35;margin-top:2px}
+.pk em{flex:none;font-style:normal;text-align:right;font:800 1.05rem var(--fh);color:var(--ink)}
+.pk em small{display:block;margin:0;font:600 .7rem var(--f);color:var(--mut)}
+.pk svg{flex:none;width:18px;height:18px;color:var(--mut)}
+.pk .pop{box-shadow:inset 0 0 0 2px var(--y)}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -227,11 +268,31 @@ h2{font-size:1.7rem;line-height:1.15}
       <div class="good"><i>{I_USERS}</i><span><b>What nearby competitors do better</b><span>So you know exactly how to catch up.</span></span></div>
       <div class="good"><i>{I_TAG}</i><span><b>A simple plan with clear prices</b><span>You decide what to do. No pressure, no obligation.</span></span></div>
     </div>
+    <div class="rep" aria-label="Sample free check report">
+      <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small></div>
+      <table class="rept"><tbody>
+        <tr><td>Google search<small>"<span class="q">plumber near me</span>"</small></td><td><span class="bd r">Not in top 10</span></td></tr>
+        <tr><td>Google Maps<small>3-pack near you</small></td><td><span class="bd a">#7</span></td></tr>
+        <tr><td>ChatGPT<small>"best <span class="svl">plumber</span> nearby"</small></td><td><span class="bd r">Not mentioned</span></td></tr>
+        <tr><td>Google reviews<small>you vs. top competitor</small></td><td><span class="bd a">12 vs 214</span></td></tr>
+      </tbody></table>
+      <div class="repf"><b>Top 3 fixes, in order</b><ol><li>Fill in your Google listing: services, hours, photos</li><li>Fix 4 pages Google can't read</li><li>Ask happy customers for reviews, the easy way</li></ol><div class="repp">Fixes from <b>$120</b> · you approve first</div></div>
+    </div>
     <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
 </section>
 
-<section class="sec soft">
+<section class="sec soft" id="ind">
+  <div class="w">
+    <span class="eyb">Built for local businesses</span>
+    <h2>Pick your business</h2>
+    <p class="lead">Tap yours to see what your customers type into Google.</p>
+    <div class="inds" id="inds">{INDS}</div>
+    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn" href="#check" data-go><span id="indcta">Get my free check</span></a></div>
+  </div>
+</section>
+
+<section class="sec">
   <div class="w">
     <span class="eyb">How it works</span>
     <h2>Three easy steps</h2>
@@ -243,23 +304,24 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
-<section class="sec">
+<section class="sec soft">
   <div class="w">
     <span class="eyb">Client reviews</span>
-    <h2>What business owners say</h2>
+    <h2>Real results, in their words</h2>
     <div class="rsum"><b>4.9</b><div><span class="st">★★★★★</span><span>Average rating from 2,000+ projects over 10+ years</span></div></div>
     <div class="rv">{REVIEWS}</div>
   </div>
 </section>
 
-<section class="sec soft">
+<section class="sec">
   <div class="w">
     <span class="eyb">Honest pricing</span>
-    <h2>No surprises. Ever.</h2>
+    <h2>Pick what you need</h2>
+    <p class="lead">Start with the free check. These are our most popular services.</p>
+    <div class="pk">{PACKS}</div>
     <div class="price">
       <div class="big"><b>$0</b><span>for your free check</span></div>
       <ul>
-        <li>{I_OK}<span>Fixes start at <b>$120</b>. One-time jobs or monthly plans.</span></li>
         <li>{I_OK}<span><b>You approve every price</b> before any work starts.</span></li>
         <li>{I_OK}<span><b>No long contracts.</b> We earn your business every month.</span></li>
         <li>{I_OK}<span><b>It stays yours.</b> Your website and Google listing belong to you.</span></li>
@@ -269,7 +331,7 @@ h2{font-size:1.7rem;line-height:1.15}
   </div>
 </section>
 
-<section class="sec">
+<section class="sec soft">
   <div class="w">
     <span class="eyb">Who you'll work with</span>
     <h2>Real people who know your name</h2>

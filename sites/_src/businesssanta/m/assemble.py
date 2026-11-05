@@ -37,17 +37,28 @@ P = {
 }
 svg = lambda k: f'<svg class="i" viewBox="0 0 24 24" aria-hidden="true">{P[k]}</svg>'
 BI = {k: svg(k) for k in ["plumbing", "restaurant", "dental", "roofing", "salon", "law", "store", "other"]}
-ICONJS = "const BI = " + json.dumps(BI) + ";"
+ICONJS = "const BI = " + json.dumps(BI) + ", SRCH = " + json.dumps(svg("search")) + ";"
 TY = [("plumbing", "Plumbing"), ("restaurant", "Restaurant"), ("dental", "Dental"), ("roofing", "Roofing"), ("salon", "Salon or spa"), ("law", "Law office"), ("store", "Shop or store"), ("other", "Something else")]
 options = "".join(f'<option value="{k}">{n}</option>' for k, n in TY)
 fl = f'<svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{flag}</svg>'
-REV = [("T", "#2563eb", "Technical fixes", 7, "I'm not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me."),
-       ("C", "#ea580c", "Full SEO package", 4, "Working with Manav was one of the best decisions I made during the launch of my business."),
-       ("J", "#16a34a", "Online store SEO", 6, "They provided a very detailed report that went above and beyond what we were expecting."),
-       ("M", "#db2777", "Online store SEO", 4, "The team was professional, polite, well-spoken, and highly knowledgeable.")]
-reviews = "".join(f'<article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><blockquote>“{html.escape(q)}”</blockquote><div class="rw"><span class="ra" style="--c:{c}" aria-hidden="true">{a}</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small>{fl} United States · {s} · {d} days</small></div></div></article>' for a, c, s, d, q in REV)
-out = tpl.replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
-for k in ["SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
+REV = [("M", "#db2777", "New AI citations within days", "Most importantly, we began seeing positive results within just days of the work being completed, including new AI citations and increased visibility for our brand.", "Online store SEO", "$400 to $600", 4),
+       ("C", "#ea580c", "Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package", "$200 to $400", 4),
+       ("J", "#16a34a", "Quick replies and a detailed report", "He was very easy to talk to and their responsiveness was extremely quick. … They provided a very detailed report that went above and beyond what we were expecting", "Online store SEO", "$100 to $200", 6),
+       ("T", "#2563eb", "Patient, plain-English help", "I’m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.", "Technical SEO", "$200 to $400", 7),
+       ("V", "#7c3aed", "Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website…", "Technical SEO", "$200 to $400", 3)]
+fl = f'<svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{flag}</svg>'
+reviews = "".join(f'<article class="rc"><span class="st" aria-label="5 out of 5 stars">★★★★★</span><h3>{html.escape(h)}</h3><blockquote>“{html.escape(q)}”</blockquote><div class="rw"><span class="ra" style="--c:{c}" aria-hidden="true">{a}</span><div><b>Verified client <i class="vk" aria-hidden="true"></i></b><small>{fl} United States</small></div></div><div class="meta"><span>{sv}</span><span>Paid {pr}</span><span>Done in {d} days</span></div></article>' for a, c, h, q, sv, pr, d in REV)
+P["chev"] = '<path d="M9 6l6 6-6 6"/>'
+PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google reads every page", "$120"),
+      ("gsc", "Fix Google Search Console", "Indexing errors, sitemaps, pages Google skips", "$160"),
+      ("full", "Full SEO package", "Research, on-page, technical and off-page in one plan", None),
+      ("monthly", "Monthly SEO", "Steady work every month, with plain-English reports", None),
+      ("shopify", "Shopify store SEO", "Products and collections shoppers can find", None),
+      ("geo", "Get found on ChatGPT", "Show up when people ask AI for a business like yours", None)]
+packs = "".join(f'<a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content={k}#gig-{k}" data-pk="{k}"><div><b>{n}</b><small>{d}</small></div><em>{("From " + pr) if pr else "Quote"}<small>{"one-time fix" if pr else "after free check"}</small></em>{svg("chev")}</a>' for k, n, d, pr in PK)
+inds = "".join(f'<button type="button" data-k="{k}" aria-pressed="false"><i>{svg(k)}</i>{n}</button>' for k, n in TY)
+out = tpl.replace("{PACKS}", packs).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
+for k in ["CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
     out = out.replace("{I_" + k + "}", svg(k.lower()))
 js = main.replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
 open("/tmp/bs-m.js", "w").write(js)
