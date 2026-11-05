@@ -20,15 +20,16 @@ const trackC = (ev, d) => { try { fbq("trackCustom", ev, d || {}); } catch (e) {
 /* the business type: from the ad link (?type=dental), or picked in the form */
 let T = "plumbing", fromAd = false;
 try { const q = new URLSearchParams(location.search).get("type"); if (q && TYPES[q]) { T = q; fromAd = true; } } catch (e) { }
+const put = (e, s) => { if (e.textContent !== s) e.textContent = s; };
 function setType(k, ad) {
   T = k; const v = TYPES[k];
-  $$(".q").forEach(e => e.textContent = v.q);
-  $$(".bn").forEach(e => e.textContent = v.n);
-  $$(".tfor").forEach(e => e.textContent = ad ? "for a " + v.a : "for your business");
-  $("#hIc").innerHTML = BI[k];
+  $$(".q").forEach(e => put(e, v.q));
+  $$(".bn").forEach(e => put(e, v.n));
+  $$(".tfor").forEach(e => put(e, ad ? "for a " + v.a : "for your business"));
+  const hi = $("#hIc"); if (hi.dataset.k !== k) { hi.innerHTML = BI[k]; hi.dataset.k = k; }
   $("#fType").value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
-  $$(".pn2").forEach(e => e.textContent = v.pn); $$(".cmp").forEach(e => e.textContent = v.c[0]); $$(".svl").forEach(e => e.textContent = v.a);
+  $$(".pn2").forEach(e => put(e, v.pn)); $$(".cmp").forEach(e => put(e, v.c[0])); $$(".svl").forEach(e => put(e, v.a));
   $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
   $("#indq").innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
   $("#indcta").textContent = `Get my free check as a ${v.a}`;
@@ -39,8 +40,12 @@ $$("[data-pk]").forEach(a => a.addEventListener("click", () => trackC("ViewedPac
 $("#fType").addEventListener("change", () => { picked = true; setType($("#fType").value, true); trackC("ChoseBusinessType", { type: TYPES[T].l, from: "mobile form" }); });
 
 /* buttons: every "free check" button goes to the form; WhatsApp opens with the business type filled in */
+/* sections below the fold skip layout until the visitor first touches or scrolls the page */
+const cvOff = () => document.documentElement.classList.add("cv0");
+["scroll", "pointerdown", "touchstart", "keydown"].forEach(e => addEventListener(e, cvOff, { once: true, passive: true }));
+if (location.hash) cvOff();
 $$("[data-go]").forEach(a => a.addEventListener("click", e => {
-  e.preventDefault(); $("#check").scrollIntoView({ behavior: "smooth", block: "start" });
+  e.preventDefault(); cvOff(); requestAnimationFrame(() => $("#check").scrollIntoView({ behavior: "smooth", block: "start" }));
   trackC("OpenedFreeCheck", { from: "mobile" });
   setTimeout(() => { const n = $("#fName"); if (n && !n.value) n.focus({ preventScroll: true }); }, 700);
 }));
@@ -90,7 +95,7 @@ new IntersectionObserver(es => bar.classList.toggle("hide", es[0].isIntersecting
 const STATES = { AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado", CT: "Connecticut", DE: "Delaware", DC: "Washington, D.C.", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina", SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming" };
 fetch("/api/geo", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(g => {
   if (!g || g.country !== "US") return; const st = STATES[g.region]; if (!st) return;
-  $$(".geoState").forEach(e => e.textContent = st);
+  $$(".geoState").forEach(e => put(e, st));
   const city = g.city && g.city.length < 28 ? g.city : ""; if (city) { $("#fCity").placeholder = `${city}, ${g.region}`; $$(".cty").forEach(e => e.textContent = `${city}, ${g.region}`); }
 }).catch(() => { });
 

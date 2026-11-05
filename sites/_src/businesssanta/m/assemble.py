@@ -60,7 +60,14 @@ PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google 
       ("geo", "Get found on ChatGPT", "Show up when people ask AI for a business like yours", None)]
 packs = "".join(f'<a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content={k}#gig-{k}" data-pk="{k}"><div><b>{n}</b><small>{d}</small></div><em>{("From " + pr) if pr else "Quote"}<small>{"one-time fix" if pr else "after free check"}</small></em>{svg("chev")}</a>' for k, n, d, pr in PK)
 inds = "".join(f'<button type="button" data-k="{k}" aria-pressed="false"><i>{svg(k)}</i>{n}</button>' for k, n in TY)
-out = tpl.replace("{PACKS}", packs).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
+HT = {}
+for ln in types.splitlines():
+    mk = re.match(r'\s*(\w+): \{', ln)
+    if not mk: continue
+    g = lambda f: re.search(r'\b' + f + r': "([^"]*)"', ln).group(1)
+    HT[mk.group(1)] = [g("a"), g("q"), g("n"), BI[mk.group(1)]]
+early = "(function(){try{var k=new URLSearchParams(location.search).get('type'),T=" + json.dumps(HT, separators=(",", ":")) + ",v=T[k];if(!v)return;var h=document.querySelector('.hero');h.querySelector('.tfor').textContent='for a '+v[0];h.querySelectorAll('.q').forEach(function(e){e.textContent=v[1]});h.querySelector('.bn').textContent=v[2];var i=h.querySelector('#hIc');i.innerHTML=v[3];i.dataset.k=k}catch(e){}})()"
+out = tpl.replace("{PACKS}", packs).replace("{HIC}", BI["plumbing"]).replace("{EARLY}", early).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
 for k in ["WEB", "MOON", "X", "CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
     out = out.replace("{I_" + k + "}", svg(k.lower()))
 js = main.replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
