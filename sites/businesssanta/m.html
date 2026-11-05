@@ -132,8 +132,12 @@ h2{font-size:1.7rem;line-height:1.15}
 .price li b{color:var(--ink)}
 
 /* team */
-.team{margin-top:20px;border-radius:18px;overflow:hidden;background:linear-gradient(180deg,#e9eefb,#f5f7fb)}
-.team img{width:100%}
+.team{position:relative;margin-top:20px;padding:22px 10px 0;border-radius:20px;overflow:hidden;background:radial-gradient(70% 60% at 50% 30%,rgba(253,185,19,.28),transparent 70%),radial-gradient(90% 70% at 50% 110%,rgba(37,99,235,.35),transparent 70%),#0b1220}
+.tw2{position:relative}
+.tw2 img{width:100%}
+.tcap{position:relative;display:grid;grid-template-columns:repeat(4,1fr);margin:-6px -10px 0;padding:10px 4px 14px;border-top:1px solid rgba(255,255,255,.1);background:rgba(11,18,32,.6)}
+.tcap span{display:flex;flex-direction:column;align-items:center;color:#fff;font:700 .86rem/1.2 var(--fh)}
+.tcap i{font-style:normal;font:600 .68rem var(--f);color:#94a3b8;margin-top:2px}
 .jc{display:flex;gap:12px;align-items:center;margin-top:14px;padding:14px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line)}
 .jc img{width:52px;height:52px;border-radius:50%;object-fit:cover}
 .jc small{display:block;font:700 .72rem var(--f);letter-spacing:.06em;text-transform:uppercase;color:var(--yd)}
@@ -277,7 +281,7 @@ h2{font-size:1.7rem;line-height:1.15}
     <span class="eyb">Who you'll work with</span>
     <h2>Real people who know your name</h2>
     <p class="lead">A small, experienced team. No call center, no ticket numbers.</p>
-    <div class="team"><img src="/assets/img/crew-800.webp" srcset="/assets/img/crew-800.webp 800w, /assets/img/crew-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1900" height="1275" loading="lazy" decoding="async"></div>
+    <div class="team"><div class="tw2"><img src="/assets/img/crew-clean-800.webp" srcset="/assets/img/crew-clean-800.webp 800w, /assets/img/crew-clean-1200.webp 1200w" sizes="(max-width:560px) 100vw, 520px" alt="Jyoti, Manav, Sam and Sakshi from the Business Santa team" width="1430" height="941" loading="lazy" decoding="async"></div><div class="tcap"><span>Jyoti<i>Your contact</i></span><span>Manav<i>Founder</i></span><span>Sam<i>Tech expert</i></span><span>Sakshi<i>Content</i></span></div></div>
     <div class="jc"><img src="/assets/img/face-jyoti.webp" alt="" width="52" height="52" loading="lazy"><div><small>Your main contact</small><b>Jyoti</b><span>Answers your messages and sends your weekly update.</span></div></div>
   </div>
 </section>
