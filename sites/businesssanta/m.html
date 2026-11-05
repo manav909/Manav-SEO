@@ -192,6 +192,21 @@ h2{font-size:1.7rem;line-height:1.15}
 .rept td:last-child{text-align:right;white-space:nowrap}
 .bd{display:inline-block;padding:4px 9px;border-radius:999px;font:700 .78rem var(--f)}
 .bd.r{background:#fee2e2;color:#b91c1c}.bd.a{background:#fef3c7;color:#92400e}
+.rsc{display:flex;gap:14px;align-items:center;margin-top:14px;padding:12px;border-radius:14px;background:rgba(255,255,255,.07)}
+.rsn{flex:none;display:grid;place-items:center;width:62px;height:62px;border-radius:50%;background:conic-gradient(var(--y) 0 38%,rgba(255,255,255,.14) 0);position:relative}
+.rsn::before{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--navy)}
+.rsn b,.rsn small{position:relative;line-height:1}.rsn b{font:800 1.3rem var(--fh)}.rsn small{font-size:.62rem;color:#94a3b8;margin-top:-14px}
+.rsc>div:last-child{min-width:0}.rsc>div:last-child small{display:block;line-height:1.35;font-size:.8rem}.rsl{display:block;font:700 .9rem var(--fh)}
+.rbar{display:block;height:6px;margin:6px 0;border-radius:9px;background:rgba(255,255,255,.14)}.rbar i{display:block;width:38%;height:100%;border-radius:9px;background:var(--y)}
+.rh{display:flex;align-items:center;gap:8px;margin:0;padding:14px 16px 6px;font:800 .8rem var(--f);letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);border-top:6px solid var(--soft)}
+.rh span{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--navy);color:#fff;font-size:.7rem}
+.rcmp th{padding:4px 16px 8px;font:700 .72rem var(--f);color:var(--mut);text-align:right;vertical-align:bottom}
+.rcmp th:nth-child(2){color:#b91c1c}.rcmp td:nth-child(n+2){text-align:right;font-weight:700;width:26%}.rcmp td.w{color:#b91c1c}.rcmp th.cmp{white-space:normal;line-height:1.2}
+.rfx{list-style:none;counter-reset:f;padding:0!important;margin:10px 0 0;display:grid;gap:8px!important}
+.rfx li{counter-increment:f;position:relative;padding:10px 12px 10px 42px;border-radius:12px;background:var(--soft);color:var(--ink)}
+.rfx li::before{content:counter(f);position:absolute;left:12px;top:10px;display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--y);font:800 .72rem var(--f)}
+.rfx span{display:block;font-weight:600}.rfx em{display:inline-block;margin-top:5px;padding:2px 8px;border-radius:999px;background:#e0ecff;color:#1557b0;font:700 .74rem var(--f);font-style:normal}.rfx em.g{background:#dcfce7;color:#15803d}
+.rnote{margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--y);background:#fffbeb;border-radius:0 10px 10px 0;font-size:.88rem;color:var(--ink2)}
 .repf{padding:14px 16px 16px}
 .repf b{font:700 .95rem var(--fh)}
 .repf ol{margin:8px 0 0;padding-left:20px;color:var(--ink2);font-size:.92rem;display:grid;gap:4px}
@@ -276,14 +291,36 @@ h2{font-size:1.7rem;line-height:1.15}
       <div class="good"><i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/></svg></i><span><b>A simple plan with clear prices</b><span>You decide what to do. No pressure, no obligation.</span></span></div>
     </div>
     <div class="rep" aria-label="Sample free check report">
-      <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small></div>
+      <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small>
+        <div class="rsc"><div class="rsn"><b>38</b><small>/100</small></div><div><span class="rsl">How easy you are to find</span><span class="rbar"><i></i></span><small>Customers nearby are finding others first.</small></div></div>
+      </div>
+      <h4 class="rh"><span>1</span>Where customers look</h4>
       <table class="rept"><tbody>
         <tr><td>Google search<small>"<span class="q">plumber near me</span>"</small></td><td><span class="bd r">Not in top 10</span></td></tr>
-        <tr><td>Google Maps<small>3-pack near you</small></td><td><span class="bd a">#7</span></td></tr>
+        <tr><td>Google Maps<small>Most calls go to the top 3</small></td><td><span class="bd a">You are #7</span></td></tr>
         <tr><td>ChatGPT<small>"best <span class="svl">plumber</span> nearby"</small></td><td><span class="bd r">Not mentioned</span></td></tr>
-        <tr><td>Google reviews<small>you vs. top competitor</small></td><td><span class="bd a">12 vs 214</span></td></tr>
       </tbody></table>
-      <div class="repf"><b>Top 3 fixes, in order</b><ol><li>Fill in your Google listing: services, hours, photos</li><li>Fix 4 pages Google can't read</li><li>Ask happy customers for reviews, the easy way</li></ol><div class="repp">Fixes from <b>$120</b> · you approve first</div></div>
+      <h4 class="rh"><span>2</span>You vs. the top business near you</h4>
+      <table class="rept rcmp"><thead><tr><th></th><th>You</th><th class="cmp">Mike's Plumbing</th></tr></thead><tbody>
+        <tr><td>Google reviews</td><td class="w">12</td><td>214</td></tr>
+        <tr><td>Star rating</td><td class="w">4.2</td><td>4.8</td></tr>
+        <tr><td>Photos</td><td class="w">3</td><td>86</td></tr>
+        <tr><td>Opening hours</td><td class="w">Missing</td><td>Listed</td></tr>
+      </tbody></table>
+      <h4 class="rh"><span>3</span>Your website on a phone</h4>
+      <table class="rept"><tbody>
+        <tr><td>Load time<small>Aim for under 3 seconds</small></td><td><span class="bd r">6.1 sec</span></td></tr>
+        <tr><td>Tap to call button<small>Lets people call in one tap</small></td><td><span class="bd r">Missing</span></td></tr>
+        <tr><td>Pages Google can't read<small>They never show up in search</small></td><td><span class="bd a">4 pages</span></td></tr>
+      </tbody></table>
+      <div class="repf"><b>Your plan: top 3 fixes, in order</b>
+        <ol class="rfx">
+          <li><span>Fill in your Google listing: hours, services, photos</span><em class="g">Free · we show you how</em></li>
+          <li><span>Fix the 4 pages Google can't read</span><em>We do it · from $160</em></li>
+          <li><span>Get more reviews with a simple text link</span><em class="g">Free template</em></li>
+        </ol>
+        <p class="rnote"><b>Jyoti's note:</b> The good news? Fix 1 is free and takes about 20 minutes. Start there and you should see more calls from Maps.</p>
+        <div class="repp">You approve every fix first · no contract</div></div>
     </div>
     <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
   </div>
@@ -391,6 +428,6 @@ h2{font-size:1.7rem;line-height:1.15}
 </main>
 <footer class="ft"><div class="w"><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
 <div class="bar pre" id="bar"><a class="btn" href="#check" data-go>Get my free check</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm5.8 14.03c-.25.69-1.44 1.32-1.98 1.37-.51.05-.99.24-3.34-.7-2.82-1.11-4.6-4-4.74-4.18-.14-.19-1.13-1.5-1.13-2.87 0-1.36.71-2.03.97-2.31.25-.28.55-.35.73-.35h.53c.17 0 .4-.06.62.48.25.6.83 2.06.9 2.21.08.15.12.32.03.51-.1.19-.14.31-.28.48-.14.16-.3.37-.42.49-.14.14-.29.29-.12.57.16.28.73 1.2 1.57 1.95 1.08.96 1.99 1.26 2.27 1.4.28.14.45.12.61-.07.17-.19.71-.83.9-1.11.19-.28.37-.23.63-.14.25.09 1.61.76 1.89.9.28.14.46.21.53.32.07.12.07.67-.18 1.35z"/></svg></a></div>
-<script type="module" src="/assets/js/m.8fdbf4af49.js"></script>
+<script type="module" src="/assets/js/m.2118ecea1d.js"></script>
 </body>
 </html>

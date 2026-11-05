@@ -28,7 +28,7 @@ function setType(k, ad) {
   $("#hIc").innerHTML = BI[k];
   $("#fType").value = k;
   $("#fName").placeholder = v.pn; $("#fSite").placeholder = v.pw; $("#eMail").placeholder = "maria@" + v.pw;
-  $$(".pn2").forEach(e => e.textContent = v.pn); $$(".svl").forEach(e => e.textContent = v.a);
+  $$(".pn2").forEach(e => e.textContent = v.pn); $$(".cmp").forEach(e => e.textContent = v.c[0]); $$(".svl").forEach(e => e.textContent = v.a);
   $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
   $("#indq").innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
   $("#indcta").textContent = `Get my free check as a ${v.a}`;
