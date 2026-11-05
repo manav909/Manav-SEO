@@ -349,11 +349,34 @@ showCrew(0);
 const bws = $$(".bw"), pst = $(".pstage");
 let dx = 0, lastPb = -1;
 /* natural scroll: the Google screen and the step pills sit in one sticky column; the pills jump to their step */
-const FLOW = stage.classList.contains("flow");
+const FLOW = stage.classList.contains("flow"), TABS = stage.classList.contains("tabs");
 let pcol = null;
 if (FLOW) {
   pcol = document.createElement("div"); pcol.className = "pcol"; pst.parentNode.insertBefore(pcol, pst); pcol.appendChild(pst); pcol.appendChild($("#steps6"));
   steps.forEach((s, k) => { s.setAttribute("role", "button"); s.tabIndex = 0; const go = () => chs[k].scrollIntoView({ behavior: RM ? "auto" : "smooth", block: "center" }); s.addEventListener("click", go); s.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } }); });
+}
+
+/* step player: each step plays for a few seconds, then the next; a tap picks a step; hovering pauses */
+if (TABS) {
+  const DUR = 5500; let stT = 0, stStart = 0, stLeft = DUR, stOn = false, stHover = false;
+  const stNext = () => { setChapter((cur + 1) % chs.length, true); stArm(DUR); };
+  const stArm = ms => { clearTimeout(stT); stLeft = ms; stStart = performance.now(); if (stOn && !stHover && !RM) stT = setTimeout(stNext, ms); };
+  const replayFill = () => { const c = chs[cur]; if (!c) return; c.classList.remove("on"); void c.offsetWidth; c.classList.add("on"); };
+  chs.forEach((ch, k) => {
+    ch.tabIndex = 0; ch.setAttribute("role", "button");
+    const pick = () => { if (k !== cur) setChapter(k, true); else replayFill(); stArm(DUR); trackC("StoryStep", { step: k }); };
+    ch.addEventListener("click", e => { if (e.target.closest("a")) return; pick(); });
+    ch.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+  });
+  const wr = $("#stage .wrap:not(.sth)");
+  wr.addEventListener("mouseenter", () => { stHover = true; clearTimeout(stT); stLeft = Math.max(400, stLeft - (performance.now() - stStart)); stage.classList.add("paused"); });
+  wr.addEventListener("mouseleave", () => { stHover = false; stage.classList.remove("paused"); stArm(stLeft); });
+  new IntersectionObserver(es => { const was = stOn; stOn = es[0].isIntersecting; if (stOn && !was) { if (cur < 0) setChapter(0, true); else replayFill(); stArm(DUR); } if (!stOn) clearTimeout(stT); }, { threshold: .45 }).observe(wr);
+  if (RM) stage.classList.add("manual");
+  /* keep the list's height steady whichever step is open, so nothing below the section moves */
+  const box = $("#stage .chs");
+  const lockH = () => { box.style.minHeight = ""; const was = cur; let mx = 0; stage.classList.add("measure"); chs.forEach((c, k) => { chs.forEach((d, j) => d.classList.toggle("on", j === k)); mx = Math.max(mx, box.offsetHeight); }); stage.classList.remove("measure"); chs.forEach((d, j) => d.classList.toggle("on", j === was)); box.style.minHeight = mx + "px"; };
+  lockH(); addEventListener("resize", () => { clearTimeout(lockH.t); lockH.t = setTimeout(lockH, 200); });
 }
 function measureBridge() { const r = pst.getBoundingClientRect(); dx = MOB() ? 0 : innerWidth / 2 - (r.left + r.width / 2); }
 function bridge(pb, vh) {
@@ -372,7 +395,7 @@ const hd = $("#hd"), bar = $("#bar"); let ticking = false, solid = null, barOn =
 function onScroll() {
   ticking = false;
   const y = scrollY, vh = innerHeight, sr = stage.getBoundingClientRect();
-  if (FLOW) {
+  if (TABS) { } else if (FLOW) {
     let i = 0; const mid = vh * .55; chs.forEach((ch, k) => { if (ch.getBoundingClientRect().top < mid) i = k; }); setChapter(i);
   } else {
     const run = -sr.top, B = vh * 1.6, total = sr.height - vh;
