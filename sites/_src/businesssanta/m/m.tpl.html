@@ -298,6 +298,22 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
 .lk{margin:18px 0 0;text-align:center;font-size:.95rem}.lk a{color:var(--ink);font-weight:700;text-decoration:underline;text-decoration-color:var(--y);text-decoration-thickness:3px;text-underline-offset:4px}
 .btn{font-family:var(--fh);font-weight:800;letter-spacing:-.01em}
 .rsum>b,.price .big b{font-family:var(--fh)}
+/* sample report: four pages you swipe or tap */
+.rtabs{display:flex;gap:6px;padding:10px 12px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line);background:#fff}
+.rtabs::-webkit-scrollbar{display:none}
+.rtabs button{flex:none;padding:8px 12px;border:0;border-radius:999px;background:var(--soft);color:var(--ink2);font:700 .8rem var(--f);cursor:pointer}
+.rtabs button.on{background:var(--navy);color:#fff}
+.rsw{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain}
+.rsw::-webkit-scrollbar{display:none}
+.rsw{align-items:flex-start;transition:height .3s ease}
+.rpg{flex:0 0 100%;min-width:0;scroll-snap-align:start}
+.rpg .rh{border-top:0}
+.rpg .repf{padding:0 16px 16px}.rpg .repf .rh{padding-left:0;padding-right:0}
+.rsh{margin:0;padding:10px 16px 12px;border-top:1px solid var(--line);text-align:center;color:var(--mut);font-size:.8rem}
+.pl.g2{grid-template-columns:1fr 1fr;gap:10px}
+.pl.g2>div{flex-direction:column;gap:10px;padding:14px}
+.pl.g2 b{font-size:.95rem}
+.pl.g2 div>span>span{font-size:.84rem}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -343,7 +359,7 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
     <span class="eyb">Your free check</span>
     <h2>What you get, <em class="ac">for free</em></h2>
     <p class="lead">A real person on our team looks at your business and sends you a short, plain-English report.</p>
-    <div class="pl">
+    <div class="pl g2">
       <div class="good"><i>{I_RANK}</i><span><b>Where you show up today</b><span>On Google, Google Maps and ChatGPT, for the searches your customers use.</span></span></div>
       <div class="good"><i>{I_LIST}</i><span><b>The top things holding you back</b><span>Ranked by what will bring you the most calls first.</span></span></div>
       <div class="good"><i>{I_USERS}</i><span><b>What nearby competitors do better</b><span>So you know exactly how to catch up.</span></span></div>
@@ -353,33 +369,32 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
       <div class="reph"><span class="rtag">Sample report</span><b class="pn2">Rivera Plumbing</b><small><span class="cty">Austin, TX</span> · prepared by Jyoti</small>
         <div class="rsc"><div class="rsn"><b>38</b><small>/100</small></div><div><span class="rsl">How easy you are to find</span><span class="rbar"><i></i></span><small>Customers nearby are finding others first.</small></div></div>
       </div>
-      <h3 class="rh"><span>1</span>Where customers look</h3>
+<div class="rtabs" role="tablist" aria-label="Sample report pages"><button type="button" class="on" data-i="0">Where you show up</button><button type="button" data-i="1">You vs. them</button><button type="button" data-i="2">Your website</button><button type="button" data-i="3">Your plan</button></div>
+      <div class="rsw" id="rsw"><div class="rpg"><h3 class="rh"><span>1</span>Where customers look</h3>
       <table class="rept"><tbody>
         <tr><td>Google search<small>"<span class="q">plumber near me</span>"</small></td><td><span class="bd r">Not in top 10</span></td></tr>
         <tr><td>Google Maps<small>Most calls go to the top 3</small></td><td><span class="bd a">You are #7</span></td></tr>
         <tr><td>ChatGPT<small>"best <span class="svl">plumber</span> nearby"</small></td><td><span class="bd r">Not mentioned</span></td></tr>
-      </tbody></table>
-      <h3 class="rh"><span>2</span>You vs. the top business near you</h3>
+      </tbody></table></div><div class="rpg"><h3 class="rh"><span>2</span>You vs. the top business near you</h3>
       <table class="rept rcmp"><thead><tr><th><span class="sr">Item</span></th><th>You</th><th class="cmp">Mike's Plumbing</th></tr></thead><tbody>
         <tr><th scope="row">Google reviews</th><td class="w">12</td><td>214</td></tr>
         <tr><th scope="row">Star rating</th><td class="w">4.2</td><td>4.8</td></tr>
         <tr><th scope="row">Photos</th><td class="w">3</td><td>86</td></tr>
         <tr><th scope="row">Opening hours</th><td class="w">Missing</td><td>Listed</td></tr>
-      </tbody></table>
-      <h3 class="rh"><span>3</span>Your website on a phone</h3>
+      </tbody></table></div><div class="rpg"><h3 class="rh"><span>3</span>Your website on a phone</h3>
       <table class="rept"><tbody>
         <tr><td>Load time<small>Aim for under 3 seconds</small></td><td><span class="bd r">6.1 sec</span></td></tr>
         <tr><td>Tap to call button<small>Lets people call in one tap</small></td><td><span class="bd r">Missing</span></td></tr>
         <tr><td>Pages Google can't read<small>They never show up in search</small></td><td><span class="bd a">4 pages</span></td></tr>
-      </tbody></table>
-      <div class="repf"><b>Your plan: top 3 fixes, in order</b>
+      </tbody></table></div><div class="rpg"><div class="repf"><h3 class="rh"><span>4</span>Your plan: top 3 fixes</h3>
         <ol class="rfx">
           <li><span>Fill in your Google listing: hours, services, photos</span><em class="g">Free · we show you how</em></li>
           <li><span>Fix the 4 pages Google can't read</span><em>We do it · from $160</em></li>
           <li><span>Get more reviews with a simple text link</span><em class="g">Free template</em></li>
         </ol>
         <p class="rnote"><b>Jyoti's note:</b> The good news? Fix 1 is free and takes about 20 minutes. Start there and you should see more calls from Maps.</p>
-        <div class="repp">You approve every fix first · no contract</div></div>
+        <div class="repp">You approve every fix first · no contract</div></div></div></div>
+      <p class="rsh">Swipe the report, or tap a tab</p>
     </div>
   </div>
 </section>
