@@ -244,12 +244,12 @@ export default function Index() {
 
             <h1 style={{fontWeight:900,lineHeight:1.07,letterSpacing:'-0.025em',marginBottom:18,color:'#fff',fontSize:'clamp(2.2rem,4.8vw,3.6rem)'}}>
               I architect{' '}
-              <span style={gText}>search authority<br/>that compounds</span>{' '}
-              — for brands that<br/>can't afford to fail.
+              <span style={gText}>search authority<br/>that compounds</span>
+              , for brands that<br/>can't afford to fail.
             </h1>
 
             <p style={{fontSize:16,color:'rgba(255,255,255,0.44)',marginBottom:28,lineHeight:1.72,maxWidth:420}}>
-              I'm Manav — a validation-first SEO strategist. I take on a select few clients and personally build their digital authority from the ground up.
+              I'm Manav, a validation-first SEO strategist. I take on a select few clients and personally build their digital authority from the ground up.
             </p>
 
             <div style={{display:'flex',flexWrap:'wrap',alignItems:'center',gap:12,marginBottom:28}}>
@@ -322,13 +322,13 @@ export default function Index() {
               {
                 icon: Brain, color: '#6366f1',
                 title: 'AI Search Visibility',
-                desc: 'Your brand cited in ChatGPT, Perplexity, and Google AI Overviews. Buyers who ask AI — find you.',
+                desc: 'Your brand cited in ChatGPT, Perplexity, and Google AI Overviews. Buyers who ask AI find you.',
                 proof: '10x avg AI citation growth',
               },
               {
                 icon: BarChart3, color: '#06b6d4',
                 title: 'Live Keyword Rankings',
-                desc: 'Every ranking verified with live Google SERP checks — not cached data from 3 months ago.',
+                desc: 'Every ranking verified with live Google SERP checks, not cached data from 3 months ago.',
                 proof: '↑ 40% avg ranking improvement',
               },
               {
@@ -346,7 +346,7 @@ export default function Index() {
               {
                 icon: Eye, color: '#f59e0b',
                 title: 'E-E-A-T Authority Building',
-                desc: 'Google\'s trust signals built systematically — experience, expertise, authoritativeness, trust.',
+                desc: 'Google\'s trust signals built systematically: experience, expertise, authoritativeness, trust.',
                 proof: 'Avg 22pt E-E-A-T score lift in 60 days',
               },
               {
@@ -390,7 +390,7 @@ export default function Index() {
             {[
               { n:'01', title:'Validation Audit', desc:'I crawl your site and competitors live. Every score is verified, not estimated. You see reality on day one.', color:'#6366f1', icon:Eye },
               { n:'02', title:'Architecture Sprint', desc:'Based on verified gaps, I build a targeted content and technical strategy. Nothing is launched without testing.', color:'#06b6d4', icon:Brain },
-              { n:'03', title:'Authority Build', desc:'Link signals, E-E-A-T improvements, AI citation strategy — all tracked in your live dashboard weekly.', color:'#a78bfa', icon:TrendingUp },
+              { n:'03', title:'Authority Build', desc:'Link signals, E-E-A-T improvements, AI citation strategy, all tracked in your live dashboard weekly.', color:'#a78bfa', icon:TrendingUp },
               { n:'04', title:'Compounding Growth', desc:'Month over month, your authority compounds. Competitors plateau. Your rankings grow without paid ads.', color:'#4ade80', icon:Trophy },
             ].map(({n,title,desc,color,icon:Icon},i)=>(
               <div key={n} className="glass spa-card" style={{borderRadius:18,padding:'22px 20px',position:'relative',overflow:'hidden'}}>
@@ -447,7 +447,7 @@ export default function Index() {
                     <span style={{fontSize:10,color:'rgba(255,255,255,0.35)',marginLeft:5}}>500+ reviews</span>
                   </div>
                   <p style={{fontSize:12,color:'rgba(255,255,255,0.5)',lineHeight:1.62,margin:0}}>
-                    "I don't run an agency. I personally manage every client's strategy — from the first audit to compounding growth. That's the SEO Season difference."
+                    "I don't run an agency. I personally manage every client's strategy, from the first audit to compounding growth. That's the SEO Season difference."
                   </p>
                 </div>
               </div>
@@ -462,7 +462,7 @@ export default function Index() {
                     {[1,2,3,4,5].map(i=><Star key={i} size={10} style={{fill:'#facc15',color:'#facc15'}}/>)}
                   </div>
                   <p style={{fontSize:13,color:'rgba(255,255,255,0.68)',fontStyle:'italic',lineHeight:1.6,margin:'0 0 8px'}}>{`"${t.quote}"`}</p>
-                  <div style={{fontSize:11,color:'rgba(255,255,255,0.32)'}}>— {t.name}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.32)'}}>{t.name}</div>
                 </div>
               ))}
             </div>
@@ -557,6 +557,9 @@ export default function Index() {
               </div>
             ))}
           </div>
+          <a href="https://businesssanta.com/" style={{fontSize:11,color:'rgba(253,185,19,0.8)',textDecoration:'none'}}>
+            Business Santa: SEO for US small businesses, powered by SEO Season
+          </a>
           <div style={{fontSize:10,color:'rgba(255,255,255,0.18)'}}>© 2026 SEO Season</div>
         </div>
       </footer>
