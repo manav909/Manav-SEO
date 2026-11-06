@@ -621,6 +621,7 @@ function applyGeo() {
 fetch("/api/geo", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(g => { if (g && g.country === "US") { GEO = g; applyGeo(); } }).catch(() => { });
 
 /* ---------- start: what is on screen first, the rest when the browser is idle ---------- */
+try { const q = new URLSearchParams(location.search).get("type"); if (q && TYPES[q]) T = q; } catch (e) { }
 sizePhone(); setType(T);
 if (scrollY > 0) { measureBridge(); onScroll(); } else (window.requestIdleCallback || setTimeout)(() => { measureBridge(); onScroll(); }, { timeout: 1200 });
 

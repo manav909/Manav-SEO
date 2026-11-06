@@ -11,4 +11,6 @@ rm -f $OUT/app*.js
 cp /tmp/bs-app.js $OUT/app.$H.js
 sed -i -E "s#/assets/js/app[^\"]*\.js#/assets/js/app.$H.js#" ../../businesssanta/index.html
 echo "built app.$H.js"
-python3 "$(dirname "$0")/m/assemble.py"
+python3 pages/home_ld.py
+python3 pages/build_pages.py
+python3 m/assemble.py

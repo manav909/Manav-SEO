@@ -1,10 +1,29 @@
 # Business Santa
 
-> Business Santa, powered by SEO Season (https://seoseason.com, the SEO platform built by Manav S), is an SEO and GEO (AI search) service for US businesses, founded by Manav S. The team (Jyoti, Manav, Sam and Sakshi) does technical SEO, on-page SEO, Google Search Console fixes, WordPress and Yoast SEO, Shopify e-commerce SEO, monthly SEO, and visibility in AI assistants such as ChatGPT, Google AI Overviews, Claude and Gemini.
+> Business Santa (https://businesssanta.com) helps small businesses across the United States show up on Google search, Google Maps and AI assistants such as ChatGPT, Google AI Overviews, Gemini and Perplexity. It is the client-facing brand of SEO Season (https://seoseason.com), the SEO and AI search intelligence platform built by founder Manav S. A real team does the work: Jyoti (Client Success Lead), Manav S (founder; strategy and AI search), Sam (technical SEO) and Sakshi (content and on-page SEO).
 
-- Founder: Manav S, 10+ years in SEO, 2,000+ projects delivered, 4.9 average rating from 2,000+ client reviews
-- Starting prices: On-Page SEO from $120, Technical SEO from $160. Monthly, Shopify, GEO and full packages are quoted after a free site review.
-- Platforms: WordPress, Shopify, Wix, Squarespace, Webflow, custom sites.
-- Contact: WhatsApp from https://seoseason.com/businesssanta ; Instagram https://www.instagram.com/businesssanta
-- Human-led: every change is done or reviewed by a person; client logins and private data are never put into public AI chat tools.
-- Policy: no guaranteed rankings; every change is reported and verifiable in Google Search Console.
+## Key facts
+- What it does: local SEO, Google Business Profile optimization, Google Maps ranking, technical SEO and Google Search Console fixes, on-page SEO, WordPress and Yoast SEO, Shopify SEO, monthly SEO, and AI search optimization (GEO and AEO).
+- Who it serves: small and local businesses in all 50 US states, including plumbers, dentists, roofers, law firms, restaurants, salons and spas, and retail stores.
+- Free check: a real person checks how a business shows up on Google, Google Maps and ChatGPT and sends a short plain-English report with the top 3 fixes. No card, no contract.
+- Prices: free check $0; on-page SEO fixes from $120; technical SEO fixes from $160; monthly, Shopify, AI search and full packages quoted after the free check.
+- Experience: founder Manav S has 10+ years in SEO and 2,000+ projects delivered, with a 4.9 average rating from client reviews.
+- How it works: clients approve every change first, see every change, and check results in their own Google Business Profile and Google Search Console. No long contracts.
+- Team location: India. Work happens while US clients sleep, prices stay fair, and the team talks with clients by WhatsApp, email and Zoom.
+- Honesty policy: no guaranteed #1 rankings. Google says no one can guarantee them.
+- Contact: seo@businesssanta.com, WhatsApp +91 70097 75189, Instagram https://www.instagram.com/businesssanta
+
+## Pages
+- [Home and free check](https://businesssanta.com/): what Business Santa does, sample report, prices, team, reviews, FAQ.
+- [Local SEO services for small businesses](https://businesssanta.com/local-seo): what local SEO includes and costs.
+- [AI search optimization (GEO)](https://businesssanta.com/ai-search-optimization): how businesses get recommended by ChatGPT and AI search.
+- [SEO for plumbers](https://businesssanta.com/seo-for-plumbers)
+- [Dental SEO](https://businesssanta.com/seo-for-dentists)
+- [Roofing SEO](https://businesssanta.com/seo-for-roofers)
+- [Law firm SEO](https://businesssanta.com/seo-for-law-firms)
+- [Restaurant SEO](https://businesssanta.com/seo-for-restaurants)
+- [SEO for salons and spas](https://businesssanta.com/seo-for-salons-and-spas)
+- [SEO for retail stores](https://businesssanta.com/seo-for-retail-stores)
+- [Google Business Profile checklist](https://businesssanta.com/guides/google-business-profile-checklist): 15 steps to show up on Google Maps.
+- [Why isn't my business showing up on Google Maps?](https://businesssanta.com/guides/why-my-business-is-not-on-google-maps): 10 common reasons and fixes.
+- [All services and prices](https://seoseason.com/businesssanta): the full Business Santa catalog, hosted by SEO Season.

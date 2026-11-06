@@ -32,6 +32,8 @@ function setType(k, ad) {
   $$(".pn2").forEach(e => put(e, v.pn)); $$(".cmp").forEach(e => put(e, v.c[0])); $$(".svl").forEach(e => put(e, v.a));
   $$("#inds button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k && (ad || picked)));
   const iq = $("#indq"); if (iq) iq.innerHTML = v.qs.map(q => `<li>${SRCH}${esc(q)}</li>`).join("");
+  const IL = { plumbing: ["seo-for-plumbers", "plumbers"], dental: ["seo-for-dentists", "dentists"], roofing: ["seo-for-roofers", "roofers"], law: ["seo-for-law-firms", "law firms"], restaurant: ["seo-for-restaurants", "restaurants"], salon: ["seo-for-salons-and-spas", "salons and spas"], store: ["seo-for-retail-stores", "retail stores"], other: ["local-seo", "local businesses"] }[k];
+  const il = $("#indl"); if (il && IL) { il.href = "/" + IL[0]; put(il, `How we help ${IL[1]} get found`); }
 }
 let picked = false;
 $$("#inds button").forEach(b => b.addEventListener("click", () => { picked = true; setType(b.dataset.k, true); trackC("ChoseBusinessType", { type: TYPES[b.dataset.k].l, from: "mobile tiles" }); }));

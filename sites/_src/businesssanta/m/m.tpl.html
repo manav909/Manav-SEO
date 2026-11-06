@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Get Found by Customers Near You | Business Santa</title>
-<meta name="description" content="People near you are searching for what you sell. Business Santa helps US small businesses show up on Google, Google Maps and ChatGPT, so the phone rings. Free check from a real team.">
+<title>Small Business SEO for Google Maps &amp; ChatGPT | Business Santa</title>
+<meta name="description" content="Business Santa helps US small businesses show up on Google, Google Maps and ChatGPT, so the phone rings. Free check from a real team. Fixes from $120, no contract.">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <link rel="canonical" href="https://businesssanta.com/">
 <meta name="theme-color" content="#0b1220">
 <script>(function(){try{if(innerWidth>=980&&!/[?&]m=1/.test(location.search))location.replace("/?desk=1")}catch(e){}})()</script>
@@ -15,11 +16,15 @@
 <link rel="preload" as="image" href="/assets/img/bs-hero-poster.webp" fetchpriority="high">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Business Santa">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="Customers are searching for you. Can they find you?">
 <meta property="og:description" content="We help US small businesses show up on Google, Google Maps and ChatGPT. Get a free check from a real team.">
 <meta property="og:image" content="https://businesssanta.com/assets/img/og.jpg">
 <meta property="og:url" content="https://businesssanta.com/">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Customers are searching for you. Can they find you?">
+<meta name="twitter:description" content="We help US small businesses show up on Google, Google Maps and ChatGPT. Get a free check from a real team.">
+<meta name="twitter:image" content="https://businesssanta.com/assets/img/og.jpg">
 {LDJSON}
 <style>
 @font-face{font-family:"BS Head";src:url(/assets/img/bs-head-800.woff2) format("woff2");font-weight:600 900;font-display:swap}
@@ -314,6 +319,10 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
 .pl.g2>div{flex-direction:column;gap:10px;padding:14px}
 .pl.g2 b{font-size:.95rem}
 .pl.g2 div>span>span{font-size:.84rem}
+.hc{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.hero h1 .pill{display:flex;width:fit-content;margin:0 0 14px;letter-spacing:0;line-height:1.2}
+.indl{display:inline-block;margin:4px 0 14px;font-weight:700;font-size:.92rem;color:var(--ink);text-decoration:underline;text-decoration-color:var(--y);text-decoration-thickness:3px;text-underline-offset:4px}
+.fti{margin-bottom:14px}
 /* sticky bottom bar */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;gap:10px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);border-top:1px solid var(--line);box-shadow:0 -8px 24px rgba(15,23,42,.08);transition:transform .3s}
 .bar.hide,.bar.pre{transform:translateY(110%)}
@@ -329,8 +338,7 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
 
 <section class="hero">
   <div class="w">
-    <span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{FLAG}</svg>Helping small businesses in <b class="geoState">the US</b></span>
-    <h1>Get more calls from people searching <span class="tfor">for your business</span> <em class="ac">near you.</em></h1>
+    <h1><span class="pill"><svg class="flag" viewBox="0 0 19 10" aria-hidden="true">{FLAG}</svg>Small business SEO in <b class="geoState">the US</b><span class="hc">:</span></span> Get more calls from people searching <span class="tfor">for your business</span> <em class="ac">near you.</em></h1>
     <p class="lead">When someone nearby searches "<span class="q">plumber near me</span>", we put your business in front of them on Google, Maps and ChatGPT. So they call you, not the competition.</p>
     <div class="vid" id="v1"><video id="hv" muted playsinline loop preload="none" poster="/assets/img/bs-hero-poster.webp" data-src="/assets/video/bs-hero.mp4" width="720" height="900" aria-label="Short video: three reasons customers pick someone else, and how we fix all three"></video><button class="snd ic" type="button" data-v="hv" aria-label="Turn the sound on">{I_SOUND}<span>Tap for sound</span></button><span class="vt">17 sec</span></div>
     <div class="ctas"><a class="btn" href="#check" data-go>Get my free check</a></div>
@@ -405,7 +413,7 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
     <h2>Pick <em class="ac">your</em> business</h2>
     <p class="lead">Tap yours to see what your customers type into Google.</p>
     <div class="inds" id="inds">{INDS}</div>
-    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="btn out" href="#check" data-go><span id="indcta">Check my business, free</span></a></div>
+    <div class="indbox" id="indbox" aria-live="polite"><b>People near you search:</b><ul id="indq"></ul><a class="indl" id="indl" href="/seo-for-plumbers">How we help plumbers get found</a><a class="btn out" href="#check" data-go><span id="indcta">Check my business, free</span></a></div>
   </div>
 </section>
 
@@ -540,7 +548,7 @@ h2{font-size:2rem;line-height:1.06;letter-spacing:-.032em;word-spacing:.02em}
 </section>
 
 </main>
-<footer class="ft"><div class="w"><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
+<footer class="ft"><div class="w"><nav class="fti" aria-label="Local SEO by industry"><a href="/local-seo">Local SEO</a><a href="/seo-for-plumbers">Plumbers</a><a href="/seo-for-dentists">Dentists</a><a href="/seo-for-roofers">Roofers</a><a href="/seo-for-law-firms">Law firms</a><a href="/seo-for-restaurants">Restaurants</a><a href="/seo-for-salons-and-spas">Salons</a><a href="/seo-for-retail-stores">Retail</a><a href="/ai-search-optimization">ChatGPT and AI search</a><a href="/guides/google-business-profile-checklist">Google profile checklist</a></nav><nav><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a><a href="/?desk=1">Desktop site</a></nav>© <span id="yr">2026</span> Business Santa, powered by SEO Season.</div></footer>
 <div class="bar pre" id="bar"><a class="btn" href="#check" data-go>Check my business, free</a><a class="wa1" href="#" data-wa="bar" aria-label="Message us on WhatsApp">{WAICO}</a></div>
 <script type="module" src="/assets/js/m.js"></script>
 </body>
