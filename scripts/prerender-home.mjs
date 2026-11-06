@@ -33,6 +33,7 @@ const snapshot = `<div class="pre-home">
 <main>
 <h1>I architect search authority that compounds, for brands that can't afford to fail.</h1>
 <p>I'm Manav, a validation-first SEO strategist. I take on a select few clients and personally build their digital authority from the ground up.</p>
+<p>AI-native SEO · 2,000+ projects delivered across 30+ countries · 4.9 average rating</p>
 <p>Access the client portal. No commitment required.</p>
 <h2>Not reports. Not vanity metrics. Real, compounding authority.</h2>
 <ul>${get.map(([t, d]) => `<li><h3>${t}</h3><p>${d}</p></li>`).join("")}</ul>
