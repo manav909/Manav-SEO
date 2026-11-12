@@ -115,7 +115,7 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
     : /google\.|bing\.|duckduckgo\.|yahoo\./.test(ref) ? "organic" : /chatgpt|openai|perplexity|gemini|copilot|claude/.test(ref) ? "ai"
     : /facebook|instagram|fb\.|l\.instagram/.test(ref) ? "social" : ref && ref.indexOf("businesssanta.com") < 0 ? "referral" : "direct";
   var path = location.pathname.replace(/\.html$/, "") || "/";
-  var ptype = path === "/" || path === "/m" ? (innerWidth <= 760 ? "home mobile" : "home desktop") : path.indexOf("/guides/") === 0 ? "guide" : "service page";
+  var ptype = path === "/" || path === "/home-phone" ? (innerWidth <= 760 ? "home mobile" : "home desktop") : path.indexOf("/guides/") === 0 ? "guide" : "service page";
   var base = { page: path, page_type: ptype, traffic: traffic };
   if (src.utm_source) base.utm_source = src.utm_source;
   if (src.utm_campaign) base.utm_campaign = src.utm_campaign;
