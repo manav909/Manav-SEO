@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds the mobile page (businesssanta/m.html) and its script from m.tpl.html and main.js.
+"""Builds the mobile page (businesssanta/home-phone.html) and its script from m.tpl.html and main.js.
 Business types come from the desktop app.js so both pages always describe businesses the same way."""
 import re, html, os, subprocess, hashlib, sys, json
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,5 +92,5 @@ open(os.path.join(jsdir, f"m.{h}.js"), "w").write(mj)
 out = out.replace("/assets/js/m.js", f"/assets/js/m.{h}.js")
 left = re.findall(r"\{[A-Z_]+\}", out)
 if left: sys.exit("unfilled: " + ", ".join(left))
-open(os.path.join(SITE, "m.html"), "w").write(out)
-print("built m.html and m." + h + ".js")
+open(os.path.join(SITE, "home-phone.html"), "w").write(out)
+print("built home-phone.html and m." + h + ".js")

@@ -363,7 +363,7 @@ state = json.load(open(LM)) if os.path.exists(LM) else {}
 now = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
 def files_for(u):
-    return ["index.html", "m.html"] if u == "" else [u + ".html"]
+    return ["index.html", "home-phone.html"] if u == "" else [u + ".html"]
 
 def lastmod(u):
     fs = [os.path.join(OUT, f) for f in files_for(u) if os.path.exists(os.path.join(OUT, f))]
