@@ -66,23 +66,20 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
 .ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft nav{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px}.ft a{color:var(--mut)}
 """
 
-JS = r"""(function(){var PX="28943176985310116",MAIL="seo@businesssanta.com";
-!function(f){if(f.fbq)return;var n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};f._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[]}(window);
-fbq("init",PX);fbq("track","PageView");var on=0;function px(){if(on)return;on=1;var t=document.createElement("script");t.async=1;t.src="https://connect.facebook.net/en_US/fbevents.js";document.head.appendChild(t)}
-["scroll","pointerdown","touchstart"].forEach(function(e){addEventListener(e,px,{once:true,passive:true})});addEventListener("load",function(){setTimeout(px,5000)});
-function tr(e,d){try{fbq("track",e,d||{})}catch(x){}}var page=location.pathname;
-document.querySelectorAll("[data-wa]").forEach(function(a){a.addEventListener("click",function(){tr("Lead",{content_name:"WhatsApp "+a.dataset.wa,method:"WhatsApp",page:page})})});
-document.querySelectorAll('a[href="#check"]').forEach(function(a){a.addEventListener("click",function(){try{fbq("trackCustom","FormIntent",{page:page})}catch(x){}})});
+JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "track.js")).read() + r"""
+(function(){var B=window.BST,MAIL="seo@businesssanta.com",k=(document.getElementById("lf")||{}).dataset;if(k&&k.type)B.type(k.type.charAt(0).toUpperCase()+k.type.slice(1));
+document.querySelectorAll("[data-wa]").forEach(function(a){a.addEventListener("click",function(){B.contact("WhatsApp","WhatsApp "+a.dataset.wa)})});
+document.querySelectorAll('a[href="#check"]').forEach(function(a){a.addEventListener("click",function(){B.event("OpenedFreeCheck",{from:a.closest(".bar")?"bar":a.closest(".mid")?"mid":"header"})})});
 var f=document.getElementById("lf"),er=document.getElementById("lfErr"),b=document.getElementById("lfB");if(!f)return;
-function v(id){return document.getElementById(id).value.trim()}function bad(id,m){var el=document.getElementById(id);el.classList.add("bad");el.focus();er.textContent=m;return false}
+function v(id){return document.getElementById(id).value.trim()}function bad(id,m){var el=document.getElementById(id);el.classList.add("bad");el.focus();er.textContent=m;B.formError("page check",id);return false}
 f.addEventListener("input",function(e){e.target.classList.remove("bad");er.textContent=""});
 f.addEventListener("submit",function(e){e.preventDefault();er.textContent="";
 if(!v("lfN"))return bad("lfN","Add your business name so we know who you are.");if(!v("lfC"))return bad("lfC","Add your city and state, so we can check your local competition.");
 if(!v("lfW"))return bad("lfW","Add your name so we know who to reply to.");if(!/^\S+@\S+\.\S+$/.test(v("lfE")))return bad("lfE","Add an email we can send your check to.");
 b.disabled=true;b.textContent="Sending...";var t=f.dataset.type;
-fetch("https://formsubmit.co/ajax/"+encodeURIComponent(MAIL),{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({_subject:"Free check request: "+v("lfN")+" ("+v("lfC")+")",_template:"box",_captcha:"false",_replyto:v("lfE"),name:v("lfW"),email:v("lfE"),phone:v("lfP")||"Not given",business_type:t,business_name:v("lfN"),website:v("lfS")||"No website yet",city:v("lfC"),page:location.href})})
+fetch("https://formsubmit.co/ajax/"+encodeURIComponent(MAIL),{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({_subject:"Free check request: "+v("lfN")+" ("+v("lfC")+")",_template:"box",_captcha:"false",_replyto:v("lfE"),name:v("lfW"),email:v("lfE"),phone:v("lfP")||"Not given",business_type:t,business_name:v("lfN"),website:v("lfS")||"No website yet",city:v("lfC"),page:location.href,came_from:B.sourceText()})})
 .then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok||String(j.success)==="false")throw 0})})
-.then(function(){tr("Lead",{content_name:"Free check",method:"Email",business_type:t,page:page});f.style.display="none";document.getElementById("lfD").classList.add("on")})
+.then(function(){B.lead({content_name:"Free check",method:"Email",business_type:t},{email:v("lfE"),phone:v("lfP"),name:v("lfW"),city:v("lfC")});f.style.display="none";document.getElementById("lfD").classList.add("on")})
 .catch(function(){b.disabled=false;b.textContent="Send me my free check";er.innerHTML='That didn\'t go through. Try again, or email us at <a href="mailto:'+MAIL+'">'+MAIL+"</a>."})});
 var bar=document.getElementById("bar"),ck=document.getElementById("check");if(bar&&ck&&"IntersectionObserver"in window)new IntersectionObserver(function(es){bar.classList.toggle("hide",es[0].isIntersecting)},{rootMargin:"0px 0px -10% 0px"}).observe(ck);
 })();"""
@@ -160,7 +157,7 @@ def service_ld(url, name, desc, stype):
                       + [{"@type": "Offer", "name": "Free check", "price": "0", "priceCurrency": "USD"}]}
 
 def price_html():
-    return ('<div class="price"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>'
+    return ('<div class="price" data-track="pricing"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>'
             '<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>'
             '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div></div>'
             '<p class="src">Monthly SEO, AI search and full packages are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
@@ -171,11 +168,11 @@ REV = [("Patient, plain-English help", "I\u2019m not a website or technology per
 
 def proof_html(who):
     cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating from 2,000+ projects over 10+ years</span></div><div class="rv">{cards}</div></div>'
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating from 2,000+ projects over 10+ years</span></div><div class="rv">{cards}</div></div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
-    return (f'<section class="lead-f" id="check"><h2>Get a free check for your <span class="ac">{E(who)}</span></h2>'
+    return (f'<section class="lead-f" id="check" data-track="form"><h2>Get a free check for your <span class="ac">{E(who)}</span></h2>'
             '<p>A real person on our team checks how you show up on Google, Google Maps and ChatGPT, and sends you a short plain-English report with your top 3 fixes. No card, no contract.</p>'
             f'<form id="lf" novalidate data-type="{E(k)}"><label>Business name<input id="lfN" autocomplete="organization" required></label><label>City and state<input id="lfC" autocomplete="address-level2" placeholder="Austin, TX" required></label>'
             '<label>Your name<input id="lfW" autocomplete="name" required></label><label>Email<input id="lfE" type="email" inputmode="email" autocomplete="email" required></label>'

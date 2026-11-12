@@ -4,15 +4,10 @@ const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAl
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 $("#yr").textContent = new Date().getFullYear();
 
-/* Meta Pixel: queued now, the script loads after the first touch */
-!function (f) { if (f.fbq) return; const n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments) }; f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = []; }(window);
-fbq("init", CONFIG.metaPixelId); fbq("track", "PageView");
-let pxOn = false;
-const loadPixel = () => { if (pxOn) return; pxOn = true; const t = document.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; document.head.appendChild(t); };
-["scroll", "pointerdown", "touchstart"].forEach(e => addEventListener(e, loadPixel, { once: true, passive: true }));
-addEventListener("load", () => setTimeout(loadPixel, 5000));
-const track = (ev, d) => { try { fbq("track", ev, d || {}); } catch (e) { } };
-const trackC = (ev, d) => { try { fbq("trackCustom", ev, d || {}); } catch (e) { } };
+/*TRACK*/
+const BST = window.BST;
+const track = (ev, d) => BST.std(ev, d);
+const trackC = (ev, d) => BST.event(ev, d);
 
 /*TYPES*/
 /*ICONS*/
@@ -22,6 +17,7 @@ let T = "plumbing", fromAd = false;
 try { const q = new URLSearchParams(location.search).get("type"); if (q && TYPES[q]) { T = q; fromAd = true; } } catch (e) { }
 const put = (e, s) => { if (e.textContent !== s) e.textContent = s; };
 function setType(k, ad) {
+  try { BST.type(TYPES[k].l); } catch (e) { }
   T = k; const v = TYPES[k];
   $$(".q").forEach(e => put(e, v.q));
   $$(".bn").forEach(e => put(e, v.n));
@@ -52,14 +48,14 @@ $$("[data-go]").forEach(a => a.addEventListener("click", e => {
 }));
 const wa = msg => `https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(msg)}`;
 $$("[data-wa]").forEach(a => a.addEventListener("click", e => {
-  e.preventDefault(); track("Lead", { content_name: "WhatsApp " + a.dataset.wa, method: "WhatsApp" });
+  e.preventDefault(); BST.contact("WhatsApp", "WhatsApp " + a.dataset.wa);
   const n = $("#fName").value.trim(), c = $("#fCity").value.trim();
   window.open(wa(`Hi Business Santa! I'd like a free check for my ${TYPES[T].l.toLowerCase()} business` + (n ? ` (${n}${c ? ", " + c : ""})` : "") + "."), "_blank", "noopener");
 }));
 
 /* the form: email the request to the team, no WhatsApp needed */
 const err = $("#fErr");
-const show = (el, msg) => { el.closest(".fl").after(err); err.textContent = msg; el.classList.add("bad"); el.focus(); };
+const show = (el, msg) => { BST.formError("mobile check", el.id); el.closest(".fl").after(err); err.textContent = msg; el.classList.add("bad"); el.focus(); };
 const need = (id, msg) => { const el = $(id); if (el.value.trim()) return true; show(el, msg); return false; };
 $$("#mForm input").forEach(i => i.addEventListener("input", () => { i.classList.remove("bad"); err.textContent = ""; }));
 $("#mForm").addEventListener("submit", async e => {
@@ -74,11 +70,11 @@ $("#mForm").addEventListener("submit", async e => {
   try {
     const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.email), {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name: d.who, email: mail, phone: d.phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, page: location.href })
+      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name: d.who, email: mail, phone: d.phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, page: location.href, came_from: BST.sourceText() })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
-    track("Lead", { content_name: "Free check", method: "Email", business_type: d.type });
+    BST.lead({ content_name: "Free check", method: "Email", business_type: d.type }, { email: mail, phone: d.phone, name: d.who, city: d.city });
     $("#mForm").style.display = "none"; $("#done").classList.add("on");
   } catch (x) {
     btn.disabled = false; btn.textContent = "Send me my free check"; btn.before(err);

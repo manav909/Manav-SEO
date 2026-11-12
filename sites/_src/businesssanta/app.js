@@ -1,5 +1,6 @@
 /* Business Santa landing page. Native scrolling, compositor-only animations, no libraries. */
 import { buildGrow } from "./grow.js";
+import "./track.js";
 
 const CONFIG = { whatsapp: "917009775189", email: "seo@businesssanta.com", metaPixelId: "28943176985310116" };
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -15,15 +16,11 @@ function tween(d, fn, done) {
 }
 $("#yr").textContent = new Date().getFullYear();
 
-/* ---------- Meta Pixel: events queue at once, the script loads after the first scroll or tap ---------- */
-!function (f) { if (f.fbq) return; const n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments) }; f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = []; }(window);
-fbq("init", CONFIG.metaPixelId); fbq("track", "PageView");
-let pxOn = false;
-const loadPixel = () => { if (pxOn) return; pxOn = true; const t = document.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; document.head.appendChild(t); };
-["scroll", "pointerdown", "keydown", "touchstart"].forEach(e => addEventListener(e, loadPixel, { once: true, passive: true }));
-addEventListener("load", () => setTimeout(loadPixel, 6000));
-const track = (ev, d) => { try { fbq("track", ev, d || {}); } catch (e) { } };
-const trackC = (ev, d) => { try { fbq("trackCustom", ev, d || {}); } catch (e) { } };
+/* ---------- measurement (track.js): Meta Pixel, Conversions API, engagement ---------- */
+const BST = window.BST;
+/* WhatsApp taps are a Contact, a sent form is a Lead (see the form handlers) */
+const track = (ev, d = {}) => { if (ev === "Lead" && /WhatsApp (bar|footer)/.test(d.content_name || "")) return BST.contact("WhatsApp", d.content_name); BST.std(ev, d); };
+const trackC = (ev, d) => BST.event(ev, d);
 
 /* ---------- business types ---------- */
 const TYPES = {
@@ -43,6 +40,7 @@ fType.addEventListener("change", () => setType(fType.value));
 const slug = n => n.toLowerCase().replace(/[^a-z0-9]+/g, "");
 const res = (name, rating, count, me) => `<div class="res${me ? " me" : ""}">${me ? '<span class="tg">You</span>' : ""}<div class="u">${slug(name)}.com</div><div class="t">${esc(name)}</div><div class="st">★★★★★ ${rating} <span>(${count}) · Open now</span></div></div>`;
 function setType(k) {
+  try { window.BST.type(TYPES[k].l); } catch (e) { }
   T = k; const v = TYPES[k];
   $$("#chips button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === k));
   fType.value = k;
@@ -576,7 +574,7 @@ function celebrate(how) {
 }
 ckGo(0, false);
 new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); replay($("#shBld"), "pop"); replay($(".awn"), "unroll"); } }, { threshold: .5 }).observe(shop);
-$("#ckForm").addEventListener("submit", e => { e.preventDefault(); if (ck < 5) return ckNext(); const d = check($("#fErr")); if (!d) return; track("Lead", { content_name: "Free check", method: "WhatsApp", business_type: d.type }); window.open(wa(message(d)), "_blank", "noopener"); celebrate("wa"); });
+$("#ckForm").addEventListener("submit", e => { e.preventDefault(); if (ck < 5) return ckNext(); const d = check($("#fErr")); if (!d) return; BST.lead({ content_name: "Free check (WhatsApp)", method: "WhatsApp", business_type: d.type }, { city: d.city }); window.open(wa(message(d)), "_blank", "noopener"); celebrate("wa"); });
 $("#barWa").addEventListener("click", e => { e.preventDefault(); track("Lead", { content_name: "WhatsApp bar", method: "WhatsApp" }); window.open(wa("Hi Business Santa! I'd like a free check of my business."), "_blank", "noopener"); });
 $("#altBtn").addEventListener("click", () => { $("#emBox").classList.add("on"); $("#altBtn").style.display = "none"; $("#eName").focus(); });
 $("#emSend").addEventListener("click", async () => {
@@ -588,11 +586,11 @@ $("#emSend").addEventListener("click", async () => {
   try {
     const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.email), {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, wants: d.wants || "Not chosen", goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
+      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, came_from: BST.sourceText(), wants: d.wants || "Not chosen", goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
-    track("Lead", { content_name: "Free check", method: "Email", business_type: d.type });
+    BST.lead({ content_name: "Free check", method: "Email", business_type: d.type }, { email: mail, phone, name, city: d.city });
     celebrate("em");
   } catch (err) {
     btn.disabled = false; btn.textContent = "Send my request";
