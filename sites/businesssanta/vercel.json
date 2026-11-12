@@ -70,18 +70,5 @@
       ],
       "destination": "/m"
     }
-  ],
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "www.businesssanta.com"
-        }
-      ],
-      "destination": "https://businesssanta.com/:path*",
-      "permanent": true
-    }
   ]
 }
