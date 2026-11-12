@@ -4,7 +4,7 @@
    Optional: META_TEST_EVENT_CODE to see events in Events Manager > Test events. Nothing is stored here. */
 export const config = { runtime: "edge" };
 
-const PIXEL = "28943176985310116";
+const PIXEL = "3294418987387872";
 const ALLOWED = new Set(["PageView", "ViewContent", "Contact", "Lead"]);
 const HOSTS = /(^|\.)businesssanta\.com$/;
 

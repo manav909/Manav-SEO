@@ -2,7 +2,7 @@
 import { buildGrow } from "./grow.js";
 import "./track.js";
 
-const CONFIG = { whatsapp: "917009775189", email: "seo@businesssanta.com", metaPixelId: "28943176985310116" };
+const CONFIG = { whatsapp: "917009775189", email: "seo@businesssanta.com", metaPixelId: "3294418987387872" };
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const MOB = () => innerWidth <= 760;
