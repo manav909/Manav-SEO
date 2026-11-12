@@ -1,6 +1,7 @@
 /* Business Santa landing page. Native scrolling, compositor-only animations, no libraries. */
 import { buildGrow } from "./grow.js";
 import "./track.js";
+import "./engage.js";
 
 const CONFIG = { whatsapp: "917009775189", email: "seo@businesssanta.com", metaPixelId: "3294418987387872" };
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];

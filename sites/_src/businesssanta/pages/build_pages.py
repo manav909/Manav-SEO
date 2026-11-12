@@ -69,7 +69,7 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
 .ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft .ftg{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1080px}.ft nav{display:flex;flex-direction:column;gap:7px}.ft nav b{font:800 .95rem var(--fh);color:var(--ink);margin-bottom:2px}.ft a{color:var(--mut);text-decoration:none}.ft a:hover{color:var(--ink);text-decoration:underline}.ft .ftc{max-width:1080px;margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}@media(max-width:760px){.ft .ftg{grid-template-columns:1fr 1fr;gap:26px 18px}}
 """
 
-JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "track.js")).read() + r"""
+JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "track.js")).read() + "\n" + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engage.js")).read() + r"""
 (function(){var B=window.BST,MAIL="seo@businesssanta.com",k=(document.getElementById("lf")||{}).dataset;if(k&&k.type)B.type(k.type.charAt(0).toUpperCase()+k.type.slice(1));
 document.querySelectorAll("[data-wa]").forEach(function(a){a.addEventListener("click",function(){B.contact("WhatsApp","WhatsApp "+a.dataset.wa)})});
 document.querySelectorAll('a[href="#check"]').forEach(function(a){a.addEventListener("click",function(){B.event("OpenedFreeCheck",{from:a.closest(".bar")?"bar":a.closest(".mid")?"mid":"header"})})});

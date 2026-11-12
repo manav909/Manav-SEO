@@ -125,6 +125,7 @@
       m.country = "us";
       try { fbq("init", PX, initData(m)); } catch (e) { }
       std("Lead", data, m);
+      try { localStorage.setItem("bs_lead", "1"); } catch (e) { } /* no more offers for someone who already asked */
       /* keep only SHA-256 hashes for later visits */
       try {
         var keys = ["em", "ph", "fn", "ct", "st"].filter(function (k) { return m[k]; }), out = { country: "us" };

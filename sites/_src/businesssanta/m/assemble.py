@@ -81,7 +81,7 @@ ld = home_ld.graph(_faq, videos=[
 out = tpl.replace("{PACKS}", packs).replace("{HIC}", BI["plumbing"]).replace("{EARLY}", early).replace("{INDS}", inds).replace("{LDJSON}", ld).replace("{FLAG}", flag).replace("{WAICO}", waico).replace("{REVIEWS}", reviews).replace("{OPTIONS}", options)
 for k in ["SOUND", "WEB", "MOON", "X", "CHEV", "SEARCH", "SEARCHOFF", "PHONE", "PHONEX", "DIR", "PIN", "OK", "RANK", "LIST", "USERS", "TAG"]:
     out = out.replace("{I_" + k + "}", svg(k.lower()))
-js = main.replace("/*TRACK*/", open(os.path.join(HERE, "..", "track.js")).read()).replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
+js = main.replace("/*TRACK*/", open(os.path.join(HERE, "..", "track.js")).read() + "\n" + open(os.path.join(HERE, "..", "engage.js")).read()).replace("/*TYPES*/", types).replace("/*ICONS*/", ICONJS)
 open("/tmp/bs-m.js", "w").write(js)
 subprocess.run(["npx", "--yes", "esbuild@0.21.5", "/tmp/bs-m.js", "--minify", "--format=esm", "--target=es2020", "--legal-comments=none", "--outfile=/tmp/bs-m.min.js"], check=True)
 mj = open("/tmp/bs-m.min.js").read(); h = hashlib.sha1(mj.encode()).hexdigest()[:10]
