@@ -38,6 +38,23 @@ export default async function handler(req) {
           const px = await fetch(`https://graph.facebook.com/v21.0/${PIXEL}?fields=id,name&access_token=${encodeURIComponent(token)}`).then(x => x.json()).catch(() => ({}));
           out.pixel_visible = px.id ? `yes (${px.name})` : (px.error && px.error.message) || "no";
           out.token_length = token.length; out.token_has_spaces = /\s/.test(token);
+          /* which datasets/Pixels this token can reach (ids and names only) */
+          const T = encodeURIComponent(token), G = "https://graph.facebook.com/v21.0/";
+          const get = (p) => fetch(G + p + (p.includes("?") ? "&" : "?") + "access_token=" + T).then(x => x.json()).catch(() => ({}));
+          const dbg = await get(`debug_token?input_token=${T}`);
+          if (dbg.data) out.token_info = { app_id: dbg.data.app_id, type: dbg.data.type, valid: dbg.data.is_valid, scopes: dbg.data.scopes, targets: (dbg.data.granular_scopes || []).map(s => ({ scope: s.scope, ids: s.target_ids })) };
+          else if (dbg.error) out.token_info = dbg.error.message;
+          const biz = await get("me/businesses?fields=id,name");
+          out.businesses = (biz.data || []).map(b => `${b.id} ${b.name}`);
+          if (biz.error) out.businesses = biz.error.message;
+          const pixels = [];
+          for (const b of biz.data || []) for (const edge of ["owned_pixels", "client_pixels", "adspixels"]) {
+            const r2 = await get(`${b.id}/${edge}?fields=id,name`);
+            for (const p of r2.data || []) pixels.push(`${p.id} ${p.name} (${edge})`);
+          }
+          const mine = await get("me/adspixels?fields=id,name");
+          for (const p of mine.data || []) pixels.push(`${p.id} ${p.name} (me)`);
+          out.pixels_visible = [...new Set(pixels)];
         }
       } catch (e) { out.meta_error = "could not reach Meta"; }
     }
