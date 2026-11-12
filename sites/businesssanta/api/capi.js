@@ -19,6 +19,21 @@ function cookie(h, name) {
 
 export default async function handler(req) {
   const token = process.env.META_CAPI_TOKEN;
+  /* health check: GET /api/capi?verify=1 sends one Test Events-only PageView and reports what Meta answered (never the token) */
+  if (req.method === "GET" && new URL(req.url).searchParams.get("verify") === "1") {
+    const out = { configured: !!token };
+    if (token) {
+      try {
+        const r = await fetch(`https://graph.facebook.com/v21.0/${PIXEL}/events?access_token=${encodeURIComponent(token)}`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ test_event_code: "BSVERIFY", data: [{ event_name: "PageView", event_time: Math.floor(Date.now() / 1000), event_id: "verify-" + Date.now(), action_source: "website", event_source_url: "https://www.businesssanta.com/", user_data: { client_ip_address: (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "8.8.8.8", client_user_agent: req.headers.get("user-agent") || "check" } }] }),
+        });
+        const j = await r.json().catch(() => ({}));
+        out.meta_status = r.status; out.events_received = j.events_received; if (j.error) out.meta_error = j.error.message;
+      } catch (e) { out.meta_error = "could not reach Meta"; }
+    }
+    return new Response(JSON.stringify(out), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
   if (req.method !== "POST" || !token) return new Response(null, { status: 204 });
   let b;
   try { b = await req.json(); } catch (e) { return new Response(null, { status: 400 }); }
