@@ -18,7 +18,11 @@
 - [Local SEO services for small businesses](https://www.businesssanta.com/local-seo): what local SEO includes and costs.
 - [AI search optimization (GEO)](https://www.businesssanta.com/ai-search-optimization): how businesses get recommended by ChatGPT and AI search.
 - [SEO for plumbers](https://www.businesssanta.com/seo-for-plumbers)
-- [Dental SEO](https://www.businesssanta.com/seo-for-dentists)
+- [Dental SEO](https://www.businesssanta.com/seo-for-dentists): SEO and local SEO for dentists and dental practices.
+  - [Dental SEO keywords](https://www.businesssanta.com/guides/dental-seo-keywords): the searches patients use, grouped by need, including insurance searches.
+  - [Google Business Profile for dentists](https://www.businesssanta.com/guides/google-business-profile-for-dentists): how dental practices rank in the Google Maps pack.
+  - [Dental reviews and HIPAA](https://www.businesssanta.com/guides/dental-reviews-hipaa): how to get reviews and reply without revealing patient information, with safe reply templates.
+  - [How much does dental SEO cost?](https://www.businesssanta.com/guides/dental-seo-cost): what drives the price, fair packages, red flags.
 - [Roofing SEO services](https://www.businesssanta.com/seo-for-roofers): SEO and local SEO for roofers and roofing companies.
   - [Roofing SEO keywords](https://www.businesssanta.com/guides/roofing-seo-keywords): the searches homeowners use, grouped by job.
   - [Google Business Profile for roofers](https://www.businesssanta.com/guides/google-business-profile-for-roofers): how roofers rank in the Google Maps pack.

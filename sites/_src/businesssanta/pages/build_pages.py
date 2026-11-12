@@ -3,8 +3,11 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES
-ALLG = GUIDES + ROOF_GUIDES
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES
+# Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
+CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES
+EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA}
+ALLG = GUIDES + CLUSTER_GUIDES
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
 E = html.escape
@@ -235,12 +238,12 @@ def byline():
             '<div><b>Written by Manav S</b><p>Founder of Business Santa and SEO Season. 10+ years in SEO and 2,000+ projects for businesses in the US and worldwide. '
             f'Updated November 2026.</p></div></div>')
 
-def google_src():
-    u, t = GOOGLE_LOCAL
-    return f'<p class="src">Source: <a href="{u}" rel="noopener">{E(t)}</a>.</p>'
+def google_src(extra=()):
+    links = "; ".join(f'<a href="{u}" rel="noopener">{E(t)}</a>' for u, t in [GOOGLE_LOCAL, *extra])
+    return f'<p class="src">Source{"s" if extra else ""}: {links}.</p>'
 
 def cluster_html(parent, cur=None):
-    gs = [g for g in ROOF_GUIDES if g["parent"] == parent and g["slug"] != cur]
+    gs = [g for g in CLUSTER_GUIDES if g["parent"] == parent and g["slug"] != cur]
     if not gs: return ""
     par = next(i for i in INDUSTRIES if i["slug"] == parent)
     li = "".join(f'<li><a href="/{g["slug"]}">{E(g["title"].split(" | ")[0])}</a></li>' for g in gs)
@@ -248,8 +251,8 @@ def cluster_html(parent, cur=None):
     return f'<section class="clu"><h2>{E(par["h1"])} guides</h2><ul>{back}{li}</ul></section>'
 
 def extra_html(p):
-    if p["slug"] != "seo-for-roofers": return ""
-    return "".join(f"<h2>{h}</h2>{b}" for h, b in ROOF_EXTRA) + cluster_html("seo-for-roofers")
+    if p["slug"] not in EXTRAS: return ""
+    return "".join(f"<h2>{h}</h2>{b}" for h, b in EXTRAS[p["slug"]]) + cluster_html(p["slug"])
 
 def build_industry(p):
     url = f"{SITE}/{p['slug']}"
@@ -319,6 +322,8 @@ def build_ai(p):
     graph = [service_ld(url, "AI search optimization (GEO) for local businesses", p["answer"], "Generative engine optimization"), faq_ld(url, p["faq"])]
     return shell(p["slug"], p["title"], p["desc"], body, graph, "AI search optimization")
 
+def _par(g): return next(i for i in INDUSTRIES if i["slug"] == g["parent"])
+
 def build_guide(g):
     url = f"{SITE}/{g['slug']}"
     items = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in g["items"])
@@ -329,12 +334,12 @@ def build_guide(g):
 {groups}
 {"" if groups else '<h2>The <span class="ac">list</span></h2>'}
 <ol class="steps">{items}</ol>
-{google_src()}
+{google_src(g.get('src', ()))}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(g['faq'])}
 {byline()}
 {cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
-{cta('roofing' if g.get("parent") == "seo-for-roofers" else 'other', 'roofing company' if g.get("parent") == "seo-for-roofers" else 'business')}"""
+{cta(_par(g)["k"], _par(g)["biz"]) if g.get("parent") else cta('other', 'business')}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": g["title"].split(" | ")[0], "description": g["desc"],
            "author": FOUNDER, "publisher": ORG, "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US",
            "mainEntityOfPage": {"@id": url + "#page"}, "image": f"{SITE}/assets/img/og.jpg"}

@@ -394,3 +394,115 @@ ROOF_GUIDES = [
   ],
  },
 ]
+
+# ---------- Dental topic cluster: extra pillar sections and the guides that support it ----------
+HHS_NVD = ("https://www.hhs.gov/hipaa/for-professionals/compliance-enforcement/agreements/new-vision/index.html", "HHS: Settlement with New Vision Dental over patient information in online review replies")
+
+DENT_EXTRA = [
+ ("Your practice website, <span class=\"ac\">kept in shape</span>",
+  "<p>Your website is where a search becomes a booked appointment. It needs online booking or a tap-to-call button at the top, a page for each treatment, the insurance plans you accept, new-patient information, and your dentists with their credentials. It also needs looking after. Broken booking links, a slow load on phones and outdated hours quietly send patients to the practice down the street. Our monthly plan covers this website maintenance along with the SEO.</p>"),
+ ("Google Ads or SEO: <span class=\"ac\">which first?</span>",
+  "<p>Google Ads can bring emergency and implant patients quickly, and you pay for every click. SEO brings the free calls from the map and the regular results, and keeps working when you stop paying. Most practices do best with both: ads for the high-value treatments while SEO builds, and a strong Google Business Profile that helps both.</p>"),
+ ("Choosing a dental SEO company: <span class=\"ac\">5 questions to ask</span>",
+  "<ol class=\"steps\"><li><b>Will I see every change?</b>A good dental SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, booking clicks and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>How do you protect patient privacy?</b>SEO work should never need patient records. Ask how they handle review replies and patient photos. If a vendor will see patient information, HIPAA requires a business associate agreement.</li></ol>"),
+]
+
+DENT_GUIDES = [
+ {
+  "slug": "guides/dental-seo-keywords", "parent": "seo-for-dentists", "nav": "Dental SEO keywords",
+  "title": "Dental SEO Keywords: 50+ Searches Patients Use | Business Santa",
+  "desc": "The dental SEO keywords patients actually type, grouped by need: booking, emergencies, cleanings, cosmetic, Invisalign, implants, insurance and kids. Plus how to turn them into pages.",
+  "h1": "Dental SEO keywords:", "h1ac": "what patients really search",
+  "answer": "The best dental SEO keywords are the ones patients type when they are ready to book: \"dentist near me\", \"emergency dentist open now\", \"dentist that takes [insurance]\", \"teeth cleaning near me\" and \"dental implants cost\", plus the same searches with your city's name. Group them by the need they describe, give each group its own page, and use the patient's words in your titles, headings and Google Business Profile services.",
+  "groups": [
+   ("Ready to book", ["dentist near me", "dentist taking new patients", "best dentist in [city]", "family dentist near me", "dentist open Saturday", "dentist open late", "dental office near me", "general dentist [city]"]),
+   ("Emergencies", ["emergency dentist near me", "emergency dentist open now", "same day dentist", "tooth pain dentist", "broken tooth repair", "dentist for swollen face", "lost filling", "walk in dentist"]),
+   ("Cleanings and checkups", ["teeth cleaning near me", "dental checkup", "deep cleaning teeth", "dental x rays", "gum disease treatment", "fluoride treatment", "dental exam cost", "cleaning without insurance"]),
+   ("Cosmetic", ["teeth whitening near me", "veneers cost", "cosmetic dentist [city]", "smile makeover", "dental bonding", "porcelain veneers", "gummy smile fix", "chipped tooth repair"]),
+   ("Straightening", ["Invisalign near me", "Invisalign cost", "clear aligners", "braces for adults", "orthodontist near me", "Invisalign vs braces", "retainers", "teeth straightening"]),
+   ("Implants and repairs", ["dental implants near me", "dental implants cost", "all on 4 implants", "dental crown", "root canal near me", "tooth extraction", "dentures near me", "dental bridge"]),
+   ("Insurance and cost", ["dentist that takes Delta Dental", "dentist that accepts Medi-Cal", "dentist that takes Cigna", "dental membership plan", "dentist payment plans", "affordable dentist near me", "dentist no insurance", "dental financing"]),
+   ("Kids and family", ["pediatric dentist near me", "kids dentist", "dentist for toddlers", "sedation dentist for kids", "family dentist", "first dental visit", "dentist for anxious patients", "sedation dentistry"]),
+  ],
+  "items": [
+   ("One page per treatment group", "Emergencies, cleanings, cosmetic, Invisalign, implants. Each page answers what patients ask before they book: what happens, how long, and what it costs."),
+   ("A clear insurance page", "List the plans you accept by name. Patients search for their insurance, and AI assistants read this page when they answer."),
+   ("Match your Google Business Profile services", "List the same treatments on your profile, in the words patients use."),
+   ("Use the words in titles and headings", "\"Emergency dentist in Pasadena, same-day visits\" beats \"Comprehensive dental care\"."),
+   ("Answer the cost questions", "Patients search for prices. Give honest ranges or what changes the price, even if each treatment plan is quoted."),
+  ],
+  "faq": [
+   ("What is the most important dental keyword?", "Usually \"dentist near me\" and \"emergency dentist near me\". They show up on Google Maps, so they depend mostly on your Google Business Profile, reviews and how close you are."),
+   ("Should we target insurance plan names?", "Yes, if you really accept them. \"Dentist that takes Delta Dental\" is a ready-to-book search. List each plan by name on your insurance page."),
+   ("Do we need a page for every keyword?", "No. One page per treatment group is enough. Similar searches like \"Invisalign near me\" and \"clear aligners\" belong on the same page."),
+  ],
+ },
+ {
+  "slug": "guides/google-business-profile-for-dentists", "parent": "seo-for-dentists", "nav": "Google profile for dentists",
+  "title": "Google Business Profile for Dentists: Rank in the Map Pack | Business Santa",
+  "desc": "How dental practices set up a Google Business Profile that ranks on Google Maps: categories, treatments, booking link, office photos, HIPAA-safe reviews and hours.",
+  "h1": "Google Business Profile for dentists:", "h1ac": "get into the map pack",
+  "answer": "To rank a dental practice on Google Maps, choose the right primary category (Dentist, or your specialty), list every treatment, add an online booking link, post real photos of your office and team, get steady reviews and reply to them without confirming anyone is a patient, and keep hours and emergency availability accurate. Google ranks map results on relevance, distance and prominence, and these steps improve the two you control.",
+  "items": [
+   ("Pick the right primary category", "Dentist for general practices, or your specialty: Cosmetic dentist, Orthodontist, Pediatric dentist, Endodontist, Oral surgeon. Add secondary categories only for care you really provide."),
+   ("List every treatment", "Cleanings, emergency visits, fillings, crowns, implants, Invisalign, whitening, root canals. Use the patient's words."),
+   ("Add a booking link", "Point it to online booking or a short appointment form, not your home page."),
+   ("Show your office and team", "Reception, treatment rooms, the building from the street, your dentists and staff. No patient photos unless you have their written permission."),
+   ("Ask for reviews after visits", "Send a text link after the appointment. Ask every patient the same way: Google does not allow offering rewards for reviews."),
+   ("Reply without confirming anyone is a patient", "Thank people in general terms and never mention a visit, treatment or insurance. See our HIPAA review reply guide."),
+   ("Keep hours and emergencies accurate", "If you see same-day emergencies, say so in your description and answer the phone in those hours."),
+   ("Mention insurance in your description", "Name the main plans you accept. It is one of the first things patients check."),
+   ("One profile per real location", "Each office with its own address and staff gets its own profile. Never create profiles for places you do not see patients."),
+   ("Never add keywords to your name", "\"Bright Smile Dental\" not \"Bright Smile Dental Best Dentist Pasadena\". Keyword stuffing breaks Google's rules and can get the profile suspended."),
+  ],
+  "faq": [
+   ("What category should a dentist use on Google?", "Dentist for a general practice, or your specialty as the primary category. Add secondary categories only for services you really offer."),
+   ("Can each dentist have their own Google profile?", "Google allows profiles for individual practitioners who see the public, with rules for solo and group practices. Follow Google's practitioner guidelines so profiles do not compete or get merged."),
+   ("How many reviews does a dental practice need?", "There is no magic number. What matters is having more recent, detailed reviews than the practices you compete with nearby, and getting them steadily."),
+  ],
+ },
+ {
+  "slug": "guides/dental-reviews-hipaa", "parent": "seo-for-dentists", "nav": "Dental reviews and HIPAA",
+  "src": [HHS_NVD],
+  "title": "Dental Reviews and HIPAA: How to Reply Without a Fine | Business Santa",
+  "desc": "How dental practices can get more Google reviews and reply to good and bad ones without revealing patient information. Safe reply templates and the HIPAA cases to learn from.",
+  "h1": "Dental reviews and HIPAA:", "h1ac": "how to reply without a fine",
+  "answer": "A dental practice can reply to every review, as long as the reply never confirms that the reviewer is a patient or mentions a visit, treatment, insurance or bill, even if the patient wrote about it first. Federal regulators have fined dental practices for review replies that did exactly that, including a California practice that paid $23,000 in 2022. Use short, general replies and move any real conversation to a private phone call.",
+  "items": [
+   ("Never confirm they are a patient", "\"We're sorry your visit went badly\" already confirms it. Write about your practice and your standards instead."),
+   ("Never repeat health details", "Not the treatment, the tooth, the insurance or the bill, even if the patient mentioned it in the review."),
+   ("Never use a real name they did not use", "If the review is under a nickname, so is your reply."),
+   ("Safe reply to a good review", "\"Thank you for the kind words. Our team works hard to make every visit easy and comfortable.\""),
+   ("Safe reply to a bad review", "\"We take every concern seriously and would welcome the chance to talk. Please call our office manager at [number].\""),
+   ("Take the conversation offline", "Fix the problem by phone. Many reviewers update their review after a good call."),
+   ("Ask every patient the same way", "A text link after each visit. No rewards and no asking only happy patients: Google's rules forbid both."),
+   ("Give your team a reply library", "Five or six approved replies that staff adapt, so nobody writes in frustration at 10pm."),
+  ],
+  "faq": [
+   ("Can a dentist reply to Google reviews at all?", "Yes. Replying shows patients you care. The rule is what you say: nothing that confirms someone is a patient or reveals their care."),
+   ("What if the patient already shared their treatment in the review?", "You still cannot discuss it. The patient can share their own information, but that does not give your practice permission to repeat or add to it."),
+   ("Has any dental practice really been fined for a review reply?", "Yes. In 2022 a California practice, New Vision Dental, paid $23,000 to HHS after replies on Yelp included patient names, treatment and insurance details. A Dallas practice paid $10,000 in 2019 for a similar reply."),
+  ],
+ },
+ {
+  "slug": "guides/dental-seo-cost", "parent": "seo-for-dentists", "nav": "Dental SEO cost",
+  "title": "How Much Does Dental SEO Cost? Honest Pricing Guide | Business Santa",
+  "desc": "What dental SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
+  "h1": "How much does dental SEO cost?", "h1ac": "An honest answer",
+  "answer": "Dental SEO costs depend on how competitive your area is, how many locations and treatments you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your practice needs.",
+  "items": [
+   ("Your market", "A practice in a dense city area with dozens of dentists nearby needs more work than one in a small town."),
+   ("Locations and treatments", "Each office and each high-value treatment you want to rank for, like implants or Invisalign, needs its own page and proof."),
+   ("Where you start", "A complete profile and a fast website cost less to improve than a new profile and a slow, outdated site."),
+   ("What is included", "A fair package covers your Google Business Profile, website fixes, treatment pages, HIPAA-safe review requests and replies, listings and a monthly report you can check yourself."),
+   ("Red flag: guaranteed #1", "No one can guarantee a ranking. Google says so."),
+   ("Red flag: long lock-in contracts", "Good work keeps clients without a 12 month contract."),
+   ("Red flag: no access", "You should own your profile, website and reviews, and see every change."),
+  ],
+  "faq": [
+   ("Is dental SEO worth the money?", "For most practices, yes. A new patient often stays for years, and one implant or Invisalign case can cover months of SEO."),
+   ("Can we do dental SEO ourselves?", "Some of it. Our Google Business Profile guide for dentists covers the basics. Many practices do that part and hire help for the website and technical work."),
+   ("How long before dental SEO pays off?", "Profile fixes can help within weeks. Ranking for \"dentist near me\" across your area usually builds over three to six months."),
+  ],
+ },
+]
