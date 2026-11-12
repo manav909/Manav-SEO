@@ -12,7 +12,7 @@ def cut(s, a, b, inc=False):
     i = s.index(a); j = s.index(b, i); return s[i:j + (len(b) if inc else 0)]
 ld = cut(idx, '<script type="application/ld+json">', '</script>', True)
 flag = cut(idx, '<rect width="19" height="10" fill="#B22234"/>', '</svg>')
-waico = cut(idx, '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.04', '</svg>', True)
+waico = open(os.path.join(HERE, "wa-icon.svg")).read().strip()  # WhatsApp icon for the phone page
 types = cut(app, "const TYPES = {", "\n};", True)
 P = {
  "search": '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',

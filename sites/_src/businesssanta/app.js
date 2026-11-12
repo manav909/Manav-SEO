@@ -504,9 +504,9 @@ function check(errEl) {
   const d = details(); let m = "";
   if (!d.name) m = "Add your business name so we know who you are.";
   else if (!d.city) m = "Add your city and state, so we can check your local competition.";
-  errEl.textContent = m; if (m) { ckGo(!d.name ? 1 : 2); return null; } return d;
+  errEl.textContent = m; if (m) { ckGo(1); return null; } return d;
 }
-["#fName", "#fCity"].forEach(s => $(s).addEventListener("input", () => { $("#fErr").textContent = ""; $("#eErr").textContent = ""; }));
+["#fName", "#fCity"].forEach(s => $(s).addEventListener("input", () => { $("#fErr").textContent = ""; }));
 /* ---------- the free check: one friendly question at a time, while a little shop builds itself ---------- */
 const SHOP = { plumbing: ["🔧", "#2563eb"], restaurant: ["🍝", "#dc2626"], dental: ["🦷", "#0ea5e9"], roofing: ["🏠", "#ea580c"], salon: ["💇", "#db2777"], law: ["⚖️", "#4338ca"], store: ["🛍️", "#16a34a"], other: ["✨", "#f59e0b"] };
 const shop = $("#shop"), shopW = $(".shopw"), stps = $$(".stp"); let ck = 0;
@@ -527,20 +527,22 @@ function shopText() {
   sg.parentNode.classList.toggle("ph", !n);
   $$(".aiN").forEach(x => x.textContent = t);
   $("#mName").textContent = t;
-  shop.classList.toggle("has-city", !!c && ck > 2);
+  shop.classList.toggle("has-city", !!c);
   $("#mMeta").textContent = v.svc + (c ? " · " + c : "");
-  $("#mWeb").textContent = w ? w.replace(/^https?:\/\//, "") : ck > 4 ? "No website yet" : "Website: not added yet";
-  const g = goals(); GOALS.forEach(k => shop.classList.toggle("has-" + k, g.includes(k) || (k === "web" && !!w)));
+  $("#mWeb").textContent = w ? w.replace(/^https?:\/\//, "") : ck >= 2 ? "No website yet" : "Website: not added yet";
+  /* the last step lights up the whole shop: calls, map pin, reviews, ChatGPT */
+  const g = ck >= 2 ? ["calls", "maps", "rev", "ai"] : []; GOALS.forEach(k => shop.classList.toggle("has-" + k, g.includes(k) || (k === "web" && !!w)));
   shop.classList.toggle("fl1", g.length >= 2 && g.length < 4); shop.classList.toggle("fl2", g.length >= 4);
   $("#shWeb").textContent = w ? w.replace(/^https?:\/\//, "").replace(/\/$/, "") : "Your new website";
 }
 function ckGo(n, focus = true) {
-  ck = clamp(n, 0, 5);
+  ck = clamp(n, 0, 2);
   stps.forEach((st, i) => { st.classList.toggle("on", i === ck); st.classList.toggle("past", i < ck); st.inert = i !== ck; });
-  const pc = 4 + ck / 5 * 92; $("#ckBar").style.width = pc + "%"; $("#ckGift").style.left = pc + "%";
+  const pc = 4 + ck / 2 * 92; $("#ckBar").style.width = pc + "%"; $("#ckGift").style.left = pc + "%";
   $("#ckN").textContent = ck + 1; $("#ckBack").hidden = ck === 0;
-  for (let i = 1; i < 6; i++) shopW.classList.toggle("s" + i, ck >= i);
-  if (ck === 5) $("#ckSum").innerHTML = [[0, TYPES[T].l], [1, $("#fName").value.trim()], [2, $("#fCity").value.trim()], [3, goals().length ? goals().map(k => GL[k]).join(", ") : "Not sure yet"], [4, $("#fSite").value.trim() || "No website yet"]].map(([i, t]) => `<button type="button" data-e="${i}" aria-label="Change ${esc(t)}">${esc(t)}</button>`).join("");
+  const lvl = [0, 2, 5][ck]; for (let i = 1; i < 6; i++) shopW.classList.toggle("s" + i, i <= lvl);
+  shop.classList.toggle("open", ck >= 1); /* the sign flips to OPEN as soon as they start */
+  if (ck === 2) $("#ckSum").innerHTML = [[0, TYPES[T].l], [1, $("#fName").value.trim()], [1, $("#fCity").value.trim()], [1, $("#fSite").value.trim() || "No website yet"]].map(([i, t]) => `<button type="button" data-e="${i}" aria-label="Change ${esc(t)}">${esc(t)}</button>`).join("");
   shopText();
   if (focus) {
     const f = stps[ck].querySelector(ck === 0 ? "input:checked, input" : "input, .btn"); f && f.focus({ preventScroll: true });
@@ -550,53 +552,50 @@ function ckGo(n, focus = true) {
 function ckNext() {
   const st = stps[ck], er = st.querySelector(".serr");
   if (ck === 1 && !$("#fName").value.trim()) { er.textContent = "Add your business name. Even a nickname works."; $("#fName").focus(); return; }
-  if (ck === 2 && !$("#fCity").value.trim()) { er.textContent = "Add your city and state, like " + $("#fCity").placeholder + "."; $("#fCity").focus(); return; }
+  if (ck === 1 && !$("#fCity").value.trim()) { er.textContent = "Add your city and state, like " + $("#fCity").placeholder + "."; $("#fCity").focus(); return; }
   if (er) er.textContent = "";
-  if (ck === 1) { const sg = $(".sign"); sg.classList.remove("pop"); void sg.offsetWidth; sg.classList.add("pop"); }
-  if (ck === 1) trackC("CheckStep", { step: "name" }); if (ck === 2) trackC("CheckStep", { step: "city" });
+  if (ck === 1) { const sg = $(".sign"); sg.classList.remove("pop"); void sg.offsetWidth; sg.classList.add("pop"); trackC("CheckStep", { step: "details" }); }
   ckGo(ck + 1);
 }
 $$(".btl input").forEach(r => r.addEventListener("change", () => { setType(r.value); trackC("ChoseBusinessType", { type: TYPES[r.value].l, from: "form" }); setTimeout(() => { if (ck === 0) ckGo(1); }, 420); }));
 $$(".btl").forEach(t => t.addEventListener("click", () => { if (ck === 0 && t.querySelector("input").checked) setTimeout(() => { if (ck === 0) ckGo(1); }, 420); }));
 $$("[data-next]").forEach(b => b.addEventListener("click", ckNext));
-["#fName", "#fCity", "#fSite"].forEach(sl => { const el = $(sl); el.addEventListener("input", () => { const er = el.closest(".stp").querySelector(".serr"); if (er) er.textContent = ""; shopText(); }); el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); ckNext(); } }); });
-$("#noSite").addEventListener("click", () => { $("#fSite").value = ""; ckGo(5); });
-$$(".gch input").forEach(c => c.addEventListener("change", () => { shopText(); $("#glNext").textContent = goals().length ? "Grow my business" : "Not sure yet, skip"; if (c.checked) trackC("CheckGoal", { goal: c.value }); }));
+["#fName", "#fCity", "#fSite"].forEach(sl => { const el = $(sl); el.addEventListener("input", () => { const er = el.closest(".stp").querySelector(".serr"); if (er) er.textContent = ""; shopText(); }); el.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); if (sl === "#fName") $("#fCity").focus(); else if (sl === "#fCity") $("#fSite").focus(); else ckNext(); } }); });
 $("#ckBack").addEventListener("click", () => ckGo(ck - 1));
 $("#ckSum").addEventListener("click", e => { const b = e.target.closest("button"); if (b) ckGo(+b.dataset.e); });
-$("#citySug").addEventListener("click", () => { $("#fCity").value = $("#citySug").dataset.v; shopText(); ckNext(); });
+$("#citySug").addEventListener("click", () => { $("#fCity").value = $("#citySug").dataset.v; shopText(); $("#fSite").focus(); });
 function celebrate(how) {
   shop.classList.add("open");
   if (!RM) { const cf = $("#shCf"), C = ["#fdb913", "#ef4444", "#22c55e", "#3b82f6", "#ec4899", "#fff"]; cf.innerHTML = Array.from({ length: 34 }, (_, i) => `<i style="background:${C[i % 6]};--dx:${Math.round(Math.cos(i * 2.4) * (90 + (i * 37) % 160))}px;--dy:${Math.round(-60 - (i * 53) % 170 + ((i * 29) % 3) * 60)}px;--r:${(i * 97) % 720 - 360}deg;animation-delay:${(i % 6) * 40}ms"></i>`).join(""); }
-  $("#doneH").textContent = how === "wa" ? "You're open for business!" : "Got it, thank you!";
-  $("#doneP").textContent = how === "wa" ? "WhatsApp just opened with your details filled in. Tap send there, and Jyoti from our team will reply with your free check." : "Jyoti from our team will reach out soon with your free check.";
+  $("#doneH").textContent = "You're open for business!";
+  $("#doneP").textContent = "Got it, thank you. Jyoti from our team will email your free check soon. Keep an eye on your inbox.";
   $("#ckForm").style.display = "none"; $("#done").classList.add("on");
 }
 ckGo(0, false);
 new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); replay($("#shBld"), "pop"); replay($(".awn"), "unroll"); } }, { threshold: .5 }).observe(shop);
-$("#ckForm").addEventListener("submit", e => { e.preventDefault(); if (ck < 5) return ckNext(); const d = check($("#fErr")); if (!d) return; BST.lead({ content_name: "Free check (WhatsApp)", method: "WhatsApp", business_type: d.type }, { city: d.city }); window.open(wa(message(d)), "_blank", "noopener"); celebrate("wa"); });
-$("#barWa").addEventListener("click", e => { e.preventDefault(); track("Lead", { content_name: "WhatsApp bar", method: "WhatsApp" }); window.open(wa("Hi Business Santa! I'd like a free check of my business."), "_blank", "noopener"); });
-$("#altBtn").addEventListener("click", () => { $("#emBox").classList.add("on"); $("#altBtn").style.display = "none"; $("#eName").focus(); });
-$("#emSend").addEventListener("click", async () => {
-  const d = check($("#eErr")); if (!d) return;
+$("#ckForm").addEventListener("submit", async e => {
+  e.preventDefault(); if (ck < 2) return ckNext();
+  const er = $("#fErr"), d = check(er); if (!d) return;
   const name = $("#eName").value.trim(), mail = $("#eMail").value.trim(), phone = $("#ePhone").value.trim();
-  if (!name) { $("#eErr").textContent = "Add your name so we know who to reply to."; $("#eName").focus(); return; }
-  if (!/^\S+@\S+\.\S+$/.test(mail)) { $("#eErr").textContent = "Add an email address we can reply to, like name@yourbusiness.com."; $("#eMail").focus(); return; }
-  const btn = $("#emSend"); btn.disabled = true; btn.textContent = "Sending…";
+  if (!name) { er.textContent = "Add your name so we know who to reply to."; $("#eName").focus(); return; }
+  if (!/^\S+@\S+\.\S+$/.test(mail)) { er.textContent = "Add an email address we can reply to, like name@yourbusiness.com."; $("#eMail").focus(); return; }
+  er.textContent = "";
+  const btn = $("#ckSend"); btn.disabled = true; btn.textContent = "Sending…";
   try {
     const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(CONFIG.email), {
       method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, came_from: BST.sourceText(), wants: d.wants || "Not chosen", goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
+      body: JSON.stringify({ _subject: `Free check request: ${d.name} (${d.city})`, _template: "box", _captcha: "false", _replyto: mail, name, email: mail, phone: phone || "Not given", business_type: d.type, business_name: d.name, website: d.site || "No website yet", city: d.city, came_from: BST.sourceText(), goal: dream ? DREAMS[dream][2] : "Not chosen", page: location.href })
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
     BST.lead({ content_name: "Free check", method: "Email", business_type: d.type }, { email: mail, phone, name, city: d.city });
     celebrate("em");
   } catch (err) {
-    btn.disabled = false; btn.textContent = "Send my request";
-    $("#eErr").innerHTML = 'That didn\'t go through. Try again, or email us at <a href="mailto:' + CONFIG.email + '">' + CONFIG.email + "</a>.";
+    btn.disabled = false; btn.textContent = "Send my free check";
+    er.innerHTML = 'That didn\'t go through. Try again, or email us at <a href="mailto:' + CONFIG.email + '">' + CONFIG.email + "</a>.";
   }
 });
+$("#barMail").addEventListener("click", () => BST.contact("Email", "bar"));
 
 /* ---------- local */
 /* ---------- local to the visitor: their state and city, from Vercel's edge (approximate, never stored) ---------- */
