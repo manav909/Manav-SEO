@@ -127,8 +127,21 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
   var biz = "";
 
   /* Meta Pixel */
+  /* Matching IDs, created the moment the page opens (before Meta's script, which loads later for speed).
+     Same formats Meta's own script and parameter builder use, so the Pixel reuses them and the browser and
+     server copies of every event carry the same fbp, fbc and external_id. */
+  function gc(n) { var m = d.cookie.match(new RegExp("(?:^|; )" + n + "=([^;]*)")); return m ? decodeURIComponent(m[1]) : ""; }
+  function sc(n, v) { var dom = /businesssanta\.com$/.test(location.hostname) ? "; domain=.businesssanta.com" : ""; d.cookie = n + "=" + encodeURIComponent(v) + "; max-age=7776000; path=/; SameSite=Lax" + dom + (location.protocol === "https:" ? "; Secure" : ""); }
+  var now = Date.now();
+  var fbp = gc("_fbp"); if (!fbp) { fbp = "fb.1." + now + "." + Math.floor(1e9 + Math.random() * 9e9); sc("_fbp", fbp); }
+  var click = q.get("fbclid"), fbc = gc("_fbc"); if (click && fbc.split(".").slice(3).join(".") !== click) { fbc = "fb.1." + now + "." + click; sc("_fbc", fbc); }
+  var vid = gc("bs_vid"); if (!vid) { vid = now.toString(36) + Math.random().toString(36).slice(2, 12); } sc("bs_vid", vid);
+  /* after someone has sent the form once, their hashed email/phone ride along on later visits (hashes only, never raw) */
+  var known = {}; try { known = JSON.parse(localStorage.getItem("bs_m") || "{}") || {}; } catch (e) { }
+  function initData(extra) { var m = { external_id: vid }, k; for (k in known) m[k] = known[k]; for (k in extra || {}) m[k] = extra[k]; return m; }
+
   !function (f) { if (f.fbq) return; var n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); }; f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = []; }(w);
-  fbq("init", PX);
+  fbq("init", PX, initData());
   var on = false;
   function load() { if (on) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); }
   ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, load, { once: true, passive: true }); });
@@ -143,7 +156,8 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
   function capi(name, eid, data, user) {
     if (!SERVER[name]) return;
     try {
-      var body = JSON.stringify({ event: name, id: eid, url: location.href, data: data, user: user || null });
+      var u = {}, k; for (k in known) u[k] = known[k]; for (k in user || {}) u[k] = user[k];
+      var body = JSON.stringify({ event: name, id: eid, url: location.href, data: data, user: u, fbp: fbp, fbc: fbc || null, xid: vid });
       if (navigator.sendBeacon) navigator.sendBeacon("/api/capi", new Blob([body], { type: "application/json" }));
       else fetch("/api/capi", { method: "POST", body: body, keepalive: true, headers: { "Content-Type": "application/json" } });
     } catch (e) { }
@@ -207,8 +221,14 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
       if (user.city) m.ct = String(user.city).split(",")[0].trim().toLowerCase().replace(/[^a-z]/g, "");
       var st = String(user.city || "").split(",")[1]; if (st) m.st = st.trim().toLowerCase().replace(/[^a-z]/g, "").slice(0, 2);
       m.country = "us";
-      try { fbq("init", PX, m); } catch (e) { }
+      try { fbq("init", PX, initData(m)); } catch (e) { }
       std("Lead", data, m);
+      /* keep only SHA-256 hashes for later visits */
+      try {
+        var keys = ["em", "ph", "fn", "ct", "st"].filter(function (k) { return m[k]; }), out = { country: "us" };
+        Promise.all(keys.map(function (k) { return crypto.subtle.digest("SHA-256", new TextEncoder().encode(m[k])).then(function (b) { out[k] = Array.prototype.map.call(new Uint8Array(b), function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }); }))
+          .then(function () { known = out; localStorage.setItem("bs_m", JSON.stringify(out)); }).catch(function () { });
+      } catch (e) { }
     },
     formError: function (form, field) { custom("FormError", { form: form, field: field }); },
     source: function () { return mix({}); },

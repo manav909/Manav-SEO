@@ -72,11 +72,15 @@ export default async function handler(req) {
   const user = {
     client_ip_address: (h.get("x-forwarded-for") || "").split(",")[0].trim() || undefined,
     client_user_agent: h.get("user-agent") || undefined,
-    fbp: cookie(h, "_fbp"),
-    fbc: cookie(h, "_fbc") || (url.searchParams.get("fbclid") ? `fb.1.${Date.now()}.${url.searchParams.get("fbclid")}` : undefined),
+    fbp: cookie(h, "_fbp") || (typeof b.fbp === "string" && /^fb\.\d\.\d+\.\d+$/.test(b.fbp) ? b.fbp : undefined),
+    fbc: cookie(h, "_fbc") || (typeof b.fbc === "string" && /^fb\.\d\.\d+\..+/.test(b.fbc) ? b.fbc.slice(0, 500) : undefined)
+      || (url.searchParams.get("fbclid") ? `fb.1.${Date.now()}.${url.searchParams.get("fbclid")}` : undefined),
   };
+  const xid = cookie(h, "bs_vid") || (typeof b.xid === "string" ? b.xid.slice(0, 64) : "");
+  if (xid) user.external_id = [await sha256(xid)];
   const u = b.user || {};
-  for (const k of ["em", "ph", "fn", "ct", "st", "country"]) if (u[k]) user[k] = [await sha256(String(u[k]).trim().toLowerCase())];
+  const HEX = /^[a-f0-9]{64}$/;  /* values the browser already hashed (returning visitors) pass through as they are */
+  for (const k of ["em", "ph", "fn", "ct", "st", "country"]) if (u[k]) { const v = String(u[k]).trim().toLowerCase(); user[k] = [HEX.test(v) ? v : await sha256(v)]; }
 
   const custom = {};
   for (const [k, v] of Object.entries(b.data || {})) if (["string", "number"].includes(typeof v)) custom[k] = String(v).slice(0, 100);
