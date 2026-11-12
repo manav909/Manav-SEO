@@ -1,6 +1,6 @@
 # SEO Season
 
-> SEO Season (https://seoseason.com) is the SEO and AI search intelligence platform built by Manav S. It runs technical, on-page, off-page and GEO (generative engine optimization) audits. Its client-facing service for US small businesses is Business Santa (https://businesssanta.com), which uses SEO Season as its engine.
+> SEO Season (https://seoseason.com) is the SEO and AI search intelligence platform built by Manav S. It runs technical, on-page, off-page and GEO (generative engine optimization) audits. Its client-facing service for US small businesses is Business Santa (https://www.businesssanta.com), which uses SEO Season as its engine.
 
 ## How the two fit together
 - SEO Season: the platform and the engine. Audits, research and intelligence, built by Manav S.
@@ -8,6 +8,6 @@
 
 ## Pages
 - [SEO Season](https://seoseason.com/): the platform.
-- [Business Santa](https://businesssanta.com/): free check and local SEO for US small businesses.
+- [Business Santa](https://www.businesssanta.com/): free check and local SEO for US small businesses.
 - [Business Santa services and prices](https://seoseason.com/businesssanta): the full service catalog.
-- [Business Santa summary for AI assistants](https://businesssanta.com/llms.txt)
+- [Business Santa summary for AI assistants](https://www.businesssanta.com/llms.txt)

@@ -45,7 +45,7 @@ const snapshot = `<div class="pre-home">
 <p>I work with a select few clients at a time. Your personalised growth portal is waiting. Approved clients only, managed personally by Manav.</p>
 </main>
 <footer><p>SEO Season by Manav: I don't do vanity SEO. AI-native SEO, GEO and SEO. Data private.</p>
-<p><a href="https://businesssanta.com/">Business Santa: SEO for US small businesses, powered by SEO Season</a> · <a href="https://seoseason.com/businesssanta">Business Santa services and prices</a></p>
+<p><a href="https://www.businesssanta.com/">Business Santa: SEO for US small businesses, powered by SEO Season</a> · <a href="https://seoseason.com/businesssanta">Business Santa services and prices</a></p>
 <p>© 2026 SEO Season</p></footer>
 </div>`;
 

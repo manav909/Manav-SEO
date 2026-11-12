@@ -5,7 +5,7 @@ graph(faq, videos) returns the JSON-LD for one home page; run directly to rewrit
 The mobile page gets its own FAQ and its videos in m/assemble.py."""
 import json, re, os, html
 
-SITE = "https://businesssanta.com"
+SITE = "https://www.businesssanta.com"
 SS = "https://seoseason.com"
 TODAY = "2026-11-06"
 

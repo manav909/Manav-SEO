@@ -557,7 +557,7 @@ export default function Index() {
               </div>
             ))}
           </div>
-          <a href="https://businesssanta.com/" style={{fontSize:11,color:'rgba(253,185,19,0.8)',textDecoration:'none'}}>
+          <a href="https://www.businesssanta.com/" style={{fontSize:11,color:'rgba(253,185,19,0.8)',textDecoration:'none'}}>
             Business Santa: SEO for US small businesses, powered by SEO Season
           </a>
           <div style={{fontSize:10,color:'rgba(255,255,255,0.18)'}}>© 2026 SEO Season</div>

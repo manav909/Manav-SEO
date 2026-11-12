@@ -71,9 +71,9 @@ early = "(function(){try{var k=new URLSearchParams(location.search).get('type'),
 sys.path.insert(0, os.path.join(HERE, "..", "pages"))
 import home_ld
 _faq = home_ld.faqs_from(tpl)
-_vid = lambda vid, name, desc, poster, sec: {"@type": "VideoObject", "@id": f"https://businesssanta.com/#{vid}", "name": name, "description": desc,
-    "thumbnailUrl": f"https://businesssanta.com/assets/img/{poster}", "contentUrl": f"https://businesssanta.com/assets/video/{vid}.mp4",
-    "uploadDate": "2026-11-05T00:00:00+00:00", "duration": f"PT{sec}S", "inLanguage": "en-US", "publisher": {"@id": "https://businesssanta.com/#org"}}
+_vid = lambda vid, name, desc, poster, sec: {"@type": "VideoObject", "@id": f"https://www.businesssanta.com/#{vid}", "name": name, "description": desc,
+    "thumbnailUrl": f"https://www.businesssanta.com/assets/img/{poster}", "contentUrl": f"https://www.businesssanta.com/assets/video/{vid}.mp4",
+    "uploadDate": "2026-11-05T00:00:00+00:00", "duration": f"PT{sec}S", "inLanguage": "en-US", "publisher": {"@id": "https://www.businesssanta.com/#org"}}
 ld = home_ld.graph(_faq, videos=[
     _vid("bs-hero", "3 reasons customers pick someone else, and how Business Santa fixes them", "Why local customers choose another business: an empty Google listing, a website Google can't read, and AI assistants that have never heard of you. Business Santa fixes all three, and the first check is free.", "bs-hero-poster.webp", 17),
     _vid("bs-manav", "A message from Manav, founder of Business Santa", "Manav, founder of Business Santa: if you're serious about growing your business, message us. Let's talk about your goals, and we'll tell you honestly what it takes to get there.", "bs-manav-poster.webp", 8)],

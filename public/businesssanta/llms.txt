@@ -1,6 +1,6 @@
 # Business Santa
 
-> Business Santa (https://businesssanta.com) helps small businesses across the United States show up on Google search, Google Maps and AI assistants such as ChatGPT, Google AI Overviews, Gemini and Perplexity. It is the client-facing brand of SEO Season (https://seoseason.com), the SEO and AI search intelligence platform built by founder Manav S. A real team does the work: Jyoti (Client Success Lead), Manav S (founder; strategy and AI search), Sam (technical SEO) and Sakshi (content and on-page SEO).
+> Business Santa (https://www.businesssanta.com) helps small businesses across the United States show up on Google search, Google Maps and AI assistants such as ChatGPT, Google AI Overviews, Gemini and Perplexity. It is the client-facing brand of SEO Season (https://seoseason.com), the SEO and AI search intelligence platform built by founder Manav S. A real team does the work: Jyoti (Client Success Lead), Manav S (founder; strategy and AI search), Sam (technical SEO) and Sakshi (content and on-page SEO).
 
 ## Key facts
 - What it does: local SEO, Google Business Profile optimization, Google Maps ranking, technical SEO and Google Search Console fixes, on-page SEO, WordPress and Yoast SEO, Shopify SEO, monthly SEO, and AI search optimization (GEO and AEO).
@@ -14,16 +14,16 @@
 - Contact: seo@businesssanta.com, WhatsApp +91 70097 75189, Instagram https://www.instagram.com/businesssanta
 
 ## Pages
-- [Home and free check](https://businesssanta.com/): what Business Santa does, sample report, prices, team, reviews, FAQ.
-- [Local SEO services for small businesses](https://businesssanta.com/local-seo): what local SEO includes and costs.
-- [AI search optimization (GEO)](https://businesssanta.com/ai-search-optimization): how businesses get recommended by ChatGPT and AI search.
-- [SEO for plumbers](https://businesssanta.com/seo-for-plumbers)
-- [Dental SEO](https://businesssanta.com/seo-for-dentists)
-- [Roofing SEO](https://businesssanta.com/seo-for-roofers)
-- [Law firm SEO](https://businesssanta.com/seo-for-law-firms)
-- [Restaurant SEO](https://businesssanta.com/seo-for-restaurants)
-- [SEO for salons and spas](https://businesssanta.com/seo-for-salons-and-spas)
-- [SEO for retail stores](https://businesssanta.com/seo-for-retail-stores)
-- [Google Business Profile checklist](https://businesssanta.com/guides/google-business-profile-checklist): 15 steps to show up on Google Maps.
-- [Why isn't my business showing up on Google Maps?](https://businesssanta.com/guides/why-my-business-is-not-on-google-maps): 10 common reasons and fixes.
+- [Home and free check](https://www.businesssanta.com/): what Business Santa does, sample report, prices, team, reviews, FAQ.
+- [Local SEO services for small businesses](https://www.businesssanta.com/local-seo): what local SEO includes and costs.
+- [AI search optimization (GEO)](https://www.businesssanta.com/ai-search-optimization): how businesses get recommended by ChatGPT and AI search.
+- [SEO for plumbers](https://www.businesssanta.com/seo-for-plumbers)
+- [Dental SEO](https://www.businesssanta.com/seo-for-dentists)
+- [Roofing SEO](https://www.businesssanta.com/seo-for-roofers)
+- [Law firm SEO](https://www.businesssanta.com/seo-for-law-firms)
+- [Restaurant SEO](https://www.businesssanta.com/seo-for-restaurants)
+- [SEO for salons and spas](https://www.businesssanta.com/seo-for-salons-and-spas)
+- [SEO for retail stores](https://www.businesssanta.com/seo-for-retail-stores)
+- [Google Business Profile checklist](https://www.businesssanta.com/guides/google-business-profile-checklist): 15 steps to show up on Google Maps.
+- [Why isn't my business showing up on Google Maps?](https://www.businesssanta.com/guides/why-my-business-is-not-on-google-maps): 10 common reasons and fixes.
 - [All services and prices](https://seoseason.com/businesssanta): the full Business Santa catalog, hosted by SEO Season.

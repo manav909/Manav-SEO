@@ -32,4 +32,4 @@ Allow: /
 User-agent: DuckAssistBot
 Allow: /
 
-Sitemap: https://businesssanta.com/sitemap.xml
+Sitemap: https://www.businesssanta.com/sitemap.xml

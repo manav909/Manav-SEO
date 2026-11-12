@@ -111,7 +111,7 @@ const vRun = v => { if (!vOk) return; if (!v.src) v.src = v.dataset.src; v.play(
 const vio = new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? vRun(e.target) : e.target.pause()), { threshold: .5 });
 const vStart = () => { if (vOk) return; vOk = true; VIDS.forEach(v => { if (onScreen(v)) vRun(v); }); };
 VIDS.forEach(v => vio.observe(v));
-addEventListener("load", () => setTimeout(vStart, 900));
+addEventListener("load", () => setTimeout(vStart, 3000));
 ["scroll", "pointerdown", "touchstart"].forEach(e => addEventListener(e, vStart, { once: true, passive: true }));
 const sndSet = (b, on) => { b.classList.toggle("on", on); b.lastElementChild.textContent = on ? "Sound on" : b.dataset.t; };
 $$(".snd").forEach(b => {
@@ -132,7 +132,9 @@ const rsw = $("#rsw"), rtb = $$(".rtabs button");
 if (rsw && rtb.length) {
   rtb.forEach(b => b.addEventListener("click", () => { rsw.scrollTo({ left: +b.dataset.i * rsw.clientWidth, behavior: "smooth" }); trackC("SampleReportTab", { tab: b.textContent }); }));
   const pg = [...rsw.children], fit = i => { rsw.style.height = pg[i].offsetHeight + "px"; };
-  let ri = 0; addEventListener("load", () => fit(0)); new ResizeObserver(() => fit(ri)).observe(pg[0]);
+  let ri = 0;
+  /* size the report card only when it comes near the screen, so the page load does no extra layout work */
+  new IntersectionObserver((es, o) => { if (es[0].isIntersecting) { o.disconnect(); requestAnimationFrame(() => { fit(ri); new ResizeObserver(() => fit(ri)).observe(pg[0]); }); } }, { rootMargin: "600px 0px" }).observe(rsw);
   rsw.addEventListener("scroll", () => { const i = Math.round(rsw.scrollLeft / rsw.clientWidth); if (i !== ri) { ri = i; fit(i); rtb.forEach((b, k) => { b.classList.toggle("on", k === i); b.setAttribute("aria-pressed", k === i); }); rtb[i].parentNode.scrollTo({ left: rtb[i].offsetLeft - 12, behavior: "smooth" }); } }, { passive: true });
 }
 
@@ -142,5 +144,5 @@ if (rv && rvd) {
   const cards = [...rv.children]; rvd.innerHTML = cards.map(() => "<i></i>").join("");
   const dots = [...rvd.children]; let ci = -1;
   const mark = () => { const w = cards[0].offsetWidth + 12, i = Math.max(0, Math.min(cards.length - 1, Math.round(rv.scrollLeft / w))); if (i !== ci) { ci = i; dots.forEach((d, k) => d.classList.toggle("on", k === i)); } };
-  rv.addEventListener("scroll", mark, { passive: true }); mark();
+  rv.addEventListener("scroll", mark, { passive: true }); ci = 0; dots[0].classList.add("on");
 }

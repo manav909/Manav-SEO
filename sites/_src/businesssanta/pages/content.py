@@ -1,7 +1,7 @@
 """Content for the Business Santa SEO pages: one page per kind of business, the local SEO hub,
 the AI search page and the guides. Plain American English, no dashes as punctuation."""
 
-SITE = "https://businesssanta.com"
+SITE = "https://www.businesssanta.com"
 TODAY = "2026-11-06"
 
 GOOGLE_LOCAL = ("https://support.google.com/business/answer/7091", "Google Business Profile Help: How to improve your local ranking on Google")
