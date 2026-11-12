@@ -70,5 +70,17 @@
       ],
       "destination": "/m"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/m",
+      "destination": "/",
+      "permanent": true
+    },
+    {
+      "source": "/m.html",
+      "destination": "/",
+      "permanent": true
+    }
   ]
 }

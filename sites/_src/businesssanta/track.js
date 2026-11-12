@@ -34,7 +34,10 @@
   var on = false;
   function load() { if (on) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); }
   ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, load, { once: true, passive: true }); });
-  if (d.readyState === "complete") setTimeout(load, 1500); else addEventListener("load", function () { setTimeout(load, 1500); });
+  /* No touch or scroll yet: wait until the page is fully settled. The Conversions API already records the visit
+     from the server, so nothing is lost by keeping Meta's 100 KB script off the first seconds of the load. */
+  function later() { setTimeout(function () { (w.requestIdleCallback || setTimeout)(load, { timeout: 2000 }); }, 6000); }
+  if (d.readyState === "complete") later(); else addEventListener("load", later);
 
   function id() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function mix(data) { var o = {}, k; for (k in base) o[k] = base[k]; if (biz) o.business_type = biz; for (k in data || {}) o[k] = data[k]; return o; }

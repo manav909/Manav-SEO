@@ -63,7 +63,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:9;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);box-shadow:0 -6px 20px rgba(15,23,42,.08);transition:transform .25s}
 .bar .btn{flex:1}.bar .btn.wa{flex:none;padding:12px 16px}.bar.hide{transform:translateY(110%)}@media(min-width:900px){.bar{display:none}}
 body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
-.ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft nav{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px}.ft a{color:var(--mut)}
+.ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft .ftg{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1080px}.ft nav{display:flex;flex-direction:column;gap:7px}.ft nav b{font:800 .95rem var(--fh);color:var(--ink);margin-bottom:2px}.ft a{color:var(--mut);text-decoration:none}.ft a:hover{color:var(--ink);text-decoration:underline}.ft .ftc{max-width:1080px;margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}@media(max-width:760px){.ft .ftg{grid-template-columns:1fr 1fr;gap:26px 18px}}
 """
 
 JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "track.js")).read() + r"""
@@ -88,6 +88,46 @@ def page_links(cur):
     items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT")] + [(f"/{g['slug']}", g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]) for g in ALLG]
     return [(u, t) for u, t in items if u != "/" + cur]
 
+# Site-wide link lists. Footers on every page (inner pages, desktop home, mobile home) are built from these,
+# the same lists the sitemap uses, so a new page shows up everywhere on the next build.
+# Give a new page a short "nav" label in content.py; otherwise one is derived.
+_GNAV = {"guides/google-business-profile-checklist": "Google profile checklist",
+         "guides/why-my-business-is-not-on-google-maps": "Not on Google Maps?",
+         "guides/roofing-seo-keywords": "Roofing SEO keywords",
+         "guides/google-business-profile-for-roofers": "Google profile for roofers",
+         "guides/roofing-leads-after-a-storm": "Storm season leads",
+         "guides/roofing-seo-cost": "Roofing SEO cost"}
+def _ilabel(p): return p.get("nav") or {"retail stores and boutiques": "Retail stores"}.get(p["noun"], p["noun"]).capitalize()
+def _glabel(g): return g.get("nav") or _GNAV.get(g["slug"]) or g["h1"].rstrip(":?")
+IND_LINKS = [("/" + p["slug"], _ilabel(p)) for p in INDUSTRIES]
+GUIDE_LINKS = [("/" + g["slug"], _glabel(g)) for g in ALLG]
+SVC_LINKS = [("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT")]
+def _nav(label, links, cls=""):
+    return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
+
+FOOTER = ('<footer class="ft"><div class="w ftg">'
+    + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
+    + _nav("By industry", IND_LINKS) + _nav("Guides", GUIDE_LINKS)
+    + _nav("Company", [("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
+    + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
+
+# Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
+# its founder and the website, matching the full description on the home page (same @id values).
+import home_ld
+def _site_nodes():
+    keep = {"WebSite": None,
+            "Organization": ["@type", "@id", "name", "alternateName", "url", "logo", "image", "description", "email", "areaServed", "founder", "parentOrganization", "sameAs", "contactPoint"],
+            "Person": ["@type", "@id", "name", "jobTitle", "url", "worksFor", "description"]}
+    out = []
+    for n in home_ld.org():
+        t = n["@type"] if isinstance(n["@type"], str) else n["@type"][0]
+        if n["@id"] == f"{SITE}/#site": out.append(n)
+        elif n["@id"] == f"{SITE}/#org": out.append({k: n[k] for k in keep["Organization"] if k in n})
+        elif n["@id"] == f"{SITE}/#manav": out.append({k: n[k] for k in keep["Person"] if k in n})
+        elif n["@id"] == f"{home_ld.SS}/#org": out.append({k: n[k] for k in ("@type", "@id", "name", "url") if k in n})
+    return out
+SITE_NODES = _site_nodes()
+
 def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None):
     url = f"{SITE}/{slug}"
     par = next((i for i in INDUSTRIES if i["slug"] == parent), None)
@@ -99,7 +139,7 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
             {"@type": "ListItem", "position": 1, "name": "Business Santa", "item": SITE + "/"},
             *([{"@type": "ListItem", "position": 2, "name": par["h1"], "item": f"{SITE}/{par['slug']}"}] if par else []),
             {"@type": "ListItem", "position": 3 if par else 2, "name": crumb_name, "item": url}]},
-    ] + graph
+    ] + graph + SITE_NODES
     ld = json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False, separators=(",", ":"))
     rel = "".join(f'<li><a href="{u}">{E(t)}</a></li>' for u, t in page_links(slug))
     return f"""<!doctype html>
@@ -134,7 +174,7 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
 <section class="rel"><h2>More from Business Santa</h2><ul>{rel}</ul></section>
 </main>
 <div class="bar" id="bar"><a class="btn" href="#check">Get my free check</a><a class="btn wa" href="{WA}" rel="noopener" data-wa="bar" aria-label="Message us on WhatsApp">WhatsApp</a></div>
-<footer class="ft"><div class="w"><nav><a href="/">Home</a><a href="/local-seo">Local SEO</a><a href="/ai-search-optimization">AI search</a><a href="https://seoseason.com/businesssanta">Services and prices</a><a href="https://seoseason.com/">SEO Season</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states. <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></footer>
+{FOOTER}
 <script>{JS}</script>
 </body>
 </html>
@@ -355,3 +395,18 @@ open(os.path.join(OUT, "sitemap.xml"), "w").write(
     + "".join(f"  <sitemap><loc>{SITE}/{n}</loc><lastmod>{newest[n]}</lastmod></sitemap>\n" for n in groups) + "</sitemapindex>\n")
 json.dump(state, open(LM, "w"), indent=1, sort_keys=True)
 print("built", len(ind) + len(svc) + len(gds), "pages, sitemap index +", len(groups), "sitemaps")
+
+# Home page footers (desktop index.html and the mobile template) get the same link lists, between <!--FTNAV--> markers.
+def _patch(path, inner):
+    s = open(path).read()
+    n = re.sub(r"<!--FTNAV-->.*?<!--/FTNAV-->", lambda m: "<!--FTNAV-->" + inner + "<!--/FTNAV-->", s, count=1, flags=re.S)
+    assert "<!--FTNAV-->" in n, path
+    if n != s: open(path, "w").write(n)
+_HOME = os.path.normpath(os.path.join(OUT, "index.html"))
+_MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../m/m.tpl.html"))
+_patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
+       + '<a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
+       + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", GUIDE_LINKS))
+_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:1] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
+       + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in GUIDE_LINKS) + "</nav>")
+print("footers updated")
