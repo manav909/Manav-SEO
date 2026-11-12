@@ -3,7 +3,8 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES
+ALLG = GUIDES + ROOF_GUIDES
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
 E = html.escape
@@ -48,22 +49,59 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .by{display:flex;align-items:center;gap:14px;margin:40px 0 0;padding:16px;border-radius:18px;background:var(--soft)}.by img{border-radius:50%;flex:none}.by p{margin:2px 0 0;font-size:.92rem}
 .src{margin-top:10px;font-size:.88rem;color:var(--mut)}
 .rel{margin:48px 0 0}.rel ul{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}.rel a{display:inline-block;padding:8px 14px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 1px var(--line);text-decoration:none;font-size:.92rem}
+.proof{margin-top:18px}.proof .sum{display:flex;align-items:center;gap:12px;margin-bottom:12px}.proof .sum b{font:800 2.2rem var(--fh);color:var(--ink)}.proof .sum span{font-size:.92rem}.st{color:#f5a400;letter-spacing:2px}
+.rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
+.rv article{padding:16px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line)}.rv h3{margin:6px 0 0;font-size:1.02rem}.rv blockquote{margin:8px 0 10px;font-size:.95rem;color:var(--ink2)}.rv small{color:var(--mut);font-size:.82rem}
+.mid{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:40px 0 0;padding:18px 20px;border-radius:18px;background:#fff3c4}.mid p{margin:0;color:var(--ink);font-weight:700}
+.lead-f{margin:56px 0 0;padding:26px 20px;border-radius:24px;background:var(--navy);color:#cbd5e1}.lead-f h2{margin:0;color:#fff}.lead-f .ac{color:var(--y)}.lead-f>p{margin:10px 0 16px}
+.lead-f form{display:grid;grid-template-columns:1fr;gap:10px}@media(min-width:700px){.lead-f form{grid-template-columns:1fr 1fr}.lead-f .full{grid-column:1/-1}}
+.lead-f label{display:block;font-size:.85rem;color:#e2e8f0}.lead-f label small{color:#94a3b8}.lead-f input{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f)}
+.lead-f input.bad{border-color:#f87171}.lead-f .err{min-height:1px;color:#fca5a5;font-size:.9rem}.lead-f button{width:100%;border:0;cursor:pointer}.lead-f .or{margin:12px 0;text-align:center;color:#94a3b8;font-size:.85rem}
+.lead-f .done{display:none;padding:18px;border-radius:16px;background:#052e16;color:#bbf7d0}.lead-f .done.on{display:block}.lead-f .priv{margin:4px 0 0;font-size:.8rem;color:#94a3b8}.lead-f .priv a{color:#cbd5e1}
+.kw{margin-top:14px}.kw h3{margin:22px 0 0}
+.clu{margin:40px 0 0;padding:18px 20px;border-radius:18px;box-shadow:0 0 0 2px var(--y)}.clu h2{margin:0;font-size:1.35rem}.clu ul{margin:10px 0 0;padding-left:1.1em}.clu li{margin:6px 0}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:9;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);box-shadow:0 -6px 20px rgba(15,23,42,.08);transition:transform .25s}
+.bar .btn{flex:1}.bar .btn.wa{flex:none;padding:12px 16px}.bar.hide{transform:translateY(110%)}@media(min-width:900px){.bar{display:none}}
+body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
 .ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft nav{display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px}.ft a{color:var(--mut)}
 """
 
+JS = r"""(function(){var PX="28943176985310116",MAIL="seo@businesssanta.com";
+!function(f){if(f.fbq)return;var n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};f._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[]}(window);
+fbq("init",PX);fbq("track","PageView");var on=0;function px(){if(on)return;on=1;var t=document.createElement("script");t.async=1;t.src="https://connect.facebook.net/en_US/fbevents.js";document.head.appendChild(t)}
+["scroll","pointerdown","touchstart"].forEach(function(e){addEventListener(e,px,{once:true,passive:true})});addEventListener("load",function(){setTimeout(px,5000)});
+function tr(e,d){try{fbq("track",e,d||{})}catch(x){}}var page=location.pathname;
+document.querySelectorAll("[data-wa]").forEach(function(a){a.addEventListener("click",function(){tr("Lead",{content_name:"WhatsApp "+a.dataset.wa,method:"WhatsApp",page:page})})});
+document.querySelectorAll('a[href="#check"]').forEach(function(a){a.addEventListener("click",function(){try{fbq("trackCustom","FormIntent",{page:page})}catch(x){}})});
+var f=document.getElementById("lf"),er=document.getElementById("lfErr"),b=document.getElementById("lfB");if(!f)return;
+function v(id){return document.getElementById(id).value.trim()}function bad(id,m){var el=document.getElementById(id);el.classList.add("bad");el.focus();er.textContent=m;return false}
+f.addEventListener("input",function(e){e.target.classList.remove("bad");er.textContent=""});
+f.addEventListener("submit",function(e){e.preventDefault();er.textContent="";
+if(!v("lfN"))return bad("lfN","Add your business name so we know who you are.");if(!v("lfC"))return bad("lfC","Add your city and state, so we can check your local competition.");
+if(!v("lfW"))return bad("lfW","Add your name so we know who to reply to.");if(!/^\S+@\S+\.\S+$/.test(v("lfE")))return bad("lfE","Add an email we can send your check to.");
+b.disabled=true;b.textContent="Sending...";var t=f.dataset.type;
+fetch("https://formsubmit.co/ajax/"+encodeURIComponent(MAIL),{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({_subject:"Free check request: "+v("lfN")+" ("+v("lfC")+")",_template:"box",_captcha:"false",_replyto:v("lfE"),name:v("lfW"),email:v("lfE"),phone:v("lfP")||"Not given",business_type:t,business_name:v("lfN"),website:v("lfS")||"No website yet",city:v("lfC"),page:location.href})})
+.then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok||String(j.success)==="false")throw 0})})
+.then(function(){tr("Lead",{content_name:"Free check",method:"Email",business_type:t,page:page});f.style.display="none";document.getElementById("lfD").classList.add("on")})
+.catch(function(){b.disabled=false;b.textContent="Send me my free check";er.innerHTML='That didn\'t go through. Try again, or email us at <a href="mailto:'+MAIL+'">'+MAIL+"</a>."})});
+var bar=document.getElementById("bar"),ck=document.getElementById("check");if(bar&&ck&&"IntersectionObserver"in window)new IntersectionObserver(function(es){bar.classList.toggle("hide",es[0].isIntersecting)},{rootMargin:"0px 0px -10% 0px"}).observe(ck);
+})();"""
+
 def page_links(cur):
-    items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT")] + [(f"/{g['slug']}", g["h1"] + " " + g["h1ac"]) for g in GUIDES]
+    items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT")] + [(f"/{g['slug']}", g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]) for g in ALLG]
     return [(u, t) for u, t in items if u != "/" + cur]
 
-def shell(slug, title, desc, body, graph, crumb_name, og_type="website"):
+def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None):
     url = f"{SITE}/{slug}"
+    par = next((i for i in INDUSTRIES if i["slug"] == parent), None)
     graph = [
         {"@type": "WebPage", "@id": url + "#page", "url": url, "name": title, "description": desc, "inLanguage": "en-US",
          "isPartOf": {"@id": f"{SITE}/#site"}, "about": ORG, "dateModified": TODAY,
          "breadcrumb": {"@id": url + "#crumb"}},
         {"@type": "BreadcrumbList", "@id": url + "#crumb", "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "Business Santa", "item": SITE + "/"},
-            {"@type": "ListItem", "position": 2, "name": crumb_name, "item": url}]},
+            *([{"@type": "ListItem", "position": 2, "name": par["h1"], "item": f"{SITE}/{par['slug']}"}] if par else []),
+            {"@type": "ListItem", "position": 3 if par else 2, "name": crumb_name, "item": url}]},
     ] + graph
     ld = json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False, separators=(",", ":"))
     rel = "".join(f'<li><a href="{u}">{E(t)}</a></li>' for u, t in page_links(slug))
@@ -92,13 +130,15 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website"):
 <script type="application/ld+json">{ld}</script>
 </head>
 <body>
-<header class="hd"><div class="w"><a class="brand" href="/"><img src="/assets/img/logo-96.webp" alt="" width="36" height="36">Business <i>Santa</i></a><a class="btn dk" href="/#check">Free check</a></div></header>
+<header class="hd"><div class="w"><a class="brand" href="/"><img src="/assets/img/logo-96.webp" alt="" width="36" height="36">Business <i>Santa</i></a><a class="btn dk" href="#check">Free check</a></div></header>
 <main class="w">
-<nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › <span>{E(crumb_name)}</span></nav>
+<nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › {f'<a href="/{par["slug"]}">{E(par["h1"])}</a> › ' if par else ''}<span>{E(crumb_name)}</span></nav>
 {body}
 <section class="rel"><h2>More from Business Santa</h2><ul>{rel}</ul></section>
 </main>
+<div class="bar" id="bar"><a class="btn" href="#check">Get my free check</a><a class="btn wa" href="{WA}" rel="noopener" data-wa="bar" aria-label="Message us on WhatsApp">WhatsApp</a></div>
 <footer class="ft"><div class="w"><nav><a href="/">Home</a><a href="/local-seo">Local SEO</a><a href="/ai-search-optimization">AI search</a><a href="https://seoseason.com/businesssanta">Services and prices</a><a href="https://seoseason.com/">SEO Season</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states. <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div></footer>
+<script>{JS}</script>
 </body>
 </html>
 """
@@ -125,7 +165,30 @@ def price_html():
             '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div></div>'
             '<p class="src">Monthly SEO, AI search and full packages are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
 
+REV = [("Patient, plain-English help", "I\u2019m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.", "Technical SEO"),
+       ("Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website\u2026", "Technical SEO"),
+       ("Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package")]
+
+def proof_html(who):
+    cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating from 2,000+ projects over 10+ years</span></div><div class="rv">{cards}</div></div>'
+            f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
+
+def form_html(k, who):
+    return (f'<section class="lead-f" id="check"><h2>Get a free check for your <span class="ac">{E(who)}</span></h2>'
+            '<p>A real person on our team checks how you show up on Google, Google Maps and ChatGPT, and sends you a short plain-English report with your top 3 fixes. No card, no contract.</p>'
+            f'<form id="lf" novalidate data-type="{E(k)}"><label>Business name<input id="lfN" autocomplete="organization" required></label><label>City and state<input id="lfC" autocomplete="address-level2" placeholder="Austin, TX" required></label>'
+            '<label>Your name<input id="lfW" autocomplete="name" required></label><label>Email<input id="lfE" type="email" inputmode="email" autocomplete="email" required></label>'
+            '<label>Phone <small>(optional)</small><input id="lfP" type="tel" inputmode="tel" autocomplete="tel"></label><label>Website <small>(optional)</small><input id="lfS" inputmode="url" autocomplete="url"></label>'
+            '<div class="err full" id="lfErr" role="alert"></div><button class="btn full" type="submit" id="lfB">Send me my free check</button>'
+            '<p class="priv full">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p></form>'
+            '<div class="done" id="lfD" role="status"><b>Got it, thank you!</b> Jyoti from our team will reach out soon with your free check.</div>'
+            f'<div class="or">or</div><a class="btn wa" href="{WA}" rel="noopener" data-wa="form" style="width:100%">Message us on WhatsApp</a></section>')
+
 def cta(k, who):
+    return form_html(k, who)
+
+def _old_cta(k, who):
     return (f'<section class="cta"><h2>Get a free check for your <span class="ac">{E(who)}</span></h2>'
             '<p>A real person on our team checks how you show up on Google, Google Maps and ChatGPT, and sends you a short plain-English report with your top 3 fixes.</p>'
             f'<div class="row"><a class="btn" href="/?type={k}#check">Get my free check</a><a class="btn wa" href="{WA}" rel="noopener">WhatsApp us</a></div></section>')
@@ -139,6 +202,18 @@ def google_src():
     u, t = GOOGLE_LOCAL
     return f'<p class="src">Source: <a href="{u}" rel="noopener">{E(t)}</a>.</p>'
 
+def cluster_html(parent, cur=None):
+    gs = [g for g in ROOF_GUIDES if g["parent"] == parent and g["slug"] != cur]
+    if not gs: return ""
+    par = next(i for i in INDUSTRIES if i["slug"] == parent)
+    li = "".join(f'<li><a href="/{g["slug"]}">{E(g["title"].split(" | ")[0])}</a></li>' for g in gs)
+    back = f'<li><a href="/{parent}">{E(par["h1"])}: the full guide</a></li>' if cur else ""
+    return f'<section class="clu"><h2>{E(par["h1"])} guides</h2><ul>{back}{li}</ul></section>'
+
+def extra_html(p):
+    if p["slug"] != "seo-for-roofers": return ""
+    return "".join(f"<h2>{h}</h2>{b}" for h, b in ROOF_EXTRA) + cluster_html("seo-for-roofers")
+
 def build_industry(p):
     url = f"{SITE}/{p['slug']}"
     fixes = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in p["fixes"])
@@ -150,11 +225,13 @@ def build_industry(p):
 <ul class="qs">{''.join(f'<li>{E(q)}</li>' for q in p['searches'])}</ul>
 <h2>What we fix for <span class="ac">{E(p['noun'])}</span></h2>
 <div class="grid">{fixes}</div>
+{proof_html(p['biz'])}
 <h2>How Google picks the <span class="ac">top 3 on the map</span></h2>
 <p>Google ranks local results on three things: <b>relevance</b> (how well your profile matches the search), <b>distance</b> (how close you are to the person searching) and <b>prominence</b> (how well known and well reviewed you are). You cannot move your shop, so we work on relevance and prominence: a complete profile, pages that match each service, steady reviews and consistent listings.</p>
 {google_src()}
 <h2>Showing up in <span class="ac">ChatGPT and AI answers</span></h2>
 <p>{E(p['ai'])} <a href="/ai-search-optimization">How AI search optimization works</a>.</p>
+{extra_html(p)}
 <h2>How it <span class="ac">works</span></h2>
 <ol class="steps"><li><b>Tell us about your {E(p['biz'])}</b>A one minute form, or a WhatsApp message.</li><li><b>Get your free check</b>A real person checks Google, Google Maps, ChatGPT and your website, and sends you a short report with your top 3 fixes.</li><li><b>You decide</b>Do the fixes yourself, or have us do them. You approve every change, and you see the results in your own Google account.</li></ol>
 <h2>What it <span class="ac">costs</span></h2>
@@ -208,21 +285,25 @@ def build_ai(p):
 def build_guide(g):
     url = f"{SITE}/{g['slug']}"
     items = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in g["items"])
+    groups = "".join(f'<h3>{E(n)}</h3><ul class="qs">{"".join(f"<li>{E(q)}</li>" for q in qs)}</ul>' for n, qs in g.get("groups", []))
+    groups = f'<h2>The keywords, <span class="ac">by job</span></h2><div class="kw">{groups}</div><h2>How to <span class="ac">use them</span></h2>' if groups else ""
     body = f"""{h1(g['h1'], g['h1ac'])}
 <p class="ans">{E(g['answer'])}</p>
-<h2>The <span class="ac">list</span></h2>
+{groups}
+{"" if groups else '<h2>The <span class="ac">list</span></h2>'}
 <ol class="steps">{items}</ol>
 {google_src()}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(g['faq'])}
 {byline()}
-{cta('other', 'business')}"""
+{cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
+{cta('roofing' if g.get("parent") == "seo-for-roofers" else 'other', 'roofing company' if g.get("parent") == "seo-for-roofers" else 'business')}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": g["title"].split(" | ")[0], "description": g["desc"],
            "author": FOUNDER, "publisher": ORG, "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US",
            "mainEntityOfPage": {"@id": url + "#page"}, "image": f"{SITE}/assets/img/og.jpg"}
     graph = [art, faq_ld(url, g["faq"]),
              {"@type": "ItemList", "name": g["h1"] + " " + g["h1ac"], "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": t} for i, (t, d) in enumerate(g["items"])]}]
-    return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"] + " " + g["h1ac"], og_type="article")
+    return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"], og_type="article", parent=g.get("parent"))
 
 def write(slug, s):
     assert "—" not in s and "–" not in s, f"dash in {slug}"
@@ -233,7 +314,7 @@ pages = []
 for p in INDUSTRIES: write(p["slug"], build_industry(p)); pages.append((p["slug"], "0.8"))
 write(HUB["slug"], build_hub(HUB)); pages.append((HUB["slug"], "0.9"))
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); pages.append((AI_PAGE["slug"], "0.9"))
-for g in GUIDES: write(g["slug"], build_guide(g)); pages.append((g["slug"], "0.7"))
+for g in ALLG: write(g["slug"], build_guide(g)); pages.append((g["slug"], "0.7"))
 
 urls = [("", "1.0")] + pages + [("privacy", "0.2"), ("terms", "0.2")]
 sm = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "".join(

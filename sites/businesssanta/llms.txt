@@ -19,7 +19,11 @@
 - [AI search optimization (GEO)](https://www.businesssanta.com/ai-search-optimization): how businesses get recommended by ChatGPT and AI search.
 - [SEO for plumbers](https://www.businesssanta.com/seo-for-plumbers)
 - [Dental SEO](https://www.businesssanta.com/seo-for-dentists)
-- [Roofing SEO](https://www.businesssanta.com/seo-for-roofers)
+- [Roofing SEO services](https://www.businesssanta.com/seo-for-roofers): SEO and local SEO for roofers and roofing companies.
+  - [Roofing SEO keywords](https://www.businesssanta.com/guides/roofing-seo-keywords): the searches homeowners use, grouped by job.
+  - [Google Business Profile for roofers](https://www.businesssanta.com/guides/google-business-profile-for-roofers): how roofers rank in the Google Maps pack.
+  - [Storm season SEO for roofers](https://www.businesssanta.com/guides/roofing-leads-after-a-storm): getting the calls first after hail and wind storms.
+  - [How much does roofing SEO cost?](https://www.businesssanta.com/guides/roofing-seo-cost): what drives the price, fair packages, red flags.
 - [Law firm SEO](https://www.businesssanta.com/seo-for-law-firms)
 - [Restaurant SEO](https://www.businesssanta.com/seo-for-restaurants)
 - [SEO for salons and spas](https://www.businesssanta.com/seo-for-salons-and-spas)
