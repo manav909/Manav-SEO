@@ -307,14 +307,51 @@ def write(slug, s):
     f = os.path.join(OUT, slug + ".html"); os.makedirs(os.path.dirname(f), exist_ok=True)
     open(f, "w").write(s)
 
-pages = []
-for p in INDUSTRIES: write(p["slug"], build_industry(p)); pages.append((p["slug"], "0.8"))
-write(HUB["slug"], build_hub(HUB)); pages.append((HUB["slug"], "0.9"))
-write(AI_PAGE["slug"], build_ai(AI_PAGE)); pages.append((AI_PAGE["slug"], "0.9"))
-for g in ALLG: write(g["slug"], build_guide(g)); pages.append((g["slug"], "0.7"))
+ind, svc, gds = [], [], []
+for p in INDUSTRIES: write(p["slug"], build_industry(p)); ind.append(p["slug"])
+write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
+write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
+for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 
-urls = [("", "1.0")] + pages + [("privacy", "0.2"), ("terms", "0.2")]
-sm = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n' + "".join(
-    f'  <url><loc>{SITE}/{u}</loc><lastmod>{TODAY}</lastmod><priority>{pr}</priority></url>\n' for u, pr in urls) + "</urlset>\n"
-open(os.path.join(OUT, "sitemap.xml"), "w").write(sm)
-print("built", len(pages), "pages and sitemap.xml")
+# Sitemaps. /sitemap.xml is an index pointing to one sitemap per page group, so Search Console
+# reports indexing per group. Every page built above lands in its group automatically.
+# <lastmod> is the day a page's HTML last really changed (tracked by content hash in lastmod.json),
+# not the build day, so Google keeps trusting it.
+import hashlib, subprocess, datetime
+LM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lastmod.json")
+state = json.load(open(LM)) if os.path.exists(LM) else {}
+now = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
+
+def files_for(u):
+    return ["index.html", "m.html"] if u == "" else [u + ".html"]
+
+def lastmod(u):
+    fs = [os.path.join(OUT, f) for f in files_for(u) if os.path.exists(os.path.join(OUT, f))]
+    h = hashlib.sha1(b"".join(re.sub(rb'/assets/js/app\.[0-9a-f]+\.js', b'', open(f, "rb").read()) for f in fs)).hexdigest()
+    old = state.get(u)
+    if old and old[0] == h: return old[1]
+    d = now
+    if not old:  # first time we see this page: use its last commit date if it has one
+        try:
+            g = subprocess.run(["git", "log", "-1", "--format=%cs", "--"] + fs, cwd=OUT, capture_output=True, text=True).stdout.strip()
+            d = g or now
+        except Exception: pass
+    state[u] = [h, d]; return d
+
+groups = {
+    "sitemap-main.xml": [""] + svc + ["privacy", "terms"],
+    "sitemap-industries.xml": ind,
+    "sitemap-guides.xml": gds,
+}
+newest = {}
+for name, us in groups.items():
+    rows = [(u, lastmod(u)) for u in us]
+    newest[name] = max(d for _, d in rows)
+    open(os.path.join(OUT, name), "w").write(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        + "".join(f"  <url><loc>{SITE}/{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in rows) + "</urlset>\n")
+open(os.path.join(OUT, "sitemap.xml"), "w").write(
+    '<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + "".join(f"  <sitemap><loc>{SITE}/{n}</loc><lastmod>{newest[n]}</lastmod></sitemap>\n" for n in groups) + "</sitemapindex>\n")
+json.dump(state, open(LM, "w"), indent=1, sort_keys=True)
+print("built", len(ind) + len(svc) + len(gds), "pages, sitemap index +", len(groups), "sitemaps")
