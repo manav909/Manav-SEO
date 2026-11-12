@@ -353,8 +353,7 @@ write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 
-# Sitemaps. /sitemap.xml is an index pointing to one sitemap per page group, so Search Console
-# reports indexing per group. Every page built above lands in its group automatically.
+# Sitemap: every page built above is listed automatically.
 # <lastmod> is the day a page's HTML last really changed (tracked by content hash in lastmod.json),
 # not the build day, so Google keeps trusting it.
 import hashlib, subprocess, datetime
@@ -378,23 +377,16 @@ def lastmod(u):
         except Exception: pass
     state[u] = [h, d]; return d
 
-groups = {
-    "sitemap-main.xml": [""] + svc + ["privacy", "terms"],
-    "sitemap-industries.xml": ind,
-    "sitemap-guides.xml": gds,
-}
-newest = {}
-for name, us in groups.items():
-    rows = [(u, lastmod(u)) for u in us]
-    newest[name] = max(d for _, d in rows)
-    open(os.path.join(OUT, name), "w").write(
-        '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-        + "".join(f"  <url><loc>{SITE}/{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in rows) + "</urlset>\n")
+# One flat sitemap: Google reads every URL on the first fetch. (A sitemap index only pays off past thousands of URLs;
+# its child files wait in Search Console as "Couldn't fetch" until Google gets round to them.)
+rows = [(u, lastmod(u)) for u in [""] + svc + ind + gds + ["privacy", "terms"]]
 open(os.path.join(OUT, "sitemap.xml"), "w").write(
-    '<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-    + "".join(f"  <sitemap><loc>{SITE}/{n}</loc><lastmod>{newest[n]}</lastmod></sitemap>\n" for n in groups) + "</sitemapindex>\n")
+    '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + "".join(f"  <url><loc>{SITE}/{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in rows) + "</urlset>\n")
+for old in ("sitemap-main.xml", "sitemap-industries.xml", "sitemap-guides.xml"):
+    if os.path.exists(os.path.join(OUT, old)): os.remove(os.path.join(OUT, old))
 json.dump(state, open(LM, "w"), indent=1, sort_keys=True)
-print("built", len(ind) + len(svc) + len(gds), "pages, sitemap index +", len(groups), "sitemaps")
+print("built", len(ind) + len(svc) + len(gds), "pages and sitemap.xml with", len(rows), "URLs")
 
 # Home page footers (desktop index.html and the mobile template) get the same link lists, between <!--FTNAV--> markers.
 def _patch(path, inner):

@@ -1,6 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <sitemap><loc>https://www.businesssanta.com/sitemap-main.xml</loc><lastmod>2026-11-12</lastmod></sitemap>
-  <sitemap><loc>https://www.businesssanta.com/sitemap-industries.xml</loc><lastmod>2026-11-12</lastmod></sitemap>
-  <sitemap><loc>https://www.businesssanta.com/sitemap-guides.xml</loc><lastmod>2026-11-12</lastmod></sitemap>
-</sitemapindex>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://www.businesssanta.com/</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/local-seo</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/ai-search-optimization</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-plumbers</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-dentists</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-roofers</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-law-firms</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-restaurants</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-salons-and-spas</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/seo-for-retail-stores</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/google-business-profile-checklist</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/why-my-business-is-not-on-google-maps</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/roofing-seo-keywords</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/google-business-profile-for-roofers</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/roofing-leads-after-a-storm</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/guides/roofing-seo-cost</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/privacy</loc><lastmod>2026-11-12</lastmod></url>
+  <url><loc>https://www.businesssanta.com/terms</loc><lastmod>2026-11-12</lastmod></url>
+</urlset>
