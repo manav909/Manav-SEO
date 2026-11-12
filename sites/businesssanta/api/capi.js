@@ -30,6 +30,15 @@ export default async function handler(req) {
         });
         const j = await r.json().catch(() => ({}));
         out.meta_status = r.status; out.events_received = j.events_received; if (j.error) out.meta_error = j.error.message;
+        if (j.error) {
+          /* who the token belongs to, and whether it can see this Pixel at all */
+          const me = await fetch(`https://graph.facebook.com/v21.0/me?fields=id,name&access_token=${encodeURIComponent(token)}`).then(x => x.json()).catch(() => ({}));
+          out.token_owner = me.name || (me.error && me.error.message) || "unknown";
+          out.token_owner_id = me.id;
+          const px = await fetch(`https://graph.facebook.com/v21.0/${PIXEL}?fields=id,name&access_token=${encodeURIComponent(token)}`).then(x => x.json()).catch(() => ({}));
+          out.pixel_visible = px.id ? `yes (${px.name})` : (px.error && px.error.message) || "no";
+          out.token_length = token.length; out.token_has_spaces = /\s/.test(token);
+        }
       } catch (e) { out.meta_error = "could not reach Meta"; }
     }
     return new Response(JSON.stringify(out), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
