@@ -44,8 +44,13 @@
 
   !function (f) { if (f.fbq) return; var n = f.fbq = function () { n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments); }; f._fbq = n; n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = []; }(w);
   fbq("init", PX, initData());
+  /* Microsoft Clarity (recordings and heatmaps): queued now, loaded together with the Pixel. Inputs stay masked. */
+  var CLARITY = "zcivmbz7b4";
+  w.clarity = w.clarity || function () { (w.clarity.q = w.clarity.q || []).push(arguments); };
+  function cl() { try { w.clarity.apply(null, arguments); } catch (e) { } }
+  cl("set", "traffic", traffic); cl("set", "page_type", ptype);
   var on = false;
-  function load() { if (on) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); }
+  function load() { if (on) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); var c = d.createElement("script"); c.async = true; c.src = "https://www.clarity.ms/tag/" + CLARITY; d.head.appendChild(c); }
   ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, load, { once: true, passive: true }); });
   /* No touch or scroll yet: wait until the page is fully settled. The Conversions API already records the visit
      from the server, so nothing is lost by keeping Meta's 100 KB script off the first seconds of the load. */
@@ -64,8 +69,9 @@
       else fetch("/api/capi", { method: "POST", body: body, keepalive: true, headers: { "Content-Type": "application/json" } });
     } catch (e) { }
   }
-  function std(name, data, user) { var eid = id(), o = mix(data); try { fbq("track", name, o, { eventID: eid }); } catch (e) { } capi(name, eid, o, user); }
-  function custom(name, data) { try { fbq("trackCustom", name, mix(data)); } catch (e) { } }
+  function std(name, data, user) { var eid = id(), o = mix(data); try { fbq("track", name, o, { eventID: eid }); } catch (e) { } capi(name, eid, o, user); if (name !== "PageView") cl("event", name); if (name === "Lead") cl("upgrade", "lead"); /* keep every lead's recording */ }
+  var CL_SKIP = { ScrollDepth: 1, EngagedTime: 1, VideoProgress: 1 };
+  function custom(name, data) { try { fbq("trackCustom", name, mix(data)); } catch (e) { } if (!CL_SKIP[name]) cl("event", name); }
 
   std("PageView");
 
@@ -111,7 +117,7 @@
     /* a standard Meta event */
     std: std,
     /* the business type the visitor picked, added to every later event */
-    type: function (t) { biz = t || ""; },
+    type: function (t) { biz = t || ""; if (biz) cl("set", "business_type", biz); },
     /* a WhatsApp, email or phone tap */
     contact: function (method, where) { std("Contact", { method: method, content_name: where || method }); },
     /* the free check form was sent. user = { email, phone, name, city, state } for better matching (Meta hashes it) */
