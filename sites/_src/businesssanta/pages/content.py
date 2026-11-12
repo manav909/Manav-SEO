@@ -59,10 +59,10 @@ INDUSTRIES = [
  },
  {
   "slug": "seo-for-roofers", "k": "roofing", "noun": "roofers", "one": "roofer", "biz": "roofing company",
-  "title": "Roofing SEO Services for Roofers & Roofing Companies | Business Santa",
+  "title": "Roofing SEO Agency & Local SEO Services for Roofers | Business Santa",
   "desc": "Roofing SEO services and local SEO for roofing contractors in the US. Rank on Google Maps for \"roofer near me\", roof repair and storm damage searches. Free check.",
   "h1": "Roofing SEO services", "h1ac": "for roofers and roofing companies",
-  "answer": "Roofing SEO is the work that gets a roofing company into the top results when homeowners nearby search \"roofer near me\", \"roof leak repair\" or \"storm damage roof\". For most roofing contractors that means local SEO first: a strong Google Business Profile, a page for each service and town, reviews that name the work, and a website that turns a visit into an inspection request. One roofing job can be worth thousands of dollars, so a few extra leads a month pay for the work.",
+  "answer": "Roofing SEO is the work a roofing SEO agency does to get a roofing company into the top results when homeowners nearby search \"roofer near me\", \"roof leak repair\" or \"storm damage roof\". For most roofing contractors that means local SEO first: a strong Google Business Profile, a page for each service and town, reviews that name the work, and a website that turns a visit into an inspection request. One roofing job can be worth thousands of dollars, so a few extra leads a month pay for the work.",
   "intro": "Roofing searches jump after every storm. The roofers who show up first that week get the inspections, and the inspections become the big jobs. Being ready before the storm is the whole game.",
   "searches": ["roofer near me", "roof leak repair", "storm damage roof", "new roof cost", "roof inspection near me", "hail damage roof repair"],
   "fixes": [
@@ -79,6 +79,8 @@ INDUSTRIES = [
    ("Should we use Google Local Services Ads?", "They can work well for roofers and show above the map. SEO brings the free leads from the map and regular results. A strong profile and reviews help both."),
    ("We work in many towns. Can we show up in all of them?", "Yes, within reason. Google favors businesses close to the searcher, so we build pages and proof for each town you really serve, starting with the ones that matter most to you."),
    ("Do you write the website pages?", "Yes. We write and publish the pages, or hand them to your web person. You approve everything first."),
+   ("What does a roofing SEO agency actually do each month?", "Keeps your Google Business Profile active with job photos and posts, gets new reviews coming in, adds and improves service and town pages, fixes website problems, keeps your listings matching, and reports calls and rankings you can check in your own Google accounts."),
+   ("Do you handle listing management for roofers?", "Yes. We make your name, address, phone and services match on Google, Bing, Apple Maps, the BBB, Angi, Yelp and the other directories search engines and AI assistants read, and we fix duplicates."),
   ],
  },
  {
@@ -131,7 +133,7 @@ INDUSTRIES = [
  },
  {
   "slug": "seo-for-salons-and-spas", "k": "salon", "noun": "salons and spas", "one": "salon", "biz": "salon or spa",
-  "title": "Salon SEO: Get More Bookings From Google Maps | Business Santa",
+  "title": "Salon SEO for Hair & Nail Salons, Spas and Barbers | Business Santa",
   "desc": "SEO for hair salons, nail salons, barbershops and spas in the US. Show up for \"hair salon near me\" and \"walk in\" searches on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "SEO for salons and spas", "h1ac": "that fills your calendar",
   "answer": "Salon SEO means getting your salon, spa or barbershop into the top results when people nearby search \"hair salon near me\", \"haircut open now\" or \"nail salon walk in\". Most bookings start on Google Maps, so the work centers on your Google Business Profile, your booking link, photos of your work and reviews.",
@@ -503,6 +505,90 @@ DENT_GUIDES = [
    ("Is dental SEO worth the money?", "For most practices, yes. A new patient often stays for years, and one implant or Invisalign case can cover months of SEO."),
    ("Can we do dental SEO ourselves?", "Some of it. Our Google Business Profile guide for dentists covers the basics. Many practices do that part and hire help for the website and technical work."),
    ("How long before dental SEO pays off?", "Profile fixes can help within weeks. Ranking for \"dentist near me\" across your area usually builds over three to six months."),
+  ],
+ },
+]
+
+# ---------- Salon topic cluster: extra pillar sections and the guides that support it ----------
+SALON_EXTRA = [
+ ("Hair, nail, barber or spa: <span class=\"ac\">same playbook, different words</span>",
+  "<p>A nail salon, a barbershop, a hair salon and a day spa all get found the same way: a complete Google Business Profile, a booking button, fresh photos of real work and steady reviews. What changes is the words. Nail salon clients search \"gel manicure near me\" and \"nail salon walk in\". Barbershop clients search \"fade haircut near me\" and \"barber open Sunday\". Spa clients search \"couples massage\" and \"facial near me\". We build your profile and pages around the words your own clients use.</p>"),
+ ("Your booking link <span class=\"ac\">is your best salesperson</span>",
+  "<p>Most salon searches happen on a phone, often for today or this weekend. If the person can book in two taps, you get the appointment. Many salon booking systems, such as Vagaro, Booksy and Fresha, can add a Book button straight to your Google profile. We check that your link works, opens the right service and shows real open times, on Google, on your website and on Instagram.</p>"),
+ ("Choosing a salon SEO company: <span class=\"ac\">5 questions to ask</span>",
+  "<ol class=\"steps\"><li><b>Will I see every change?</b>A good salon SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, booking clicks and searches in your own Google Business Profile, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, photos and reviews should stay yours if you leave.</li><li><b>Who posts the photos?</b>Fresh photos of real work matter more for salons than almost anything. Ask who takes, approves and posts them each month.</li></ol>"),
+]
+
+SALON_GUIDES = [
+ {
+  "slug": "guides/salon-seo-keywords", "parent": "seo-for-salons-and-spas", "nav": "Salon SEO keywords",
+  "title": "Salon SEO Keywords: What Hair, Nail & Spa Clients Search | Business Santa",
+  "desc": "The salon SEO keywords clients actually type, grouped for hair salons, nail salons, barbershops and spas, plus how to turn them into pages and Google profile services.",
+  "h1": "Salon SEO keywords:", "h1ac": "what clients really search",
+  "answer": "The best salon SEO keywords are the ones clients type when they want to book: \"hair salon near me\", \"nail salon walk in\", \"barber open now\", \"balayage near me\" and \"massage near me\", plus the same searches with your town's name. Group them by service, give each group its own page, and use the client's words in your titles, headings and Google Business Profile services.",
+  "groups": [
+   ("Ready to book", ["hair salon near me", "salon open now", "best hair salon in [town]", "walk in hair salon", "salon open Sunday", "book haircut today", "hair salon near me open late", "salons that take walk ins"]),
+   ("Color and styling", ["balayage near me", "highlights near me", "hair color salon", "blonde specialist", "keratin treatment near me", "hair extensions near me", "curly hair salon", "bridal hair near me"]),
+   ("Nails", ["nail salon near me", "nail salon walk in", "gel manicure near me", "acrylic nails near me", "pedicure near me", "dip powder nails", "nail art near me", "nail salon open now"]),
+   ("Barbershop", ["barber near me", "barbershop open now", "fade haircut near me", "beard trim near me", "barber open Sunday", "kids haircut near me", "walk in barber", "best barber in [town]"]),
+   ("Spa and massage", ["massage near me", "couples massage", "facial near me", "day spa near me", "spa gift card", "deep tissue massage", "spa packages", "waxing near me"]),
+   ("Price and value", ["haircut prices near me", "cheap haircut near me", "how much is balayage", "nail salon prices", "massage deals near me", "salon first visit discount", "spa membership", "gift cards near me"]),
+  ],
+  "items": [
+   ("One page per service group", "Color, cuts, nails, barbering, spa. Each page shows real photos, prices or price ranges, and a booking button."),
+   ("Match your Google profile services", "List the same services on your Google Business Profile, with prices, in the words clients use."),
+   ("Use the words in titles and headings", "\"Balayage and blonde color in Scottsdale\" beats \"Our services\"."),
+   ("Say if you take walk ins", "\"Walk in\" and \"open now\" are some of the busiest salon searches. Say it clearly on your profile and website, and keep hours exact."),
+   ("Name your stylists", "A page or section for each stylist, with their specialties and their own work, helps people who search for a style choose you."),
+  ],
+  "faq": [
+   ("What is the most important salon keyword?", "Usually \"hair salon near me\", \"nail salon near me\" or \"barber near me\". They show up on Google Maps, so they depend mostly on your Google Business Profile, reviews and how close you are."),
+   ("Should a nail salon and a hair salon use the same keywords?", "No. The approach is the same, but the words are different. Build your pages around the services you really offer."),
+   ("Do we need a page for every keyword?", "No. One page per service group is enough. Similar searches like \"gel manicure\" and \"gel nails near me\" belong on the same page."),
+  ],
+ },
+ {
+  "slug": "guides/google-business-profile-for-salons", "parent": "seo-for-salons-and-spas", "nav": "Google profile for salons",
+  "title": "Google Business Profile for Salons, Nail Salons & Spas | Business Santa",
+  "desc": "How hair salons, nail salons, barbershops and spas set up a Google Business Profile that ranks on Google Maps and gets bookings: categories, services, Book button, photos, reviews.",
+  "h1": "Google Business Profile for salons:", "h1ac": "get booked from Maps",
+  "answer": "To rank a salon on Google Maps, choose the most accurate primary category (Hair salon, Nail salon, Barber shop, Day spa), list every service with prices, connect a Book button through your booking software, add fresh photos of real work every month, get steady reviews that mention the service, and keep hours and walk-in details exact. Google ranks map results on relevance, distance and prominence, and these steps improve the two you control.",
+  "items": [
+   ("Pick the right primary category", "Hair salon, Nail salon, Barber shop, Beauty salon, Day spa or Massage spa. Choose what most of your income comes from, and add secondary categories only for services you really offer."),
+   ("List every service with prices", "Cuts, color, balayage, extensions, gel nails, pedicures, fades, facials, massage. Add a price or a \"from\" price when you can."),
+   ("Connect a Book button", "Many booking systems, such as Vagaro, Booksy and Fresha, can link to Google so people book without leaving Maps."),
+   ("Post real work every month", "Fresh photos of cuts, color, nails and the space. Before and after shots work well, with the client's permission."),
+   ("Show your team", "Photos of your stylists or technicians help people feel they know you before they walk in."),
+   ("Say if you take walk ins", "Mention walk ins in your description if you take them, and keep hours exact, including holidays."),
+   ("Ask every client for a review", "A text link after the visit. Reviews that mention the stylist and the service help you show up for those searches."),
+   ("Reply to every review", "Short, warm, and by name. Handle a bad review calmly and invite the person to call."),
+   ("Never add keywords to your name", "\"Luna Hair Studio\" not \"Luna Hair Studio Best Balayage Austin\". Keyword stuffing breaks Google's rules and can get the profile suspended."),
+   ("Suite renters need their own profile", "If you rent a suite and run your own business, you can have your own profile at that address. Make sure it does not copy the salon's details."),
+  ],
+  "faq": [
+   ("What category should a nail salon use on Google?", "Nail salon as the primary category. Add secondary categories like Waxing hair removal service only if you really offer them."),
+   ("Can I get a Book button on my Google profile?", "Yes, if your booking software is connected to Google. Check your booking system's settings, or add your booking link as the appointment link."),
+   ("How often should a salon post photos?", "Every month at least. Fresh photos of real work show Google and clients that you are active and good at what you do."),
+  ],
+ },
+ {
+  "slug": "guides/how-salons-get-found-on-ai-search", "parent": "seo-for-salons-and-spas", "nav": "Salons on ChatGPT and AI search",
+  "title": "How Salons and Spas Get Found on ChatGPT and AI Search | Business Santa",
+  "desc": "How hair salons, nail salons, barbershops and spas get recommended by ChatGPT, Google AI Overviews and other AI assistants, and the simple steps that help.",
+  "h1": "How salons and spas get found", "h1ac": "on ChatGPT and AI search",
+  "answer": "AI assistants like ChatGPT and Google's AI Overviews recommend salons using what is written about them across the web: Google and Bing listings, Yelp and booking sites, reviews, local articles and the salon's own website. A salon gets named when those places describe it clearly and the same way: what services it offers, where it is, what it costs, and what clients say. There is no separate trick for AI. It rewards the same clear, consistent information that local SEO builds.",
+  "items": [
+   ("Say plainly what you do", "\"Curly hair specialists in Austin, open Sundays\" is something an AI assistant can repeat. \"Where beauty meets passion\" is not."),
+   ("Be on the listings AI reads", "Google, Bing, Apple Maps and Yelp, plus the booking sites your clients use. Bing matters more than most salons think, because some AI assistants draw on it."),
+   ("Keep details the same everywhere", "Same name, address, phone, hours and services on every listing. Mismatches make AI less sure about you."),
+   ("Get reviews that describe the work", "\"Best balayage I have had, and Maria explained everything\" gives AI something specific to say about you."),
+   ("Answer the questions clients ask", "Prices, walk ins, parking, how long a service takes, and who each stylist is best for. Put the answers on your website in plain words."),
+   ("Get mentioned locally", "A local news piece, a \"best salons in town\" list or a wedding blog feature gives AI another trusted source that names you."),
+  ],
+  "faq": [
+   ("Can I pay to be recommended by ChatGPT?", "No. AI assistants build their answers from what is published about you. The way in is clear listings, reviews and mentions."),
+   ("Do I need a website for AI search?", "It helps a lot. Your website is the one place you control completely, and AI assistants read it to understand your services and prices."),
+   ("How do I check if AI recommends my salon?", "Ask ChatGPT, Google and Bing something like \"best nail salon in [your town]\" and see who is named. Our free check includes this."),
   ],
  },
 ]

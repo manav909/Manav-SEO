@@ -3,10 +3,10 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
-CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES
-EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA}
+CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES
+EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA}
 ALLG = GUIDES + CLUSTER_GUIDES
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
