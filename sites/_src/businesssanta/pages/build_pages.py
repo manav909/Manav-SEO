@@ -3,10 +3,10 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
-CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES
-EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA}
+CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
+EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
 ALLG = GUIDES + CLUSTER_GUIDES
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
@@ -251,8 +251,7 @@ def cluster_html(parent, cur=None):
     return f'<section class="clu"><h2>{E(par["h1"])} guides</h2><ul>{back}{li}</ul></section>'
 
 def extra_html(p):
-    if p["slug"] not in EXTRAS: return ""
-    return "".join(f"<h2>{h}</h2>{b}" for h, b in EXTRAS[p["slug"]]) + cluster_html(p["slug"])
+    return "".join(f"<h2>{h}</h2>{b}" for h, b in EXTRAS.get(p["slug"], [])) + cluster_html(p["slug"])
 
 def build_industry(p):
     url = f"{SITE}/{p['slug']}"

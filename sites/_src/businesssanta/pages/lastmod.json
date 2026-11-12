@@ -1,66 +1,90 @@
 {
  "": [
-  "3296da8fbf1a597ab80a8c178abb5c9d1125ef1c",
+  "faf776adfba2646e728918167c5d5f9aa9447c07",
   "2026-11-12"
  ],
  "ai-search-optimization": [
-  "3c8b89fea2634f8b32c100a5ee5c28f7153dead0",
+  "5283e61ab7804a299b83064022d65600b7b1c959",
   "2026-11-12"
  ],
  "guides/dental-reviews-hipaa": [
-  "d3002bbfd7451aa9d65a1b43db769f62470065fc",
+  "4f06a828fead5555547af4017b9e101679422d0a",
   "2026-11-12"
  ],
  "guides/dental-seo-cost": [
-  "81e7220bd9e8b2f0f83feb5f468c3ef0939ee674",
+  "fb5043bb41d0f5f9c84b5065f6075fbd23f82541",
   "2026-11-12"
  ],
  "guides/dental-seo-keywords": [
-  "706a1002c847991f499ce27e2eacca1c6c65e457",
+  "2906820f069718f9cd06e3b75c87fd078959571e",
+  "2026-11-12"
+ ],
+ "guides/emergency-plumber-seo": [
+  "7e7069bcaa5be64799f5b49c1a3a6ade9fbb8f71",
   "2026-11-12"
  ],
  "guides/google-business-profile-checklist": [
-  "fc2b371bf1d4ac9edf8a03432617294d5bbf1632",
+  "a448f6fb3ce7eca333cf9ce49b5309cd4934fb52",
   "2026-11-12"
  ],
  "guides/google-business-profile-for-dentists": [
-  "35ee58647de805ac158a0f22879d42988fd40839",
+  "93ba18cd08919b6e7d7a3238702c6bbfd07865a2",
   "2026-11-12"
  ],
  "guides/google-business-profile-for-roofers": [
-  "cb0b371a000ec8de0930af9c783bda52eb853819",
+  "1dab731be7fad8792e55d09299c9960d4bf9cd8b",
   "2026-11-12"
  ],
  "guides/google-business-profile-for-salons": [
-  "88a3f737ee2b358a080ff0e2c694b2c4bb2bd7c6",
+  "1a228ba4c7c7550c2542b6e776c0e5452b77e9af",
+  "2026-11-12"
+ ],
+ "guides/google-maps-for-restaurants-and-caterers": [
+  "b30ac722fd272df07d20e26c15cb7672cd67465d",
+  "2026-11-12"
+ ],
+ "guides/google-maps-seo-for-plumbers": [
+  "d9d9136ddf1fac5d352533dcf1c928db6025f6f5",
   "2026-11-12"
  ],
  "guides/how-salons-get-found-on-ai-search": [
-  "bde15ff20470384a97899a2eacaa419bca4dc85c",
+  "580a76f74cc02479436c536c5bba08d88bdbcd84",
+  "2026-11-12"
+ ],
+ "guides/local-store-pages": [
+  "50c4b4c05176d9adf6e2f5fbf6eca33a83f293b9",
+  "2026-11-12"
+ ],
+ "guides/plumbing-seo-cost": [
+  "fb60e5955b3f77ee300701f2d915b623c6790911",
+  "2026-11-12"
+ ],
+ "guides/plumbing-seo-keywords": [
+  "bae59d2605fdf657a11fac91f3723e4786cdfd38",
   "2026-11-12"
  ],
  "guides/roofing-leads-after-a-storm": [
-  "d8ad35790672c7d3311f14b66bca710989b687e2",
+  "1d6c7d0223b18d72c7848ce94bf4dff50451865e",
   "2026-11-12"
  ],
  "guides/roofing-seo-cost": [
-  "9fb1de2c5488a1e14401f4eed3ab250dfb8fb5b5",
+  "ea5f299598f9c75420c5815d8449ca3c559bc35f",
   "2026-11-12"
  ],
  "guides/roofing-seo-keywords": [
-  "1a6597b07b6658812afd7f38ffe2b381996dc3fb",
+  "7b1d010b5e75c85e30c6cb5d4e65a7b126e4301b",
   "2026-11-12"
  ],
  "guides/salon-seo-keywords": [
-  "6b169ce5245e5cfb4d5e8b799af0616c82a5e445",
+  "9eae8a5df88dda5ec6cfdcc77192f538be171dda",
   "2026-11-12"
  ],
  "guides/why-my-business-is-not-on-google-maps": [
-  "7f40acf1041bc767c950300157cb21ce43187791",
+  "a145654db0db5f3ec331a292ed81e03176c076d3",
   "2026-11-12"
  ],
  "local-seo": [
-  "82ef29883d1e7226cdb61b90276522db6b019ce3",
+  "d85548081fb185833a882d2e7b99f8ff98e54432",
   "2026-11-12"
  ],
  "privacy": [
@@ -68,31 +92,31 @@
   "2026-11-12"
  ],
  "seo-for-dentists": [
-  "e1e057a7f5b6607b32781bd1f28dc5d24f0a7574",
+  "339ac380c33c15f567c2b825bcba292beaa04d87",
   "2026-11-12"
  ],
  "seo-for-law-firms": [
-  "ef1b88811b6a4120ac59b64a3e59d3e9a33b8bc6",
+  "041e715ccbf3bb464a8ee5ca7178debbee63f7ff",
   "2026-11-12"
  ],
  "seo-for-plumbers": [
-  "c263f07d803d9ad6158327bf3409e42135d99b2a",
+  "4933dc7449d3d8c0bb1d56842c71598f00eb8df7",
   "2026-11-12"
  ],
  "seo-for-restaurants": [
-  "0490f91b423efd9df7a71fd5961b63fdf8e57f11",
+  "4f3620249650517470e64490b52bcbc13a7af643",
   "2026-11-12"
  ],
  "seo-for-retail-stores": [
-  "cf08c2a73ea78d5506e2493b730fb5e2c2ed54fd",
+  "4474a25d04393dbd8bed44317e9d3c042d8d2c9a",
   "2026-11-12"
  ],
  "seo-for-roofers": [
-  "4836284671e74c9e9f1e84f8c2b0bb4a3beb0563",
+  "e458cae31394b24043928665ed0cfead9c62b075",
   "2026-11-12"
  ],
  "seo-for-salons-and-spas": [
-  "b99da8687661bdeb93a31df384f5c3cf080a8ead",
+  "126787d57c3ec124ece624de5a813f7ecf8381d2",
   "2026-11-12"
  ],
  "terms": [

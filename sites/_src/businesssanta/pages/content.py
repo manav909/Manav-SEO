@@ -592,3 +592,159 @@ SALON_GUIDES = [
   ],
  },
 ]
+
+# ---------- Plumbing topic cluster: extra pillar sections and the guides that support it ----------
+PLUMB_EXTRA = [
+ ("Night and weekend calls: <span class=\"ac\">where plumbers win or lose</span>",
+  "<p>A burst pipe at 11pm is the most valuable call a plumber gets, and the homeowner calls whoever looks open right now. If you take emergency calls, your Google Business Profile hours, your website and your listings must all say so, and someone must answer. If you do not, say that clearly too, so you do not collect angry reviews from people who could not reach you.</p>"),
+ ("Local Services Ads or SEO: <span class=\"ac\">which first?</span>",
+  "<p>Google Local Services Ads put a Google Guaranteed badge above everything else, and you pay per lead. SEO brings the free calls from the map and the regular results, and keeps working when you stop paying. Most plumbing companies do best with both. A strong Google Business Profile and steady reviews help your ads and your free rankings at the same time.</p>"),
+ ("Choosing a plumbing SEO company: <span class=\"ac\">5 questions to ask</span>",
+  "<ol class=\"steps\"><li><b>Will I see every change?</b>A good plumbing SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, direction requests and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>How do you handle emergency searches?</b>Ask how they show you as open for \"emergency plumber\" searches at night, and how they keep that honest.</li></ol>"),
+]
+
+PLUMB_GUIDES = [
+ {
+  "slug": "guides/plumbing-seo-keywords", "parent": "seo-for-plumbers", "nav": "Plumbing SEO keywords",
+  "title": "Plumbing SEO Keywords: 50+ Searches Homeowners Use | Business Santa",
+  "desc": "The plumbing SEO keywords homeowners actually type, grouped by job: emergencies, drains, water heaters, leaks, sewer lines and remodels. Plus how to turn them into pages.",
+  "h1": "Plumbing SEO keywords:", "h1ac": "what homeowners really search",
+  "answer": "The best plumbing SEO keywords are the ones homeowners type when they need help now: \"plumber near me\", \"emergency plumber\", \"water heater repair\", \"drain cleaning near me\" and \"leak detection\", plus the same searches with your town's name. Group them by the job they describe, give each group its own page, and use the homeowner's words in your titles, headings and Google Business Profile services.",
+  "groups": [
+   ("Ready to hire", ["plumber near me", "plumbing company near me", "best plumber in [town]", "licensed plumber [town]", "local plumbers", "plumber free estimate", "residential plumber", "plumbing contractor near me"]),
+   ("Emergencies", ["emergency plumber", "24 hour plumber", "plumber open now", "burst pipe repair", "emergency plumber near me", "weekend plumber", "frozen pipe repair", "same day plumber"]),
+   ("Drains and sewer", ["drain cleaning near me", "clogged drain", "sewer line repair", "main line clog", "hydro jetting", "sewer camera inspection", "toilet clog won't clear", "septic line repair"]),
+   ("Water heaters", ["water heater repair", "water heater installation", "tankless water heater", "no hot water", "water heater replacement cost", "water heater leaking", "gas water heater repair", "electric water heater installation"]),
+   ("Leaks and pipes", ["leak detection", "slab leak repair", "water leak under sink", "repiping", "pipe repair near me", "low water pressure", "PEX repiping", "water line repair"]),
+   ("Fixtures and remodels", ["toilet repair", "faucet installation", "garbage disposal repair", "shower valve replacement", "bathroom remodel plumbing", "sump pump installation", "water softener installation", "backflow testing"]),
+  ],
+  "items": [
+   ("One page per job group", "Emergencies, drains, water heaters, leaks, sewer lines. Each page answers what homeowners ask before they call: how fast, how much and what happens next."),
+   ("One page per town you really serve", "Real jobs, photos and reviews from that town. Pages that only swap the town name do not help."),
+   ("Match your Google Business Profile services", "List the same services on your profile, in the words homeowners use."),
+   ("Use the words in titles and headings", "\"24 hour emergency plumber in Mesa\" beats \"Quality plumbing solutions\"."),
+   ("Answer the cost questions", "Homeowners search for prices. Give honest ranges or what changes the price, even if you quote each job."),
+  ],
+  "faq": [
+   ("What is the most important plumbing keyword?", "Usually \"plumber near me\" and \"emergency plumber\". They show up on Google Maps, so they depend mostly on your Google Business Profile, your hours, your reviews and how close you are."),
+   ("Should a small plumbing company target water heaters and sewer work separately?", "Yes, if you do both. People search for the job, not the trade, so each big job type needs its own page."),
+   ("Do I need a separate page for each keyword?", "No. One page per job group or town is enough. Similar searches like \"clogged drain\" and \"drain cleaning\" belong on the same page."),
+  ],
+ },
+ {
+  "slug": "guides/google-maps-seo-for-plumbers", "parent": "seo-for-plumbers", "nav": "Google Maps SEO for plumbers",
+  "title": "Google Maps SEO for Plumbers: Get Into the Map Pack | Business Santa",
+  "desc": "How plumbing companies rank on Google Maps: Google Business Profile categories, service area, hours, emergency signals, photos, reviews and listings. A plain step-by-step guide.",
+  "h1": "Google Maps SEO for plumbers:", "h1ac": "get into the map pack",
+  "answer": "To rank a plumbing company on Google Maps, choose Plumber as the primary category, list every service, set a real service area, keep hours exact (including whether you take emergency calls), post job photos, get steady reviews that mention the work, and keep your name, address and phone identical everywhere. Google ranks map results on relevance, distance and prominence, and these steps improve the two you control.",
+  "items": [
+   ("Primary category: Plumber", "Add secondary categories only for work you really do, such as Water heater installation service, Drainage service or Septic system service."),
+   ("List every service", "Drain cleaning, water heaters, leak detection, repiping, sewer lines, fixtures. Use the homeowner's words."),
+   ("Set a real service area", "Most plumbers go to the customer, so list the towns or ZIP codes you serve and hide your street address if customers do not visit you."),
+   ("Make your hours honest", "If you answer 24 hours, set your hours to open 24 hours. If you do not, set your real hours. Wrong hours lose calls and earn bad reviews."),
+   ("Post real job photos", "Before and after shots, your van, your team. Fresh photos show Google and homeowners that you are active."),
+   ("Ask for reviews after every job", "Send a text link right after the job. Reviews that mention the job and the town help you show up for those searches."),
+   ("Reply to every review", "Short, by name, and calm with complaints. Never share private details."),
+   ("Keep your details identical everywhere", "Same name, phone and service area on your website, Bing, Apple Maps, Yelp, Angi and the BBB."),
+   ("Never add keywords to your name", "\"Rivera Plumbing\" not \"Rivera Plumbing 24/7 Emergency Plumber Phoenix\". Keyword stuffing breaks Google's rules and can get the profile suspended."),
+   ("Link the profile to the right page", "Point your website link to your main service page or home page, with your phone number at the top."),
+  ],
+  "faq": [
+   ("Why does my plumbing company not show on Google Maps?", "Common reasons are an unverified or suspended profile, the wrong primary category, searching from outside your service area, few reviews, or details that do not match across the web. Our guide on why a business is not on Google Maps covers each fix."),
+   ("Can I rank on Maps in towns where I have no office?", "Google favors businesses close to the searcher, so ranking far from your location is hard. A service area tells Google where you work, and strong reviews and pages for those towns help at the edges."),
+   ("Does posting on my Google profile help a plumbing business?", "Posts keep the profile active and give people a reason to call, such as seasonal water heater checks. They are a small ranking help, not a magic fix."),
+  ],
+ },
+ {
+  "slug": "guides/emergency-plumber-seo", "parent": "seo-for-plumbers", "nav": "Emergency plumber SEO",
+  "title": "Emergency Plumber SEO: Get the 24 Hour Calls First | Business Santa",
+  "desc": "How plumbing companies show up for \"emergency plumber\" and \"24 hour plumber\" searches on Google, Maps and ChatGPT, and turn those urgent searches into booked jobs.",
+  "h1": "Emergency plumber SEO:", "h1ac": "get the 24 hour calls first",
+  "answer": "To show up for \"emergency plumber\" and \"24 hour plumber\" searches, your Google Business Profile hours must show you as open when people search, your website needs a clear emergency page with a tap-to-call button at the top, your listings must say you take emergency calls, and someone must actually answer. Google shows businesses that look open and close to the searcher first, so honest hours and fast answers matter as much as rankings.",
+  "items": [
+   ("Set hours that match reality", "Open 24 hours only if you really answer 24 hours. If you take emergencies after hours, say so in your profile description and on your website."),
+   ("Build one emergency page", "Burst pipes, no hot water, sewer backups and leaks, what to do while waiting, and your number in big type at the top."),
+   ("Make calling one tap", "A sticky call button on phones and your number in the header of every page. Emergency visitors will not fill in a form."),
+   ("Answer every call", "A missed call at night goes to the next plumber. Use an answering service or call forwarding if you cannot pick up yourself."),
+   ("Ask emergency customers for reviews", "Reviews that say \"came out at midnight and fixed our burst pipe\" are the strongest proof for emergency searches."),
+   ("Say it the same way everywhere", "Your website, Google, Bing, Apple Maps and Yelp should all show the same emergency hours, so AI assistants and search engines trust it."),
+  ],
+  "faq": [
+   ("Will Google show me for emergency searches if I am closed at night?", "Usually not. Google favors businesses that are open when someone searches. Showing as open when you are not leads to missed calls and bad reviews, so only set the hours you really work."),
+   ("Should I run ads for emergency plumbing?", "Many plumbers do. Local Services Ads and search ads catch urgent searches right away while SEO builds. Both work better with a strong profile and reviews."),
+   ("How do I get ChatGPT to name my plumbing company for emergencies?", "AI assistants repeat what is written about you across the web. Clear emergency hours on your site and listings, and reviews that mention fast emergency work, give them something to say."),
+  ],
+ },
+ {
+  "slug": "guides/plumbing-seo-cost", "parent": "seo-for-plumbers", "nav": "Plumbing SEO cost",
+  "title": "How Much Does Plumbing SEO Cost? Honest Pricing Guide | Business Santa",
+  "desc": "What plumbing SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
+  "h1": "How much does plumbing SEO cost?", "h1ac": "An honest answer",
+  "answer": "Plumbing SEO costs depend on how competitive your area is, how many towns and services you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your business needs.",
+  "items": [
+   ("Your market", "A plumber in a big metro area with dozens of competitors needs more work than one in a small town."),
+   ("Towns and services", "Each town and each big job type you want to rank for, like water heaters or sewer lines, needs its own page and proof."),
+   ("Where you start", "A complete profile and a fast website cost less to improve than a new profile and a slow, outdated site."),
+   ("What is included", "A fair package covers your Google Business Profile, website fixes, service and town pages, review requests, listings and a monthly report you can check yourself."),
+   ("Red flag: guaranteed #1", "No one can guarantee a ranking. Google says so."),
+   ("Red flag: long lock-in contracts", "Good work keeps clients without a 12 month contract."),
+   ("Red flag: no access", "You should own your profile, website and reviews, and see every change."),
+  ],
+  "faq": [
+   ("Is plumbing SEO worth the money?", "For most plumbers, yes. One water heater replacement or sewer line job can cover months of SEO, and the calls keep coming after the work is done."),
+   ("Can I do plumbing SEO myself?", "Some of it. Our Google Maps guide for plumbers covers the basics. Many owners do that part and hire help for the website and technical work."),
+   ("How long before plumbing SEO pays off?", "Profile fixes can help within weeks. Ranking for \"plumber near me\" across your area usually builds over three to six months."),
+  ],
+ },
+]
+
+# ---------- Single guides that answer searches from Search Console ----------
+REST_GUIDES = [
+ {
+  "slug": "guides/google-maps-for-restaurants-and-caterers", "parent": "seo-for-restaurants", "nav": "Google Maps for restaurants and caterers",
+  "title": "Google Maps Listing Tips for Restaurants and Caterers | Business Santa",
+  "desc": "Google Maps listing tips for US restaurants, cafes and catering companies: categories, menus, hours, photos, ordering links, catering details and reviews that bring more orders.",
+  "h1": "Google Maps listing tips", "h1ac": "for restaurants and caterers",
+  "answer": "To get more orders from Google Maps, a restaurant or catering company needs the right primary category (Restaurant type, Caterer, or both where Google allows), a readable menu, exact hours including holidays, fresh food photos, direct ordering or inquiry links, and steady reviews that mention dishes and events. Caterers should also list the event types, guest counts and areas they serve, because people search for those details.",
+  "items": [
+   ("Pick the most specific category", "\"Mexican restaurant\" beats \"Restaurant\". A catering business that does not serve walk-in diners should use Caterer as its main category."),
+   ("Add your menu", "A menu on your profile and a readable menu page on your website, with dishes named the way people search for them."),
+   ("Keep hours exact", "Regular, holiday and special hours. Wrong hours send people elsewhere and bring bad reviews."),
+   ("Post food photos every month", "Real dishes, your space and your setups for events. Photos sell more than any description."),
+   ("Link orders and inquiries directly", "An ordering link for restaurants and a short catering inquiry form for caterers, so people do not drift to third-party apps."),
+   ("List what caterers really offer", "Weddings, office lunches, parties, guest counts, delivery areas and dietary options, on your profile and website."),
+   ("Ask every guest and client for a review", "Reviews that name a dish or an event, like \"catered our office lunch for 40\", help you show up for those searches."),
+   ("Answer reviews kindly", "Short, warm replies to good reviews and calm replies to bad ones show you care."),
+  ],
+  "faq": [
+   ("Can a catering company rank on Google Maps without a storefront?", "Yes. A caterer can be a service-area business with a hidden address, as long as it serves customers in the area it lists."),
+   ("How do restaurants get more Google reviews?", "Ask at the right moment: a small card with a QR code, a line on the receipt, or a text after an online order. Never offer rewards for reviews."),
+   ("Do Google posts help restaurants?", "They help people decide: specials, events and seasonal menus give diners a reason to come in now."),
+  ],
+ },
+]
+
+RETAIL_GUIDES = [
+ {
+  "slug": "guides/local-store-pages", "parent": "seo-for-retail-stores", "nav": "Local store pages",
+  "title": "Local Store Pages: How Shops Show Up in Local Search | Business Santa",
+  "desc": "How US retail stores and boutiques build local store pages that rank on Google and Maps: what to include, how many you need, products, hours, schema and common mistakes.",
+  "h1": "Local store pages:", "h1ac": "how shops show up in local search",
+  "answer": "A local store page is a page on your website for one physical store: its address, hours, phone, directions, what it sells, photos and reviews. It gives Google and shoppers one clear place to confirm the store is real, open and nearby. Every store location needs its own page, linked from its Google Business Profile, with details that match the profile exactly.",
+  "items": [
+   ("One page per real store", "Each location gets its own page with its own address and phone. Never make pages for towns where you have no store."),
+   ("Put the basics at the top", "Address, today's hours, phone and a directions button, readable on a phone in two seconds."),
+   ("Show what this store sells", "Top brands, categories and local favorites, so the page matches what people search for nearby."),
+   ("Add store photos", "The front of the store so people recognize it, the inside, and your team."),
+   ("Link it from the Google profile", "Each store's Google Business Profile should link to its own store page, not the home page."),
+   ("Mark it up with schema", "LocalBusiness structured data with the same name, address, phone and hours as the profile helps search engines connect them."),
+   ("Show local proof", "Reviews from that store, local events and pickup or delivery options."),
+   ("Keep holiday hours current", "Shopping seasons are when hours change most and when shoppers check most."),
+  ],
+  "faq": [
+   ("Does a single-location shop need a store page?", "Yes, though it can be your contact or visit page. It should hold the full address, hours, directions and what you sell, matching your Google profile."),
+   ("Can store pages show products?", "Yes. Showing popular products and brands helps, and free product listings through Google Merchant Center can put your items on Google and Maps."),
+   ("What are the most common store page mistakes?", "Different hours from the Google profile, missing phone numbers, no directions, and copy that is the same on every location page."),
+  ],
+ },
+]
