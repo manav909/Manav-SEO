@@ -28,6 +28,18 @@
   if (src.utm_content) base.utm_content = src.utm_content;
   var biz = "";
 
+  /* Only real visitors on the real site are measured: no Vercel preview copies, no automated browsers. */
+  var LIVE = /(^|\.)businesssanta\.com$/.test(location.hostname) && !navigator.webdriver && !/HeadlessChrome|Lighthouse|PTST|bot|crawl|spider|slurp/i.test(navigator.userAgent);
+
+  /* Clarity privacy: show the page's own text (our prices and numbers), keep everything typed into forms hidden. */
+  function clarityMask() {
+    try {
+      d.body.setAttribute("data-clarity-unmask", "true");
+      [].forEach.call(d.querySelectorAll("form, input, textarea, select"), function (f) { f.setAttribute("data-clarity-mask", "true"); });
+    } catch (e) { }
+  }
+  if (d.body) clarityMask(); else d.addEventListener("DOMContentLoaded", clarityMask);
+
   /* Meta Pixel */
   /* Matching IDs, created the moment the page opens (before Meta's script, which loads later for speed).
      Same formats Meta's own script and parameter builder use, so the Pixel reuses them and the browser and
@@ -50,7 +62,7 @@
   function cl() { try { w.clarity.apply(null, arguments); } catch (e) { } }
   cl("set", "traffic", traffic); cl("set", "page_type", ptype);
   var on = false;
-  function load() { if (on) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); var c = d.createElement("script"); c.async = true; c.src = "https://www.clarity.ms/tag/" + CLARITY; d.head.appendChild(c); }
+  function load() { if (on || !LIVE) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); var c = d.createElement("script"); c.async = true; c.src = "https://www.clarity.ms/tag/" + CLARITY; d.head.appendChild(c); }
   ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, load, { once: true, passive: true }); });
   /* No touch or scroll yet: wait until the page is fully settled. The Conversions API already records the visit
      from the server, so nothing is lost by keeping Meta's 100 KB script off the first seconds of the load. */
@@ -61,7 +73,7 @@
   function mix(data) { var o = {}, k; for (k in base) o[k] = base[k]; if (biz) o.business_type = biz; for (k in data || {}) o[k] = data[k]; return o; }
   var SERVER = { PageView: 1, ViewContent: 1, Contact: 1, Lead: 1 };
   function capi(name, eid, data, user) {
-    if (!SERVER[name]) return;
+    if (!SERVER[name] || !LIVE) return;
     try {
       var u = {}, k; for (k in known) u[k] = known[k]; for (k in user || {}) u[k] = user[k];
       var body = JSON.stringify({ event: name, id: eid, url: location.href, data: data, user: u, fbp: fbp, fbc: fbc || null, xid: vid });

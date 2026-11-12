@@ -112,6 +112,7 @@
     '<div class="bsx-body" aria-live="polite"></div>' +
     '<div class="bsx-ask"><label class="vh-bsx" style="font-size:13px;font-weight:600">Your question</label><textarea rows="3" placeholder="Type your question"></textarea><input type="email" autocomplete="email" placeholder="Your email, so we can reply"><div class="bsx-err" role="alert"></div><button class="bsx-btn" type="button">Send</button></div>' +
     '<div class="bsx-ch"><a href="' + IG + '" target="_blank" rel="noopener" data-c="Instagram">' + IC.ig + 'Instagram</a><a href="#" data-c="WhatsApp">' + IC.wa + 'WhatsApp</a><button type="button" data-c="Email">' + IC.em + 'Email</button></div>');
+  panel.querySelector(".bsx-ask").setAttribute("data-clarity-mask", "true"); /* typed questions stay private in recordings */
   root.appendChild(fab); root.appendChild(panel); d.body.appendChild(root);
   var body = panel.querySelector(".bsx-body"), ask = panel.querySelector(".bsx-ask"), asked = {};
   function say(who, html) { var m = el("div", { "class": "bsx-m " + who }, html); body.appendChild(m); body.scrollTop = body.scrollHeight; return m; }
@@ -179,6 +180,7 @@
       '<button class="px" type="button" aria-label="Close">&times;</button>' +
       '<div class="top"><small>Free check · No card · No contract</small><h3 id="bsxPopH">Before you go: are customers finding you on Google Maps?</h3><p>A real person on our team checks your business and emails you your top 3 fixes. Takes about a minute.</p></div>' +
       '<form novalidate><input name="biz" autocomplete="organization" placeholder="Business name" aria-label="Business name"><input name="city" autocomplete="address-level2" placeholder="City and state" aria-label="City and state"><input name="email" type="email" autocomplete="email" placeholder="Your email" aria-label="Your email"><div class="bsx-err" role="alert"></div><button class="bsx-btn y" type="submit">Send my free check</button><button class="no" type="button">No thanks</button></form>');
+    p.querySelector("form").setAttribute("data-clarity-mask", "true");
     d.body.appendChild(veil); d.body.appendChild(p);
     var f = p.querySelector("form"), prev = d.activeElement; f.biz.focus();
     function shut(why) { closePop(p, veil, why); d.removeEventListener("keydown", key); if (prev && prev.focus) prev.focus({ preventScroll: true }); }
