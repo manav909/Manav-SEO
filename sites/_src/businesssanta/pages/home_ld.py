@@ -25,7 +25,7 @@ def org():
       "employee": [{"@id": f"{SITE}/#manav"}] + [{"@id": f"{SITE}/#{k}"} for k, _, _ in team],
       "parentOrganization": {"@id": f"{SS}/#org"},
       "brand": {"@type": "Brand", "name": "Business Santa"},
-      "sameAs": ["https://www.instagram.com/businesssanta", f"{SS}/businesssanta"],
+      "sameAs": ["https://www.instagram.com/businesssanta", "https://www.linkedin.com/showcase/businesssanta", f"{SS}/businesssanta"],
       "contactPoint": [{"@type": "ContactPoint", "contactType": "customer support", "email": "seo@businesssanta.com", "telephone": "+91-70097-75189",
                         "areaServed": "US", "availableLanguage": ["English"]}],
       "knowsAbout": ["Local SEO", "Google Business Profile optimization", "Google Maps ranking", "Technical SEO", "On-page SEO",
