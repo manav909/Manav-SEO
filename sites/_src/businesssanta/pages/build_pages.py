@@ -111,7 +111,7 @@ def _nav(label, links, cls=""):
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", GUIDE_LINKS)
-    + _nav("Company", [("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.pickanagency.com/", "Listed on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
+    + _nav("Company", [("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
 # Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
