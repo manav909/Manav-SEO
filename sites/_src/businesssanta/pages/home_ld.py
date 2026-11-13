@@ -25,7 +25,7 @@ def org():
       "employee": [{"@id": f"{SITE}/#manav"}] + [{"@id": f"{SITE}/#{k}"} for k, _, _ in team],
       "parentOrganization": {"@id": f"{SS}/#org"},
       "brand": {"@type": "Brand", "name": "Business Santa"},
-      "sameAs": ["https://www.instagram.com/businesssanta", "https://www.linkedin.com/showcase/businesssanta", "https://www.crunchbase.com/organization/business-santa", "https://clutch.co/profile/business-santa", f"{SS}/businesssanta"],
+      "sameAs": ["https://www.instagram.com/businesssanta", "https://www.linkedin.com/showcase/businesssanta", "https://www.crunchbase.com/organization/business-santa", "https://clutch.co/profile/business-santa", "https://www.agencyspotter.com/business-santa", "https://www.pickanagency.com/agencies/business-santa", f"{SS}/businesssanta"],
       "contactPoint": [{"@type": "ContactPoint", "contactType": "customer support", "email": "seo@businesssanta.com", "telephone": "+91-70097-75189",
                         "areaServed": "US", "availableLanguage": ["English"]}],
       "knowsAbout": ["Local SEO", "Google Business Profile optimization", "Google Maps ranking", "Technical SEO", "On-page SEO",
