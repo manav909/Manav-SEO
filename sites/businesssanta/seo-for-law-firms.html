@@ -357,6 +357,13 @@ body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
   }
   var tick = 0; function onMove() { if (!tick) { tick = 1; requestAnimationFrame(function () { tick = 0; barOffset(); }); } }
   addEventListener("scroll", onMove, { passive: true }); addEventListener("resize", onMove);
+  /* the bar also slides in and out without any scroll (when the hero button leaves view): re-measure when it settles */
+  var barEl = d.querySelector(".bar");
+  if (barEl) {
+    barEl.addEventListener("transitionend", barOffset);
+    if (window.MutationObserver) new MutationObserver(function () { onMove(); setTimeout(barOffset, 350); }).observe(barEl, { attributes: true, attributeFilter: ["class"] });
+  }
+  barOffset();
 
   /* ---------- chat ---------- */
   var QA = [
