@@ -446,7 +446,7 @@ def build_story(r):
 {res_block(others, MORE_HEAD)}
 {form_html(r['k'], r['biz'])}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": r["title"].split(" | ")[0], "description": r["desc"], "author": FOUNDER, "publisher": ORG,
-           "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US", "mainEntityOfPage": {"@id": url + "#page"},
+           "datePublished": r["published"], "dateModified": r.get("modified", r["published"]), "inLanguage": "en-US", "mainEntityOfPage": {"@id": url + "#page"},
            "about": {"@type": "Organization", "name": r["company"]}, "image": {"@type": "ImageObject", "url": SITE + r["thumb"][0], "width": r["thumb"][1], "height": r["thumb"][2]}}
     return shell(slug, r["title"], r["desc"], body, [art], r["h1a"] + " " + r["h1b"], og_type="article", og_img=r["thumb"][0], crumb_mid=("/results", "Client results"))
 

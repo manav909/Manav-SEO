@@ -185,7 +185,8 @@
     1200,
     513
    ]
-  ]
+  ],
+  "published": "2026-11-14"
  },
  "us-remodeling-group": {
   "slug": "us-remodeling-group",
@@ -378,7 +379,8 @@
     1200,
     513
    ]
-  ]
+  ],
+  "published": "2026-11-14"
  },
  "us-metal-buildings": {
   "slug": "us-metal-buildings",
@@ -559,7 +561,8 @@
     1200,
     462
    ]
-  ]
+  ],
+  "published": "2026-11-14"
  },
  "us-hvac-durham": {
   "slug": "us-hvac-durham",
@@ -744,6 +747,7 @@
     1200,
     411
    ]
-  ]
+  ],
+  "published": "2026-11-14"
  }
 }
