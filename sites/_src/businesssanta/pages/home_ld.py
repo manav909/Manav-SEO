@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Structured data for businesssanta.com home pages.
-graph(faq, videos) returns the JSON-LD for one home page; run directly to rewrite the block in index.html
+graph(faq, videos) returns the JSON-LD for one home page; run directly to rewrite the block in home-desktop.html
 (desktop), with the desktop FAQ read from the page itself so the markup always matches what people see.
 The mobile page gets its own FAQ and its videos in m/assemble.py."""
 import json, re, os, html
@@ -78,7 +78,7 @@ def meta(page, name):
     return html.unescape(m.group(1))
 
 if __name__ == "__main__":
-    p = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta/index.html"))
+    p = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta/home-desktop.html"))
     s = open(p).read()
     faq = [(q, a) for q, a in faqs_from(s) if "services page" not in a]
     new = graph(faq, title=meta(s, "title"), desc=meta(s, "description"))

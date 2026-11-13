@@ -69,6 +69,10 @@
         }
       ],
       "destination": "/home-phone"
+    },
+    {
+      "source": "/",
+      "destination": "/home-desktop"
     }
   ],
   "redirects": [

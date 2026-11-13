@@ -393,7 +393,7 @@ state = json.load(open(LM)) if os.path.exists(LM) else {}
 now = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
 
 def files_for(u):
-    return ["index.html", "home-phone.html"] if u == "" else [u + ".html"]
+    return ["home-desktop.html", "home-phone.html"] if u == "" else [u + ".html"]
 
 def lastmod(u):
     fs = [os.path.join(OUT, f) for f in files_for(u) if os.path.exists(os.path.join(OUT, f))]
@@ -419,13 +419,13 @@ for old in ("sitemap-main.xml", "sitemap-industries.xml", "sitemap-guides.xml"):
 json.dump(state, open(LM, "w"), indent=1, sort_keys=True)
 print("built", len(ind) + len(svc) + len(gds), "pages and sitemap.xml with", len(rows), "URLs")
 
-# Home page footers (desktop index.html and the mobile template) get the same link lists, between <!--FTNAV--> markers.
+# Home page footers (desktop home-desktop.html and the mobile template) get the same link lists, between <!--FTNAV--> markers.
 def _patch(path, inner):
     s = open(path).read()
     n = re.sub(r"<!--FTNAV-->.*?<!--/FTNAV-->", lambda m: "<!--FTNAV-->" + inner + "<!--/FTNAV-->", s, count=1, flags=re.S)
     assert "<!--FTNAV-->" in n, path
     if n != s: open(path, "w").write(n)
-_HOME = os.path.normpath(os.path.join(OUT, "index.html"))
+_HOME = os.path.normpath(os.path.join(OUT, "home-desktop.html"))
 _MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../m/m.tpl.html"))
 _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
        + '<a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '

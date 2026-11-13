@@ -4,7 +4,7 @@ Business types come from the desktop app.js so both pages always describe busine
 import re, html, os, subprocess, hashlib, sys, json
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.normpath(os.path.join(HERE, "../../../businesssanta"))
-idx = open(os.path.join(SITE, "index.html")).read()
+idx = open(os.path.join(SITE, "home-desktop.html")).read()
 app = open(os.path.join(HERE, "..", "app.js")).read()
 tpl = open(os.path.join(HERE, "m.tpl.html")).read()
 main = open(os.path.join(HERE, "main.js")).read()
