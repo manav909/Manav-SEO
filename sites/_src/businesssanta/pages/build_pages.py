@@ -3,7 +3,7 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
 EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
@@ -88,7 +88,7 @@ var bar=document.getElementById("bar"),ck=document.getElementById("check");if(ba
 })();"""
 
 def page_links(cur):
-    items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT")] + [(f"/{g['slug']}", g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]) for g in ALLG]
+    items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")] + [(f"/{g['slug']}", g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]) for g in ALLG]
     return [(u, t) for u, t in items if u != "/" + cur]
 
 # Site-wide link lists. Footers on every page (inner pages, desktop home, mobile home) are built from these,
@@ -104,7 +104,7 @@ def _ilabel(p): return p.get("nav") or {"retail stores and boutiques": "Retail s
 def _glabel(g): return g.get("nav") or _GNAV.get(g["slug"]) or g["h1"].rstrip(":?")
 IND_LINKS = [("/" + p["slug"], _ilabel(p)) for p in INDUSTRIES]
 GUIDE_LINKS = [("/" + g["slug"], _glabel(g)) for g in ALLG]
-SVC_LINKS = [("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT")]
+SVC_LINKS = [("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
@@ -321,6 +321,26 @@ def build_ai(p):
     graph = [service_ld(url, "AI search optimization (GEO) for local businesses", p["answer"], "Generative engine optimization"), faq_ld(url, p["faq"])]
     return shell(p["slug"], p["title"], p["desc"], body, graph, "AI search optimization")
 
+def build_ads(p):
+    url = f"{SITE}/{p['slug']}"
+    types = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in p["types"])
+    steps = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in p["steps"])
+    body = f"""{h1(p['h1'], p['h1ac'])}
+<p class="ans">{E(p['answer'])}</p>
+<h2>The ads <span class="ac">we run</span></h2>
+<div class="grid">{types}</div>
+<h2>Ads or SEO <span class="ac">first?</span></h2>
+<p>Ads bring calls fast, but they stop the day you stop paying. SEO is slower to start, then keeps bringing customers without a cost per click. Most small businesses do best with a small ads budget for calls now while <a href="/local-seo">local SEO</a> builds, and <a href="/ai-search-optimization">AI search</a> gets them named by ChatGPT too.</p>
+<h2>What we <span class="ac">do</span></h2>
+<ol class="steps">{steps}</ol>
+<h2>What it <span class="ac">costs</span></h2>
+<p>The free check costs nothing. Ad management is priced after the check, based on how many campaigns you need. Your ad budget is paid straight to Google or Meta from your own account, so you always own the account and the data.</p>
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+{cta(p['k'], 'business')}"""
+    graph = [service_ld(url, "Google Ads and Meta ads management for small businesses", p["answer"], "Pay-per-click advertising"), faq_ld(url, p["faq"])]
+    return shell(p["slug"], p["title"], p["desc"], body, graph, "Google and Meta ads")
+
 def _par(g): return next(i for i in INDUSTRIES if i["slug"] == g["parent"])
 
 def build_guide(g):
@@ -355,6 +375,7 @@ ind, svc, gds = [], [], []
 for p in INDUSTRIES: write(p["slug"], build_industry(p)); ind.append(p["slug"])
 write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
+write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 
 # Sitemap: every page built above is listed automatically.

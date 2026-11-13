@@ -1,90 +1,94 @@
 {
  "": [
-  "11e2cb67efb4a57d68402b594a0eee6986da00ca",
+  "771569fb3ae5212358ba7fba906619f1e2e6b1f7",
   "2026-11-13"
  ],
  "ai-search-optimization": [
-  "9c5dec2327bd193c607b5e5f7959794ad1ef2626",
+  "12280703f882786463b01789c7f677fa9a4fe6a1",
+  "2026-11-13"
+ ],
+ "google-and-meta-ads": [
+  "836cccb87304e3ac4c3629c5fa7522cf490eb351",
   "2026-11-13"
  ],
  "guides/dental-reviews-hipaa": [
-  "149cf4d43a3cad057e0f70fa1af4d4927b8d5f08",
+  "2c09db2ea7feb458f31f62d8046ed9f098060ec2",
   "2026-11-13"
  ],
  "guides/dental-seo-cost": [
-  "092332ef37b4c749aca732b04f17ec52fa4ea4ce",
+  "c6916c99b194404aaffaf63851b8709100dc1cb5",
   "2026-11-13"
  ],
  "guides/dental-seo-keywords": [
-  "b9d9cba0b9f423b207b7b83c02342a50a8f276be",
+  "bee6f0197f4748acfe441c345a68589b13cc91de",
   "2026-11-13"
  ],
  "guides/emergency-plumber-seo": [
-  "6e8a3ee336dd9837ae737db8d2f3e38f0849216a",
+  "17da263437a63d44019cf7ba42321f9c26e83efb",
   "2026-11-13"
  ],
  "guides/google-business-profile-checklist": [
-  "d166899d78f93a9b05c4f0aa8d732e9e8ad010ff",
+  "ddd15ff7607727e5f0ec33066aa3762f77de8c00",
   "2026-11-13"
  ],
  "guides/google-business-profile-for-dentists": [
-  "2a6807707d2b3ae13f4e357f66caf542d315f16a",
+  "99978ecb0d8f6621b175054ed393ed53d88e48fe",
   "2026-11-13"
  ],
  "guides/google-business-profile-for-roofers": [
-  "ec688cb764d6d351ef81641d247cdaea02e99c74",
+  "a4af2a09df1a04d3f8bb279237bc9f73b8958ac3",
   "2026-11-13"
  ],
  "guides/google-business-profile-for-salons": [
-  "dbc88d1c68ce7558682738cd9199e91d50e20696",
+  "9f3ac0b3693671a87b65ea31af873b9ba6e9f0c9",
   "2026-11-13"
  ],
  "guides/google-maps-for-restaurants-and-caterers": [
-  "f5417583468efdffd08c1ca68a2f5fb0a2d9ebdd",
+  "f3ec28e27ea72f74fc06ff555db4aa4ef1d5dc9a",
   "2026-11-13"
  ],
  "guides/google-maps-seo-for-plumbers": [
-  "8f5ed40eaf03bf9ae4222df4ffca4ed36f0cb4a4",
+  "cb765e140191d35852b86880d5572d3c6cfd96aa",
   "2026-11-13"
  ],
  "guides/how-salons-get-found-on-ai-search": [
-  "955721fb5781c31952cb04d65e20156ba33dc06e",
+  "88269a9e379ce7a34fcd5536edafc1e0be8c437a",
   "2026-11-13"
  ],
  "guides/local-store-pages": [
-  "eb2faed78b51dc24bd8ba7c156dc3a5d1cc21bf5",
+  "3016fc6adc761cb7cb59795364c58465c8f68129",
   "2026-11-13"
  ],
  "guides/plumbing-seo-cost": [
-  "08c118f81b8fd2cc1df3ff88389e14a6036cefd9",
+  "da9d27a90411fe31c22eaea346235af0ecd817e5",
   "2026-11-13"
  ],
  "guides/plumbing-seo-keywords": [
-  "d525ab229cd2d6a0ae91aa1122d93254268b7b3f",
+  "5b6fb3fd390c669848c3b072da852adc13b7f7f9",
   "2026-11-13"
  ],
  "guides/roofing-leads-after-a-storm": [
-  "0fe93f610aa16c265f68bca35492df1606f95f4a",
+  "5898848ec4041aaf38d7a5cb3cae3f6159e96b4f",
   "2026-11-13"
  ],
  "guides/roofing-seo-cost": [
-  "b29c00ac4420fcadd9bd2b2ec6de4f7930556f3a",
+  "054ee84ac02610f80d9968d71e6a170cb9d469c6",
   "2026-11-13"
  ],
  "guides/roofing-seo-keywords": [
-  "f3622ff16d7fbc9657a758824355e62b38f3772b",
+  "1113751d467b74445ca12cb19c659ef07acd05ca",
   "2026-11-13"
  ],
  "guides/salon-seo-keywords": [
-  "c41e214dc717efb1d3eb47b70f3b3671a629f073",
+  "5e8046644b729783f38cb67bd3320f3465a5228d",
   "2026-11-13"
  ],
  "guides/why-my-business-is-not-on-google-maps": [
-  "b57456bf310770e7e63b9c0458d55a8767fd73b4",
+  "76acb2616bdeca3e4c0a04e5c0b09241e691ef62",
   "2026-11-13"
  ],
  "local-seo": [
-  "64be91c6713cdceb5f14e0962d41bfb8a59ab9de",
+  "3f14e73f10a90f99f3365c03dc2a3862bb61e1c7",
   "2026-11-13"
  ],
  "privacy": [
@@ -92,31 +96,31 @@
   "2026-11-12"
  ],
  "seo-for-dentists": [
-  "a2c738bf9da7ff0ce09b7277918b57d2eeaeea72",
+  "079928737ce7f686266dee02da01055a02994396",
   "2026-11-13"
  ],
  "seo-for-law-firms": [
-  "d72451c4cdb8f9d2d05c73bb11b1ee4c0cbf79fe",
+  "e3a7adabea4300d2edba4f2e893957b19cf0e284",
   "2026-11-13"
  ],
  "seo-for-plumbers": [
-  "806536915f66167f64f5179708c88721c819c551",
+  "d05a5eae2a5dfd7bde0c27b544c16172b4112ee8",
   "2026-11-13"
  ],
  "seo-for-restaurants": [
-  "5eb02d35e08a158840341431c09316181c02082d",
+  "bd66c8d65fc1a2608fbfb6f133cd7dfad72f94f0",
   "2026-11-13"
  ],
  "seo-for-retail-stores": [
-  "6035db3adf39263a91905ee231580980209f9f3e",
+  "688b6899ebf4047eeb031aad0eb1e259b3c1aa1a",
   "2026-11-13"
  ],
  "seo-for-roofers": [
-  "27a5e736189f410e14c230419b50c5c70aaeaae5",
+  "18ea4128242280b15c64df15ac23ddfccac2a210",
   "2026-11-13"
  ],
  "seo-for-salons-and-spas": [
-  "abe519f951547c960f9d22c26771c0f0f19bd342",
+  "b6fba2d5d67d241b1fd8feaba7497e1cdce0dc7b",
   "2026-11-13"
  ],
  "terms": [

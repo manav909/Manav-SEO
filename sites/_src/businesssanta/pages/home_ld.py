@@ -37,6 +37,7 @@ def org():
         {"@type": "Offer", "name": "Technical SEO fixes", "price": "160", "priceCurrency": "USD", "priceSpecification": {"@type": "PriceSpecification", "minPrice": 160, "priceCurrency": "USD"}, "itemOffered": {"@type": "Service", "name": "Technical SEO and Google Search Console fixes"}},
         {"@type": "Offer", "name": "Local SEO", "itemOffered": {"@type": "Service", "name": "Local SEO and Google Business Profile optimization", "url": f"{SITE}/local-seo"}},
         {"@type": "Offer", "name": "AI search optimization", "itemOffered": {"@type": "Service", "name": "AI search optimization (GEO)", "url": f"{SITE}/ai-search-optimization"}},
+        {"@type": "Offer", "name": "Google and Meta ads", "itemOffered": {"@type": "Service", "name": "Google Ads and Meta ads management", "url": f"{SITE}/google-and-meta-ads"}},
         {"@type": "Offer", "name": "Monthly SEO", "itemOffered": {"@type": "Service", "name": "Monthly SEO"}},
         {"@type": "Offer", "name": "Shopify SEO", "itemOffered": {"@type": "Service", "name": "Shopify store SEO"}}]}},
      {"@type": "Person", "@id": f"{SITE}/#manav", "name": "Manav S", "jobTitle": "Founder", "image": f"{SITE}/assets/img/logo-512.png",

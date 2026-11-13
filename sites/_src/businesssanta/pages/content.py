@@ -233,6 +233,34 @@ AI_PAGE = {
  ],
 }
 
+ADS_PAGE = {
+ "slug": "google-and-meta-ads", "k": "other",
+ "title": "Google Ads and Meta Ads for Small Businesses in the US | Business Santa",
+ "desc": "Google Ads and Facebook and Instagram ads for US small businesses, set up and run by a real team. Calls and leads now, while SEO builds. Free check first.",
+ "h1": "Google and Meta ads", "h1ac": "that bring calls now",
+ "answer": "Google Ads put your business at the top of Google and Google Maps when someone searches for what you do, and you pay when they click. Meta ads show your business to people nearby on Facebook and Instagram before they start searching. We set up, run and report on both for US small businesses, so the phone rings this week while SEO builds traffic that lasts.",
+ "types": [
+  ("Google Search ads", "For people already looking, like \"emergency plumber near me\" or \"dentist open Saturday\". You show up at the top and pay per click."),
+  ("Google Local Services Ads", "The Google Guaranteed or Google Screened listings above everything else for many trades. You pay per lead, not per click."),
+  ("Facebook and Instagram ads", "For people nearby who are not searching yet: a new salon, a seasonal offer, a restaurant opening. Photos and videos of real work do best."),
+  ("Retargeting", "Bring back people who visited your website or watched your video but did not call yet."),
+ ],
+ "steps": [
+  ("Free check first", "We look at your Google profile, website and competitors, and tell you honestly whether ads make sense for you yet."),
+  ("Fix the basics", "A page that turns clicks into calls, call and form tracking, and a complete Google Business Profile."),
+  ("Set up the campaigns", "Keywords and audiences for your trade and town, negative keywords to block wasted clicks, and ads written in plain words."),
+  ("Watch the money every day", "We cut what does not bring calls and move the budget to what does."),
+  ("Report in plain English", "Every month you see what you spent, how many calls and forms came in, and what each lead cost."),
+ ],
+ "faq": [
+  ("How much should a small business spend on Google Ads?", "It depends on your trade and town, because clicks cost more for a lawyer in a big city than for a salon in a small town. During the free check we look at real click prices for your area and suggest a starting budget you are comfortable with."),
+  ("Do you run Facebook and Instagram ads too?", "Yes. Meta ads are good for showing your work to people nearby before they need you, and for offers, openings and seasonal services."),
+  ("Should I start with SEO or ads?", "If you need calls this month, start with ads. If you can wait a few months, SEO brings traffic you do not pay for per click. Many small businesses run a small ads budget while SEO builds."),
+  ("Who owns the ad account?", "You do. Campaigns run in your own Google Ads and Meta accounts, your ad budget is paid straight to Google or Meta, and you can see every number yourself."),
+  ("Can you guarantee results?", "No one honest can. We promise careful setup, daily checks on your spend, and plain reports on what each lead cost."),
+ ],
+}
+
 GUIDES = [
  {
   "slug": "guides/google-business-profile-checklist",
