@@ -3,6 +3,8 @@
 plus sitemap.xml. Run after editing content.py. One URL per page, same HTML for phones and desktops."""
 import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import guide_img
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
@@ -131,12 +133,13 @@ def _site_nodes():
     return out
 SITE_NODES = _site_nodes()
 
-def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None):
+def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None, og_img="/assets/img/og.jpg"):
     url = f"{SITE}/{slug}"
+    img = {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 675 if og_img != "/assets/img/og.jpg" else 630}
     par = next((i for i in INDUSTRIES if i["slug"] == parent), None)
     graph = [
         {"@type": "WebPage", "@id": url + "#page", "url": url, "name": title, "description": desc, "inLanguage": "en-US",
-         "isPartOf": {"@id": f"{SITE}/#site"}, "about": ORG, "dateModified": TODAY,
+         "isPartOf": {"@id": f"{SITE}/#site"}, "about": ORG, "dateModified": TODAY, "primaryImageOfPage": img,
          "breadcrumb": {"@id": url + "#crumb"}},
         {"@type": "BreadcrumbList", "@id": url + "#crumb", "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "Business Santa", "item": SITE + "/"},
@@ -163,7 +166,9 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
 <meta property="og:locale" content="en_US">
 <meta property="og:title" content="{E(title)}">
 <meta property="og:description" content="{E(desc)}">
-<meta property="og:image" content="{SITE}/assets/img/og.jpg">
+<meta property="og:image" content="{SITE}{og_img}">
+<meta property="og:image:width" content="{img['width']}">
+<meta property="og:image:height" content="{img['height']}">
 <meta property="og:url" content="{url}">
 <meta name="twitter:card" content="summary_large_image">
 <style>{CSS}</style>
@@ -345,6 +350,7 @@ def _par(g): return next(i for i in INDUSTRIES if i["slug"] == g["parent"])
 
 def build_guide(g):
     url = f"{SITE}/{g['slug']}"
+    og_img = guide_img.make(g)
     items = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in g["items"])
     groups = "".join(f'<h3>{E(n)}</h3><ul class="qs">{"".join(f"<li>{E(q)}</li>" for q in qs)}</ul>' for n, qs in g.get("groups", []))
     groups = f'<h2>The keywords, <span class="ac">by job</span></h2><div class="kw">{groups}</div><h2>How to <span class="ac">use them</span></h2>' if groups else ""
@@ -361,10 +367,10 @@ def build_guide(g):
 {cta(_par(g)["k"], _par(g)["biz"]) if g.get("parent") else cta('other', 'business')}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": g["title"].split(" | ")[0], "description": g["desc"],
            "author": FOUNDER, "publisher": ORG, "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US",
-           "mainEntityOfPage": {"@id": url + "#page"}, "image": f"{SITE}/assets/img/og.jpg"}
+           "mainEntityOfPage": {"@id": url + "#page"}, "image": {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 675}}
     graph = [art, faq_ld(url, g["faq"]),
              {"@type": "ItemList", "name": g["h1"] + " " + g["h1ac"], "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": t} for i, (t, d) in enumerate(g["items"])]}]
-    return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"], og_type="article", parent=g.get("parent"))
+    return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"], og_type="article", parent=g.get("parent"), og_img=og_img)
 
 def write(slug, s):
     assert "—" not in s and "–" not in s, f"dash in {slug}"
