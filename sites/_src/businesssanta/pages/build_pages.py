@@ -438,7 +438,7 @@ def build_story(r):
 {shots}
 <h3 style="margin-top:28px">In the client’s own words</h3>
 {quotes}
-<p class="src">Quotes are copied word for word from our conversations with the client. The full conversation can be shown on a live screen-share.</p>
+<p class="src">Quotes are taken from our conversations with the client. Only spelling and punctuation are tidied; the words are the client\u2019s own. The full conversation can be shown on a live screen-share.</p>
 <h2>What this means for <span class="ac">your business</span></h2>
 <p>{E(r['means'])}</p>
 <section class="clu"><h2>Related services</h2><ul>{rel}</ul></section>
