@@ -42,7 +42,7 @@ def org():
         {"@type": "Offer", "name": "Shopify SEO", "itemOffered": {"@type": "Service", "name": "Shopify store SEO"}}]}},
      {"@type": "Person", "@id": f"{SITE}/#manav", "name": "Manav S", "jobTitle": "Founder", "image": f"{SITE}/assets/img/logo-512.png",
       "worksFor": [{"@id": f"{SITE}/#org"}, {"@id": f"{SS}/#org"}], "url": f"{SS}/",
-      "description": "Founder of Business Santa and SEO Season, with 10+ years in SEO and 2,000+ projects delivered.",
+      "description": "Founder of Business Santa and SEO Season, with 10+ years in SEO and 3,000+ orders delivered.",
       "knowsAbout": ["SEO", "Local SEO", "Technical SEO", "Generative engine optimization", "AI search"]},
     ] + [{"@type": "Person", "@id": f"{SITE}/#{k}", "name": n, "jobTitle": j, "worksFor": {"@id": f"{SITE}/#org"}} for k, n, j in team] + [
      {"@type": "Organization", "@id": f"{SS}/#org", "name": "SEO Season", "url": f"{SS}/", "founder": {"@id": f"{SITE}/#manav"},

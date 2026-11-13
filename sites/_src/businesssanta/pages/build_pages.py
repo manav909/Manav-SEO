@@ -10,6 +10,7 @@ from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOO
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
 EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
 ALLG = GUIDES + CLUSTER_GUIDES
+RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"]}
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
 E = html.escape
@@ -63,6 +64,15 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .lead-f label{display:block;font-size:.85rem;color:#e2e8f0}.lead-f label small{color:#94a3b8}.lead-f input{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f)}
 .lead-f input.bad{border-color:#f87171}.lead-f .err{min-height:1px;color:#fca5a5;font-size:.9rem}.lead-f button{width:100%;border:0;cursor:pointer}.lead-f .or{margin:12px 0;text-align:center;color:#94a3b8;font-size:.85rem}
 .lead-f .done{display:none;padding:18px;border-radius:16px;background:#052e16;color:#bbf7d0}.lead-f .done.on{display:block}.lead-f .priv{margin:4px 0 0;font-size:.8rem;color:#94a3b8}.lead-f .priv a{color:#cbd5e1}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}@media(min-width:700px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tiles div{padding:16px;border-radius:16px;background:var(--soft);box-shadow:0 0 0 1px var(--line)}.tiles b{display:block;font:800 1.7rem var(--fh);color:var(--ink);letter-spacing:-.03em}.tiles span{font-size:.88rem;line-height:1.35;display:block;margin-top:4px}
+.meta{margin:14px 0 0;font-size:.92rem;color:var(--mut)}
+.rs{display:grid;grid-template-columns:1fr;gap:14px;margin-top:18px}@media(min-width:700px){.rs{grid-template-columns:1fr 1fr}}
+.rs a{display:block;border-radius:18px;overflow:hidden;text-decoration:none;color:var(--ink2);background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.06);transition:transform .15s}.rs a:hover{transform:translateY(-2px)}
+.rs img{display:block;width:100%;height:auto;background:var(--navy)}.rs .t{padding:14px 16px 16px}.rs .t b{display:block;font:800 1.15rem var(--fh);color:var(--ink);letter-spacing:-.02em}.rs .t span{display:block;margin-top:4px;font-size:.9rem}.rs .t i{font-style:normal;color:var(--yd);font-weight:700}
+.shot{margin:18px 0 0}.shot img{display:block;width:100%;border-radius:16px;box-shadow:0 0 0 1px var(--line)}.shot figcaption{margin-top:6px;font-size:.85rem;color:var(--mut)}
+.qt{margin:14px 0 0;padding:14px 18px;border-left:4px solid var(--y);background:var(--soft);border-radius:0 14px 14px 0;color:var(--ink)}.qt small{display:block;margin-top:4px;color:var(--mut);font-size:.85rem}
+.sample{margin:22px 0 0;padding:16px 18px;border-radius:16px;background:#fff3c4;color:var(--ink)}
 .kw{margin-top:14px}.kw h3{margin:22px 0 0}
 .clu{margin:40px 0 0;padding:18px 20px;border-radius:18px;box-shadow:0 0 0 2px var(--y)}.clu h2{margin:0;font-size:1.35rem}.clu ul{margin:10px 0 0;padding-left:1.1em}.clu li{margin:6px 0}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:9;display:flex;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(255,255,255,.97);box-shadow:0 -6px 20px rgba(15,23,42,.08);transition:transform .25s}
@@ -113,7 +123,7 @@ def _nav(label, links, cls=""):
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", GUIDE_LINKS)
-    + _nav("Company", [("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
+    + _nav("Company", [("/results", "Client results"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
 # Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
@@ -133,7 +143,7 @@ def _site_nodes():
     return out
 SITE_NODES = _site_nodes()
 
-def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None, og_img="/assets/img/og.jpg"):
+def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None, og_img="/assets/img/og.jpg", crumb_mid=None):
     url = f"{SITE}/{slug}"
     img = {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 675 if og_img != "/assets/img/og.jpg" else 630}
     par = next((i for i in INDUSTRIES if i["slug"] == parent), None)
@@ -144,7 +154,8 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
         {"@type": "BreadcrumbList", "@id": url + "#crumb", "itemListElement": [
             {"@type": "ListItem", "position": 1, "name": "Business Santa", "item": SITE + "/"},
             *([{"@type": "ListItem", "position": 2, "name": par["h1"], "item": f"{SITE}/{par['slug']}"}] if par else []),
-            {"@type": "ListItem", "position": 3 if par else 2, "name": crumb_name, "item": url}]},
+            *([{"@type": "ListItem", "position": 2, "name": crumb_mid[1], "item": SITE + crumb_mid[0]}] if crumb_mid else []),
+            {"@type": "ListItem", "position": 3 if (par or crumb_mid) else 2, "name": crumb_name, "item": url}]},
     ] + graph + SITE_NODES
     ld = json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False, separators=(",", ":"))
     rel = "".join(f'<li><a href="{u}">{E(t)}</a></li>' for u, t in page_links(slug))
@@ -177,7 +188,7 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
 <body>
 <header class="hd"><div class="w"><a class="brand" href="/"><img src="/assets/img/logo-96.webp" alt="" width="36" height="36">Business <i>Santa</i></a><a class="btn dk" href="#check">Free check</a></div></header>
 <main class="w">
-<nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › {f'<a href="/{par["slug"]}">{E(par["h1"])}</a> › ' if par else ''}<span>{E(crumb_name)}</span></nav>
+<nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › {f'<a href="/{par["slug"]}">{E(par["h1"])}</a> › ' if par else ''}{f'<a href="{crumb_mid[0]}">{E(crumb_mid[1])}</a> › ' if crumb_mid else ''}<span>{E(crumb_name)}</span></nav>
 {body}
 <section class="rel"><h2>More from Business Santa</h2><ul>{rel}</ul></section>
 </main>
@@ -216,7 +227,7 @@ REV = [("Patient, plain-English help", "I\u2019m not a website or technology per
 
 def proof_html(who):
     cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating from 2,000+ projects over 10+ years</span></div><div class="rv">{cards}</div></div>'
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating across 2,000+ client reviews, 3,000+ orders over 10+ years</span></div><div class="rv">{cards}</div></div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
@@ -240,7 +251,7 @@ def _old_cta(k, who):
 
 def byline():
     return ('<div class="by"><img src="/assets/img/logo-96.webp" alt="Manav S" width="56" height="56" loading="lazy">'
-            '<div><b>Written by Manav S</b><p>Founder of Business Santa and SEO Season. 10+ years in SEO and 2,000+ projects for businesses in the US and worldwide. '
+            '<div><b>Written by Manav S</b><p>Founder of Business Santa and SEO Season. 10+ years in SEO and 3,000+ orders for businesses in the US and worldwide. '
             f'Updated November 2026.</p></div></div>')
 
 def google_src(extra=()):
@@ -269,6 +280,7 @@ def build_industry(p):
 <ul class="qs">{''.join(f'<li>{E(q)}</li>' for q in p['searches'])}</ul>
 <h2>What we fix for <span class="ac">{E(p['noun'])}</span></h2>
 <div class="grid">{fixes}</div>
+{res_block(RES_FOR.get(p['k'], ["us-pet-hospice", "us-hvac-durham"]))}
 {proof_html(p['biz'])}
 <h2>How Google picks the <span class="ac">top 3 on the map</span></h2>
 <p>Google ranks local results on three things: <b>relevance</b> (how well your profile matches the search), <b>distance</b> (how close you are to the person searching) and <b>prominence</b> (how well known and well reviewed you are). You cannot move your shop, so we work on relevance and prominence: a complete profile, pages that match each service, steady reviews and consistent listings.</p>
@@ -298,6 +310,7 @@ def build_hub(p):
 <h2>How Google picks the <span class="ac">top 3 on the map</span></h2>
 <p>Google ranks local results on <b>relevance</b>, <b>distance</b> and <b>prominence</b>. Distance is fixed by where you are. Relevance and prominence are what local SEO improves: a complete Google Business Profile, pages for each service, reviews, and the same details everywhere online.</p>
 {google_src()}
+{res_block(["us-pet-hospice", "us-hvac-durham"])}
 <h2>Local SEO <span class="ac">for your industry</span></h2>
 <div class="grid">{inds}</div>
 <h2>What it <span class="ac">costs</span></h2>
@@ -320,6 +333,7 @@ def build_ai(p):
 <ol class="steps">{steps}</ol>
 <h2>What it <span class="ac">costs</span></h2>
 {price_html()}
+{res_block(["us-pet-hospice", "us-metal-buildings"], "Named in AI answers: <span class=\"ac\">real clients</span>")}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 {cta(p['k'], 'business')}"""
@@ -338,6 +352,7 @@ def build_ads(p):
 <p>Ads bring calls fast, but they stop the day you stop paying. SEO is slower to start, then keeps bringing customers without a cost per click. Most small businesses do best with a small ads budget for calls now while <a href="/local-seo">local SEO</a> builds, and <a href="/ai-search-optimization">AI search</a> gets them named by ChatGPT too.</p>
 <h2>What we <span class="ac">do</span></h2>
 <ol class="steps">{steps}</ol>
+{res_block(["us-remodeling-group"], "Leads from ads: <span class=\"ac\">a real client</span>")}
 <h2>What it <span class="ac">costs</span></h2>
 <p>The free check costs nothing. Ad management is priced after the check, based on how many campaigns you need. Your ad budget is paid straight to Google or Meta from your own account, so you always own the account and the data.</p>
 <h2>Common <span class="ac">questions</span></h2>
@@ -372,6 +387,80 @@ def build_guide(g):
              {"@type": "ItemList", "name": g["h1"] + " " + g["h1ac"], "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": t} for i, (t, d) in enumerate(g["items"])]}]
     return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"], og_type="article", parent=g.get("parent"), og_img=og_img)
 
+
+# ---------- Client results: one hub and one page per client story (data in results.json, company names only) ----------
+RES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.json")))
+# Release order: a story is published by adding its slug here (2 a week, after the quality gate in the plan).
+PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group"]
+STORIES = [RES[k] for k in PUBLISHED]
+SAMPLE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
+
+def res_cards(keys):
+    out = ""
+    for k in keys:
+        if k not in PUBLISHED: continue
+        r = RES[k]; src, w, h = r["thumb"]
+        out += (f'<a href="/results/{r["url"]}" data-res="{E(r["url"])}"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
+                f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span><span><i>Read the story</i></span></div></a>')
+    return f'<div class="rs">{out}</div>' if out else ""
+
+def res_block(keys, head="Real results <span class=\"ac\">for businesses like yours</span>"):
+    c = res_cards(keys)
+    return f'<h2>{head}</h2><div data-track="results">{c}</div><p class="src">{E(SAMPLE)} <a href="/results">See all client results</a>.</p>' if c else ""
+
+MORE_HEAD = 'More client <span class="ac">results</span>'
+def build_story(r):
+    slug = "results/" + r["url"]; url = f"{SITE}/{slug}"
+    tiles = "".join(f"<div><b>{E(a)}</b><span>{E(b)}</span></div>" for a, b in r["stats"])
+    glance = {a: b for a, b in r["glance"]}
+    steps = "".join(f'<li><b>{E(n)} <span class="meta">({E(when)})</span></b>{" ".join(E(x) for x in xs)}</li>' for n, when, xs in r["phases"])
+    chall = "".join(f'<div class="card"><h3>{E(a)}</h3><p>{E(b)}</p></div>' for a, b in r["challenges"])
+    results = "".join(f"<li><b>{E(a)}</b>{E(b)}</li>" for a, b in r["results"])
+    shots = "".join(f'<figure class="shot"><img src="{src}" alt="{E(cap)}" width="{w}" height="{h}" loading="lazy" decoding="async"><figcaption>{E(cap)}</figcaption></figure>' for src, cap, w, h in r["images"])
+    quotes = "".join(f'<blockquote class="qt">“{E(q)}”<small>{E(r["who"])}, {E(when)}</small></blockquote>' for q, when in r["quotes"])
+    others = [k for k in PUBLISHED if k != r["slug"]][:2]
+    rel = "".join(f'<li><a href="/{u}">{E(next((p["h1"] for p in INDUSTRIES if p["slug"] == u), {"local-seo": "Local SEO services", "ai-search-optimization": "Get recommended by ChatGPT", "google-and-meta-ads": "Google and Meta ads"}.get(u, u)))}</a></li>' for u in r["rel"])
+    body = f"""{h1(r['h1a'], r['h1b'])}
+<p class="meta">{E(r['company'])} · {E(r['label'])} · {E(r['place'])} · {E(glance.get('Timeline', ''))}</p>
+<p class="ans">{E(r['sub'])}</p>
+<div class="tiles" data-track="story-results">{tiles}</div>
+<h2>The <span class="ac">problem</span></h2>
+<p>{E(r['client'])}</p>
+<ul>{''.join(f'<li>{E(g)}</li>' for g in r['goals'])}</ul>
+<h2>What we <span class="ac">did</span></h2>
+<p class="src">Services: {E(glance.get('Services', ''))}.</p>
+<ol class="steps">{steps}</ol>
+<h2>What stood in <span class="ac">the way</span></h2>
+<div class="grid">{chall}</div>
+<h2>The <span class="ac">results</span></h2>
+<ol class="steps">{results}</ol>
+<h2>The <span class="ac">proof</span></h2>
+{shots}
+<h3 style="margin-top:28px">In the client’s own words</h3>
+{quotes}
+<p class="src">Quotes are copied word for word from our conversations with the client. The full conversation can be shown on a live screen-share.</p>
+<h2>What this means for <span class="ac">your business</span></h2>
+<p>{E(r['means'])}</p>
+<section class="clu"><h2>Related services</h2><ul>{rel}</ul></section>
+<div class="sample">{E(SAMPLE)}</div>
+{res_block(others, MORE_HEAD)}
+{form_html(r['k'], r['biz'])}"""
+    art = {"@type": "Article", "@id": url + "#article", "headline": r["title"].split(" | ")[0], "description": r["desc"], "author": FOUNDER, "publisher": ORG,
+           "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US", "mainEntityOfPage": {"@id": url + "#page"},
+           "about": {"@type": "Organization", "name": r["company"]}, "image": {"@type": "ImageObject", "url": SITE + r["thumb"][0], "width": r["thumb"][1], "height": r["thumb"][2]}}
+    return shell(slug, r["title"], r["desc"], body, [art], r["h1a"] + " " + r["h1b"], og_type="article", og_img=r["thumb"][0], crumb_mid=("/results", "Client results"))
+
+def build_results():
+    slug = "results"; url = f"{SITE}/{slug}"
+    body = f"""{h1('Real results,', 'checked live on Google')}
+<p class="ans">{E(SAMPLE)}</p>
+<p class="lead">Each story shows the business, the problem, what we did month by month, and the proof: a dated Google check and the client’s own words. Company names are shown; the people behind them stay private.</p>
+{res_cards(PUBLISHED)}
+<p class="src">New stories are added every week. Want proof for your industry? Ask on the free check and we will send the stories closest to your business.</p>
+{form_html('other', 'business')}"""
+    graph = [{"@type": "ItemList", "name": "Business Santa client results", "itemListElement": [{"@type": "ListItem", "position": i + 1, "url": f"{SITE}/results/{r['url']}", "name": r["title"].split(" | ")[0]} for i, r in enumerate(STORIES)]}]
+    return shell(slug, "Client Results and Case Studies | Business Santa", "Real client results from Business Santa: Google rankings, traffic and leads for US and international businesses, each with dated proof and the client’s own words.", body, graph, "Client results")
+
 def write(slug, s):
     assert "—" not in s and "–" not in s, f"dash in {slug}"
     f = os.path.join(OUT, slug + ".html"); os.makedirs(os.path.dirname(f), exist_ok=True)
@@ -383,6 +472,8 @@ write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
 write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
+res = ["results"]; write("results", build_results())
+for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
 
 # Sitemap: every page built above is listed automatically.
 # <lastmod> is the day a page's HTML last really changed (tracked by content hash in lastmod.json),
@@ -410,14 +501,14 @@ def lastmod(u):
 
 # One flat sitemap: Google reads every URL on the first fetch. (A sitemap index only pays off past thousands of URLs;
 # its child files wait in Search Console as "Couldn't fetch" until Google gets round to them.)
-rows = [(u, lastmod(u)) for u in [""] + svc + ind + gds + ["privacy", "terms"]]
+rows = [(u, lastmod(u)) for u in [""] + svc + res + ind + gds + ["privacy", "terms"]]
 open(os.path.join(OUT, "sitemap.xml"), "w").write(
     '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
     + "".join(f"  <url><loc>{SITE}/{u}</loc><lastmod>{d}</lastmod></url>\n" for u, d in rows) + "</urlset>\n")
 for old in ("sitemap-main.xml", "sitemap-industries.xml", "sitemap-guides.xml"):
     if os.path.exists(os.path.join(OUT, old)): os.remove(os.path.join(OUT, old))
 json.dump(state, open(LM, "w"), indent=1, sort_keys=True)
-print("built", len(ind) + len(svc) + len(gds), "pages and sitemap.xml with", len(rows), "URLs")
+print("built", len(ind) + len(svc) + len(gds) + len(res), "pages and sitemap.xml with", len(rows), "URLs")
 
 # Home page footers (desktop home-desktop.html and the mobile template) get the same link lists, between <!--FTNAV--> markers.
 def _patch(path, inner):

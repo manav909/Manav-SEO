@@ -4,7 +4,8 @@
    - Standard events Meta can optimize ads for: PageView, ViewContent (key sections seen), Contact (WhatsApp or email), Lead (form sent).
    - Custom events for improving the page: ScrollDepth, EngagedTime, FormStart, FormError, VideoProgress, and the page's own events.
    - The same events go to /api/capi (Meta Conversions API) with the same event id, so Meta counts each once.
-     That server route does nothing until a Conversions API token is set in Vercel. */
+     That server route does nothing until a Conversions API token is set in Vercel.
+   - Google Analytics 4 (G-F3V2VVEQR9) gets the same Contact, Lead and section events, so organic and ad visitors can be compared. */
 (function () {
   if (window.BST) return;
   var PX = "3294418987387872";
@@ -21,7 +22,7 @@
     : /google\.|bing\.|duckduckgo\.|yahoo\./.test(ref) ? "organic" : /chatgpt|openai|perplexity|gemini|copilot|claude/.test(ref) ? "ai"
     : /facebook|instagram|fb\.|l\.instagram/.test(ref) ? "social" : ref && ref.indexOf("businesssanta.com") < 0 ? "referral" : "direct";
   var path = location.pathname.replace(/\.html$/, "") || "/";
-  var ptype = path === "/" || path === "/home-phone" ? (innerWidth <= 760 ? "home mobile" : "home desktop") : path.indexOf("/guides/") === 0 ? "guide" : "service page";
+  var ptype = path === "/" || path === "/home-phone" ? (innerWidth <= 760 ? "home mobile" : "home desktop") : path.indexOf("/guides/") === 0 ? "guide" : path.indexOf("/results") === 0 ? "results" : "service page";
   var base = { page: path, page_type: ptype, traffic: traffic };
   if (src.utm_source) base.utm_source = src.utm_source;
   if (src.utm_campaign) base.utm_campaign = src.utm_campaign;
@@ -61,6 +62,19 @@
   w.clarity = w.clarity || function () { (w.clarity.q = w.clarity.q || []).push(arguments); };
   function cl() { try { w.clarity.apply(null, arguments); } catch (e) { } }
   cl("set", "traffic", traffic); cl("set", "page_type", ptype);
+  /* Google Analytics 4: the same lead events as Meta, so organic, social and ad visitors can be compared */
+  var GA = "G-F3V2VVEQR9";
+  w.dataLayer = w.dataLayer || [];
+  function gtag() { w.dataLayer.push(arguments); }
+  if (!w.gtag) w.gtag = gtag;
+  gtag("js", new Date()); gtag("config", GA, { page_type: ptype, traffic: traffic });
+  var gaOn = false;
+  function gaLoad() { if (gaOn || !LIVE) return; gaOn = true; var g = d.createElement("script"); g.async = true; g.src = "https://www.googletagmanager.com/gtag/js?id=" + GA; d.head.appendChild(g); }
+  function ga(name, data) { try { var o = mix(data); delete o.page; gtag("event", name, o); } catch (e) { } }
+  var GA_STD = { Contact: "contact", Lead: "generate_lead", ViewContent: "view_section" };
+  function gaName(n) { return n.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().slice(0, 40); }
+  if (d.readyState === "complete") setTimeout(gaLoad, 1500); else addEventListener("load", function () { setTimeout(gaLoad, 1500); });
+  ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, gaLoad, { once: true, passive: true }); });
   var on = false;
   function load() { if (on || !LIVE) return; on = true; var t = d.createElement("script"); t.async = true; t.src = "https://connect.facebook.net/en_US/fbevents.js"; d.head.appendChild(t); var c = d.createElement("script"); c.async = true; c.src = "https://www.clarity.ms/tag/" + CLARITY; d.head.appendChild(c); }
   ["scroll", "pointerdown", "keydown", "touchstart"].forEach(function (e) { addEventListener(e, load, { once: true, passive: true }); });
@@ -81,9 +95,9 @@
       else fetch("/api/capi", { method: "POST", body: body, keepalive: true, headers: { "Content-Type": "application/json" } });
     } catch (e) { }
   }
-  function std(name, data, user) { var eid = id(), o = mix(data); try { fbq("track", name, o, { eventID: eid }); } catch (e) { } capi(name, eid, o, user); if (name !== "PageView") cl("event", name); if (name === "Lead") cl("upgrade", "lead"); /* keep every lead's recording */ }
+  function std(name, data, user) { var eid = id(), o = mix(data); try { fbq("track", name, o, { eventID: eid }); } catch (e) { } capi(name, eid, o, user); if (name !== "PageView") cl("event", name); if (GA_STD[name]) ga(GA_STD[name], data); if (name === "Lead") cl("upgrade", "lead"); /* keep every lead's recording */ }
   var CL_SKIP = { ScrollDepth: 1, EngagedTime: 1, VideoProgress: 1 };
-  function custom(name, data) { try { fbq("trackCustom", name, mix(data)); } catch (e) { } if (!CL_SKIP[name]) cl("event", name); }
+  function custom(name, data) { try { fbq("trackCustom", name, mix(data)); } catch (e) { } if (!CL_SKIP[name]) { cl("event", name); ga(gaName(name), data); } }
 
   std("PageView");
 
