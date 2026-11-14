@@ -565,3 +565,32 @@ _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="
 _patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
        + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in GUIDE_LINKS) + "</nav>")
 print("footers updated")
+
+# Home page "Real client results" block (desktop and phone), between <!--RESULTS--> markers.
+# Filled from the newest published US stories, so each story release updates the home page too.
+def _home_cards(cls):
+    us = [r for r in STORIES if "US" in r["place"]]
+    pick = sorted(us, key=lambda r: (r.get("published", ""), PUBLISHED.index(r["slug"]) if r.get("slug") in PUBLISHED else 0), reverse=True)[:4]
+    out = []
+    for r in pick:
+        src, w, h = r["thumb"]
+        out.append(f'<a class="{cls}c" href="/results/{r["url"]}" data-track="home-result"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
+                   f'<span><small>{E(r["label"])} &middot; {E(r["place"])}</small><b>{E(r["hero"])}</b><em>{E(r["company"])}</em></span></a>')
+    return "".join(out)
+_HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:{ih}px;object-fit:cover;object-position:left top;display:block;background:#f1f5f9}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
+_SAMPLE_LINE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
+_desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
+         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}</style>"
+         '<div class="wrap hresw"><span class="eyb">Real client results</span><h2 class="h2">Real US businesses. <em>Real, dated results.</em></h2>'
+         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a></div></section>')
+_mob = ('<section data-track="client-results" class="sec" id="clients"><style>' + _HCSS.format(c="hrm", cols="repeat(2,minmax(0,1fr))", ih=110, bs=".98rem")
+        + ".hrma{color:#8a5a00!important}</style>"
+        '<div class="w"><span class="eyb">Real client results</span><h2>Real US businesses, <em class="ac">real results</em></h2>'
+        f'<p class="lead">{_SAMPLE_LINE}</p><div class="hrm">{_home_cards("hrm")}</div><a class="hrma" href="/results">See all client results &rarr;</a></div></section>')
+def _patch_res(path, inner):
+    s = open(path).read()
+    n = re.sub(r"<!--RESULTS-->.*?<!--/RESULTS-->", lambda m: "<!--RESULTS-->" + inner + "<!--/RESULTS-->", s, count=1, flags=re.S)
+    assert "<!--RESULTS-->" in n, path
+    if n != s: open(path, "w").write(n)
+_patch_res(_HOME, _desk); _patch_res(_MTPL, _mob)
+print("home results updated")
