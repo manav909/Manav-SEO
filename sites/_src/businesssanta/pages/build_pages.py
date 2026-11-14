@@ -18,6 +18,7 @@ E = html.escape
 ORG = {"@id": f"{SITE}/#org"}
 FOUNDER = {"@id": f"{SITE}/#manav"}
 PRICES = [("On-page SEO fixes", 120), ("Technical SEO fixes", 160)]
+WA_OFFER = "https://wa.me/917009775189?text=" + "Hi%20Business%20Santa%2C%20I%27d%20like%20the%20%24149%20Holiday%20Google%20tune-up."
 WA = "https://wa.me/917009775189?text=" + "Hi%20Business%20Santa%2C%20I%27d%20like%20a%20free%20check%20for%20my%20business."
 
 CSS = """@font-face{font-family:"BS Head";src:url(/assets/img/bs-head-800.woff2) format("woff2");font-weight:600 900;font-display:swap}
@@ -81,7 +82,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
 .ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft .ftg{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1080px}.ft nav{display:flex;flex-direction:column;gap:7px}.ft nav b{font:800 .95rem var(--fh);color:var(--ink);margin-bottom:2px}.ft a{color:var(--mut);text-decoration:none}.ft a:hover{color:var(--ink);text-decoration:underline}.ft .ftc{max-width:1080px;margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}@media(max-width:760px){.ft .ftg{grid-template-columns:1fr 1fr;gap:26px 18px}}
 """
-CSS += """.xm{display:block;background:var(--navy);color:#fff;text-align:center;font-size:.9rem;padding:8px 16px;text-decoration:none}.xm b{color:var(--y);font-weight:700}.xm:hover b{text-decoration:underline}
+CSS += """.xm{display:block;background:var(--navy);color:#fff;text-align:center;font-size:.9rem;padding:8px 16px;text-decoration:none}.xm b{color:var(--y);font-weight:700}.offer{margin:28px 0;padding:22px 22px 20px;border-radius:18px;background:var(--navy);color:#fff;box-shadow:inset 0 4px 0 var(--y)}.offer .ok{margin:0 0 4px;font-size:.78rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--y)}.offer h2{color:#fff;margin:0 0 10px}.offer h2 span{color:var(--y);white-space:nowrap}.offer ul{margin:0 0 16px;padding-left:20px;display:grid;gap:6px;color:#e2e8f0}.offer .row{display:flex;flex-wrap:wrap;gap:10px}.xm:hover b{text-decoration:underline}
 .tbl{overflow-x:auto;margin:0 0 1.2em}.tbl table{width:100%;border-collapse:collapse;font-size:.95rem}.tbl th,.tbl td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}.tbl th{background:var(--soft);color:var(--ink);font-weight:700}.tbl td:first-child{white-space:nowrap}
 @media(max-width:600px){.tbl td:first-child{white-space:normal}}"""
 
@@ -218,7 +219,7 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
 <script type="application/ld+json">{ld}</script>
 </head>
 <body>
-{"" if slug == HOLIDAY_HUB["slug"] else f'<a class="xm" href="{XH}">Christmas is close: <b>see what to fix on Google before December 25</b></a>'}
+{"" if slug == HOLIDAY_HUB["slug"] else (f'<a class="xm" href="{XH}#offer">Holiday Google tune-up, $149 until Dec 10: <b>get found by Christmas shoppers</b></a>' if TODAY <= "2026-12-10" else f'<a class="xm" href="{XH}">Christmas is close: <b>see what to fix on Google before December 25</b></a>')}
 <header class="hd"><div class="w"><a class="brand" href="/"><img src="/assets/img/logo-96.webp" alt="" width="36" height="36">Business <i>Santa</i></a><a class="btn dk" href="#check">Free check</a></div></header>
 <main class="w">
 <nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › {f'<a href="/{par["slug"]}">{E(par["h1"])}</a> › ' if par else ''}{f'<a href="{crumb_mid[0]}">{E(crumb_mid[1])}</a> › ' if crumb_mid else ''}<span>{E(crumb_name)}</span></nav>
@@ -411,7 +412,7 @@ def build_guide(g):
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(g['faq'])}
 {byline()}
-{holiday_cluster(g["slug"]) if g.get("holiday") else cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
+{(holiday_offer() + holiday_cluster(g["slug"])) if g.get("holiday") else cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
 {cta(_par(g)["k"], _par(g)["biz"]) if g.get("parent") else cta('other', 'business')}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": g["title"].split(" | ")[0], "description": g["desc"],
            "author": FOUNDER, "publisher": ORG, "datePublished": g.get("date", TODAY), "dateModified": g.get("date", TODAY), "inLanguage": "en-US",
@@ -441,6 +442,18 @@ def build_guides_hub():
     graph = [{"@type": "CollectionPage", "@id": url + "#cp", "name": "Business Santa guides", "url": url, "hasPart": [{"@type": "Article", "headline": g["title"].split(" | ")[0], "url": SITE + "/" + g["slug"]} for g in ALLG]}]
     return shell("guides", "Free Local SEO Guides for US Small Businesses | Business Santa", "Free plain-English guides for US small business owners: Google Maps, Google Business Profile, ChatGPT and AI search, holiday marketing and industry guides.", body, graph, "Guides")
 
+def holiday_offer():
+    """Christmas 2026 offer, shown on the Christmas plan and the holiday guides until 10 Dec."""
+    if TODAY > "2026-12-10": return ""
+    items = ["Holiday hours set on your Google profile for Thanksgiving, Christmas and New Year",
+             "Christmas offer posts and fresh photos added to your Google profile",
+             "A ChatGPT check: what it says when people ask for a business like yours",
+             "One-time price, no contract. Usually done in 3 to 7 days"]
+    li = "".join(f"<li>{E(t)}</li>" for t in items)
+    return (f'<section class="offer" id="offer" data-track="holiday-offer"><p class="ok">Christmas offer, until December 10</p>'
+            f'<h2>Holiday Google tune-up <span>$149</span></h2><ul>{li}</ul>'
+            f'<div class="row"><a class="btn" href="#check">Claim it with a free check</a><a class="btn wa" href="{WA_OFFER}" rel="noopener" data-wa="offer">Ask on WhatsApp</a></div></section>')
+
 def build_holiday_hub(p):
     url = SITE + XH
     rows = "".join(f"<tr><td><b>{E(d)}</b></td><td>{E(n)}</td><td>{E(w)}</td></tr>" for d, n, w in p["dates"])
@@ -448,6 +461,7 @@ def build_holiday_hub(p):
     gl = "".join(f'<div class="card"><h3><a href="/{g["slug"]}">{E(g["nav"])}</a></h3><p>{E(g["desc"])}</p></div>' for g in HOLIDAY_GUIDES)
     body = f"""{h1(p['h1'], p['h1ac'])}
 <p class="ans">{E(p['answer'])}</p>
+{holiday_offer()}
 <h2>The dates that <span class="ac">matter in 2026</span></h2>
 <div class="tbl"><table><thead><tr><th>Date</th><th>Day</th><th>Have this ready</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Week by week, <span class="ac">from now to New Year</span></h2>
