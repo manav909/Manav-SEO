@@ -156,7 +156,7 @@ def _nav(label, links, cls=""):
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", FOOT_GUIDES)
-    + _nav("Company", [("/results", "Client results"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
+    + _nav("Company", [("/results", "Client results"), ("/white-label-local-seo", "For agencies"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
 # Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
@@ -454,6 +454,43 @@ def holiday_offer():
             f'<h2>Holiday Google tune-up <span>$149</span></h2><ul>{li}</ul>'
             f'<div class="row"><a class="btn" href="#check">Claim it with a free check</a><a class="btn wa" href="{WA_OFFER}" rel="noopener" data-wa="offer">Ask on WhatsApp</a></div></section>')
 
+PARTNER = {"slug": "white-label-local-seo",
+  "title": "White-Label Local SEO for US Agencies and Web Designers | Business Santa",
+  "desc": "Your clients want Google Maps rankings, ChatGPT visibility and ads. We do the work behind your brand, you keep the client and the margin.",
+  "faq": [("Will you ever contact my clients?", "No. We work behind your brand and talk only to you, unless you ask us to join a call."),
+          ("Can the reports go out under my name?", "Yes. You get plain-English monthly reports you can send as your own."),
+          ("How do you price partner work?", "We quote per client, so you can resell at your own price and keep a healthy margin. Ask us for a quote on your first client."),
+          ("What can you take on?", "Google Business Profile and Google Maps work, local SEO, AI search visibility on ChatGPT, Perplexity and Google AI Overviews, and Google and Meta ads."),
+          ("How do we start?", "Send us one client's business below. We send you a free check you can share with them, and you decide from there.")]}
+
+def build_partners():
+    p = PARTNER; url = SITE + "/" + p["slug"]
+    what = [("Google Maps and Business Profile", "Categories, services, photos, posts, reviews and holiday hours, so your clients show up in the map results that get the calls."),
+            ("Local SEO", "Service and city pages, technical fixes, links and content on the client's site, done every month."),
+            ("AI search (GEO)", "Getting your clients named when people ask ChatGPT, Perplexity or Google AI for a business like theirs."),
+            ("Google and Meta ads", "Fast leads while SEO builds, set up and managed for your clients.")]
+    how = [("1. Send us one client", "Their business name, city and website. Nothing to sign."),
+           ("2. Get a free check", "We send a plain-English check of how they show up on Google, Google Maps and ChatGPT, ready to share."),
+           ("3. You set the price", "We quote you per client. You sell it as your own service."),
+           ("4. We do the work", "Monthly work and a report you can send under your brand. You stay the client's only contact.")]
+    wc = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in what)
+    hc = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in how)
+    body = f"""{h1("White-label local SEO", "for US agencies and web designers")}
+<p class="ans">Your clients ask for Google Maps rankings, ChatGPT visibility and ads. We do the work behind your brand, you keep the client and the margin.</p>
+<h2>What we do <span class="ac">under your brand</span></h2>
+<div class="grid">{wc}</div>
+<h2>How it <span class="ac">works</span></h2>
+<div class="grid">{hc}</div>
+<div class="mid"><p>You stay the face, we stay out of sight. Your client never hears our name unless you want them to.</p><a class="btn" href="#check">Send us one client</a></div>
+{res_block(["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group"], head="Work we have done <span class=\"ac\">for US businesses</span>")}
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+{byline()}
+{cta('other', 'client')}"""
+    svc = {"@type": "Service", "@id": url + "#service", "name": "White-label local SEO for agencies", "serviceType": "White-label local SEO, AI search and ads",
+           "provider": ORG, "areaServed": {"@type": "Country", "name": "United States"}, "url": url}
+    return shell(p["slug"], p["title"], p["desc"], body, [svc, faq_ld(url, p["faq"])], "White-label for agencies")
+
 def build_holiday_hub(p):
     url = SITE + XH
     rows = "".join(f"<tr><td><b>{E(d)}</b></td><td>{E(n)}</td><td>{E(w)}</td></tr>" for d, n, w in p["dates"])
@@ -587,6 +624,7 @@ write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
 write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
 write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_HUB["slug"])
 write("guides", build_guides_hub()); svc.append("guides")
+write(PARTNER["slug"], build_partners()); svc.append(PARTNER["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
 for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
