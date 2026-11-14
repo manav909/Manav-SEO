@@ -5,11 +5,12 @@ import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guide_img
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES, HOLIDAY_HUB, HOLIDAY_GUIDES, GOOGLE_SPECIAL
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
 EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
-ALLG = GUIDES + CLUSTER_GUIDES
+ALLG = GUIDES + CLUSTER_GUIDES + HOLIDAY_GUIDES
+XH = "/" + HOLIDAY_HUB["slug"]
 RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"]}
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
@@ -80,6 +81,10 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 body{padding-bottom:76px}@media(min-width:900px){body{padding-bottom:0}}
 .ft{margin-top:64px;padding:28px 0 40px;border-top:1px solid var(--line);font-size:.88rem;color:var(--mut)}.ft .ftg{display:grid;grid-template-columns:repeat(4,1fr);gap:24px;max-width:1080px}.ft nav{display:flex;flex-direction:column;gap:7px}.ft nav b{font:800 .95rem var(--fh);color:var(--ink);margin-bottom:2px}.ft a{color:var(--mut);text-decoration:none}.ft a:hover{color:var(--ink);text-decoration:underline}.ft .ftc{max-width:1080px;margin-top:26px;padding-top:16px;border-top:1px solid var(--line)}@media(max-width:760px){.ft .ftg{grid-template-columns:1fr 1fr;gap:26px 18px}}
 """
+CSS += """.xm{display:block;background:var(--navy);color:#fff;text-align:center;font-size:.9rem;padding:8px 16px;text-decoration:none}.xm b{color:var(--y);font-weight:700}.xm:hover b{text-decoration:underline}
+.tbl{overflow-x:auto;margin:0 0 1.2em}.tbl table{width:100%;border-collapse:collapse;font-size:.95rem}.tbl th,.tbl td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}.tbl th{background:var(--soft);color:var(--ink);font-weight:700}.tbl td:first-child{white-space:nowrap}
+@media(max-width:600px){.tbl td:first-child{white-space:normal}}"""
+
 
 JS = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "track.js")).read() + "\n" + open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "engage.js")).read() + r"""
 (function(){var B=window.BST,MAIL="seo@businesssanta.com",k=(document.getElementById("lf")||{}).dataset;if(k&&k.type)B.type(k.type.charAt(0).toUpperCase()+k.type.slice(1));
@@ -116,7 +121,7 @@ def _ilabel(p): return p.get("nav") or {"retail stores and boutiques": "Retail s
 def _glabel(g): return g.get("nav") or _GNAV.get(g["slug"]) or g["h1"].rstrip(":?")
 IND_LINKS = [("/" + p["slug"], _ilabel(p)) for p in INDUSTRIES]
 GUIDE_LINKS = [("/" + g["slug"], _glabel(g)) for g in ALLG]
-SVC_LINKS = [("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
+SVC_LINKS = [(XH, "Christmas plan 2026"), ("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
@@ -186,6 +191,7 @@ def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=
 <script type="application/ld+json">{ld}</script>
 </head>
 <body>
+{"" if slug == HOLIDAY_HUB["slug"] else f'<a class="xm" href="{XH}">Christmas is close: <b>see what to fix on Google before December 25</b></a>'}
 <header class="hd"><div class="w"><a class="brand" href="/"><img src="/assets/img/logo-96.webp" alt="" width="36" height="36">Business <i>Santa</i></a><a class="btn dk" href="#check">Free check</a></div></header>
 <main class="w">
 <nav class="crumb" aria-label="Breadcrumb"><a href="/">Business Santa</a> › {f'<a href="/{par["slug"]}">{E(par["h1"])}</a> › ' if par else ''}{f'<a href="{crumb_mid[0]}">{E(crumb_mid[1])}</a> › ' if crumb_mid else ''}<span>{E(crumb_name)}</span></nav>
@@ -378,14 +384,48 @@ def build_guide(g):
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(g['faq'])}
 {byline()}
-{cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
+{holiday_cluster(g["slug"]) if g.get("holiday") else cluster_html(g["parent"], g["slug"]) if g.get("parent") else ""}
 {cta(_par(g)["k"], _par(g)["biz"]) if g.get("parent") else cta('other', 'business')}"""
     art = {"@type": "Article", "@id": url + "#article", "headline": g["title"].split(" | ")[0], "description": g["desc"],
-           "author": FOUNDER, "publisher": ORG, "datePublished": TODAY, "dateModified": TODAY, "inLanguage": "en-US",
+           "author": FOUNDER, "publisher": ORG, "datePublished": g.get("date", TODAY), "dateModified": g.get("date", TODAY), "inLanguage": "en-US",
            "mainEntityOfPage": {"@id": url + "#page"}, "image": {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 675}}
     graph = [art, faq_ld(url, g["faq"]),
              {"@type": "ItemList", "name": g["h1"] + " " + g["h1ac"], "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": t} for i, (t, d) in enumerate(g["items"])]}]
-    return shell(g["slug"], g["title"], g["desc"], body, graph, g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"], og_type="article", parent=g.get("parent"), og_img=og_img)
+    crumb = g["nav"] if g.get("holiday") else g["h1"].rstrip(":") if g.get("parent") else g["h1"] + " " + g["h1ac"]
+    return shell(g["slug"], g["title"], g["desc"], body, graph, crumb, og_type="article", parent=g.get("parent"), og_img=og_img,
+                 crumb_mid=(XH, "Christmas plan 2026") if g.get("holiday") else None)
+
+def holiday_cluster(cur=None):
+    li = "".join(f'<li><a href="/{g["slug"]}">{E(g["title"].split(" | ")[0])}</a></li>' for g in HOLIDAY_GUIDES if g["slug"] != cur)
+    back = f'<li><a href="{XH}">Christmas marketing for small businesses: the full 2026 plan</a></li>' if cur else ""
+    return f'<section class="clu"><h2>Christmas 2026 guides</h2><ul>{back}{li}</ul></section>'
+
+def build_holiday_hub(p):
+    url = SITE + XH
+    rows = "".join(f"<tr><td><b>{E(d)}</b></td><td>{E(n)}</td><td>{E(w)}</td></tr>" for d, n, w in p["dates"])
+    weeks = "".join(f'<div class="card"><h3>{E(t)}: {E(k)}</h3><p>{E(d)}</p></div>' for t, k, d in p["weeks"])
+    gl = "".join(f'<div class="card"><h3><a href="/{g["slug"]}">{E(g["nav"])}</a></h3><p>{E(g["desc"])}</p></div>' for g in HOLIDAY_GUIDES)
+    body = f"""{h1(p['h1'], p['h1ac'])}
+<p class="ans">{E(p['answer'])}</p>
+<h2>The dates that <span class="ac">matter in 2026</span></h2>
+<div class="tbl"><table><thead><tr><th>Date</th><th>Day</th><th>Have this ready</th></tr></thead><tbody>{rows}</tbody></table></div>
+<h2>Week by week, <span class="ac">from now to New Year</span></h2>
+<div class="grid">{weeks}</div>
+<div class="mid"><p>Not sure what Google and ChatGPT show about you right now?</p><a class="btn" href="#check">Get my free check</a></div>
+<h2>Holiday guides <span class="ac">by task</span></h2>
+<div class="grid">{gl}</div>
+{google_src((GOOGLE_SPECIAL,))}
+{res_block(["us-pet-hospice", "us-hvac-durham"])}
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+{byline()}
+{cta('other', 'business')}"""
+    art = {"@type": "Article", "@id": url + "#article", "headline": p["title"].split(" | ")[0], "description": p["desc"],
+           "author": FOUNDER, "publisher": ORG, "datePublished": "2026-11-14", "dateModified": "2026-11-14", "inLanguage": "en-US",
+           "mainEntityOfPage": {"@id": url + "#page"}}
+    graph = [art, faq_ld(url, p["faq"]),
+             {"@type": "ItemList", "name": "Holiday guides", "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": g["nav"], "url": SITE + "/" + g["slug"]} for i, g in enumerate(HOLIDAY_GUIDES)]}]
+    return shell(p["slug"], p["title"], p["desc"], body, graph, "Christmas plan 2026", og_type="article")
 
 
 # ---------- Client results: one hub and one page per client story (data in results.json, company names only) ----------
@@ -471,6 +511,7 @@ for p in INDUSTRIES: write(p["slug"], build_industry(p)); ind.append(p["slug"])
 write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
 write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
+write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_HUB["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
 for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
@@ -521,6 +562,6 @@ _MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__))
 _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
        + '<a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
        + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", GUIDE_LINKS))
-_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:1] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
+_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
        + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in GUIDE_LINKS) + "</nav>")
 print("footers updated")
