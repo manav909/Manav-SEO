@@ -432,7 +432,8 @@
     [
      "Weekly links, paid guest posts and blogs, with weekly reports.",
      "Competitor and gap analysis against the owner's list, with keyword targets for North Carolina, Florida and more states.",
-     "About 1,200 to 1,500 monthly visits after the first month (October 2025)."
+     "About 1,200 to 1,500 monthly visits after the first month (October 2025).",
+     "Google Search Console, December 2025 to January 2026: impressions up from 104K to 137K and clicks up from 1.65K to 1.86K, with average position improving."
     ]
    ],
    [
@@ -448,7 +449,7 @@
     [
      "New home and category page content, a Google Merchant Center review and a Google Ads plan.",
      "A new homepage designed in Figma from the owner's own references.",
-     "March 2026: organic traffic up 92% and keyword rankings up 13% in Search Console."
+     "March 2026: organic traffic up 92% and ranking keywords up 13% in Semrush (25 March 2026)."
     ]
    ]
   ],
@@ -473,11 +474,15 @@
   "results": [
    [
     "Organic traffic",
-    "+92% in the Search Console comparison shared in March 2026"
+    "+92% month over month in Semrush (25 March 2026)"
    ],
    [
-    "Keyword rankings",
-    "+13% (March 2026)"
+    "Google visibility",
+    "Search Console impressions up from 104K to 137K and clicks from 1.65K to 1.86K, December 2025 to January 2026"
+   ],
+   [
+    "Ranking keywords",
+    "+13% in Semrush (25 March 2026)"
    ],
    [
     "Brand search",
@@ -520,19 +525,19 @@
   "h1a": "Organic traffic up 92%",
   "h1b": "after a sudden drop",
   "title": "SEO Traffic Drop Recovery: +92% Organic Traffic | Business Santa",
-  "desc": "Prestige Steel Structures lost traffic. We found the cause, cleaned up toxic links and indexing, then ran monthly SEO and AI search: organic traffic up 92% by March 2026.",
+  "desc": "Prestige Steel Structures lost traffic. We found the cause, cleaned up toxic links and indexing, then ran monthly SEO and AI search: organic traffic up 92% in Semrush by March 2026.",
   "stats": [
    [
     "+92%",
-    "organic traffic (Search Console, March 2026)"
+    "organic traffic month over month (Semrush, 25 March 2026)"
+   ],
+   [
+    "+32%",
+    "Google impressions, 104K to 137K (Search Console, Dec 2025 to Jan 2026)"
    ],
    [
     "#1",
     "on Google US for the brand, with an AI Overview panel"
-   ],
-   [
-    "+13%",
-    "keyword rankings (March 2026)"
    ]
   ],
   "means": "When traffic drops, more content is rarely the fix. Find the cause first: bad links, pages Google stopped indexing, or on-page problems. Clean that up, then build. Building on top of a problem wastes every month that follows.",
@@ -554,6 +559,18 @@
     "Live Google US check, 14 November 2026.",
     1200,
     941
+   ],
+   [
+    "/assets/img/results/proof-semrush-prestige-mar2026.webp",
+    "Semrush Domain Overview, 25 March 2026: organic traffic +92%, organic keywords +13%.",
+    1400,
+    555
+   ],
+   [
+    "/assets/img/results/proof-gsc-prestige-dec-jan.webp",
+    "Google Search Console, December 2025 compared with January 2026.",
+    1400,
+    570
    ],
    [
     "/assets/img/results/card-t12-us-metal-buildings.webp",
