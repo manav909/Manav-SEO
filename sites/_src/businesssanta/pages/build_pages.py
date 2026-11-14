@@ -43,7 +43,7 @@ h1 .ac{display:block;color:var(--ink)}h1 .ac span{background:linear-gradient(tra
 .lead{font-size:1.08rem}
 .qs{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0;padding:0;list-style:none}.qs li{padding:8px 14px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 1px var(--line);font-size:.93rem;color:var(--ink)}
 .qs li::before{content:"\\201C"}.qs li::after{content:"\\201D"}
-.grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}@media(min-width:700px){.grid{grid-template-columns:1fr 1fr}}
+.grid{display:grid;grid-template-columns:1fr;gap:12px;margin-top:18px}@media(min-width:700px){.grid{grid-template-columns:1fr 1fr}.grid>:last-child:nth-child(odd),.rs>:last-child:nth-child(odd){grid-column:1/-1}.rs>:last-child:nth-child(odd){display:grid;grid-template-columns:1fr 1fr}.rs>:last-child:nth-child(odd) img{height:100%}}
 .card{padding:18px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.05)}.card p{margin:6px 0 0;font-size:.97rem}
 ol.steps{counter-reset:s;list-style:none;margin:18px 0 0;padding:0}ol.steps li{counter-increment:s;position:relative;padding:0 0 18px 50px}ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--y);color:#111;font:800 .95rem var(--fh)}
 ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-.01em}
@@ -69,8 +69,8 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .tiles div{padding:16px;border-radius:16px;background:var(--soft);box-shadow:0 0 0 1px var(--line)}.tiles b{display:block;font:800 1.7rem var(--fh);color:var(--ink);letter-spacing:-.03em}.tiles span{font-size:.88rem;line-height:1.35;display:block;margin-top:4px}
 .meta{margin:14px 0 0;font-size:.92rem;color:var(--mut)}
 .rs{display:grid;grid-template-columns:1fr;gap:14px;margin-top:18px}@media(min-width:700px){.rs{grid-template-columns:1fr 1fr}}
-.rs a{display:block;border-radius:18px;overflow:hidden;text-decoration:none;color:var(--ink2);background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.06);transition:transform .15s}.rs a:hover{transform:translateY(-2px)}
-.rs img{display:block;width:100%;height:auto;background:var(--navy)}.rs .t{padding:14px 16px 16px}.rs .t b{display:block;font:800 1.15rem var(--fh);color:var(--ink);letter-spacing:-.02em}.rs .t span{display:block;margin-top:4px;font-size:.9rem}.rs .t i{font-style:normal;color:var(--yd);font-weight:700}
+.rs a{display:flex;flex-direction:column;border-radius:18px;overflow:hidden;text-decoration:none;color:var(--ink2);background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.06);transition:transform .15s}.rs a:hover{transform:translateY(-2px)}
+.rs img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;background:#0c1321}.rs .t{padding:14px 16px 16px;flex:1;display:flex;flex-direction:column}.rs .t span:last-child{margin-top:auto;padding-top:8px}.rs .t b{display:block;font:800 1.15rem var(--fh);color:var(--ink);letter-spacing:-.02em}.rs .t span{display:block;margin-top:4px;font-size:.9rem}.rs .t i{font-style:normal;color:var(--yd);font-weight:700}
 .shot{margin:18px 0 0}.shot img{display:block;width:100%;border-radius:16px;box-shadow:0 0 0 1px var(--line)}.shot figcaption{margin-top:6px;font-size:.85rem;color:var(--mut)}
 .qt{margin:14px 0 0;padding:14px 18px;border-left:4px solid var(--y);background:var(--soft);border-radius:0 14px 14px 0;color:var(--ink)}.qt small{display:block;margin-top:4px;color:var(--mut);font-size:.85rem}
 .sample{margin:22px 0 0;padding:16px 18px;border-radius:16px;background:#fff3c4;color:var(--ink)}
@@ -108,8 +108,29 @@ var bar=document.getElementById("bar"),ck=document.getElementById("check");if(ba
 })();"""
 
 def page_links(cur):
-    items = [(f"/{p['slug']}", p["h1"]) for p in INDUSTRIES] + [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")] + [(f"/{g['slug']}", g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]) for g in ALLG]
-    return [(u, t) for u, t in items if u != "/" + cur]
+    """A short, relevant set of next pages for the end of each page (all pages stay listed on /guides and in the footer)."""
+    gl = lambda g: g["h1"].rstrip(":") + ": " + g["h1ac"] if g["h1"].endswith(":") else g["h1"] + " " + g["h1ac"]
+    ind = {p["slug"]: p for p in INDUSTRIES}
+    me = next((g for g in ALLG if g["slug"] == cur), None)
+    out = []
+    if me and me.get("parent") in ind:
+        out.append(("/" + me["parent"], ind[me["parent"]]["h1"]))
+        sib = [g for g in CLUSTER_GUIDES if g.get("parent") == me["parent"]]
+    elif me and me.get("holiday"):
+        out.append((XH, "Christmas plan 2026")); sib = HOLIDAY_GUIDES
+    elif cur in ind:
+        sib = [g for g in CLUSTER_GUIDES if g.get("parent") == cur]
+    elif cur == HOLIDAY_HUB["slug"]:
+        sib = []
+    else:
+        sib = GUIDES
+    out += [("/" + g["slug"], gl(g)) for g in sib if g["slug"] != cur][:4]
+    if XH not in [u for u, _ in out] and cur != HOLIDAY_HUB["slug"]: out.append((XH, "Christmas plan 2026"))
+    out += [("/local-seo", "Local SEO for any business"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads"), ("/results", "Client results"), ("/guides", f"All {len(ALLG)} guides")]
+    seen, res = set(), []
+    for u, t in out:
+        if u != "/" + cur and u not in seen: seen.add(u); res.append((u, t))
+    return res
 
 # Site-wide link lists. Footers on every page (inner pages, desktop home, mobile home) are built from these,
 # the same lists the sitemap uses, so a new page shows up everywhere on the next build.
@@ -455,11 +476,30 @@ PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remod
 STORIES = [RES[k] for k in PUBLISHED]
 SAMPLE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
 
+def thumb16(r):
+    """Uniform 16:10 card picture for a story, so cards in a row line up with no empty space.
+    The whole proof stays visible: it is fitted on the card's own navy, never cropped."""
+    src = r["thumb"][0]; name = "tn-" + r["slug"] + ".webp"; dst = os.path.join(OUT, "assets/img/results", name)
+    try:
+        from PIL import Image
+        im = Image.open(os.path.join(OUT, src.lstrip("/"))).convert("RGB")
+        W, H, BG = 1200, 750, (12, 19, 33)
+        yel = lambda px: px[0] > 200 and px[1] > 140 and px[2] < 90
+        top = 0
+        while top < 20 and yel(im.getpixel((im.width // 2, top))): top += 1
+        im = im.crop((0, top, im.width, im.height))
+        k = min(W / im.width, (H - 6) / im.height); nw, nh = int(im.width * k), int(im.height * k)
+        c = Image.new("RGB", (W, H), BG); c.paste(im.resize((nw, nh), Image.LANCZOS), ((W - nw) // 2, 6 + (H - 6 - nh) // 2))
+        c.paste((253, 185, 19), (0, 0, W, 6)); c.save(dst, quality=84)
+    except Exception:
+        if not os.path.exists(dst): return r["thumb"]
+    return ["/assets/img/results/" + name, 1200, 750]
+
 def res_cards(keys):
     out = ""
     for k in keys:
         if k not in PUBLISHED: continue
-        r = RES[k]; src, w, h = r["thumb"]
+        r = RES[k]; src, w, h = thumb16(r)
         out += (f'<a href="/results/{r["url"]}" data-res="{E(r["url"])}"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
                 f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span><span><i>Read the story</i></span></div></a>')
     return f'<div class="rs">{out}</div>' if out else ""
@@ -594,11 +634,11 @@ def _home_cards(cls):
     pick = sorted(us, key=lambda r: (r.get("published", ""), PUBLISHED.index(r["slug"]) if r.get("slug") in PUBLISHED else 0), reverse=True)[:4]
     out = []
     for r in pick:
-        src, w, h = r["thumb"]
+        src, w, h = thumb16(r)
         out.append(f'<a class="{cls}c" href="/results/{r["url"]}" data-track="home-result"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
                    f'<span><small>{E(r["label"])} &middot; {E(r["place"])}</small><b>{E(r["hero"])}</b><em>{E(r["company"])}</em></span></a>')
     return "".join(out)
-_HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:{ih}px;object-fit:cover;object-position:left top;display:block;background:#f1f5f9}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
+_HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1321}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px;flex:1}}.{c}c em{{margin-top:auto;padding-top:6px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
 _SAMPLE_LINE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
 _desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
          + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}</style>"
