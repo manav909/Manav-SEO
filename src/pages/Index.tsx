@@ -134,7 +134,7 @@ const DashboardCard = () => {
 
 /* ─── Marquee ─── */
 const items = [
-  '2,000+ Projects Delivered','↑ 40% Avg Ranking Lift','94% Client Retention',
+  '3,000+ Orders Delivered','↑ 40% Avg Ranking Lift','94% Client Retention',
   'AI-Native SEO','Fiverr Top Rated','ChatGPT Visible','Perplexity Citations',
   '30+ Countries','Google AI Overviews','E-E-A-T Authority','10x AI Citations',
   'Validation-First','Live Dashboards',
@@ -238,7 +238,7 @@ export default function Index() {
             <div className="glass" style={{display:'inline-flex',alignItems:'center',gap:7,borderRadius:999,padding:'6px 14px',marginBottom:24}}>
               <div className="spa-nebula" style={{height:5,width:5,borderRadius:'50%',background:'#6366f1',boxShadow:'0 0 8px #6366f1',flexShrink:0}}/>
               <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.6)',letterSpacing:'0.06em'}}>
-                AI-NATIVE SEO · FIVERR TOP RATED · 2,000+ PROJECTS
+                AI-NATIVE SEO · FIVERR TOP RATED · 3,000+ ORDERS
               </span>
             </div>
 
@@ -420,7 +420,7 @@ export default function Index() {
             {/* Stats column */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
               {[
-                { v:'2,000+',  l:'Projects Delivered',    c:'#6366f1', sub:'across 30+ countries' },
+                { v:'3,000+',  l:'Orders Delivered',    c:'#6366f1', sub:'across 30+ countries' },
                 { v:'↑40%',  l:'Ranking Lift',    c:'#4ade80', sub:'within 90 days avg' },
                 { v:'10x',   l:'AI Citations',     c:'#a78bfa', sub:'ChatGPT · Perplexity' },
                 { v:'94%',   l:'Retention Rate',   c:'#facc15', sub:'clients stay 12+ months' },
