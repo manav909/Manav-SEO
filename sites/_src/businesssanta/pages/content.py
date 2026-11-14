@@ -946,4 +946,27 @@ HOLIDAY_GUIDES = [
    ("Should I show prices on winter pages?", "If you can, a starting price or a call-out fee builds trust. If not, say what affects the price and that you quote before work starts."),
   ],
  },
+ {
+  "slug": "guides/winter-roofing-leads", "holiday": True, "date": XMAS_DATE, "nav": "Winter roofing leads",
+  "title": "Winter Roofing Leads: Get Found for Ice Dams and Storm Damage | Business Santa",
+  "desc": "How US roofers get found on Google and Maps in winter: pages for ice dams, snow and storm damage, emergency tarping, holiday hours and reviews from winter jobs.",
+  "h1": "Winter roofing leads:", "h1ac": "get found for ice dams and storm damage",
+  "answer": "In winter, homeowners search for ice dam removal, roof leak repair and emergency roof tarping near me, often after a storm and often at night. Roofers who win those calls show emergency service on their Google profile, keep holiday hours correct, have a clear page for each winter problem and the towns they serve, answer the phone fast and ask every winter customer for a review.",
+  "items": [
+   ("Show emergency service clearly", "If you tarp or repair leaks after hours, say so on your Google profile, website header and every winter page."),
+   ("Build a page for each winter problem", "Ice dams, roof leaks, snow load damage, wind and storm damage, emergency tarping. Each one is a different search."),
+   ("Name the towns you really serve", "Add your service area to each page and to your Google profile, so Maps shows you to the right homeowners."),
+   ("Set holiday hours and an after-hours line", "Christmas Eve, Christmas Day and New Year as special hours on Google, with how to reach you when closed."),
+   ("Post a winter tip before storms", "A short Google post on spotting ice dams or roof leaks, with your number for when help is needed."),
+   ("Answer the phone or call back fast", "Leak calls go to the next roofer in minutes. A missed call in a storm is a missed job."),
+   ("Ask every winter job for a review", "Reviews that say fast help and fixed the leak during a storm help the next homeowner choose you."),
+   ("Get ready for the spring rush now", "Storm work in winter leads to inspections and replacements in spring. Collect contacts and follow up."),
+  ],
+  "src": (GOOGLE_SPECIAL,),
+  "faq": [
+   ("Do roofers get leads in winter?", "Yes. Leaks, ice dams and storm damage bring urgent calls, and homeowners pick the roofer who looks open and close by on Google."),
+   ("Should a roofer show emergency service on Google?", "Only if you really offer it. If you do, say it clearly on your profile and website, and make sure someone answers."),
+   ("What should a winter roofing page include?", "The problem in plain words, what you do about it, the towns you cover, your phone number, photos of real jobs and how fast you respond."),
+  ],
+ },
 ]
