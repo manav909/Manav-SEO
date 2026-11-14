@@ -315,6 +315,32 @@ GUIDES = [
    ("Can I pay Google to show up on Maps?", "You can run ads that appear on Maps, but the regular map results cannot be bought. They are earned with a complete profile, reviews and a good website."),
   ],
  },
+ {
+  "slug": "guides/google-business-profile-suspended",
+  "src": (("https://support.google.com/business/answer/13763036", "Google Business Profile Help: Business eligibility and ownership guidelines"),),
+  "title": "Google Business Profile Suspended? How to Get It Back | Business Santa",
+  "desc": "Your Google Business Profile was suspended and the calls stopped. Why it happens, what to fix first, what proof to gather, and how to appeal the right way.",
+  "h1": "Google Business Profile suspended?", "h1ac": "How to get it back",
+  "answer": "Most suspensions come from something Google reads as a rule break: extra keywords in the business name, an address you do not really work from, a service-area business that shows its address, or a manager whose own Google account was flagged. Find the cause, fix it on the profile, gather proof that the business is real, then appeal once through the official appeal link in your Business Profile. Do not make a new profile while you wait.",
+  "items": [
+   ("Check which kind of suspension it is", "Sign in at business.google.com. If the profile is gone from Search and Maps, even for your exact name, it is a hard suspension. If it still shows but you cannot edit it, your access was limited. The fix is different, so start here."),
+   ("Read the business name like Google does", "\"Smith Plumbing\" is fine. \"Smith Plumbing Best Emergency Plumber Dallas\" is keyword stuffing and a common cause. Change it to the name on your sign and paperwork."),
+   ("Check the address", "Virtual offices, PO boxes and coworking desks are not eligible unless staff meet customers there during your hours. If you visit customers instead, hide the address and list service areas."),
+   ("Check everyone who manages the profile", "If any owner or manager has their own Google account flagged, every profile they manage can be suspended at once. Remove anyone you do not know or no longer work with."),
+   ("Stop editing for a while", "Many changes in a short time, or switching between storefront and service area, can trigger a suspension. Make the fixes once, then leave the profile alone."),
+   ("Gather proof before you appeal", "A business license or registration, a utility bill, and clear photos of your sign, shopfront or branded vehicle. Every name and address must match the profile exactly, letter for letter."),
+   ("Appeal once, through the official link", "Use the appeal option shown on the suspended profile in your Business Profile manager. Upload the proof and describe what you fixed in plain words. Then wait for Google's answer."),
+   ("Do not make a new profile", "A second profile while the first is under review looks like a duplicate and can make things worse. Keep your website, reviews and phone number unchanged."),
+   ("If the appeal is denied", "Read the reason, fix what is still wrong, and appeal again with better proof. The Google Business Profile Help Community has volunteer Product Experts who look at hard cases."),
+   ("Once you are back, stay back", "Keep the name clean, the address true, the managers few, and edits slow. Then rebuild: photos, posts and fresh reviews."),
+  ],
+  "faq": [
+   ("How long does a reinstatement take?", "It depends on Google. Many owners hear back within days, some wait weeks. Appealing again while you wait does not speed it up."),
+   ("Will my reviews come back?", "When a suspended profile is reinstated, it usually comes back with its reviews and history. A brand new profile starts from zero, which is another reason not to make one."),
+   ("Can anyone guarantee reinstatement?", "No. Google makes the final decision. Anyone who promises a guaranteed result is guessing. What helps is fixing the real cause and sending clean, matching proof."),
+   ("Can I still be found while suspended?", "Your website can still rank in the regular results, and ads can still run. Make sure your site shows your phone number and service area clearly while the profile is down."),
+  ],
+ },
 ]
 
 # ---------- Roofing topic cluster: extra pillar sections and the guides that support it ----------
