@@ -93,13 +93,16 @@ document.querySelectorAll('a[href="#check"]').forEach(function(a){a.addEventList
 var f=document.getElementById("lf"),er=document.getElementById("lfErr"),b=document.getElementById("lfB");if(!f)return;
 function v(id){return document.getElementById(id).value.trim()}function bad(id,m){var el=document.getElementById(id);el.classList.add("bad");el.focus();er.textContent=m;B.formError("page check",id);return false}
 f.addEventListener("input",function(e){e.target.classList.remove("bad");er.textContent=""});
+var PD="/assets/pdf/";var PACKS={home:["business-santa-home-services-results.pdf","home services and construction businesses"],local:["business-santa-local-services-results.pdf","local service businesses"],shop:["business-santa-shops-and-stores-results.pdf","shops and online stores"],us:["business-santa-us-client-results.pdf","US businesses"]};
+var PACKK={plumbing:"home",roofing:"home",hvac:"home",remodeling:"home",dental:"local",salon:"local",law:"local",restaurant:"local",store:"shop"};
+function packHTML(k){var g=PACKK[k]||"us",p=PACKS[g];return '<p style="margin:14px 0 0">While you wait, see real, dated results from '+p[1]+' like yours:</p><a href="'+PD+p[0]+'" target="_blank" rel="noopener" data-track="results-pack" style="display:inline-block;margin-top:10px;padding:12px 18px;border-radius:999px;background:#FDB913;color:#0b1220;font-weight:800;text-decoration:none">Open the results pack (PDF)</a>'+(g!=="us"?'<a href="'+PD+PACKS.us[0]+'" target="_blank" rel="noopener" data-track="results-pack-us" style="display:inline-block;margin:10px 0 0 14px;color:inherit;font-weight:700">All US results</a>':'');}
 f.addEventListener("submit",function(e){e.preventDefault();er.textContent="";
 if(!v("lfN"))return bad("lfN","Add your business name so we know who you are.");if(!v("lfC"))return bad("lfC","Add your city and state, so we can check your local competition.");
 if(!v("lfW"))return bad("lfW","Add your name so we know who to reply to.");if(!/^\S+@\S+\.\S+$/.test(v("lfE")))return bad("lfE","Add an email we can send your check to.");
 b.disabled=true;b.textContent="Sending...";var t=f.dataset.type;
 fetch("https://formsubmit.co/ajax/"+encodeURIComponent(MAIL),{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},body:JSON.stringify({_subject:"Free check request: "+v("lfN")+" ("+v("lfC")+")",_template:"box",_captcha:"false",_replyto:v("lfE"),name:v("lfW"),email:v("lfE"),phone:v("lfP")||"Not given",business_type:t,business_name:v("lfN"),website:v("lfS")||"No website yet",city:v("lfC"),page:location.href,came_from:B.sourceText()})})
 .then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok||String(j.success)==="false")throw 0})})
-.then(function(){B.lead({content_name:"Free check",method:"Email",business_type:t},{email:v("lfE"),phone:v("lfP"),name:v("lfW"),city:v("lfC")});f.style.display="none";document.getElementById("lfD").classList.add("on")})
+.then(function(){B.lead({content_name:"Free check",method:"Email",business_type:t},{email:v("lfE"),phone:v("lfP"),name:v("lfW"),city:v("lfC")});f.style.display="none";var D=document.getElementById("lfD");D.classList.add("on");D.insertAdjacentHTML("beforeend",packHTML(t))})
 .catch(function(){b.disabled=false;b.textContent="Send me my free check";er.innerHTML='That didn\'t go through. Try again, or email us at <a href="mailto:'+MAIL+'">'+MAIL+"</a>."})});
 var bar=document.getElementById("bar"),ck=document.getElementById("check");if(bar&&ck&&"IntersectionObserver"in window)new IntersectionObserver(function(es){bar.classList.toggle("hide",es[0].isIntersecting)},{rootMargin:"0px 0px -10% 0px"}).observe(ck);
 })();"""
@@ -242,7 +245,7 @@ def form_html(k, who):
             f'<form id="lf" novalidate data-type="{E(k)}"><label>Business name<input id="lfN" autocomplete="organization" required></label><label>City and state<input id="lfC" autocomplete="address-level2" placeholder="Austin, TX" required></label>'
             '<label>Your name<input id="lfW" autocomplete="name" required></label><label>Email<input id="lfE" type="email" inputmode="email" autocomplete="email" required></label>'
             '<label>Phone <small>(optional)</small><input id="lfP" type="tel" inputmode="tel" autocomplete="tel"></label><label>Website <small>(optional)</small><input id="lfS" inputmode="url" autocomplete="url"></label>'
-            '<div class="err full" id="lfErr" role="alert"></div><button class="btn full" type="submit" id="lfB">Send me my free check</button>'
+            '<div class="err full" id="lfErr" role="alert"></div><button class="btn full" type="submit" id="lfB">Send me my free check</button><p class="priv full">Plus: our client results pack (PDF) opens right after you send.</p>'
             '<p class="priv full">We only use your details to reply to you. <a href="/privacy">Privacy policy</a></p></form>'
             '<div class="done" id="lfD" role="status"><b>Got it, thank you!</b> Jyoti from our team will reach out soon with your free check.</div>'
             f'<div class="or">or</div><a class="btn wa" href="{WA}" rel="noopener" data-wa="form" style="width:100%">Message us on WhatsApp</a></section>')

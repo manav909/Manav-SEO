@@ -57,6 +57,9 @@ $$("[data-wa]").forEach(a => a.addEventListener("click", e => {
 const err = $("#fErr");
 const show = (el, msg) => { BST.formError("mobile check", el.id); el.closest(".fl").after(err); err.textContent = msg; el.classList.add("bad"); el.focus(); };
 const need = (id, msg) => { const el = $(id); if (el.value.trim()) return true; show(el, msg); return false; };
+var PD="/assets/pdf/";var PACKS={home:["business-santa-home-services-results.pdf","home services and construction businesses"],local:["business-santa-local-services-results.pdf","local service businesses"],shop:["business-santa-shops-and-stores-results.pdf","shops and online stores"],us:["business-santa-us-client-results.pdf","US businesses"]};
+var PACKK={plumbing:"home",roofing:"home",hvac:"home",remodeling:"home",dental:"local",salon:"local",law:"local",restaurant:"local",store:"shop"};
+function packHTML(k){var g=PACKK[k]||"us",p=PACKS[g];return '<p style="margin:14px 0 0">While you wait, see real, dated results from '+p[1]+' like yours:</p><a href="'+PD+p[0]+'" target="_blank" rel="noopener" data-track="results-pack" style="display:inline-block;margin-top:10px;padding:12px 18px;border-radius:999px;background:#FDB913;color:#0b1220;font-weight:800;text-decoration:none">Open the results pack (PDF)</a>'+(g!=="us"?'<a href="'+PD+PACKS.us[0]+'" target="_blank" rel="noopener" data-track="results-pack-us" style="display:inline-block;margin:10px 0 0 14px;color:inherit;font-weight:700">All US results</a>':'');}
 $$("#mForm input").forEach(i => i.addEventListener("input", () => { i.classList.remove("bad"); err.textContent = ""; }));
 $("#mForm").addEventListener("submit", async e => {
   e.preventDefault(); err.textContent = "";
@@ -75,7 +78,7 @@ $("#mForm").addEventListener("submit", async e => {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || String(j.success) === "false") throw new Error("send");
     BST.lead({ content_name: "Free check", method: "Email", business_type: d.type }, { email: mail, phone: d.phone, name: d.who, city: d.city });
-    $("#mForm").style.display = "none"; $("#done").classList.add("on");
+    $("#mForm").style.display = "none"; $("#done").classList.add("on"); $("#done").insertAdjacentHTML("beforeend", packHTML(T));
   } catch (x) {
     btn.disabled = false; btn.textContent = "Send me my free check"; btn.before(err);
     err.innerHTML = 'That didn\'t go through. Try again, or email us at <a href="mailto:' + CONFIG.email + '">' + CONFIG.email + "</a>.";

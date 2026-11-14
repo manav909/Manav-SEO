@@ -565,12 +565,15 @@ $$("[data-next]").forEach(b => b.addEventListener("click", ckNext));
 $("#ckBack").addEventListener("click", () => ckGo(ck - 1));
 $("#ckSum").addEventListener("click", e => { const b = e.target.closest("button"); if (b) ckGo(+b.dataset.e); });
 $("#citySug").addEventListener("click", () => { $("#fCity").value = $("#citySug").dataset.v; shopText(); $("#fSite").focus(); });
+var PD="/assets/pdf/";var PACKS={home:["business-santa-home-services-results.pdf","home services and construction businesses"],local:["business-santa-local-services-results.pdf","local service businesses"],shop:["business-santa-shops-and-stores-results.pdf","shops and online stores"],us:["business-santa-us-client-results.pdf","US businesses"]};
+var PACKK={plumbing:"home",roofing:"home",hvac:"home",remodeling:"home",dental:"local",salon:"local",law:"local",restaurant:"local",store:"shop"};
+function packHTML(k){var g=PACKK[k]||"us",p=PACKS[g];return '<p style="margin:14px 0 0">While you wait, see real, dated results from '+p[1]+' like yours:</p><a href="'+PD+p[0]+'" target="_blank" rel="noopener" data-track="results-pack" style="display:inline-block;margin-top:10px;padding:12px 18px;border-radius:999px;background:#FDB913;color:#0b1220;font-weight:800;text-decoration:none">Open the results pack (PDF)</a>'+(g!=="us"?'<a href="'+PD+PACKS.us[0]+'" target="_blank" rel="noopener" data-track="results-pack-us" style="display:inline-block;margin:10px 0 0 14px;color:inherit;font-weight:700">All US results</a>':'');}
 function celebrate(how) {
   shop.classList.add("open");
   if (!RM) { const cf = $("#shCf"), C = ["#fdb913", "#ef4444", "#22c55e", "#3b82f6", "#ec4899", "#fff"]; cf.innerHTML = Array.from({ length: 34 }, (_, i) => `<i style="background:${C[i % 6]};--dx:${Math.round(Math.cos(i * 2.4) * (90 + (i * 37) % 160))}px;--dy:${Math.round(-60 - (i * 53) % 170 + ((i * 29) % 3) * 60)}px;--r:${(i * 97) % 720 - 360}deg;animation-delay:${(i % 6) * 40}ms"></i>`).join(""); }
   $("#doneH").textContent = "You're open for business!";
   $("#doneP").textContent = "Got it, thank you. Jyoti from our team will email your free check soon. Keep an eye on your inbox.";
-  $("#ckForm").style.display = "none"; $("#done").classList.add("on");
+  $("#ckForm").style.display = "none"; $("#done").classList.add("on"); $("#done").insertAdjacentHTML("beforeend", packHTML(T));
 }
 ckGo(0, false);
 new IntersectionObserver((e, o) => { if (e[0].isIntersecting) { o.disconnect(); replay($("#shBld"), "pop"); replay($(".awn"), "unroll"); } }, { threshold: .5 }).observe(shop);
