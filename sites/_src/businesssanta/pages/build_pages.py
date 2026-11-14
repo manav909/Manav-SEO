@@ -124,13 +124,16 @@ def _ilabel(p): return p.get("nav") or {"retail stores and boutiques": "Retail s
 def _glabel(g): return g.get("nav") or _GNAV.get(g["slug"]) or g["h1"].rstrip(":?")
 IND_LINKS = [("/" + p["slug"], _ilabel(p)) for p in INDUSTRIES]
 GUIDE_LINKS = [("/" + g["slug"], _glabel(g)) for g in ALLG]
+# Footers show a short, curated list plus the guides library, so they stay tidy as guides are added.
+_FG = ["guides/google-business-profile-checklist", "guides/why-my-business-is-not-on-google-maps", "guides/holiday-hours-on-google", "guides/small-business-saturday-checklist", "guides/get-found-on-chatgpt-by-holiday-shoppers"]
+FOOT_GUIDES = [l for l in GUIDE_LINKS if l[0].lstrip("/") in _FG] + [("/guides", f"All {len(ALLG)} guides")]
 SVC_LINKS = [(XH, "Christmas plan 2026"), ("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
-    + _nav("By industry", IND_LINKS) + _nav("Guides", GUIDE_LINKS)
+    + _nav("By industry", IND_LINKS) + _nav("Guides", FOOT_GUIDES)
     + _nav("Company", [("/results", "Client results"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
@@ -403,6 +406,20 @@ def holiday_cluster(cur=None):
     back = f'<li><a href="{XH}">Christmas marketing for small businesses: the full 2026 plan</a></li>' if cur else ""
     return f'<section class="clu"><h2>Christmas 2026 guides</h2><ul>{back}{li}</ul></section>'
 
+def build_guides_hub():
+    url = SITE + "/guides"
+    groups = [("Christmas 2026", XH, HOLIDAY_GUIDES), ("Google Maps and local SEO", "/local-seo", GUIDES)]
+    for ind in INDUSTRIES:
+        gs = [g for g in CLUSTER_GUIDES if g.get("parent") == ind["slug"]]
+        if gs: groups.append((ind["h1"], "/" + ind["slug"], gs))
+    secs = "".join(f'<h2>{E(t)}</h2><div class="grid">' + "".join(f'<div class="card"><h3><a href="/{g["slug"]}">{E(g["title"].split(" | ")[0])}</a></h3><p>{E(g["desc"])}</p></div>' for g in gs) + "</div>" for t, u, gs in groups)
+    body = f"""{h1("Free guides for", "US small business owners")}
+<p class="ans">Plain-English guides to getting found on Google, Google Maps and ChatGPT, written for owners, not marketers. Pick your topic or your industry below.</p>
+{secs}
+{cta('other', 'business')}"""
+    graph = [{"@type": "CollectionPage", "@id": url + "#cp", "name": "Business Santa guides", "url": url, "hasPart": [{"@type": "Article", "headline": g["title"].split(" | ")[0], "url": SITE + "/" + g["slug"]} for g in ALLG]}]
+    return shell("guides", "Free Local SEO Guides for US Small Businesses | Business Santa", "Free plain-English guides for US small business owners: Google Maps, Google Business Profile, ChatGPT and AI search, holiday marketing and industry guides.", body, graph, "Guides")
+
 def build_holiday_hub(p):
     url = SITE + XH
     rows = "".join(f"<tr><td><b>{E(d)}</b></td><td>{E(n)}</td><td>{E(w)}</td></tr>" for d, n, w in p["dates"])
@@ -515,6 +532,7 @@ write(HUB["slug"], build_hub(HUB)); svc.append(HUB["slug"])
 write(AI_PAGE["slug"], build_ai(AI_PAGE)); svc.append(AI_PAGE["slug"])
 write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
 write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_HUB["slug"])
+write("guides", build_guides_hub()); svc.append("guides")
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
 for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
@@ -564,9 +582,9 @@ _HOME = os.path.normpath(os.path.join(OUT, "home-desktop.html"))
 _MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../m/m.tpl.html"))
 _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
        + '<a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
-       + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", GUIDE_LINKS))
+       + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", FOOT_GUIDES))
 _patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
-       + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in GUIDE_LINKS) + "</nav>")
+       + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in FOOT_GUIDES) + "</nav>")
 print("footers updated")
 
 # Home page "Real client results" block (desktop and phone), between <!--RESULTS--> markers.
