@@ -63,7 +63,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .mid{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:40px 0 0;padding:18px 20px;border-radius:18px;background:#fff3c4}.mid p{margin:0;color:var(--ink);font-weight:700}
 .lead-f{margin:56px 0 0;padding:26px 20px;border-radius:24px;background:var(--navy);color:#cbd5e1}.lead-f h2{margin:0;color:#fff}.lead-f .ac{color:var(--y)}.lead-f>p{margin:10px 0 16px}
 .lead-f form{display:grid;grid-template-columns:1fr;gap:10px}@media(min-width:700px){.lead-f form{grid-template-columns:1fr 1fr}.lead-f .full{grid-column:1/-1}}
-.lead-f label{display:block;font-size:.85rem;color:#e2e8f0}.lead-f label small{color:#94a3b8}.lead-f input{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f)}
+.lead-f label{display:block;font-size:.85rem;color:#e2e8f0}.lead-f label small{color:#94a3b8}.lead-f input{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f)}.lead-f textarea{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f);resize:vertical}.lead-f .ck{display:flex;align-items:center;gap:10px}.lead-f .ck input{width:20px;height:20px;margin:0;flex:none}
 .lead-f input.bad{border-color:#f87171}.lead-f .err{min-height:1px;color:#fca5a5;font-size:.9rem}.lead-f button{width:100%;border:0;cursor:pointer}.lead-f .or{margin:12px 0;text-align:center;color:#94a3b8;font-size:.85rem}
 .lead-f .done{display:none;padding:18px;border-radius:16px;background:#052e16;color:#bbf7d0}.lead-f .done.on{display:block}.lead-f .priv{margin:4px 0 0;font-size:.8rem;color:#94a3b8}.lead-f .priv a{color:#cbd5e1}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:20px}@media(min-width:700px){.tiles{grid-template-columns:repeat(4,1fr)}}
@@ -156,7 +156,7 @@ def _nav(label, links, cls=""):
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", FOOT_GUIDES)
-    + _nav("Company", [("/results", "Client results"), ("/white-label-local-seo", "For agencies"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
+    + _nav("Company", [("/results", "Client results"), ("/white-label-local-seo", "For agencies"), ("/12-days-of-business-santa", "12 Days of Santa"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
 # Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
@@ -452,7 +452,7 @@ def holiday_offer():
     li = "".join(f"<li>{E(t)}</li>" for t in items)
     return (f'<section class="offer" id="offer" data-track="holiday-offer"><p class="ok">Christmas offer, until December 10</p>'
             f'<h2>Holiday Google tune-up <span>$149</span></h2><ul>{li}</ul>'
-            f'<div class="row"><a class="btn" href="#check">Claim it with a free check</a><a class="btn wa" href="{WA_OFFER}" rel="noopener" data-wa="offer">Ask on WhatsApp</a></div></section>')
+            f'<div class="row"><a class="btn" href="#check">Claim it with a free check</a><a class="btn wa" href="{WA_OFFER}" rel="noopener" data-wa="offer">Ask on WhatsApp</a></div><p class="ok" style="margin:14px 0 0;text-transform:none;letter-spacing:0">Know a small business that deserves it for free? <a href="/{NOMINATE['slug']}" style="color:#fff;text-decoration:underline">Nominate them for 12 Days of Business Santa</a></p></section>')
 
 PARTNER = {"slug": "white-label-local-seo",
   "title": "White-Label Local SEO for US Agencies and Web Designers | Business Santa",
@@ -462,6 +462,60 @@ PARTNER = {"slug": "white-label-local-seo",
           ("How do you price partner work?", "We quote per client, so you can resell at your own price and keep a healthy margin. Ask us for a quote on your first client."),
           ("What can you take on?", "Google Business Profile and Google Maps work, local SEO, AI search visibility on ChatGPT, Perplexity and Google AI Overviews, and Google and Meta ads."),
           ("How do we start?", "Send us one client's business below. We send you a free check you can share with them, and you decide from there.")]}
+
+NOMINATE = {"slug": "12-days-of-business-santa",
+  "title": "12 Days of Business Santa: Nominate a US Small Business | Business Santa",
+  "desc": "From December 1 to 12, Business Santa gives one US small business a day a free Holiday Google tune-up. Nominate a local business you love.",
+  "faq": [("Who can be nominated?", "Independent US small businesses with a Google Business Profile: shops, restaurants, salons, contractors, clinics and other local services. Owners can nominate themselves too."),
+          ("How are the 12 businesses picked?", "Our team picks one business a day from December 1 to 12, based on the story in the nomination and how much a tune-up would help them before Christmas. It is not a lottery and there is nothing to buy."),
+          ("What does the winner get?", "A free Holiday Google tune-up: holiday hours set on their Google profile, Christmas posts and fresh photos, and a ChatGPT check of what it says about businesses like theirs."),
+          ("Will you need passwords?", "No. The owner adds us as a manager on their own Google profile and can remove us any time. We never ask for passwords."),
+          ("Is my email shared?", "No. We only use your details to tell you if the business you nominated is picked. The owner's contact details come from their public business listing.")]}
+
+def build_nominate():
+    p = NOMINATE; url = SITE + "/" + p["slug"]
+    gets = ["Holiday hours set on Google for Christmas Eve, Christmas Day and New Year", "Christmas posts and fresh photos on their Google profile",
+            "A ChatGPT check: what it says when people ask for a business like theirs", "A before and after they can share with their customers"]
+    how = [("1. Nominate", "Tell us the business, the city and why you love them. Takes a minute."),
+           ("2. We pick 12", "One business a day, December 1 to 12, chosen by our team."),
+           ("3. We do the work", "A free Holiday Google tune-up, done with the owner's OK."),
+           ("4. We celebrate them", "Each winner is featured on our Instagram, Facebook and YouTube.")]
+    hc = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in how)
+    li = "".join(f"<li>{E(t)}</li>" for t in gets)
+    form = ('<section class="lead-f" id="nominate" data-track="nominate"><h2>Nominate a <span class="ac">small business</span></h2>'
+            '<p>Your barber, the bakery on the corner, the plumber who saved your Christmas. Who deserves a little help from Santa?</p>'
+            '<form id="nf" novalidate><label>Business name<input id="nfB" autocomplete="organization" required></label>'
+            '<label>City and state<input id="nfC" autocomplete="address-level2" placeholder="Austin, TX" required></label>'
+            '<label class="full">Why do you love them?<textarea id="nfW" rows="3" maxlength="600" placeholder="They opened during the storm and fixed our heater on Christmas Eve."></textarea></label>'
+            '<label>Your name<input id="nfN" autocomplete="name" required></label><label>Your email<input id="nfE" type="email" inputmode="email" autocomplete="email" required></label>'
+            '<label class="full ck"><input id="nfO" type="checkbox"> I own or run this business</label>'
+            '<div class="err full" id="nfErr" role="alert"></div><button class="btn full" type="submit" id="nfS">Send my nomination</button>'
+            '<p class="priv full">We only use your details to tell you if they are picked. <a href="/privacy">Privacy policy</a></p></form>'
+            '<div class="done" id="nfD" role="status"><b>Thank you, nomination received!</b> Share this page so more people can nominate the businesses they love.</div></section>')
+    js = r"""<script>(function(){var f=document.getElementById('nf');if(!f)return;var $=function(i){return document.getElementById(i)};
+f.addEventListener('submit',function(e){e.preventDefault();var b=$('nfB').value.trim(),c=$('nfC').value.trim(),n=$('nfN').value.trim(),m=$('nfE').value.trim(),w=$('nfW').value.trim(),o=$('nfO').checked,er=$('nfErr'),btn=$('nfS');
+if(!b){er.textContent='Add the business name.';$('nfB').focus();return}if(!c){er.textContent='Add the city and state.';$('nfC').focus();return}
+if(!n){er.textContent='Add your name.';$('nfN').focus();return}if(!/^\S+@\S+\.\S+$/.test(m)){er.textContent='Add an email so we can tell you if they are picked.';$('nfE').focus();return}
+er.textContent='';btn.disabled=true;btn.textContent='Sending...';var B=window.BST||{};
+fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({_subject:'12 Days nomination: '+b+' ('+c+')',_template:'box',_captcha:'false',_replyto:m,business_name:b,city:c,why:w,nominator:n,email:m,owner:o?'Yes, owner':'No',came_from:B.sourceText?B.sourceText():'',page:location.href})})
+.then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok||String(j.success)==='false')throw 0})})
+.then(function(){try{B.lead&&B.lead({content_name:'12 Days nomination',method:'Nomination form'},{email:m,city:c})}catch(x){}f.style.display='none';$('nfD').style.display='block'})
+.catch(function(){btn.disabled=false;btn.textContent='Send my nomination';er.innerHTML='That did not go through. Email us at <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a>.'})})})();</script>"""
+    body = f"""{h1("12 Days of Business Santa", "nominate a business you love")}
+<p class="ans">From December 1 to 12, Business Santa gives one US small business a day a free Holiday Google tune-up, so holiday shoppers find them on Google Maps and ChatGPT. Nominate a local business you love, or your own.</p>
+<section class="offer" data-track="12days-gift"><p class="ok">The gift, for 12 small businesses</p><h2>A free Holiday Google <span>tune-up</span></h2><ul>{li}</ul>
+<div class="row"><a class="btn" href="#nominate">Nominate a business</a></div></section>
+<h2>How it <span class="ac">works</span></h2>
+<div class="grid">{hc}</div>
+{form}
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+<div class="mid"><p>Not nominated, but want it before Christmas? The same tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
+{byline()}{js}"""
+    ev = {"@type": "Event", "@id": url + "#event", "name": "12 Days of Business Santa", "description": p["desc"], "startDate": "2026-12-01", "endDate": "2026-12-12",
+          "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "eventStatus": "https://schema.org/EventScheduled",
+          "location": {"@type": "VirtualLocation", "url": url}, "organizer": ORG, "isAccessibleForFree": True}
+    return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa")
 
 def build_partners():
     p = PARTNER; url = SITE + "/" + p["slug"]
@@ -625,6 +679,7 @@ write(ADS_PAGE["slug"], build_ads(ADS_PAGE)); svc.append(ADS_PAGE["slug"])
 write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_HUB["slug"])
 write("guides", build_guides_hub()); svc.append("guides")
 write(PARTNER["slug"], build_partners()); svc.append(PARTNER["slug"])
+write(NOMINATE["slug"], build_nominate()); svc.append(NOMINATE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
 for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
