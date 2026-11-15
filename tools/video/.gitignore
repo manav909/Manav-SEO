@@ -1,0 +1,4 @@
+*.wav
+*.mp4
+alist.txt
+__pycache__/
