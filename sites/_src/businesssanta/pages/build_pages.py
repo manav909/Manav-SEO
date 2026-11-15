@@ -61,6 +61,12 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
 .rv article{padding:16px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line)}.rv h3{margin:6px 0 0;font-size:1.02rem}.rv blockquote{margin:8px 0 10px;font-size:.95rem;color:var(--ink2)}.rv small{color:var(--mut);font-size:.82rem}
 .mid{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:40px 0 0;padding:18px 20px;border-radius:18px;background:#fff3c4}.mid p{margin:0;color:var(--ink);font-weight:700}
+.sct{margin:28px 0;padding:22px 18px;border:1px solid #e2e8f0;border-radius:24px;background:#fff}.sct-t{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-weight:700}.sct select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:12px;font:16px var(--f);background:#fff}
+.scq{list-style:none;margin:18px 0 8px;padding:0;counter-reset:q}.scq li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 0;border-top:1px solid #eef2f7;counter-increment:q}.scq li>span{flex:1 1 320px}.scq li>span:before{content:counter(q) ". ";font-weight:700;color:var(--navy)}
+.yn{display:flex;gap:8px}.yn button{min-width:64px;padding:9px 14px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;font:600 15px var(--f);cursor:pointer}.yn button.on[data-v="1"]{background:#16a34a;border-color:#16a34a;color:#fff}.yn button.on[data-v="0"]{background:#dc2626;border-color:#dc2626;color:#fff}
+.sct .err{color:#dc2626;min-height:1px}.sct>.btn{border:0;cursor:pointer}.scr{display:none;scroll-margin-top:84px;margin-top:22px;padding:20px;border-radius:20px;background:var(--navy);color:#cbd5e1}.scr.on{display:grid;gap:14px}@media(min-width:700px){.scr.on{grid-template-columns:auto 1fr}.scr .scf,.scr .row,.scr .shr{grid-column:1/-1}}
+.scn{display:flex;flex-direction:column;align-items:center;justify-content:center;width:120px;height:120px;border-radius:50%;background:var(--y);color:var(--navy)}.scn b{font-size:2.6rem;line-height:1}.scn span{font-size:.8rem}.scr h3{margin:0;color:#fff}.scr p{margin:6px 0 0}
+.scf{margin:0;padding-left:20px}.scf li{margin:6px 0}.scf li.top{color:#fff;font-weight:700}.shr{margin:0;font-size:.9rem}.shr a,.shr button{margin-right:10px;color:#fff;text-decoration:underline;background:none;border:0;font:inherit;cursor:pointer;padding:0}
 .lead-f{margin:56px 0 0;padding:26px 20px;border-radius:24px;background:var(--navy);color:#cbd5e1}.lead-f h2{margin:0;color:#fff}.lead-f .ac{color:var(--y)}.lead-f>p{margin:10px 0 16px}
 .lead-f form{display:grid;grid-template-columns:1fr;gap:10px}@media(min-width:700px){.lead-f form{grid-template-columns:1fr 1fr}.lead-f .full{grid-column:1/-1}}
 .lead-f label{display:block;font-size:.85rem;color:#e2e8f0}.lead-f label small{color:#94a3b8}.lead-f input{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f)}.lead-f textarea{display:block;width:100%;margin-top:4px;padding:12px 14px;border:1px solid #334155;border-radius:12px;background:#0f172a;color:#fff;font:16px var(--f);resize:vertical}.lead-f .ck{display:flex;align-items:center;gap:10px}.lead-f .ck input{width:20px;height:20px;margin:0;flex:none}
@@ -154,7 +160,7 @@ def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
 FOOTER = ('<footer class="ft"><div class="w ftg">'
-    + _nav("Services", [("/", "Home")] + SVC_LINKS + [("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
+    + _nav("Services", [("/", "Home")] + SVC_LINKS + [("/google-profile-score", "Free profile score"), ("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", FOOT_GUIDES)
     + _nav("Company", [("/results", "Client results"), ("/white-label-local-seo", "For agencies"), ("/12-days-of-business-santa", "12 Days of Santa"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
     + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
@@ -436,7 +442,7 @@ def build_guides_hub():
         if gs: groups.append((ind["h1"], "/" + ind["slug"], gs))
     secs = "".join(f'<h2>{E(t)}</h2><div class="grid">' + "".join(f'<div class="card"><h3><a href="/{g["slug"]}">{E(g["title"].split(" | ")[0])}</a></h3><p>{E(g["desc"])}</p></div>' for g in gs) + "</div>" for t, u, gs in groups)
     body = f"""{h1("Free guides for", "US small business owners")}
-<p class="ans">Plain-English guides to getting found on Google, Google Maps and ChatGPT, written for owners, not marketers. Pick your topic or your industry below.</p>
+<p class="ans">Plain-English guides to getting found on Google, Google Maps and ChatGPT, written for owners, not marketers. Pick your topic or your industry below, or <a href="/google-profile-score">score your Google profile in 2 minutes</a>.</p>
 {secs}
 {cta('other', 'business')}"""
     graph = [{"@type": "CollectionPage", "@id": url + "#cp", "name": "Business Santa guides", "url": url, "hasPart": [{"@type": "Article", "headline": g["title"].split(" | ")[0], "url": SITE + "/" + g["slug"]} for g in ALLG]}]
@@ -516,6 +522,70 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
           "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "eventStatus": "https://schema.org/EventScheduled",
           "location": {"@type": "VirtualLocation", "url": url}, "organizer": ORG, "isAccessibleForFree": True}
     return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa", og_img="/assets/img/og-12-days.jpg")
+
+SCORE = {"slug": "google-profile-score",
+  "title": "Free Google Business Profile Score: Check Yours in 2 Minutes | Business Santa",
+  "desc": "Answer 12 quick yes or no questions and get a score out of 100 for your Google Business Profile, plus the exact fixes to make first. Free, no sign-up.",
+  "faq": [("Is this an official Google score?", "No. It is our own self check, built on what Google says matters for local ranking: relevance, distance and prominence. It shows the gaps you can fix yourself."),
+          ("Do I need to sign up?", "No. You get your score and your fixes on the page right away. Leave your details only if you want a person on our team to check your profile for you."),
+          ("Why does ChatGPT matter for a Google profile?", "More people now ask AI assistants for a local business. Those answers lean on the same public facts: your profile, your reviews and your website. A complete profile helps in both places."),
+          ("What score is good?", "85 or more means your basics are strong. Between 60 and 84 there are gaps that cost you calls. Under 60, fix the items marked first before spending on ads."),
+          ("Will my answers be saved?", "No. Your answers stay in your browser and are not sent anywhere unless you send us the free check form.")]}
+
+def build_score():
+    p = SCORE; url = SITE + "/" + p["slug"]
+    types = [("plumbing", "Plumber", "Plumber", "plumber"), ("roofing", "Roofer", "Roofing contractor", "roofer"), ("dental", "Dentist", "Cosmetic dentist", "dentist"),
+             ("law", "Law firm", "Personal injury attorney", "lawyer"), ("restaurant", "Restaurant", "Italian restaurant", "restaurant"), ("salon", "Salon or spa", "Hair salon", "salon"),
+             ("store", "Store or boutique", "Gift shop", "store"), ("other", "Something else", "Bakery", "business like yours")]
+    opts = "".join(f'<option value="{k}" data-cat="{E(c)}" data-one="{E(o)}">{E(n)}</option>' for k, n, c, o in types)
+    qs = [(12, "Your Google profile is verified.", "Verify your profile first, so you can fully manage it and edit every detail yourself."),
+          (10, "Your primary category is the most specific one, like <i class=sc-cat>Plumber</i>.", "Change your primary category to the most specific match, like <i class=sc-cat>Plumber</i>. It is the strongest relevance signal you control."),
+          (8, "Every service you offer is listed on the profile.", "Add every service you offer, in the words customers use to search."),
+          (6, "Your description says what you do and the areas you serve.", "Rewrite your description in plain words: what you do, who for, and the areas you serve."),
+          (10, "Hours are correct, and holiday hours are set for Thanksgiving, Christmas and New Year.", "Set special hours for every holiday. Wrong hours cost visits and bring bad reviews."),
+          (8, "Your business name, phone and address or area match your website exactly.", "Make your name, phone and address or service area match exactly on your website and every listing."),
+          (6, "The website link goes to a working page about this business.", "Point your website link to a fast, working page about this location or service."),
+          (10, "You got at least one new Google review in the last month.", "Ask happy customers for a review every week. Steady new reviews help prominence."),
+          (8, "You reply to every review, good and bad.", "Reply to every review, kindly and briefly, including the bad ones."),
+          (8, "You added new photos in the last 30 days.", "Add real photos every month: your work, your team, your place."),
+          (6, "You published a Google post in the last 7 days.", "Publish a short post every week: an offer, an update or a recent job."),
+          (8, "When you ask ChatGPT for the best <i class=sc-one>plumber</i> in your city, it names you.", "ChatGPT does not name you yet. This needs a complete profile, reviews and pages that answer what people ask.")]
+    rows = "".join(f'<li data-w="{w}" data-fix="{E(f)}"><span>{q}</span><div class="yn"><button type="button" data-v="1">Yes</button><button type="button" data-v="0">No</button></div></li>' for w, q, f in qs)
+    tool = (f'<section class="sct" id="score" data-track="score-tool"><label class="sct-t">My business is a<select id="scT">{opts}</select></label>'
+            f'<ol class="scq" id="scQ">{rows}</ol><p class="err" id="scErr" role="alert"></p><button class="btn" type="button" id="scGo">Show my score</button>'
+            '<div class="scr" id="scR" role="status" aria-live="polite"><div class="scn"><b id="scN">0</b><span>out of 100</span></div><div><h3 id="scL"></h3><p id="scM"></p></div>'
+            '<ol class="scf" id="scF"></ol><div class="row"><a class="btn" href="#check">Get a free check from a person</a></div>'
+            '<p class="shr">Share the tool: <a id="shF" rel="noopener" target="_blank">Facebook</a> <a id="shX" rel="noopener" target="_blank">X</a> <a id="shL" rel="noopener" target="_blank">LinkedIn</a> <button type="button" id="shC">Copy link</button></p></div></section>')
+    js = r"""<script>(function(){var $=function(i){return document.getElementById(i)},Q=$('scQ'),T=$('scT');if(!Q)return;var U=location.origin+location.pathname;
+function ty(){var o=T.options[T.selectedIndex];[].forEach.call(document.querySelectorAll('.sc-cat'),function(e){e.textContent=o.dataset.cat});[].forEach.call(document.querySelectorAll('.sc-one'),function(e){e.textContent=o.dataset.one});try{window.BST&&BST.type(T.value)}catch(x){}}
+T.addEventListener('change',ty);try{var k=new URLSearchParams(location.search).get('type');if(k&&T.querySelector('[value="'+k+'"]')){T.value=k}}catch(x){}ty();
+Q.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;var li=b.closest('li');li.dataset.a=b.dataset.v;[].forEach.call(li.querySelectorAll('button'),function(x){x.classList.toggle('on',x===b)})});
+$('scGo').addEventListener('click',function(){var L=Q.querySelectorAll('li'),s=0,f=[],miss=0;[].forEach.call(L,function(li){if(li.dataset.a==null){miss++;return}if(li.dataset.a==='1')s+=+li.dataset.w;else f.push([+li.dataset.w,li.dataset.fix,li])});
+if(miss){$('scErr').textContent='Answer all 12 questions to see your score ('+miss+' left).';return}$('scErr').textContent='';
+f.sort(function(a,b){return b[0]-a[0]});var cat=T.options[T.selectedIndex].dataset.cat;$('scF').innerHTML='';f.forEach(function(x,i){var li=document.createElement('li');li.textContent=x[1].replace(/<[^>]+>/g,'').replace('Plumber',cat);if(i<3)li.className='top';$('scF').appendChild(li)});
+$('scN').textContent=s;$('scL').textContent=s>=85?'Strong basics':s>=60?'Good, with gaps that cost calls':'Big gaps. Fix these first';
+$('scM').textContent=f.length?'Your fixes, most important first. The top 3 are marked.':'Every basic is in place. A person on our team can look for what is left.';
+var t=encodeURIComponent('My Google Business Profile scored '+s+'/100 on the free Business Santa check. Check yours in 2 minutes:'),u=encodeURIComponent(U);
+$('shF').href='https://www.facebook.com/sharer/sharer.php?u='+u;$('shX').href='https://twitter.com/intent/tweet?text='+t+'&url='+u;$('shL').href='https://www.linkedin.com/sharing/share-offsite/?url='+u;
+var r=$('scR');r.classList.add('on');r.scrollIntoView({behavior:'smooth',block:'start'});try{window.BST&&BST.event('profile_score',{score:s,business_type:T.value})}catch(x){}});
+$('shC').addEventListener('click',function(){var b=this;try{navigator.clipboard.writeText(U).then(function(){b.textContent='Link copied'})}catch(x){}});})();</script>"""
+    body = f"""{h1("Free Google profile score", "check yours in 2 minutes")}
+<p class="ans">Answer 12 yes or no questions about your Google Business Profile. You get a score out of 100 and your fixes in order, right on this page. No sign-up, and your answers are not sent anywhere.</p>
+{tool}
+{google_src()}
+<h2>What the score <span class="ac">is based on</span></h2>
+<div class="grid"><div class="card"><h3>Relevance</h3><p>Does your profile match what people search? Category, services and description carry most of it.</p></div>
+<div class="card"><h3>Prominence</h3><p>How well known and active you look: reviews, replies, photos and posts.</p></div>
+<div class="card"><h3>Trust</h3><p>A verified profile with correct hours and the same details everywhere.</p></div>
+<div class="card"><h3>AI answers</h3><p>Whether ChatGPT names you when people ask for a business like yours.</p></div></div>
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+{byline()}
+{cta('other', 'business')}{js}"""
+    app = {"@type": "WebApplication", "@id": url + "#app", "name": "Google Business Profile Score", "url": url, "applicationCategory": "BusinessApplication",
+           "operatingSystem": "Any", "browserRequirements": "Requires JavaScript", "isAccessibleForFree": True,
+           "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}, "provider": ORG, "description": p["desc"]}
+    return shell(p["slug"], p["title"], p["desc"], body, [app, faq_ld(url, p["faq"])], "Google profile score")
 
 def build_partners():
     p = PARTNER; url = SITE + "/" + p["slug"]
@@ -680,6 +750,7 @@ write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_H
 write("guides", build_guides_hub()); svc.append("guides")
 write(PARTNER["slug"], build_partners()); svc.append(PARTNER["slug"])
 write(NOMINATE["slug"], build_nominate()); svc.append(NOMINATE["slug"])
+write(SCORE["slug"], build_score()); svc.append(SCORE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
 for r in STORIES: write("results/" + r["url"], build_story(r)); res.append("results/" + r["url"])
@@ -728,9 +799,9 @@ def _patch(path, inner):
 _HOME = os.path.normpath(os.path.join(OUT, "home-desktop.html"))
 _MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../m/m.tpl.html"))
 _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
-       + '<a href="#check" data-go="check">Free check</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
+       + '<a href="#check" data-go="check">Free check</a><a href="/google-profile-score">Free profile score</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
        + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", FOOT_GUIDES))
-_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
+_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + [("/google-profile-score", "Free profile score")] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
        + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in FOOT_GUIDES) + "</nav>")
 print("footers updated")
 
