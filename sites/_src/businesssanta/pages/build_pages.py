@@ -178,7 +178,7 @@ SITE_NODES = _site_nodes()
 
 def shell(slug, title, desc, body, graph, crumb_name, og_type="website", parent=None, og_img="/assets/img/og.jpg", crumb_mid=None):
     url = f"{SITE}/{slug}"
-    img = {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 675 if og_img != "/assets/img/og.jpg" else 630}
+    img = {"@type": "ImageObject", "url": SITE + og_img, "width": 1200, "height": 630 if og_img in ("/assets/img/og.jpg", "/assets/img/og-12-days.jpg") else 675}
     par = next((i for i in INDUSTRIES if i["slug"] == parent), None)
     graph = [
         {"@type": "WebPage", "@id": url + "#page", "url": url, "name": title, "description": desc, "inLanguage": "en-US",
@@ -515,7 +515,7 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
     ev = {"@type": "Event", "@id": url + "#event", "name": "12 Days of Business Santa", "description": p["desc"], "startDate": "2026-12-01", "endDate": "2026-12-12",
           "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "eventStatus": "https://schema.org/EventScheduled",
           "location": {"@type": "VirtualLocation", "url": url}, "organizer": ORG, "isAccessibleForFree": True}
-    return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa")
+    return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa", og_img="/assets/img/og-12-days.jpg")
 
 def build_partners():
     p = PARTNER; url = SITE + "/" + p["slug"]
