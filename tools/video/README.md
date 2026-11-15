@@ -28,7 +28,18 @@ writes an original background track (synthesized, no licensing), then renders wi
   (https://youtube.com/shorts/36zMckl8Scs): copy it into the new folder and change `scene()` for the new story.
   Word-by-word captions, pop animations and flash cuts are built in.
 
+## Reels, covers and stories: the safe-zone kit
+
+Read `SAFE_ZONES.md` first. Daily Reels are built with `reel_kit.py` (templates `hook`, `statement`, `tip`, `shot`,
+`close`, `cover` and `render_video`); `reels/example_tip.py` is the reference (the Dallas salons Reel of 15 Nov 2026,
+rebuilt). Each template centers its content in the card, shrinks type up to 18% for long text, and refuses to draw
+outside the safe zone. `safezone.mockup()` previews any frame under every platform's interface. Rotate cover styles
+(`yellow`, `navy`, `white`, `sky`, `coral`) so neighbouring covers on the grid never look alike.
+
 ## Rules for every video
+
+- Safe zones (`SAFE_ZONES.md`): every word, number, logo, face and call to action inside the safe zone; the render
+  checks it; look at the platform mockups before publishing and at the live post after.
 
 - Open on the surprise in the first 5 seconds, never on a title card.
 - Only facts checked by hand, dated; businesses named only positively or neutrally; company names only for clients;

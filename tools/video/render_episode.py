@@ -5,6 +5,9 @@ SCENES = _sc.SCENES
 EP = getattr(_sc, 'EP', 1)
 CHECKED = getattr(_sc, 'CHECKED', '')
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import safezone
+LEAKS = []
 
 W, H, FPS = 1920, 1080, 30
 NAVY = (11, 18, 32); NAVY2 = (20, 30, 52); YEL = (253, 185, 19); WHITE = (255, 255, 255); MUT = (160, 172, 192)
@@ -36,17 +39,23 @@ def wrap(d, text, font, maxw):
     if cur: lines.append(cur)
     return lines
 
-def base():
+def base(header=True):
     im = Image.new('RGB', (W, H), NAVY)
     d = ImageDraw.Draw(im)
     for y in range(H):  # soft vertical gradient
         c = tuple(int(NAVY[k] + (NAVY2[k] - NAVY[k]) * y / H) for k in range(3))
         d.line([(0, y), (W, y)], fill=c)
-    im.paste(logo_s, (60, 44), logo_s)
-    d.text((148, 52), 'Business Santa', font=F(34), fill=WHITE)
-    d.text((148, 92), 'powered by SEO Season', font=F(20, 'SemiBold'), fill=YEL)
-    d.text((W - 60, 66), f'LOCAL VISIBILITY CHECK  |  EP {EP}', font=F(20, 'Bold'), fill=MUT, anchor='ra')
+    if not header:
+        return im
+    # SAFE ZONE (15 Nov 2026): YouTube's title bar covers the top ~100 px in embeds and when paused, so the brand
+    # header starts at y 100 (safezone.SAFE['yt169']).
+    im.paste(logo_s, (96, 100), logo_s)
+    d.text((184, 106), 'Business Santa', font=F(34), fill=WHITE)
+    d.text((184, 146), 'powered by SEO Season', font=F(20, 'SemiBold'), fill=YEL)
+    d.text((W - 96, 122), f'LOCAL VISIBILITY CHECK  |  EP {EP}', font=F(20, 'Bold'), fill=MUT, anchor='ra')
     return im
+
+PLAIN = None
 
 def ease(t, a, dur=0.45):
     x = max(0.0, min(1.0, (t - a) / dur)); return 1 - (1 - x) ** 3
@@ -181,10 +190,10 @@ def cta(d, im, s, t, T):
     for j, (a, b) in enumerate([('12', 'yes or no questions'), ('100', 'point score'), ('Your fixes', 'in order, on the page')]):
         d.text((180, 420 + j * 120), a, font=F(70), fill=YEL, anchor='lm')
         d.text((180 + d.textlength(a, font=F(70)) + 30, 420 + j * 120), b, font=F(42, 'SemiBold'), fill=WHITE, anchor='lm')
-    d.rounded_rectangle((120, 840, 1180, 940), 50, fill=YEL)
-    d.text((650, 890), s['url'], font=F(44), fill=NAVY, anchor='mm')
-    m = manav.resize((560, int(manav.height * 560 / manav.width)), Image.LANCZOS)
-    im.paste(m, (1280, H - m.height + 120 if m.height > 900 else H - m.height), m)
+    d.rounded_rectangle((120, 820, 1180, 916), 48, fill=YEL)
+    d.text((650, 868), s['url'], font=F(44), fill=NAVY, anchor='mm')
+    m = manav.copy(); m.thumbnail((520, 600))  # whole photo inside the safe zone (above YouTube's controls)
+    im.paste(m, (1300, 924 - m.height), m)
 
 def end(d, im, s, t, T):
     im.paste(logo_b, (W // 2 - 100, 220), logo_b)
@@ -206,6 +215,8 @@ def captions(text, T):
     return out
 
 def main():
+    global PLAIN
+    PLAIN = base(header=False)
     PAD = 0.6
     durs = [dur(i) + PAD for i in range(len(SCENES))]
     # audio: concat each clip followed by PAD silence
@@ -229,6 +240,11 @@ def main():
             if animated or key != last_key:
                 im = static.copy(); d = ImageDraw.Draw(im)
                 DRAW[s['kind']](d, im, s, t, T) if s['kind'] not in ('title',) else title(d, im, s, t)
+                if fi == nframes - 1:  # safe zone report for the last frame of each scene (captions excluded)
+                    try:
+                        safezone.check(im, PLAIN, 'yt169', f'scene {i} ({s["kind"]})', tolerance=4000)
+                    except safezone.SafeZoneError as e:
+                        LEAKS.append(str(e))
                 cur = [c for c in caps if c[0] <= t < c[1]]
                 if cur and s['kind'] not in ('title', 'end', 'hook'):
                     ls = wrap(d, cur[0][2], capf, 1500)[:2]
@@ -242,5 +258,8 @@ def main():
             p.stdin.write(last)
         print('scene', i, 'done', flush=True)
     p.stdin.close(); p.wait()
+    if LEAKS:
+        open('safezone_report.txt', 'w').write('\n'.join(LEAKS) + '\n')
+        print('SAFE ZONE: content near the YouTube title bar or controls, see safezone_report.txt:\n' + '\n'.join(LEAKS))
 
 main()
