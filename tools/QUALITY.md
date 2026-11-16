@@ -5,6 +5,18 @@ so the same mistake is never made twice. Each entry: date, what, where, cause, f
 
 ## 16 Nov 2026
 
+0. **Reels published with a silent audio track (found by Manav).**
+   Where: Facebook and Instagram Reels of 14 Nov (Chicago plumbers, frozen pipes) and 15 Nov 7:19 pm (Denver HVAC,
+   "I asked ChatGPT"), and the Reels before them. Measured on the live Facebook Reels on 16 Nov: an audio track is
+   there but its peak level is 0 (silence). The 15 Nov 11:22 pm Dallas salons Reel has narration and the beat.
+   Cause: the Reel task's only sound check was "ffprobe shows an audio stream", which a silent track passes; when the
+   narrator could not run (soundfile and kokoro were not installed in that run's fresh machine), nothing stopped the upload.
+   Fix: old Reels cannot get new sound on Meta after posting; listed for Manav (keep or remove is his call).
+   Prevented by: tools/video/finalize.py measures loudness and refuses silent or too quiet files (SOUND OK or SILENT);
+   make.py runs it on every episode and Short; the "Sound" section in SAFE_ZONES.md and README.md; the Reel task and the
+   weekly content batch now mux with finalize.py, and Instagram and Facebook feed posts go out as short narrated videos
+   instead of silent images (update_trigger, 16 Nov).
+
 1. **Facebook Reels say "Business Santa is in Dallas, TX" (and Denver, CO).**
    Where: the Business Santa Facebook Page, Reels of 15 Nov (7:19 pm Denver HVAC, 11:22 pm Dallas salons).
    Cause: the Reel task adds a city in the composer's Location field; on Facebook it publishes as a check-in that
