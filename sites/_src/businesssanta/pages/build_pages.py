@@ -267,8 +267,8 @@ REV = [("Patient, plain-English help", "I\u2019m not a website or technology per
        ("Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package")]
 
 def proof_html(who):
-    cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating across 2,000+ client reviews, 3,000+ orders over 10+ years</span></div><div class="rv">{cards}</div></div>'
+    cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client of Manav S, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years. Screenshots on request.</span></div><div class="rv">{cards}</div></div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
@@ -657,7 +657,7 @@ RES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "r
 # Release order: a story is published by adding its slug here (2 a week, after the quality gate in the plan).
 PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la"]
 STORIES = [RES[k] for k in PUBLISHED]
-SAMPLE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
+SAMPLE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
 
 def thumb16(r):
     """Uniform 16:10 card picture for a story, so cards in a row line up with no empty space.
@@ -825,7 +825,7 @@ def _home_cards(cls):
                    f'<span><small>{E(r["label"])} &middot; {E(r["place"])}</small><b>{E(r["hero"])}</b><em>{E(r["company"])}</em></span></a>')
     return "".join(out)
 _HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1321}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px;flex:1}}.{c}c em{{margin-top:auto;padding-top:6px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
-_SAMPLE_LINE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
+_SAMPLE_LINE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
 _desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
          + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}</style>"
          '<div class="wrap hresw"><span class="eyb">Real client results</span><h2 class="h2">Real US businesses. <em>Real, dated results.</em></h2>'
