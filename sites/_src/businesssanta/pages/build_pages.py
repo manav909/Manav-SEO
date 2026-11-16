@@ -129,6 +129,8 @@ def page_links(cur):
     elif cur in ind:
         sib = [g for g in CLUSTER_GUIDES if g.get("parent") == cur]
         out += list(ind[cur].get("more", ()))
+    elif cur == HUB["slug"]:
+        out += list(HUB.get("more", ())); sib = GUIDES
     elif cur == HOLIDAY_HUB["slug"]:
         sib = []
     else:
@@ -356,8 +358,9 @@ def build_hub(p):
 {res_block(["us-pet-hospice", "us-hvac-durham"])}
 <h2>Local SEO <span class="ac">for your industry</span></h2>
 <div class="grid">{inds}</div>
-<h2>What it <span class="ac">costs</span></h2>
+<h2 id="prices" style="scroll-margin-top:80px">What it <span class="ac">costs</span></h2>
 {price_html()}
+{p.get('cost_note', '')}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 {cta(p['k'], 'business')}"""
@@ -418,11 +421,14 @@ def build_guide(g):
     items = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in g["items"])
     groups = "".join(f'<h3>{E(n)}</h3><ul class="qs">{"".join(f"<li>{E(q)}</li>" for q in qs)}</ul>' for n, qs in g.get("groups", []))
     groups = f'<h2>The keywords, <span class="ac">by job</span></h2><div class="kw">{groups}</div><h2>How to <span class="ac">use them</span></h2>' if groups else ""
+    sec = lambda k: "".join(f"<h2>{h}</h2>{b}" for h, b in g.get(k, ()))  # optional raw-HTML sections ("pre" after the answer, "post" after the list)
     body = f"""{h1(g['h1'], g['h1ac'])}
 <p class="ans">{E(g['answer'])}</p>
+{sec("pre")}
 {groups}
-{"" if groups else '<h2>The <span class="ac">list</span></h2>'}
+{"" if groups else '<h2>' + g.get("list_h", 'The <span class="ac">list</span>') + '</h2>'}
 <ol class="steps">{items}</ol>
+{sec("post")}
 {also_html(g)}
 {google_src(g.get('src', ()))}
 <h2>Common <span class="ac">questions</span></h2>

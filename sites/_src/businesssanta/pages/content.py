@@ -5,6 +5,10 @@ SITE = "https://www.businesssanta.com"
 TODAY = "2026-11-06"
 
 GOOGLE_LOCAL = ("https://support.google.com/business/answer/7091", "Google Business Profile Help: How to improve your local ranking on Google")
+# Sources for the local SEO cost guide (checked 16 Nov 2026). The Ahrefs figures are the only market figures on that page.
+AHREFS_PRICING = ("https://ahrefs.com/blog/seo-pricing/", "Ahrefs blog: SEO pricing, a survey of 439 SEO service providers (published 17 Dec 2023, updated 15 Aug 2024)")
+GOOGLE_BP = ("https://www.google.com/business/", "Google: Google Business Profile (free)")
+GOOGLE_NOSEO = ("https://developers.google.com/search/docs/fundamentals/do-i-need-seo", "Google Search Central: Do you need an SEO? (no one can guarantee a #1 ranking)")
 
 # HVAC page proof: the one real HVAC result on the site (Hays HVAC, results.json "us-hvac-durham").
 # Every figure is copied from that story with its own source and date. Company name only.
@@ -241,6 +245,8 @@ HUB = {
   ("Listings and citations", "Your name, address and phone the same on Google, Bing, Apple Maps, Yelp and the directories for your industry."),
   ("AI search (GEO)", "Making sure ChatGPT, Google AI Overviews, Gemini and Perplexity can find and describe your business correctly."),
  ],
+ "more": (("/guides/local-seo-cost", "How much local SEO costs per month (2026)"),),
+ "cost_note": "<p>How do these prices compare? Our guide to <a href=\"/guides/local-seo-cost\">how much local SEO costs per month in 2026</a> sets them next to the survey averages, with the source and date for every number.</p>",
  "faq": [
   ("What is local SEO?", "Local SEO is improving how your business shows up when people nearby search for what you offer, on Google search, Google Maps and AI assistants. It covers your Google Business Profile, website, reviews and listings."),
   ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly local SEO for one location is $299 a month with no contract; bigger plans are quoted after the free check, so you only pay for what your business needs."),
@@ -472,6 +478,75 @@ GUIDES = [
    ("Should I ask the customer to post again?", "If a real customer's review never appeared, they can update the Google Maps app and try again. Never write the review for them or post it from your own device."),
   ],
  },
+ {
+  # Local SEO cost (added 16 Nov 2026). Market figures come only from the Ahrefs survey below, each with its source and date.
+  # Business Santa prices are the ones published on /local-seo (price_html) and the Christmas offer.
+  "slug": "guides/local-seo-cost", "date": "2026-11-16", "nav": "Local SEO cost",
+  "src": (AHREFS_PRICING, GOOGLE_BP, GOOGLE_NOSEO),
+  "also": (("/guides/roofing-seo-cost", "Roofing SEO cost"), ("/guides/plumbing-seo-cost", "Plumbing SEO cost"), ("/guides/dental-seo-cost", "Dental SEO cost"), ("/guides/google-business-profile-checklist", "Google Business Profile checklist: 15 steps you can do yourself")),
+  "title": "How Much Does Local SEO Cost per Month? 2026 | Business Santa",
+  "desc": "What local SEO costs a US small business per month: dated Ahrefs survey averages, what drives the price, what a plan should include, red flags and our prices.",
+  "h1": "How much does local SEO cost", "h1ac": "per month in 2026?",
+  "answer": "There is no single price, but survey data gives a clear benchmark. In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it: about $1,819 for agencies and about $1,150 for freelancers. The most common monthly retainer across all SEO providers in that survey was $501 to $1,000. What you pay depends on how many locations you have, how competitive your trade and city are, and how much needs fixing. A Google Business Profile itself is free from Google. Business Santa's monthly local SEO is $299 a month for one location, with no contract.",
+  "pre": [
+   ("The benchmarks, <span class=\"ac\">with their source</span>",
+    "<div class=\"tiles\" data-track=\"cost-benchmarks\"><div><b>$1,557</b><span>a month: average for local SEO, from providers who offer it</span></div>"
+    "<div><b>$1,819</b><span>a month: agencies' average for local SEO (rounded)</span></div>"
+    "<div><b>$1,150</b><span>a month: freelancers' average for local SEO (rounded)</span></div>"
+    "<div><b>$501 to $1,000</b><span>a month: the most common retainer across all SEO providers</span></div></div>"
+    "<p>In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it, about $1,819 for agencies and about $1,150 for freelancers. "
+    "Across all SEO services, the most common monthly retainer in the same survey was $501 to $1,000 (20.4% of respondents), and the most common hourly rate was $75 to $100 an hour (24% of respondents).</p>"
+    "<p>These are survey figures from late 2023, updated in 2024, not 2026 price quotes. We use them because they come from a named survey with a sample size and a date. The prices you are quoted in 2026 can be higher or lower.</p>"
+    "<p class=\"src\">Source: <a href=\"https://ahrefs.com/blog/seo-pricing/\" rel=\"noopener\">Ahrefs blog, \"SEO pricing\"</a>, a survey of 439 SEO service providers, published 17 December 2023, updated 15 August 2024.</p>"
+    "<p>One part costs nothing at all: a <a href=\"https://www.google.com/business/\" rel=\"noopener\">Google Business Profile is free from Google</a>. If a quote includes a fee for the profile, that fee is for someone's work on it, not for Google.</p>"),
+   ("Business Santa's prices, <span class=\"ac\">in public</span>",
+    "<p>We publish our prices so you can compare like for like. They are the same prices shown on our <a href=\"/local-seo#prices\">local SEO services page</a> and in our <a href=\"https://seoseason.com/businesssanta\" rel=\"noopener\">full list of services and prices</a>.</p>"
+    "<div class=\"price\" data-track=\"pricing\"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>"
+    "<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>"
+    "<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div>"
+    "<div><b>$299/mo</b><span>Monthly local SEO for one location. No contract.</span></div></div>"
+    "<p class=\"src\">More locations, ads and full AI search plans are quoted after the free check. Until December 10, 2026, the one-time <a href=\"/christmas-marketing-for-small-business#offer\">Holiday Google tune-up is $149</a>.</p>"
+    "<p>Our monthly price for one location is below the survey averages above. Whoever you hire, us included, ask for three things in writing: what is done each month, who owns the accounts, and how you will see the results yourself.</p>"),
+  ],
+  "list_h": "What drives the price, <span class=\"ac\">and the red flags</span>",
+  "items": [
+   ("How many locations you have", "Each location has its own Google Business Profile, its own town pages and its own reviews to look after, so the work, and the price, grow with every location."),
+   ("How competitive your trade and city are", "A plumber in a big metro area competes with far more businesses on the map than a salon in a small town, so it takes more pages, more reviews and more time to move up."),
+   ("How much is broken today", "A verified, complete profile and a fast website cost less to improve than a suspended profile, duplicate listings or a slow, one-page site."),
+   ("How many pages and how much content you need", "A page for each main service and each town you really serve takes writing, real photos and upkeep. Some businesses need a few, others need many."),
+   ("Whether ads are included", "Some quotes include running Google or Meta ads and some do not. The ad budget itself is a separate cost that goes to Google or Meta, so ask whether a price covers the work, the ads, or both."),
+   ("Red flag: a guaranteed #1 ranking", "Google says no one can guarantee a #1 ranking on Google. A promise like that tells you more about the seller than about your results."),
+   ("Red flag: a long lock-in contract", "Good work keeps clients without a 12 month contract. If you cannot leave, you cannot judge the work."),
+   ("Red flag: the agency owns your profile or accounts", "You should own your Google Business Profile, website, Google Search Console and ad accounts, and add the agency as a manager. If you leave, everything stays with you."),
+   ("Red flag: bought reviews", "Paying for reviews, or giving a discount for them, breaks Google's rules, and reviews Google removes for that are not restored. Only real reviews from real customers are worth having."),
+   ("Red flag: no reporting", "Every month you should see what was done and what changed in calls, direction requests and website clicks, in numbers you can check in your own Google account."),
+  ],
+  "post": [
+   ("What a monthly plan <span class=\"ac\">should include</span>",
+    "<div class=\"grid\"><div class=\"card\"><h3>Google Business Profile work</h3><p>The right categories, every service listed, a real service area, accurate hours including holidays, fresh photos and regular posts.</p></div>"
+    "<div class=\"card\"><h3>Service and town pages</h3><p>A clear page for each main service and each town you really serve, written in the words your customers type.</p></div>"
+    "<div class=\"card\"><h3>A reviews process</h3><p>A simple way to ask every customer for a review after every job, and a reply to each review, good or bad.</p></div>"
+    "<div class=\"card\"><h3>Listings that match</h3><p>Your name, address or service area and phone the same on Google, Bing, Apple Maps, Yelp and the directories for your trade.</p></div>"
+    "<div class=\"card\"><h3>Reporting you can check</h3><p>Calls, direction requests, website clicks and the searches that found you, taken from your own Google Business Profile and Search Console, every month.</p></div></div>"
+    "<div class=\"mid\"><p>Want a price for your business, not an average?</p><a class=\"btn\" href=\"#check\">Get my free check</a></div>"),
+   ("One-time fixes <span class=\"ac\">or a monthly plan?</span>",
+    "<div class=\"grid\"><div class=\"card\"><h3>One-time fixes fit when</h3><p>Something specific is broken: wrong categories, a missing service area, pages Google cannot read, a slow site on phones. Fix it once and you may not need more for a while. Ours start at $120 for on-page work and $160 for technical work.</p></div>"
+    "<div class=\"card\"><h3>A monthly plan fits when</h3><p>You compete with other businesses on the map every day. Photos, posts, reviews, new pages and listings need steady work, and rankings across a whole area usually build over months, not days. Ours is $299 a month for one location, with no contract.</p></div></div>"),
+   ("Doing it yourself: <span class=\"ac\">the cost is your time</span>",
+    "<p>You can do a lot of local SEO yourself. The main tools are free: your Google Business Profile and Google Search Console cost nothing. What DIY costs is time, every week: adding photos and posts, asking for reviews and replying to them, keeping hours and listings correct, and writing pages for your services and towns. "
+    "The harder part is the website and technical work, which is where many owners hire help. Start with our <a href=\"/guides/google-business-profile-checklist\">Google Business Profile checklist</a>, then see <a href=\"/guides/why-my-business-is-not-on-google-maps\">why a business may not show on Google Maps</a>.</p>"),
+  ],
+  "faq": [
+   ("How much does local SEO cost per month for a small business?", "In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it, about $1,819 for agencies and about $1,150 for freelancers. The most common monthly retainer across all SEO providers was $501 to $1,000. Business Santa's monthly local SEO is $299 a month for one location, with no contract."),
+   ("What is the most common hourly rate for SEO?", "In the same Ahrefs survey (published 17 December 2023, updated 15 August 2024), the most common hourly rate was $75 to $100 an hour, given by 24% of respondents."),
+   ("Is a Google Business Profile free?", "Yes. Google offers the Business Profile for free. You pay only if you hire someone to work on it, or if you choose to run ads."),
+   ("Why do local SEO prices vary so much?", "Because the work varies: the number of locations, how competitive your trade and city are, how much is broken today, how many pages need writing, and whether ads are part of the plan."),
+   ("Should I sign a long contract for local SEO?", "You do not have to. Business Santa's monthly plan has no contract. If any provider asks for a long lock-in, ask what happens if you are not happy after three months, and who keeps the accounts if you leave."),
+   ("Can I do local SEO myself?", "Yes, much of it. Your Google Business Profile and Google Search Console are free, and our Google Business Profile checklist covers the basics. The cost is your time each week, plus the website and technical work, which is where many owners hire help."),
+   ("Can anyone guarantee a #1 ranking on Google?", "No. Google says no one can guarantee a #1 ranking on Google. Treat any guarantee as a red flag, whatever the price."),
+   ("How much does Business Santa charge for local SEO?", "The first check is free. One-time fixes start at $120 for on-page work and $160 for technical work. Monthly local SEO for one location is $299 a month with no contract, and the Holiday Google tune-up is $149 until December 10, 2026. Bigger plans, such as more locations or ads, are quoted after the free check."),
+  ],
+ },
 ]
 
 # ---------- Roofing topic cluster: extra pillar sections and the guides that support it ----------
@@ -575,11 +650,11 @@ ROOF_GUIDES = [
   ],
  },
  {
-  "slug": "guides/roofing-seo-cost", "parent": "seo-for-roofers",
+  "slug": "guides/roofing-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-roofers",
   "title": "How Much Does Roofing SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What roofing SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does roofing SEO cost?", "h1ac": "An honest answer",
-  "answer": "Roofing SEO costs depend on how competitive your market is, how many towns you want to rank in, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your company needs.",
+  "answer": "Roofing SEO costs depend on how competitive your market is, how many towns you want to rank in, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your company needs.",
   "items": [
    ("Your market", "A roofer in a big metro with dozens of competitors needs more work than one in a small town."),
    ("How many towns you serve", "Each town you want to rank in needs its own proof: a page, jobs, photos and reviews."),
@@ -687,11 +762,11 @@ DENT_GUIDES = [
   ],
  },
  {
-  "slug": "guides/dental-seo-cost", "parent": "seo-for-dentists", "nav": "Dental SEO cost",
+  "slug": "guides/dental-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-dentists", "nav": "Dental SEO cost",
   "title": "How Much Does Dental SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What dental SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does dental SEO cost?", "h1ac": "An honest answer",
-  "answer": "Dental SEO costs depend on how competitive your area is, how many locations and treatments you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your practice needs.",
+  "answer": "Dental SEO costs depend on how competitive your area is, how many locations and treatments you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your practice needs.",
   "items": [
    ("Your market", "A practice in a dense city area with dozens of dentists nearby needs more work than one in a small town."),
    ("Locations and treatments", "Each office and each high-value treatment you want to rank for, like implants or Invisalign, needs its own page and proof."),
@@ -893,11 +968,11 @@ PLUMB_GUIDES = [
   ],
  },
  {
-  "slug": "guides/plumbing-seo-cost", "parent": "seo-for-plumbers", "nav": "Plumbing SEO cost",
+  "slug": "guides/plumbing-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-plumbers", "nav": "Plumbing SEO cost",
   "title": "How Much Does Plumbing SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What plumbing SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does plumbing SEO cost?", "h1ac": "An honest answer",
-  "answer": "Plumbing SEO costs depend on how competitive your area is, how many towns and services you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your business needs.",
+  "answer": "Plumbing SEO costs depend on how competitive your area is, how many towns and services you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your business needs.",
   "items": [
    ("Your market", "A plumber in a big metro area with dozens of competitors needs more work than one in a small town."),
    ("Towns and services", "Each town and each big job type you want to rank for, like water heaters or sewer lines, needs its own page and proof."),

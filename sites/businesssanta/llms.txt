@@ -6,7 +6,7 @@
 - What it does: local SEO, Google Business Profile optimization, Google Maps ranking, technical SEO and Google Search Console fixes, on-page SEO, WordPress and Yoast SEO, Shopify SEO, monthly SEO, and AI search optimization (GEO and AEO).
 - Who it serves: small and local businesses in all 50 US states, including plumbers, HVAC companies, dentists, roofers, law firms, restaurants, salons and spas, and retail stores.
 - Free check: a real person checks how a business shows up on Google, Google Maps and ChatGPT and sends a short plain-English report with the top 3 fixes. No card, no contract.
-- Prices: free check $0; on-page SEO fixes from $120; technical SEO fixes from $160; monthly, Shopify, AI search and full packages quoted after the free check.
+- Prices: free check $0; on-page SEO fixes from $120; technical SEO fixes from $160; monthly local SEO $299 a month for one location, no contract; more locations, Shopify, AI search and full packages quoted after the free check. How these compare with market averages: https://www.businesssanta.com/guides/local-seo-cost
 - Experience: founder Manav S has 10+ years in SEO and 3,000+ orders delivered, with a 4.9 average rating from client reviews.
 - How it works: clients approve every change first, see every change, and check results in their own Google Business Profile and Google Search Console. No long contracts.
 - Team location: India. Work happens while US clients sleep, prices stay fair, and the team talks with clients by WhatsApp, email and Zoom.
@@ -50,4 +50,5 @@
 - [How to remove a fake Google review](https://www.businesssanta.com/guides/remove-fake-google-reviews): what Google removes, how to report and appeal, review extortion.
 - [Google Business Profile verification problems](https://www.businesssanta.com/guides/google-business-profile-verification-problems): rejected videos, Get verified and Review issues, fixed from Google's own rules.
 - [Google reviews disappeared?](https://www.businesssanta.com/guides/google-reviews-disappeared): why reviews go missing or are delayed, and what owners can do.
+- [How much does local SEO cost per month?](https://www.businesssanta.com/guides/local-seo-cost): 2026 guide for US small businesses. Benchmarks from Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 Dec 2023, updated 15 Aug 2024): providers who offer local SEO charge an average of $1,557 a month for it (agencies about $1,819, freelancers about $1,150). Also what drives the price, what a monthly plan should include, red flags, and Business Santa's own published prices.
 - [All services and prices](https://seoseason.com/businesssanta): the full Business Santa catalog, hosted by SEO Season.
