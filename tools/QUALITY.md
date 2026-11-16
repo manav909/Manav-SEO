@@ -10,7 +10,8 @@ so the same mistake is never made twice. Each entry: date, what, where, cause, f
    "I asked ChatGPT"), and the Reels before them. Measured on the live Facebook Reels on 16 Nov: an audio track is
    there but its peak level is 0 (silence). The 15 Nov 11:22 pm Dallas salons Reel has narration and the beat.
    Cause: the Reel task's only sound check was "ffprobe shows an audio stream", which a silent track passes; when the
-   narrator could not run (soundfile and kokoro were not installed in that run's fresh machine), nothing stopped the upload.
+   narrator did not run (most likely its packages were missing on that run's fresh machine; a fresh machine on 16 Nov
+   also lacked soundfile), nothing stopped the upload.
    Fix: old Reels cannot get new sound on Meta after posting; listed for Manav (keep or remove is his call).
    Prevented by: tools/video/finalize.py measures loudness and refuses silent or too quiet files (SOUND OK or SILENT);
    make.py runs it on every episode and Short; the "Sound" section in SAFE_ZONES.md and README.md; the Reel task and the
