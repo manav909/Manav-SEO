@@ -57,7 +57,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .by{display:flex;align-items:center;gap:14px;margin:40px 0 0;padding:16px;border-radius:18px;background:var(--soft)}.by img{border-radius:50%;flex:none}.by p{margin:2px 0 0;font-size:.92rem}
 .src{margin-top:10px;font-size:.88rem;color:var(--mut)}
 .also{margin:18px 0 0;padding:14px 18px;background:#f5f7fb;border-radius:12px;font-size:.98rem}.also a{font-weight:600}
-.bsl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl b{font-size:1.02rem;font-weight:800;letter-spacing:-.01em;opacity:.6}
+.bsl{display:flex;flex-wrap:wrap;align-items:center;gap:14px 30px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl img{display:block;filter:grayscale(1) brightness(0);opacity:.5}.bsl i{font-style:normal;font-weight:700;font-size:1.12rem;letter-spacing:-.02em;color:#000;opacity:.5;white-space:nowrap}.bsl i em{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;margin:0 .3em}
 .rel{margin:48px 0 0}.rel ul{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}.rel a{display:inline-block;padding:8px 14px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 1px var(--line);text-decoration:none;font-size:.92rem}
 .proof{margin-top:18px}.proof .sum{display:flex;align-items:center;gap:12px;margin-bottom:12px}.proof .sum b{font:800 2.2rem var(--fh);color:var(--ink)}.proof .sum span{font-size:.92rem}.st{color:#f5a400;letter-spacing:2px}
 .rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
@@ -161,12 +161,17 @@ SVC_LINKS = [(XH, "Christmas plan 2026"), ("/local-seo", "Local SEO services"), 
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
-# "Listed on" row: platform names only, no links and no ratings (Manav, 16 Nov 2026: the profiles show our location and
-# have no reviews yet, so visitors are not sent to them; names only, as plain text, never the platforms' logos).
-LISTED = ("Clutch", "Sortlist", "Pick an Agency", "Agency Spotter", "Crunchbase")
-LST_CSS = ".bsl{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl b{font-size:1.02rem;font-weight:800;letter-spacing:-.01em;opacity:.6}"
+# "Listed on" row: the platforms' own logos in grey, with no links and no ratings (Manav, 16 Nov 2026: the profiles show
+# our location and have no reviews yet, so visitors are not sent to them). Logo files in /assets/img/listed, taken from
+# each platform's own site; Pick an Agency's logo is lettering, so it is set in type the same way.
+LISTED = (("clutch", "Clutch", 405.7, 115, 22), ("sortlist", "Sortlist", 283.5, 72.3, 19), (None, "Pick an Agency", 0, 0, 0), ("crunchbase", "Crunchbase", 370, 52.8, 18))
+LST_CSS = ".bsl{display:flex;flex-wrap:wrap;align-items:center;gap:14px 30px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl img{display:block;filter:grayscale(1) brightness(0);opacity:.5}.bsl i{font-style:normal;font-weight:700;font-size:1.12rem;letter-spacing:-.02em;color:#000;opacity:.5;white-space:nowrap}.bsl i em{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;margin:0 .3em}"
 def listed_html(extra=""):
-    return f'<div class="bsl"{extra}><span>Listed on</span>' + "".join(f"<b>{E(n)}</b>" for n in LISTED) + "</div>"
+    out = []
+    for f, name, w, h, px in LISTED:
+        if f: out.append(f'<img src="/assets/img/listed/{f}.svg" alt="{E(name)}" width="{round(w * px / h)}" height="{px}" loading="lazy" decoding="async">')
+        else: out.append('<i role="img" aria-label="Pick an Agency">Pick<em>an</em>Agency</i>')
+    return f'<div class="bsl"{extra}><span>Listed on</span>' + "".join(out) + "</div>"
 
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("/google-profile-score", "Free profile score"), ("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
