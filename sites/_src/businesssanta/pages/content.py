@@ -505,7 +505,7 @@ GUIDES = [
     "<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>"
     "<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div>"
     "<div><b>$299/mo</b><span>Monthly local SEO for one location. No contract.</span></div></div>"
-    "<p class=\"src\">More locations, ads and full AI search plans are quoted after the free check. Until December 10, 2026, the one-time <a href=\"/christmas-marketing-for-small-business#offer\">Holiday Google tune-up is $149</a>.</p>"
+    "<p class=\"src\">More locations, ads and full AI search plans are quoted after the free check.</p>"
     "<p>Our monthly price for one location is below the survey averages above. Whoever you hire, us included, ask for three things in writing: what is done each month, who owns the accounts, and how you will see the results yourself.</p>"),
   ],
   "list_h": "What drives the price, <span class=\"ac\">and the red flags</span>",
@@ -544,7 +544,7 @@ GUIDES = [
    ("Should I sign a long contract for local SEO?", "You do not have to. Business Santa's monthly plan has no contract. If any provider asks for a long lock-in, ask what happens if you are not happy after three months, and who keeps the accounts if you leave."),
    ("Can I do local SEO myself?", "Yes, much of it. Your Google Business Profile and Google Search Console are free, and our Google Business Profile checklist covers the basics. The cost is your time each week, plus the website and technical work, which is where many owners hire help."),
    ("Can anyone guarantee a #1 ranking on Google?", "No. Google says no one can guarantee a #1 ranking on Google. Treat any guarantee as a red flag, whatever the price."),
-   ("How much does Business Santa charge for local SEO?", "The first check is free. One-time fixes start at $120 for on-page work and $160 for technical work. Monthly local SEO for one location is $299 a month with no contract, and the Holiday Google tune-up is $149 until December 10, 2026. Bigger plans, such as more locations or ads, are quoted after the free check."),
+   ("How much does Business Santa charge for local SEO?", "The first check is free. One-time fixes start at $120 for on-page work and $160 for technical work. Monthly local SEO for one location is $299 a month with no contract. Bigger plans, such as more locations or ads, are quoted after the free check."),
   ],
  },
 ]
