@@ -1,0 +1,57 @@
+# Quality log: every problem found, its cause and the fix
+
+Kept by the daily quality audit (11:07 am India time). Newest first. Read it before you build or post anything,
+so the same mistake is never made twice. Each entry: date, what, where, cause, fix, prevented by.
+
+## 16 Nov 2026
+
+1. **Facebook Reels say "Business Santa is in Dallas, TX" (and Denver, CO).**
+   Where: the Business Santa Facebook Page, Reels of 15 Nov (7:19 pm Denver HVAC, 11:22 pm Dallas salons).
+   Cause: the Reel task adds a city in the composer's Location field; on Facebook it publishes as a check-in that
+   says the business is in that city, which is not true (we serve those cities, we are not there).
+   Fix: not edited by the audit (needs switching into the Page); listed for Manav with the recommendation to remove
+   the location from both posts. Prevented by: the Reel task and the YouTube episode task no longer add a Location;
+   the city goes in the hook, caption and hashtags instead.
+
+2. **Instagram caption with a broken link and a stray hashtag.**
+   Where: Instagram Reel "Dallas salons and spas" (15 Nov, 11:22 pm). The caption ended with
+   `https://www.businesssanta.com/christmas-marketing-for-small-business#offer`: Instagram does not link URLs in
+   captions and turned `#offer` into a hashtag glued to the URL.
+   Cause: the Reel task pastes the offer URL with its `#offer` anchor into one caption shared by Facebook and Instagram.
+   Fix: caption edited on Instagram to "One-time $149 Holiday Google tune-up until Dec 10: businesssanta.com (link in bio)".
+   Prevented by: Reel task rule: never paste a URL containing "#" in a caption; write the offer line as above.
+
+3. **Headlines ending on one word (widows) on the website.**
+   Where: businesssanta.com at phone width, for example the 12 Days page H1 ("...nominate a business you / love"), the
+   Dream Closets NYC story H1 ("... closet / company"), and most "Get a free check for your business" boxes.
+   Cause: the shared page CSS had no line balancing for headings.
+   Fix: `text-wrap: balance` on h1, h2, h3 and `text-wrap: pretty` on paragraphs and list items in
+   `pages/build_pages.py` (all inner pages) and `m/m.tpl.html` (phone home page; the desktop home page already had it).
+   Re-checked by script at 390 and 1280 px on every page changed in the last 26 hours: 0 single-word last lines.
+   Prevented by: it lives in the shared CSS, so every new page gets it.
+
+4. **Every site build regenerated the fake-review guide's share image.**
+   Where: `sites/businesssanta/assets/img/guides/remove-fake-google-reviews-*.jpg` (seen on 15 Nov by the story
+   release run and again today).
+   Cause: the live page was built from text ("for example Spam or Off topic") that was later lost from
+   `pages/content.py` ("for example Spam"), so the image hash no longer matched and each build made a new image.
+   Fix: `content.py` brought back in line with the live page (the live text is the correct one: Google's report
+   reasons include both Spam and Off topic). Builds now reproduce the live image name.
+   Prevented by: after `sh build.sh`, `git status` must show no image churn you did not intend.
+
+5. **Pre-kit Reels (13 to 15 Nov) stay as they are.** The Denver and Dallas Reels of 15 Nov were made before the safe
+   zone kit: the top-left brand sits under the username row in the Story reshare and in the YouTube Shorts grid crop,
+   covers end on one word ("rush", "to?", "review."), and some frames are half empty. Posted Reels and covers cannot be
+   edited. Prevented by: tools/video/reel_kit.py and SAFE_ZONES.md (15 Nov); the next Reels are the first real test.
+
+Also seen, not ours to change without Manav (listed in the 16 Nov audit message): the Facebook Page service area
+shows "New City, NY" (a town in Rockland County) instead of New York City; the Page shows "Always open" as hours.
+
+## 15 Nov 2026
+
+1. **Logo under Instagram's username row on every Reel; bottom lines under captions and buttons** (found by Manav).
+   Cause: no safe zones. Fix and prevention: tools/video/safezone.py, reel_kit.py, SAFE_ZONES.md, renderers check
+   themselves (commit e60b21f).
+2. **Two Reels showed the same Instagram cover** (the shared closing scene). Cause: the composer's suggested
+   thumbnail. Prevention: COVER RULE, every Reel uploads its own cover.
+3. **Facebook's multi-photo collage cut a word on carousel slide 1.** Prevention: 'feed45cover' safe zone (x 100 to 980).

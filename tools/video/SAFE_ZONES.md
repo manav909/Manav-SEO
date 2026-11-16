@@ -48,3 +48,13 @@ use the lane at y 1300 inside the card. Covers keep the brand pill at y 300 and 
    fix the template the same day, so the next post is right.
 
 Command line: `python3 tools/video/safezone.py frame.png background.png vertical` checks and writes `frame_mockup.jpg`.
+
+## Captions, links and locations (added by the quality audit, 16 Nov 2026)
+
+- Never paste a URL that contains `#` into a caption. Instagram does not link URLs in captions and turns `#offer`
+  into a hashtag glued to the URL. On Instagram write the page as `businesssanta.com (link in bio)`; Facebook may
+  carry a full URL without an anchor.
+- Never add a Location in the Meta composer for a Business Santa post. On Facebook it publishes as
+  "Business Santa is in <city>", which claims a presence we do not have. Put the city in the hook, the caption and
+  the hashtags instead.
+- Every problem found and its fix is in tools/QUALITY.md. Read it before building or posting.
