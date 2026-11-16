@@ -127,6 +127,13 @@ class Stage:
                 alt = self._lines(x, y, txt, f, step, min(maxw or 10 ** 6, X1_UP - x) - cut)
                 if len(alt) == len(lines) and len(alt[-1].split()) > 1:
                     lines = alt; break
+        if len(lines) > 1 and len(lines[-1].split()) == 1:  # still a widow (e.g. "Set special / hours."): shrink up to 12%
+            for s2 in range(size - 2, int(size * 0.88) - 1, -2):
+                f2 = F(s2, kind); alt = self._lines(x, y, txt, f2, int(s2 * gap), maxw)
+                if len(alt) == 1 or len(alt[-1].split()) > 1:
+                    f, step, lines = f2, int(s2 * gap), alt; break
+            else:
+                print(f'reel_kit: single-word last line left in "{txt}"; reword it')
         for ln in lines:
             self.text((x, y), ln, f, fill); y += step
         return y
