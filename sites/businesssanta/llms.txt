@@ -4,7 +4,7 @@
 
 ## Key facts
 - What it does: local SEO, Google Business Profile optimization, Google Maps ranking, technical SEO and Google Search Console fixes, on-page SEO, WordPress and Yoast SEO, Shopify SEO, monthly SEO, and AI search optimization (GEO and AEO).
-- Who it serves: small and local businesses in all 50 US states, including plumbers, dentists, roofers, law firms, restaurants, salons and spas, and retail stores.
+- Who it serves: small and local businesses in all 50 US states, including plumbers, HVAC companies, dentists, roofers, law firms, restaurants, salons and spas, and retail stores.
 - Free check: a real person checks how a business shows up on Google, Google Maps and ChatGPT and sends a short plain-English report with the top 3 fixes. No card, no contract.
 - Prices: free check $0; on-page SEO fixes from $120; technical SEO fixes from $160; monthly, Shopify, AI search and full packages quoted after the free check.
 - Experience: founder Manav S has 10+ years in SEO and 3,000+ orders delivered, with a 4.9 average rating from client reviews.
@@ -33,6 +33,8 @@
   - [Google Business Profile for roofers](https://www.businesssanta.com/guides/google-business-profile-for-roofers): how roofers rank in the Google Maps pack.
   - [Storm season SEO for roofers](https://www.businesssanta.com/guides/roofing-leads-after-a-storm): getting the calls first after hail and wind storms.
   - [How much does roofing SEO cost?](https://www.businesssanta.com/guides/roofing-seo-cost): what drives the price, fair packages, red flags.
+- [SEO for HVAC companies](https://www.businesssanta.com/seo-for-hvac): local SEO and Google Maps SEO for heating and cooling contractors, covering AC repair, furnace repair, heat pumps and no-heat emergency calls.
+  - [HVAC SEO case study, Durham, NC](https://www.businesssanta.com/results/hvac-seo-durham-nc): Hays HVAC, #2 on Google US for "hvac company durham nc" (live Google check, 14 November 2026).
 - [Law firm SEO](https://www.businesssanta.com/seo-for-law-firms)
 - [Restaurant SEO](https://www.businesssanta.com/seo-for-restaurants)
   - [Google Maps listing tips for restaurants and caterers](https://www.businesssanta.com/guides/google-maps-for-restaurants-and-caterers): categories, menus, hours, photos and catering details.

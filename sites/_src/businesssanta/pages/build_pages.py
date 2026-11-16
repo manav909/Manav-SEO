@@ -5,13 +5,13 @@ import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guide_img
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES, HOLIDAY_HUB, HOLIDAY_GUIDES, GOOGLE_SPECIAL
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, HVAC_EXTRA, REST_GUIDES, RETAIL_GUIDES, HOLIDAY_HUB, HOLIDAY_GUIDES, GOOGLE_SPECIAL
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
-EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
+EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA, "seo-for-hvac": HVAC_EXTRA}
 ALLG = GUIDES + CLUSTER_GUIDES + HOLIDAY_GUIDES
 XH = "/" + HOLIDAY_HUB["slug"]
-RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"]}
+RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"], "hvac": ["us-hvac-durham"]}
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
 E = html.escape
@@ -128,6 +128,7 @@ def page_links(cur):
         out.append((XH, "Christmas plan 2026")); sib = HOLIDAY_GUIDES
     elif cur in ind:
         sib = [g for g in CLUSTER_GUIDES if g.get("parent") == cur]
+        out += list(ind[cur].get("more", ()))
     elif cur == HOLIDAY_HUB["slug"]:
         sib = []
     else:
@@ -267,9 +268,9 @@ REV = [("Patient, plain-English help", "I\u2019m not a website or technology per
        ("Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website\u2026", "Technical SEO"),
        ("Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package")]
 
-def proof_html(who):
+def proof_html(who, track=None):
     cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client of Manav S, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years. Screenshots on request.</span></div><div class="rv">{cards}</div></div>'
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>{E(track) if track else "Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years."} Screenshots on request.</span></div><div class="rv">{cards}</div></div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
@@ -322,8 +323,8 @@ def build_industry(p):
 <ul class="qs">{''.join(f'<li>{E(q)}</li>' for q in p['searches'])}</ul>
 <h2>What we fix for <span class="ac">{E(p['noun'])}</span></h2>
 <div class="grid">{fixes}</div>
-{res_block(RES_FOR.get(p['k'], ["us-pet-hospice", "us-hvac-durham"]))}
-{proof_html(p['biz'])}
+{res_block(RES_FOR.get(p['k'], ["us-pet-hospice", "us-hvac-durham"]), **p.get('res', {}))}
+{proof_html(p['biz'], p.get('track'))}
 <h2>How Google picks the <span class="ac">top 3 on the map</span></h2>
 <p>Google ranks local results on three things: <b>relevance</b> (how well your profile matches the search), <b>distance</b> (how close you are to the person searching) and <b>prominence</b> (how well known and well reviewed you are). You cannot move your shop, so we work on relevance and prominence: a complete profile, pages that match each service, steady reviews and consistent listings.</p>
 {google_src()}
@@ -543,7 +544,7 @@ SCORE = {"slug": "google-profile-score",
 
 def build_score():
     p = SCORE; url = SITE + "/" + p["slug"]
-    types = [("plumbing", "Plumber", "Plumber", "plumber"), ("roofing", "Roofer", "Roofing contractor", "roofer"), ("dental", "Dentist", "Cosmetic dentist", "dentist"),
+    types = [("plumbing", "Plumber", "Plumber", "plumber"), ("roofing", "Roofer", "Roofing contractor", "roofer"), ("hvac", "HVAC company", "HVAC contractor", "HVAC company"), ("dental", "Dentist", "Cosmetic dentist", "dentist"),
              ("law", "Law firm", "Personal injury attorney", "lawyer"), ("restaurant", "Restaurant", "Italian restaurant", "restaurant"), ("salon", "Salon or spa", "Hair salon", "salon"),
              ("store", "Store or boutique", "Gift shop", "store"), ("other", "Something else", "Bakery", "business like yours")]
     opts = "".join(f'<option value="{k}" data-cat="{E(c)}" data-one="{E(o)}">{E(n)}</option>' for k, n, c, o in types)
@@ -679,18 +680,19 @@ def thumb16(r):
         if not os.path.exists(dst): return r["thumb"]
     return ["/assets/img/results/" + name, 1200, 750]
 
-def res_cards(keys):
+def res_cards(keys, sub=False):
     out = ""
     for k in keys:
         if k not in PUBLISHED: continue
         r = RES[k]; src, w, h = thumb16(r)
         out += (f'<a href="/results/{r["url"]}" data-res="{E(r["url"])}"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
-                f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span><span><i>Read the story</i></span></div></a>')
+                f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span>{f'<span>{E(r["sub"])}</span>' if sub else ""}<span><i>Read the story</i></span></div></a>')
     return f'<div class="rs">{out}</div>' if out else ""
 
-def res_block(keys, head="Real results <span class=\"ac\">for businesses like yours</span>"):
-    c = res_cards(keys)
-    return f'<h2>{head}</h2><div data-track="results">{c}</div><p class="src">{E(SAMPLE)} <a href="/results">See all client results</a>.</p>' if c else ""
+def res_block(keys, head="Real results <span class=\"ac\">for businesses like yours</span>", after=None, sub=False):
+    c = res_cards(keys, sub)
+    tail = after if after is not None else f'<p class="src">{E(SAMPLE)} <a href="/results">See all client results</a>.</p>'
+    return f'<h2>{head}</h2><div data-track="results">{c}</div>{tail}' if c else ""
 
 MORE_HEAD = 'More client <span class="ac">results</span>'
 def build_story(r):

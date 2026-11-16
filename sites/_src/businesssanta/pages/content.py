@@ -6,6 +6,20 @@ TODAY = "2026-11-06"
 
 GOOGLE_LOCAL = ("https://support.google.com/business/answer/7091", "Google Business Profile Help: How to improve your local ranking on Google")
 
+# HVAC page proof: the one real HVAC result on the site (Hays HVAC, results.json "us-hvac-durham").
+# Every figure is copied from that story with its own source and date. Company name only.
+HVAC_PROOF = ("<p>Hays HVAC has served Durham and the Triangle in North Carolina since 1996. The work started in October 2025 with an audit, keyword research, "
+  "on-page fixes, sitemap, robots and schema, and the owner has renewed it month after month since. "
+  "Here is where it stands, with the source and date for every number.</p>"
+  "<div class=\"tiles\" data-track=\"hvac-proof\"><div><b>#2</b><span>on Google US for \"hvac company durham nc\" (14 Nov 2026)</span></div>"
+  "<div><b>#5</b><span>for \"ac repair cost durham nc\" with a Hays blog page (14 Nov 2026)</span></div>"
+  "<div><b>54.2K</b><span>Google impressions (November 2025 report)</span></div>"
+  "<div><b>24.5</b><span>average Google position, improved from 41.9 (December 2025)</span></div></div>"
+  "<blockquote class=\"qt\">\u201cYes I want to keep working with you.\u201d<small>Owner, Hays HVAC, Durham, NC, January 2026</small></blockquote>"
+  "<p class=\"src\">Sources: #2 and #5 are from a live Google US check on 14 November 2026 (#2 is the first HVAC company website for that search; the same check also found a Hays blog page at #5 for \"hvac maintenance plan durham nc\"). "
+  "Impressions are from the November 2025 report. Average position is for December 2025, where lower is better (roughly from page 5 to page 3). "
+  "Rankings change over time and no one can guarantee them. <a href=\"/results/hvac-seo-durham-nc\">Read the full Hays HVAC story</a> or <a href=\"/results\">see all client results</a>.</p>")
+
 # Each industry page: slug, type key for the free check form, names, the searches people make,
 # what we fix (title, text), the AI answer angle, and its own questions.
 INDUSTRIES = [
@@ -82,6 +96,35 @@ INDUSTRIES = [
    ("What does a roofing SEO agency actually do each month?", "Keeps your Google Business Profile active with job photos and posts, gets new reviews coming in, adds and improves service and town pages, fixes website problems, keeps your listings matching, and reports calls and rankings you can check in your own Google accounts."),
    ("Do you offer SEO services for roofers anywhere in the US?", "Yes. We work remotely with roofing companies in all 50 states. Everything happens in your own Google Business Profile, website and Search Console, so you can see every change and every result yourself."),
    ("Do you handle listing management for roofers?", "Yes. We make your name, address, phone and services match on Google, Bing, Apple Maps, the BBB, Angi, Yelp and the other directories search engines and AI assistants read, and we fix duplicates."),
+  ],
+ },
+ {
+  "slug": "seo-for-hvac", "k": "hvac", "noun": "HVAC companies", "one": "HVAC company", "biz": "HVAC company", "nav": "HVAC companies",
+  "title": "SEO for HVAC Companies: More Calls From Google Maps | Business Santa",
+  "desc": "Local SEO for US HVAC contractors. Show up for \"ac repair near me\", \"furnace repair\" and no-heat emergency searches on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "h1": "SEO for HVAC companies", "h1ac": "that books calls in every season",
+  "answer": "SEO for HVAC companies means getting your heating and cooling business into the top results when someone nearby searches \"ac repair near me\", \"furnace repair\" or \"no heat emergency\". Most of those calls go to the three businesses Google shows on the map, so the work starts with your Google Business Profile, then a page for each service and town, steady reviews, and the listings that ChatGPT and other AI assistants read.",
+  "intro": "HVAC demand follows the weather. The first heat wave fills the phones with AC repair calls, and the first cold snap brings furnace and no-heat calls, often at night. The companies Google shows first that week get the jobs, and many of those jobs turn into maintenance plans and new systems. The work is getting ready before the season turns, not after.",
+  "searches": ["ac repair near me", "furnace repair near me", "hvac company near me", "no heat emergency", "heat pump installation", "ac not blowing cold air"],
+  "fixes": [
+   ("Your Google Business Profile, built for HVAC", "Primary category set to HVAC contractor, secondary categories only for work you really do, every service listed (AC repair, furnace repair, heat pumps, ductwork, maintenance plans, indoor air quality), your real service area, and hours that match when you answer the phone."),
+   ("No-heat and no-AC emergency signals", "If you take after-hours calls, we make sure your profile, website and listings all say so clearly, so you can show up for \"no heat\" and \"emergency ac repair\" searches at night and on weekends."),
+   ("A page for each service and town", "Separate pages for AC repair, furnace repair, heat pump installation and maintenance plans, plus pages for the towns you serve. People search the job and their town, and one \"Services\" page misses most of those searches."),
+   ("Seasonal pages, published early", "AC tune-up and cooling pages before summer, furnace and heat pump pages before the first cold snap, with profile posts that say you are booking. Pages need time to be found, so we publish them weeks ahead."),
+   ("Reviews that name the job", "A simple text link for happy customers after each visit. Reviews that say \"furnace fixed the same night\" or \"new heat pump, clean install\" help you show up for those searches and help the next caller choose you."),
+   ("Listings that match", "Your name, address and phone the same on Google, Bing, Apple Maps, Yelp, the BBB, Angi and the directories AI assistants read. Mismatches make search engines less sure about you."),
+  ],
+  "ai": "Homeowners now ask ChatGPT and Google's AI Overviews things like \"who is a good HVAC company near me for a heat pump\" or \"how much does AC repair cost here\". Those answers are built from listings, reviews, local articles and company websites that answer service and cost questions clearly. We make sure your company, your services and your service area are described clearly and consistently in those places, so AI assistants can name you.",
+  "res": {"head": "Real results <span class=\"ac\">for an HVAC company</span>", "after": HVAC_PROOF, "sub": True},
+  "more": (("/results/hvac-seo-durham-nc", "Hays HVAC case study"), ("/guides/winter-plumbing-and-heating-leads", "Winter plumbing and heating leads"), ("/seo-for-plumbers", "SEO for plumbers"), ("/seo-for-roofers", "SEO for roofers")),
+  "track": "Our founder Manav S has 10+ years in SEO, 3,000+ orders and a 4.9 average from 2,000+ client reviews.",
+  "faq": [
+   ("How long does SEO take for an HVAC company?", "Fixes to your Google Business Profile can start helping within a few weeks. Ranking higher for competitive searches like \"ac repair near me\" usually builds over three to six months, depending on your towns and your competitors. Starting before your busy season matters."),
+   ("Can you help if we only work at customers' homes?", "Yes. Most HVAC companies are service-area businesses. We set up your profile with a service area instead of a public address, which is how Google wants it done."),
+   ("We serve a lot of towns. Can we show up in all of them?", "Within reason, yes. Google favors businesses close to the person searching, so we build pages and proof for each town you really serve, starting with the ones that bring you the best jobs."),
+   ("Can you help us sell more maintenance plans?", "Yes. A clear maintenance plan page, linked from every service page and from your Google profile, makes it easy to sign up. For Hays HVAC in Durham, NC we built a new service plan page from the owner's own PDF (May to June 2026)."),
+   ("What does an HVAC SEO company actually do each month?", "Keeps your Google Business Profile active with job photos and posts, gets new reviews coming in, adds and improves service and town pages, publishes seasonal pages before the rush, fixes website problems, keeps your listings matching, and reports calls and searches you can check in your own Google accounts."),
+   ("Do I need a new website?", "Usually not. We fix the one you have so it loads fast on phones, shows your number at the top and has a page for each service you want calls for. We work on WordPress and most website builders."),
   ],
  },
  {
@@ -760,6 +803,23 @@ PLUMB_EXTRA = [
   "<ol class=\"steps\"><li><b>Will I see every change?</b>A good plumbing SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, direction requests and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>How do you handle emergency searches?</b>Ask how they show you as open for \"emergency plumber\" searches at night, and how they keep that honest.</li></ol>"),
 ]
 
+# ---------- HVAC page: extra pillar sections (no guides of its own yet) ----------
+HVAC_EXTRA = [
+ ("Cooling season and heating season: <span class=\"ac\">two rushes a year</span>",
+  "<div class=\"grid\"><div class=\"card\"><h3>Before summer</h3><p>AC repair, AC tune-up and \"ac not blowing cold air\" pages live and linked, profile posts that say you are booking tune-ups, and fresh photos of real installs. The first hot week is when people search, so the pages need to be found before it.</p></div>"
+  "<div class=\"card\"><h3>Before the first cold snap</h3><p>Furnace repair, heat pump repair and no-heat pages ready, emergency hours checked on your profile, and holiday hours set. See <a href=\"/guides/winter-plumbing-and-heating-leads\">how HVAC companies get found before the freeze</a>.</p></div>"
+  "<div class=\"card\"><h3>The shoulder months</h3><p>Spring and fall are for the pages that bring bigger jobs: system replacement, heat pump installation, financing and maintenance plans. They are also the time to ask busy-season customers for reviews.</p></div>"
+  "<div class=\"card\"><h3>All year: ChatGPT and AI answers</h3><p>Your company, services and towns described the same way on your site and the directories AI assistants read, plus pages that answer cost questions, so they can name you when a homeowner asks who to call.</p></div></div>"),
+ ("No heat at 10pm: <span class=\"ac\">where HVAC companies win or lose</span>",
+  "<p>A family with no heat on a freezing night, or no AC in a heat wave, calls whoever looks open right now. If you take emergency calls, your Google Business Profile hours, your website header and your listings must all say so, and someone must answer or call back within minutes. If you do not take them, say that clearly too, so you do not collect angry reviews from people who could not reach you.</p>"),
+ ("Service areas, <span class=\"ac\">town by town</span>",
+  "<p>Most HVAC companies cover a city and the towns around it, but Google favors the business closest to the person searching. So we set your real service area on your Google Business Profile, build a page for each town that matters to you with the jobs you have done there and how fast you can get there, and get reviews that mention the town. We start with the towns that bring the best jobs, then add more.</p>"),
+ ("Local Services Ads or SEO: <span class=\"ac\">which first?</span>",
+  "<p>Google Local Services Ads put a Google Guaranteed badge above everything else, and you pay per lead. SEO brings the free calls from the map and the regular results, and keeps working when you stop paying. Most HVAC companies do best with both, often with ads turned up in the busy weeks. A strong Google Business Profile and steady reviews help your ads and your free rankings at the same time. See <a href=\"/google-and-meta-ads\">how we run Google and Meta ads</a>.</p>"),
+ ("Choosing an HVAC SEO company: <span class=\"ac\">5 questions to ask</span>",
+  "<ol class=\"steps\"><li><b>Will I see every change?</b>A good HVAC SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, direction requests and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>What happens before each season?</b>Ask how they prepare your cooling and heating pages and your profile before the rush, not after.</li></ol>"),
+]
+
 PLUMB_GUIDES = [
  {
   "slug": "guides/plumbing-seo-keywords", "parent": "seo-for-plumbers", "nav": "Plumbing SEO keywords",
@@ -1068,6 +1128,7 @@ HOLIDAY_GUIDES = [
    ("Ask every winter job for a review", "Reviews that say fast response and fixed it on a cold night help the next caller choose you."),
    ("Run a small local call ad on cold nights", "A call-only or call-first ad for your area when the forecast drops below freezing."),
   ],
+  "also": (("/seo-for-hvac", "SEO for HVAC companies: heating and cooling calls from Google Maps"), ("/seo-for-plumbers", "SEO for plumbers that makes the phone ring")),
   "src": (GOOGLE_SPECIAL,),
   "faq": [
    ("When should plumbers prepare for winter searches?", "Before the first freeze in your area. Pages and profile updates need a little time to be picked up, so November is the right time."),
