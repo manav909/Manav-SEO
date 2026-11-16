@@ -222,11 +222,13 @@ def statement(label, quote, source, accent=YEL):
     return _centered(accent, build, 'statement')
 
 
-def tip(n, title, body, accent=YEL):
+def tip(n, title, body, accent=YEL, label='TIP'):
+    """label: the word beside the number badge ('TIP', or e.g. 'STEP', 'LESSON'); '' shows the badge only."""
     def build(s, y0, k=1.0):
         s.box((X0, y0, X0 + 210, y0 + 210), 105, accent, 'tip badge')
         s.text((X0 + 105, y0 + 110), str(n), F(int(156 * k)), NAVY, anchor='mm')
-        s.text((X0 + 250, y0 + 64), f'TIP {n}', F(int(88 * k)), accent)
+        if label:
+            s.text((X0 + 250, y0 + 64), f'{label} {n}' if label in ('TIP', 'STEP') else label, F(int(88 * k)), accent)
         y = s.para(X0, y0 + 280, title, int(104 * k), WHITE)
         s.box((X0, y + 30, X0 + 260, y + 44), 7, accent, 'rule')
         return s.para(X0, y + 88, body, int(62 * k), MUT)
