@@ -57,6 +57,16 @@ so the same mistake is never made twice. Each entry: date, what, where, cause, f
    covers end on one word ("rush", "to?", "review."), and some frames are half empty. Posted Reels and covers cannot be
    edited. Prevented by: tools/video/reel_kit.py and SAFE_ZONES.md (15 Nov); the next Reels are the first real test.
 
+6. **ChatGPT screenshot too small to read** (found by the 7:13 pm Reel run before publishing, Atlanta HVAC).
+   Where: the first render put the whole answer in one shot() scene at about 72% scale; on a phone the business names
+   and ratings were unreadable. Fix: split into two shot() scenes (picks 1 and 2, picks 3 and 4), shown at full size.
+   Prevented by: reel_kit.shot() now prints a warning when a screenshot would be shown under 95%.
+
+7. **Accidental Instagram repost during engagement** (same run). The like heart sits in a different place in the photo
+   post view than in the Reel view; a click meant for the heart hit Repost on @atlcoolingheating's post. Seen on the
+   profile's Reposts tab within a minute and undone (the tab is empty again). Prevented by: zoom on the action row and
+   click the heart from that screenshot on every post; check the Reposts tab at the end of every engagement session.
+
 Also seen, not ours to change without Manav (listed in the 16 Nov audit message): the Facebook Page service area
 shows "New City, NY" (a town in Rockland County) instead of New York City; the Page shows "Always open" as hours.
 

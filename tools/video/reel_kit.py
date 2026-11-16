@@ -236,8 +236,16 @@ def tip(n, title, body, accent=YEL, label='TIP'):
 
 
 def shot(image_path, title, date_line, accent=YEL):
-    """A real screenshot, scaled to fit the card without cropping words. Crop the file to the answer first."""
+    """A real screenshot, scaled to fit the card without cropping words. Crop the file to the answer first.
+
+    Readability (16 Nov 2026): a whole ChatGPT answer from an 800 px wide window shrank to about 55% and its text
+    was unreadable on a phone. Keep the scale at 0.95 or more: if the crop is tall, split it into two shot()
+    scenes (for example picks 1 and 2, then picks 3 and 4), each cut between list items, never inside one."""
     sc0 = Image.open(image_path).convert('RGB')
+    _z = min((X1_LOW - X0) / sc0.width, (Y1 - 80 - (Y0 + 110)) / sc0.height)
+    if _z < 0.95:
+        print(f'reel_kit.shot: {os.path.basename(image_path)} would be shown at {_z:.0%}; text may be too small '
+              'to read on a phone. Split it into two shot() scenes.')
     def build(s, y0, k=1.0):
         y = s.para(X0, y0, title, int(60 * k), WHITE)
         top = y + 40; maxw, maxh = X1_LOW - X0, Y1 - 80 - top
