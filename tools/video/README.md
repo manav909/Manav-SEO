@@ -48,3 +48,22 @@ outside the safe zone. `safezone.mockup()` previews any frame under every platfo
 - End hook: one clear ask (a keyword to comment, or the episode's question) plus subscribe.
 - The narrator is a synthetic voice that is not any real person. YouTube's AI question asks about making a real person say
   things, altering real footage, fake realistic scenes or AI music; none apply, so the answer is No.
+
+## Sound: never publish a silent video (Manav, 16 Nov 2026)
+
+"I need voiceover and background music, or somewhere variations, but mute posts doesn't make sense."
+The 14 Nov Chicago Reel and the 15 Nov 7:19 pm Denver HVAC Reel went out with a silent audio track; an ffprobe
+"has an audio stream" check passed on them, so loudness is now measured.
+
+- Every Reel, Short, episode, video post and video Story has sound. Default: narration over our original beat
+  (`reel_voice.py`). Variations are welcome (a different beat seed, a beat-led cut with a short spoken hook), but
+  never silence. If the narrator cannot be made, use the original beat alone (`reel_music.py`) and say so in the report.
+- Mux and check with `python3 tools/video/finalize.py video_only.mp4 mix.wav out.mp4`. It refuses (prints SILENT and
+  exits with an error) when there is no audio stream, the sound is too quiet (mean under -30 dB or peak under -12 dB)
+  or it stops before the picture. Never upload a file it rejected. `make.py` runs the same check on episodes and Shorts.
+- Never pick Meta's music library (licensing on business accounts); our beat is original.
+- After publishing, open the live Facebook Reel and the Instagram post: the audio line must read "Original audio".
+  If a live video turns out silent, tell Manav at once with a PushNotification; never delete a public post yourself.
+- Feed posts on Instagram and Facebook that carry a message (tips, offers, results) go out as short narrated videos
+  (10 to 25 seconds, 1080x1350 or 1080x1920, slides animated with the kit, `reel_voice.py` sound, `finalize.py` check),
+  not as silent images. LinkedIn carousels (PDF documents) stay as they are.

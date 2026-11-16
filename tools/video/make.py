@@ -62,12 +62,15 @@ def main():
         total = sum(wav_len(p) + 0.6 for p in sorted(glob.glob('a[0-9][0-9].wav')))
         music(total + 2)
         subprocess.run([sys.executable, os.path.join(HERE, 'render_episode.py')], check=True)
+        for f in glob.glob('episode*.mp4'):  # SOUND RULE: never hand over a silent video
+            subprocess.run([sys.executable, os.path.join(HERE, 'finalize.py'), '--check', f], check=True)
     else:
         lines = open('n.txt').read().strip().split('\n')
         tts(lines, lambda i: f'a{i}.wav', 1.12)
         total = sum(wav_len(f'a{i}.wav') + 0.35 for i in range(len(lines)))
         music(total + 2)
         subprocess.run([sys.executable, os.path.join(HERE, 'render_short.py')], check=True)
+        subprocess.run([sys.executable, os.path.join(HERE, 'finalize.py'), '--check', 'short1.mp4'], check=True)  # SOUND RULE
 
 if __name__ == '__main__':
     main()
