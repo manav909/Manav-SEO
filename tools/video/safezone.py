@@ -12,6 +12,7 @@ Formats (all coordinates in pixels of the file we export):
   vertical  1080x1920  Reels (Instagram, Facebook), YouTube Shorts, Reel covers, LinkedIn vertical video
   story     1080x1920  Instagram and Facebook Stories made as stories (not Reel reshares)
   feed45    1080x1350  Instagram and Facebook feed posts and carousels (profile grid shows a 3:4 center crop)
+  feed45cover 1080x1350  first slide of a carousel (Facebook's multi-photo collage crops it to about 2:3)
   yt169     1920x1080  long YouTube episodes (player title bar on top in embeds, controls and captions at the bottom)
   thumb169  1280x720   YouTube thumbnails (time stamp bottom right, watched bar along the bottom)
 
@@ -25,7 +26,7 @@ Usage:
 import sys
 from PIL import Image, ImageDraw, ImageChops, ImageFont
 
-SIZES = {'vertical': (1080, 1920), 'story': (1080, 1920), 'feed45': (1080, 1350), 'yt169': (1920, 1080), 'thumb169': (1280, 720)}
+SIZES = {'vertical': (1080, 1920), 'story': (1080, 1920), 'feed45': (1080, 1350), 'feed45cover': (1080, 1350), 'yt169': (1920, 1080), 'thumb169': (1280, 720)}
 
 # Where each platform draws its interface on a 1080x1920 vertical video (measured from the apps, Nov 2026,
 # with a margin). Used for the mockups and to derive SAFE below.
@@ -49,6 +50,9 @@ SAFE = {
     'story': [(72, 270, 1008, 1640)],
     # profile grid shows the center 1012x1350; tag and sound icons sit bottom left
     'feed45': [(72, 60, 1008, 1260)],
+    # first slide of a carousel: Facebook's multi-photo collage shows it as a 2:3 center crop (about x 90 to 990),
+    # seen on 16 Nov 2026 when "4 things" lost its first word and "1/7" was cut in the Business Suite preview
+    'feed45cover': [(100, 60, 980, 1260)],
     'yt169': [(96, 100, 1824, 930)],
     'thumb169': [(48, 40, 1232, 600), (48, 600, 1060, 680)],
 }

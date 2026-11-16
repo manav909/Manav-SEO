@@ -30,6 +30,7 @@ use the lane at y 1300 inside the card. Covers keep the brand pill at y 300 and 
 |---|---|---|---|
 | Native Story (made as a story) | 1080x1920 | x 72 to 1008, y 270 to 1640 | progress bar and name on top, reply bar and link sticker at the bottom |
 | Feed post or carousel slide | 1080x1350 | x 72 to 1008, y 60 to 1260 | profile grid shows the center 1012 px; tag and sound icons bottom left |
+| First slide of a carousel (`feed45cover`) | 1080x1350 | x 100 to 980, y 60 to 1260 | Facebook's multi-photo collage shows slide 1 as a 2:3 center crop (found 16 Nov 2026) |
 | YouTube episode | 1920x1080 | x 96 to 1824, y 100 to 930 | title bar in embeds and when paused; controls and YouTube captions at the bottom |
 | YouTube thumbnail | 1280x720 | keep clear of x 1060 to 1280, y 600 to 720 | the time stamp sits bottom right, the watched bar along the bottom |
 | LinkedIn and X images | as feed | as feed | they crop previews to the center |
