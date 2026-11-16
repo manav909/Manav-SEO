@@ -56,6 +56,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .cta .row{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
 .by{display:flex;align-items:center;gap:14px;margin:40px 0 0;padding:16px;border-radius:18px;background:var(--soft)}.by img{border-radius:50%;flex:none}.by p{margin:2px 0 0;font-size:.92rem}
 .src{margin-top:10px;font-size:.88rem;color:var(--mut)}
+.also{margin:18px 0 0;padding:14px 18px;background:#f5f7fb;border-radius:12px;font-size:.98rem}.also a{font-weight:600}
 .rel{margin:48px 0 0}.rel ul{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}.rel a{display:inline-block;padding:8px 14px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 1px var(--line);text-decoration:none;font-size:.92rem}
 .proof{margin-top:18px}.proof .sum{display:flex;align-items:center;gap:12px;margin-bottom:12px}.proof .sum b{font:800 2.2rem var(--fh);color:var(--ink)}.proof .sum span{font-size:.92rem}.st{color:#f5a400;letter-spacing:2px}
 .rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
@@ -403,6 +404,12 @@ def build_ads(p):
 
 def _par(g): return next(i for i in INDUSTRIES if i["slug"] == g["parent"])
 
+def also_html(g):
+    """Hand-picked related guides for a guide (field "also" in content.py), so each new guide gets in-body links."""
+    a = g.get("also")
+    if not a: return ""
+    return '<p class="also"><b>Related:</b> ' + "; ".join(f'<a href="{u}">{E(t)}</a>' for u, t in a) + ".</p>"
+
 def build_guide(g):
     url = f"{SITE}/{g['slug']}"
     og_img = guide_img.make(g)
@@ -414,6 +421,7 @@ def build_guide(g):
 {groups}
 {"" if groups else '<h2>The <span class="ac">list</span></h2>'}
 <ol class="steps">{items}</ol>
+{also_html(g)}
 {google_src(g.get('src', ()))}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(g['faq'])}
