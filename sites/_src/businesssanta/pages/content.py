@@ -200,7 +200,7 @@ HUB = {
  ],
  "faq": [
   ("What is local SEO?", "Local SEO is improving how your business shows up when people nearby search for what you offer, on Google search, Google Maps and AI assistants. It covers your Google Business Profile, website, reviews and listings."),
-  ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly plans are priced after the free check, so you only pay for what your business needs."),
+  ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly local SEO for one location is $299 a month with no contract; bigger plans are quoted after the free check, so you only pay for what your business needs."),
   ("How long does local SEO take?", "Profile and listing fixes can help within a few weeks. Ranking higher for competitive searches usually takes three to six months."),
   ("Can anyone guarantee a #1 ranking?", "No. Google says no one can guarantee a top position. We promise honest work, every change shown to you, and results you can check in your own Google account."),
  ],

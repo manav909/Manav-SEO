@@ -127,9 +127,17 @@
      },
      {
       "@type": "Offer",
+      "price": "299",
+      "priceCurrency": "USD",
+      "priceSpecification": {
+       "@type": "UnitPriceSpecification",
+       "price": 299,
+       "priceCurrency": "USD",
+       "unitText": "MONTH"
+      },
       "itemOffered": {
        "@type": "Service",
-       "name": "Monthly SEO"
+       "name": "Monthly local SEO"
       }
      },
      {
@@ -981,8 +989,8 @@ details p{max-width:68ch;color:#3a3935;padding-bottom:16px}
 
 /* package box */
 .box{border:1px solid var(--line);border-radius:var(--r-l);overflow:hidden;background:#fff;box-shadow:0 12px 40px rgba(22,22,22,.08)}
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line)}
-.tabs button{all:unset;cursor:pointer;text-align:center;padding:15px 6px;font:600 .9rem var(--head);color:var(--muted);border-bottom:3px solid transparent}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+.tabs button{all:unset;cursor:pointer;text-align:center;padding:15px 4px;font:600 .86rem var(--head);color:var(--muted);border-bottom:3px solid transparent}
 .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--gold);background:#fffdf4}
 .tabs button:focus-visible{outline:3px solid var(--gold);outline-offset:-3px}
 .pane{padding:22px}
@@ -1161,7 +1169,8 @@ footer a:hover{text-decoration:underline;color:#fff}
         <div class="tabs" role="tablist" id="tabs">
           <button role="tab" aria-selected="true" aria-controls="pane" id="t0" data-i="0">On-Page</button>
           <button role="tab" aria-selected="false" aria-controls="pane" id="t1" data-i="1" tabindex="-1">Technical</button>
-          <button role="tab" aria-selected="false" aria-controls="pane" id="t2" data-i="2" tabindex="-1">Custom</button>
+          <button role="tab" aria-selected="false" aria-controls="pane" id="t2" data-i="2" tabindex="-1">Monthly</button>
+          <button role="tab" aria-selected="false" aria-controls="pane" id="t3" data-i="3" tabindex="-1">Custom</button>
         </div>
         <div class="pane" id="pane" role="tabpanel" aria-labelledby="t0">
           <div class="row"><h2 id="pTitle">On-Page SEO</h2><div class="amt" id="pAmt">$120<small>starting price</small></div></div>
@@ -1450,7 +1459,7 @@ const SERVICES = [
   {id:"full", img:"rank-1-on-google", name:"Full SEO package", short:"On-page, off-page, technical and AI SEO", price:null},
   {id:"gsc", img:"fix-google-search-console", name:"Fix Google Search Console", short:"Indexing issues, coverage errors, sitemaps", price:160},
   {id:"yoast", img:"seo-yoast-wordpress", name:"WordPress and Yoast SEO", short:"Yoast setup, on-page, technical, plugins", price:120},
-  {id:"monthly", img:"monthly-seo", name:"Monthly SEO", short:"Ongoing on-page, off-page and technical work", price:null},
+  {id:"monthly", img:"monthly-seo", name:"Monthly local SEO", short:"Google profile, local pages, listings and reports, every month", price:299, unit:"/mo"},
   {id:"shopify", img:"shopify-ecommerce-seo", name:"Shopify e-commerce SEO", short:"Store audit, product listings, promotion", price:null},
   {id:"geo", img:"geo-ai-featured-content", name:"GEO: AI search visibility", short:"Get cited by ChatGPT, Google AI, Claude, Gemini", price:null}
 ];
@@ -1496,7 +1505,9 @@ const PACKS = [
    inc:["Keyword research for your pages","SEO titles and meta descriptions","Headings, content and internal links","Image alt text and basic schema","Before and after report"]},
   {title:"Technical SEO", price:160, lead:"Fix what stops Google from crawling and indexing your site.",
    inc:["Google Search Console audit and fixes","Indexing and coverage errors","Schema markup errors","Speed and Core Web Vitals checks","Developer-ready fix notes"]},
-  {title:"Full or custom", price:null, lead:"Monthly SEO, Shopify stores, AI search (GEO) or a full package, quoted for your site.",
+  {title:"Monthly local SEO", price:299, unit:"/mo", lead:"Everything one location needs to keep climbing on Google Maps, done every month. No contract.",
+   inc:["Google profile managed: weekly posts, new photos, every review answered","Hours and holiday hours always right","One new local page or blog post on your site each month","Local listings fixed and added","Monthly report: your top 10 searches plus a ChatGPT check"]},
+  {title:"Full or custom", price:null, lead:"More locations, Shopify stores, AI search (GEO) or a full package, quoted for your site.",
    inc:["Free review of your website","Plan and price before you pay","Keyword and competitor research","On-page, technical and off-page work","Monthly reports and support"]}
 ];
 const REVIEWS = [
@@ -1671,7 +1682,7 @@ $("#svcGrid").innerHTML=SERVICES.map((s,i)=>`
     <button class="pic" type="button" data-gig="${i}" aria-label="See what you get with ${esc(s.name)}"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc(s.name)}" loading="lazy" width="1100" height="740"></button>
     <div class="txt"><strong>${esc(s.name)}</strong><span>${esc(s.short)}</span>
       <a class="see-l" href="#gig-${s.id}" data-gig="${i}">▶ See what you get, with live previews</a>
-      <div class="row"><span class="price">${s.price?`$${s.price}<small>starting price</small>`:`Custom<small>quote after a free review</small>`}</span>
+      <div class="row"><span class="price">${s.price?(s.unit?`$${s.price}<small>per month</small>`:`$${s.price}<small>starting price</small>`):`Custom<small>quote after a free review</small>`}</span>
       <span class="svc-acts"><a class="ask-l" href="#" data-ask="Tell me about ${esc(s.name)}" data-svc="${i}">Ask</a><button class="btn btn-gold" type="button" data-svc="${i}">Choose</button></span></div></div>
   </article>`).join("");
 $("#footSvc").innerHTML=SERVICES.map((s,i)=>`<li><a href="#order" data-svc="${i}">${esc(s.name)}</a></li>`).join("");
@@ -1713,7 +1724,7 @@ function render(query){
       <span class="r-main"><strong>${esc(s.name)}${n===0?'<span class="best">Best match</span>':""}</strong><span class="why">${why}</span>
         <span class="r-meta">Typical delivery: ${TIMELINE[s.id]}</span>
         ${n===0&&proofFor(s.id)?`<span class="r-proof">“${esc(proofFor(s.id).hl)}” (${esc(proofFor(s.id).u)}, US client)</span>`:""}</span>
-      <span class="r-price">${s.price?`$${s.price}<small>starting</small>`:`Custom<small>free review</small>`}</span></li>`;
+      <span class="r-price">${s.price?(s.unit?`$${s.price}<small>a month</small>`:`$${s.price}<small>starting</small>`):`Custom<small>free review</small>`}</span></li>`;
   });
   items.push(`<li role="option" id="opt${items.length}" data-ask="1" class="ask" aria-selected="false">
       <span class="bubble"><svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2z"/></svg></span>
@@ -1794,7 +1805,7 @@ function gRender(){
     const first=st.querySelector(".opts button"); first&&first.focus();
     return;
   }
-  const [a,b]=recommend(ga), s=SERVICES[a], alt=SERVICES[b], pr=proofFor(s.id), pk=s.price?`$${s.price}`:"Custom quote";
+  const [a,b]=recommend(ga), s=SERVICES[a], alt=SERVICES[b], pr=proofFor(s.id), pk=s.price?`$${s.price}${s.unit||""}`:"Custom quote";
   const fit=[];
   const GOALTXT={"My site isn't showing on Google":"Gets your missing pages found and indexed by Google","Traffic or rankings dropped":"Finds why traffic dropped and fixes the cause","I want more leads and sales":"Brings more of the right visitors who become leads","Show up in AI answers":"Makes your business easier for AI assistants to recommend","I need steady ongoing SEO":"Gives you a team that owns your SEO every month"};
   if(GOALTXT[ga.goal]) fit.push(GOALTXT[ga.goal]);
@@ -1804,7 +1815,7 @@ function gRender(){
   st.innerHTML=`<p class="q-n">Your plan</p><h2 id="gTitle">Here is what we recommend</h2>
     <div class="plan"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc(s.name)}">
       <div><span class="tag">Best fit for you</span><h3>${esc(s.name)}</h3>
-        <div class="facts2"><div><span>Price</span><strong>${s.price?`From $${s.price}`:"Quote after free review"}</strong></div>
+        <div class="facts2"><div><span>Price</span><strong>${s.price?(s.unit?`$${s.price} a month`:`From $${s.price}`):"Quote after free review"}</strong></div>
           <div><span>Typical delivery</span><strong>${TIMELINE[s.id]}</strong></div>
           <div><span>You pay</span><strong>$0 until you approve</strong></div></div>
         <ul>${fit.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div></div>
@@ -1852,13 +1863,13 @@ function setTab(i){
   document.querySelectorAll("#tabs button").forEach((b,k)=>{b.setAttribute("aria-selected",k===i);b.tabIndex=k===i?0:-1});
   $("#pane").setAttribute("aria-labelledby","t"+i);
   $("#pTitle").textContent=p.title;
-  $("#pAmt").innerHTML=p.price?`$${p.price}<small>starting price</small>`:`Quote<small>after a free review</small>`;
+  $("#pAmt").innerHTML=p.price?(p.unit?`$${p.price}<small>per month</small>`:`$${p.price}<small>starting price</small>`):`Quote<small>after a free review</small>`;
   $("#pLead").textContent=p.lead;
   $("#pInc").innerHTML=p.inc.map(x=>`<li>${esc(x)}</li>`).join("");
 }
 document.querySelectorAll("#tabs button").forEach(b=>{
   b.onclick=()=>setTab(+b.dataset.i);
-  b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ const n=(+b.dataset.i+(e.key==="ArrowRight"?1:2))%3; setTab(n); document.getElementById("t"+n).focus(); } };
+  b.onkeydown=e=>{ if(e.key==="ArrowRight"||e.key==="ArrowLeft"){ const n=(+b.dataset.i+(e.key==="ArrowRight"?1:PACKS.length-1))%PACKS.length; setTab(n); document.getElementById("t"+n).focus(); } };
 });
 setTab(0);
 
@@ -2261,10 +2272,10 @@ function SSPlayer(scr,path){
   function render(i){
     const s=SERVICES[i], g=GX[s.id]; idx=i;
     $("#gxTopName").textContent=s.name;
-    $("#gxTopPrice").textContent=s.price?`From $${s.price}`:"Custom quote";
+    $("#gxTopPrice").textContent=s.price?(s.unit?`$${s.price} a month`:`From $${s.price}`):"Custom quote";
     body.innerHTML=`<header class="gx-hero"><img src="/businesssanta/assets/img/${s.img}.webp" alt="${esc2(s.name)}" width="1100" height="740"><div>
       <h2 id="gxName">${esc2(s.name)}</h2><p>${esc2(g.promise)}</p>
-      <ul class="gx-facts"><li><b>${s.price?`$${s.price}`:"Custom"}</b>${s.price?"starting price":"quote after a free review"}</li><li><b>${esc2(g.when)}</b>delivery</li><li><b>4.9 ★</b>2,000+ reviews</li><li><b>$0</b>until you approve</li></ul>
+      <ul class="gx-facts"><li><b>${s.price?`$${s.price}${s.unit||""}`:"Custom"}</b>${s.price?(s.unit?"per month, no contract":"starting price"):"quote after a free review"}</li><li><b>${esc2(g.when)}</b>delivery</li><li><b>4.9 ★</b>founder, 2,000+ reviews</li><li><b>$0</b>until you approve</li></ul>
       <div class="gx-team">${g.team.map(t=>`<span><img src="/businesssanta/assets/img/${t[0]}.webp" alt=""><b>${TEAM[t[0]]}</b> ${t[1]}</span>`).join("")}</div></div></header>
      <section class="gx-sec"><h3>What you get</h3><p class="gx-sub">${g.items.length} deliverables. Each one runs below with example data, exactly as it works on SEO Season, the platform we built.</p>${g.items.map((it,k)=>block(it,k+1)).join("")}</section>
      <section class="gx-sec gx-aisec"><h3>The engine behind this gig <b class="x-adv">Advanced</b></h3><p class="gx-sub">SEO Season runs analysis in minutes that takes days by hand, and sees signals old-school SEO cannot: AI Overviews, ChatGPT visits, AI citations. A person on our team checks and approves every change.</p>${g.ai.map(it=>block(it,0,1)).join("")}</section>

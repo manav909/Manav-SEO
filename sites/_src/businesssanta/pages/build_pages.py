@@ -48,7 +48,7 @@ h1 .ac{display:block;color:var(--ink)}h1 .ac span{background:linear-gradient(tra
 .card{padding:18px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.05)}.card p{margin:6px 0 0;font-size:.97rem}
 ol.steps{counter-reset:s;list-style:none;margin:18px 0 0;padding:0}ol.steps li{counter-increment:s;position:relative;padding:0 0 18px 50px}ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--y);color:#111;font:800 .95rem var(--fh)}
 ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-.01em}
-.price{display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px}@media(min-width:700px){.price{grid-template-columns:repeat(3,1fr)}}
+.price{display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px}@media(min-width:600px){.price{grid-template-columns:repeat(2,1fr)}}@media(min-width:1000px){.price{grid-template-columns:repeat(4,1fr)}}
 .price div{padding:16px;border-radius:16px;background:var(--soft);box-shadow:0 0 0 1px var(--line)}.price b{display:block;font:800 1.5rem var(--fh);color:var(--ink)}.price span{font-size:.9rem}
 .faq details{border-bottom:1px solid var(--line)}.faq summary{cursor:pointer;list-style:none;padding:16px 28px 16px 0;position:relative;font:800 1.05rem var(--fh);color:var(--ink);letter-spacing:-.01em}.faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";position:absolute;right:4px;top:12px;font-size:1.4rem;color:var(--yd)}.faq details[open] summary::after{content:"\\2212"}.faq p{margin:0 0 16px}
@@ -259,8 +259,9 @@ def service_ld(url, name, desc, stype):
 def price_html():
     return ('<div class="price" data-track="pricing"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>'
             '<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>'
-            '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div></div>'
-            '<p class="src">Monthly SEO, AI search and full packages are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
+            '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div>'
+            '<div><b>$299/mo</b><span>Monthly local SEO for one location. No contract.</span></div></div>'
+            '<p class="src">More locations, ads and full AI search plans are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
 
 REV = [("Patient, plain-English help", "I\u2019m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.", "Technical SEO"),
        ("Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website\u2026", "Technical SEO"),
