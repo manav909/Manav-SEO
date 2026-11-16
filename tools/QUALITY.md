@@ -7,7 +7,7 @@ so the same mistake is never made twice. Each entry: date, what, where, cause, f
 
 0. **Reels published with a silent audio track (found by Manav).**
    Where: Facebook and Instagram Reels of 14 Nov (Chicago plumbers, frozen pipes) and 15 Nov 7:19 pm (Denver HVAC,
-   "I asked ChatGPT"), and the Reels before them. Measured on the live Facebook Reels on 16 Nov: an audio track is
+   "I asked ChatGPT"); earlier Reels not yet measured. Measured on the live Facebook Reels on 16 Nov: an audio track is
    there but its peak level is 0 (silence). The 15 Nov 11:22 pm Dallas salons Reel has narration and the beat.
    Cause: the Reel task's only sound check was "ffprobe shows an audio stream", which a silent track passes; when the
    narrator did not run (most likely its packages were missing on that run's fresh machine; a fresh machine on 16 Nov
