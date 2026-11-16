@@ -15,6 +15,7 @@ def org():
      {"@type": "WebSite", "@id": f"{SITE}/#site", "url": f"{SITE}/", "name": "Business Santa", "alternateName": "Business Santa by SEO Season",
       "inLanguage": "en-US", "publisher": {"@id": f"{SITE}/#org"}},
      {"@type": ["Organization", "ProfessionalService"], "@id": f"{SITE}/#org", "name": "Business Santa", "alternateName": "Business Santa SEO",
+      "legalName": "Business Santa", "foundingDate": "2025-10-09",
       "url": f"{SITE}/", "logo": {"@type": "ImageObject", "url": f"{SITE}/assets/img/logo-512.png", "width": 512, "height": 512},
       "image": f"{SITE}/assets/img/og.jpg",
       "description": "Business Santa helps US small businesses show up on Google, Google Maps and AI assistants like ChatGPT, with local SEO, technical SEO and AI search optimization done by a real team. Powered by SEO Season.",

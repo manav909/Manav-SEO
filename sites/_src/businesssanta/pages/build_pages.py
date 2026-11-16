@@ -174,7 +174,7 @@ FOOTER = ('<footer class="ft"><div class="w ftg">'
 import home_ld
 def _site_nodes():
     keep = {"WebSite": None,
-            "Organization": ["@type", "@id", "name", "alternateName", "url", "logo", "image", "description", "email", "areaServed", "founder", "parentOrganization", "sameAs", "contactPoint"],
+            "Organization": ["@type", "@id", "name", "alternateName", "legalName", "foundingDate", "url", "logo", "image", "description", "email", "areaServed", "founder", "parentOrganization", "sameAs", "contactPoint"],
             "Person": ["@type", "@id", "name", "jobTitle", "url", "worksFor", "description"]}
     out = []
     for n in home_ld.org():
