@@ -11,6 +11,14 @@ never mentioning what you are proving in the description". Every post now:
 
 History lives in a small JSON file the task keeps (e.g. queue/media_history.json); pass its path.
 
+Gradual improvement (17 Nov 2026: "keep experimenting by learning trends, don't settle for one or two designs"):
+  * score(history_path, title, metrics) stores each post's results (views, avg watch %, saves, shares, follows).
+  * next_post weights arcs, hook types and palettes by their results (more wins, more use), but keeps exploring:
+    every 5th post (or explore=True) is an EXPERIMENT: an untested arc, hook or layout variant, or one of the
+    brand's 'experiments' (new formats added from the weekly trend scan), marked plan['experiment'].
+  * The weekly strategy council reads report(history_path): what won, what to retire, which experiment to promote
+    into the regular rotation, and which new trend to try next week.
+
 Usage:
     from media_plan import next_post, caption, lint
     plan = next_post(BRAND, 'queue/media_history.json', kind='reel')     # dict: arc, scenes, palettes, voice, beat, hook
@@ -54,18 +62,48 @@ def _load(path):
         return []
 
 
-def _fresh(options, used, avoid, rnd):
+def _fresh(options, used, avoid, rnd, weights=None):
     recent = used[-avoid:] if avoid else []
     pool = [o for o in options if o not in recent] or list(options)
+    if weights:
+        ws = [max(0.2, weights.get(o, 1.0)) for o in pool]
+        return rnd.choices(pool, ws)[0]
     return rnd.choice(pool)
 
 
-def next_post(brand, history_path, kind='reel', seed=None, lang='en'):
+def _perf(hist, key):
+    """Average result score per option of `key` (1.0 = average post), from posts that have metrics."""
+    rows = [h for h in hist if h.get('score') is not None]
+    if len(rows) < 4:
+        return {}
+    mean = sum(h['score'] for h in rows) / len(rows) or 1
+    out = {}
+    for h in rows:
+        out.setdefault(h.get(key), []).append(h['score'] / mean)
+    return {k: sum(v) / len(v) for k, v in out.items()}
+
+
+def _score(m):
+    """One number per post from its metrics: watch time and saves and shares count most."""
+    v = m.get('views', 0) or 0
+    if not v:
+        return None
+    return (v ** 0.5) * (0.5 + (m.get('watch', 30) or 30) / 100) * (1 + 20 * ((m.get('saves', 0) or 0) + 2 * (m.get('shares', 0) or 0) + 3 * (m.get('follows', 0) or 0)) / v)
+
+
+def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=None):
     hist = _load(history_path)
     rnd = random.Random(seed if seed is not None else datetime.date.today().toordinal() * 7 + len(hist))
+    explore = (len(hist) % 5 == 4) if explore is None else explore
     arcs = brand.get('arcs') or list(ARCS)
-    arc = _fresh(arcs, [h.get('arc') for h in hist], 2, rnd)
-    hook = _fresh(list(HOOKS), [h.get('hook') for h in hist], 3, rnd)
+    tried = {h.get('arc') for h in hist}
+    experiment = None
+    if explore:
+        new = [a for a in ARCS if a not in tried] + list(brand.get('experiments', []))
+        if new:
+            experiment = rnd.choice(new)
+    arc = experiment if experiment in ARCS else _fresh(arcs, [h.get('arc') for h in hist], 2, rnd, _perf(hist, 'arc'))
+    hook = _fresh(list(HOOKS), [h.get('hook') for h in hist], 3, rnd, None if explore else _perf(hist, 'hook'))
     pals = list(brand['palettes'])
     last_pals = [h.get('palettes', [None])[0] for h in hist]
     first = _fresh(pals, last_pals, 2, rnd)
@@ -78,15 +116,31 @@ def next_post(brand, history_path, kind='reel', seed=None, lang='en'):
     cover = _fresh(pals, [h.get('cover') for h in hist], 3, rnd)
     return {'kind': kind, 'arc': arc, 'scenes': ARCS[arc], 'palettes': seq, 'hook': hook,
             'hook_rule': HOOKS[hook][0], 'hook_pattern': HOOKS[hook][1], 'voice': voice, 'beat': beat,
-            'cover': cover, 'speed': round(rnd.uniform(1.02, 1.12), 2)}
+            'cover': cover, 'speed': round(rnd.uniform(*brand.get('speed', (1.02, 1.12))), 2),
+            'experiment': experiment}
 
 
 def record(history_path, plan, title=''):
     hist = _load(history_path)
-    hist.append({k: plan.get(k) for k in ('kind', 'arc', 'hook', 'voice', 'beat', 'cover', 'palettes')} |
+    hist.append({k: plan.get(k) for k in ('kind', 'arc', 'hook', 'voice', 'beat', 'cover', 'palettes', 'experiment')} |
                 {'title': title, 'date': datetime.date.today().isoformat()})
     os.makedirs(os.path.dirname(os.path.abspath(history_path)), exist_ok=True)
     json.dump(hist[-60:], open(history_path, 'w'), indent=1, ensure_ascii=False)
+
+
+def score(history_path, title, metrics):
+    """Attach a post's results, e.g. {'views': 820, 'watch': 41, 'saves': 6, 'shares': 2, 'follows': 1}."""
+    hist = _load(history_path)
+    for h in reversed(hist):
+        if h.get('title') == title:
+            h['metrics'] = metrics; h['score'] = _score(metrics); break
+    json.dump(hist, open(history_path, 'w'), indent=1, ensure_ascii=False)
+
+
+def report(history_path):
+    """For the weekly council: average result per arc, hook, voice, beat and experiment (1.0 = average)."""
+    hist = _load(history_path)
+    return {k: dict(sorted(_perf(hist, k).items(), key=lambda kv: -kv[1])) for k in ('arc', 'hook', 'voice', 'beat', 'experiment')}
 
 
 LIMITS = {'instagram': 2200, 'facebook': 5000, 'youtube_title': 100, 'youtube': 5000, 'linkedin': 3000, 'x': 280}

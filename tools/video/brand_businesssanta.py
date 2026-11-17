@@ -37,6 +37,8 @@ BRAND = {
         'en': ['am_michael', 'af_heart', 'am_fenrir', 'bf_emma', 'am_puck', 'af_bella', 'am_michael+am_fenrir', 'bm_george'],
     },
     'beats': ['upbeat', 'pluck', 'lofi', 'cinematic'],
+    'speed': (1.02, 1.12),
+    'experiments': [],   # new formats from the weekly trend scan, tried before they join the rotation
     'arcs': ['proof_story', 'myth_bust', 'quick_tip', 'case_study', 'live_test', 'number_drop'],
     'forbidden': ['fiverr', '—', '–'],  # never on Business Santa; no em or en dashes anywhere
 }
