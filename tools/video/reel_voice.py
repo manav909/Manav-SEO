@@ -10,8 +10,8 @@ lines.txt holds one narration line per scene (written for the ear: "A C", "two t
 Then mux:  ffmpeg -i video_only.mp4 -i mix.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 128k -ar 44100 -shortest out.mp4
 
 Variety (17 Nov 2026: "same boring voice, no variety"). Options after the positional arguments:
-  --voice NAME       a Kokoro voice (am_michael, af_heart, am_fenrir, bf_emma, am_puck, af_bella, bm_george ...),
-                     or a blend 'am_michael+am_fenrir' (equal mix) or 'af_heart:0.7+bf_emma:0.3'. Default: picked
+  --voice NAME       a Kokoro voice (am_michael, af_heart, am_fenrir, af_bella, am_puck, af_nicole ...),
+                     or a blend 'am_michael+am_fenrir' (equal mix) or 'af_heart:0.7+af_bella:0.3'. Default: picked
                      from the seed out of VOICES, so consecutive Reels sound different.
   --lang en-us|en-gb|hi   language for the phonemes (hi for Hindi voices hf_alpha, hf_beta, hm_omega, hm_psi)
   --speed 1.08       base speed. The hook (first line) runs 6% faster, the last line (the ask) 6% slower,
@@ -26,7 +26,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from make import ensure_voice, VOICE_DIR, VOICE
 
-VOICES = ['am_michael', 'af_heart', 'am_fenrir', 'bf_emma', 'am_puck', 'af_bella', 'am_michael+am_fenrir', 'bm_george']
+VOICES = ['am_michael', 'af_heart', 'am_fenrir', 'af_bella', 'am_puck', 'af_nicole', 'am_michael+am_fenrir', 'af_heart+af_bella']
 BEATS = ['upbeat', 'pluck', 'lofi', 'cinematic']
 
 

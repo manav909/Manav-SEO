@@ -6,6 +6,7 @@ spec.json:
 {
   "brand": "brand_businesssanta",            # module name of the brand file next to this script
   "english": false,                          # use the brand's English display fonts (brands that have english())
+  "series": "chatgpt",                       # a key of brand['series'] (badge, palettes, voice, cover)
   "voice": "af_heart", "lang": "en-us", "speed": 1.06, "beat": "lofi", "seed": 12,   # from media_plan.next_post
   "scenes": [ {"f": "poster", "pal": "navy", "lines": ["..."], "kicker": "...", "n": "narration for this scene"}, ... ],
   "cover": {"lines": ["..."], "sub": "...", "pal": "yellow"}
@@ -30,7 +31,7 @@ def main():
     for a, b in zip(pals, pals[1:]):
         if a == b:
             qa['problems'].append(f'two scenes in a row use the palette {a}')
-    frames = R.build(brand, scenes)
+    frames = R.build(brand, scenes, series=spec.get('series'))
     for f in frames:
         qa['notes'] += f.notes
     if any('no lens' in n for n in qa['notes']):

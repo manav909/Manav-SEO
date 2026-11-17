@@ -33,12 +33,28 @@ BRAND = {
         'coral': dict(bg=CORAL, bg2=(196, 62, 50), ink=WHITE, accent=NAVY, accent_ink=WHITE, muted=(255, 226, 218),
                       panel=WHITE, panel_ink=NAVY, chip=NAVY, chip_ink=YEL, bad=NAVY, panel_soft=(244, 120, 100)),
     },
-    'voices': {  # Kokoro voices that suit the brand; media_plan rotates them, blends are written 'a+b'
-        'en': ['am_michael', 'af_heart', 'am_fenrir', 'bf_emma', 'am_puck', 'af_bella', 'am_michael+am_fenrir', 'bm_george'],
+    'voices': {  # American voices only (17 Nov 2026: US accent and tone for everything Business Santa). Blends 'a+b'.
+        'en': ['am_michael', 'af_heart', 'am_fenrir', 'af_bella', 'am_puck', 'af_nicole', 'am_michael+am_fenrir', 'af_heart+af_bella'],
     },
+    'lang': 'en-us',
+    'audience': 'US small business owners and the people they serve: US cities, US trades, US spelling, US dates (Nov 14, 2026), dollars',
     'beats': ['upbeat', 'pluck', 'lofi', 'cinematic'],
     'speed': (1.02, 1.12),
     'experiments': [],   # new formats from the weekly trend scan, tried before they join the rotation
     'arcs': ['proof_story', 'myth_bust', 'quick_tip', 'case_study', 'live_test', 'number_drop'],
+    # Content series (17 Nov 2026): similar within a series so viewers feel at home, different between series.
+    # Each keeps its badge, palettes, narrator voice, beat family and cover palette; share = how often it runs.
+    'series': {
+        'chatgpt': dict(label='I ASKED CHATGPT', fill=WHITE, ink=NAVY, palettes=['navy', 'sky'], arcs=['live_test', 'myth_bust'],
+                        voice='af_heart', beats=['cinematic', 'pluck'], cover='sky', share=2),
+        'wins':    dict(label='CLIENT WIN', fill=YEL, ink=NAVY, palettes=['navy', 'yellow'], arcs=['case_study', 'proof_story'],
+                        voice='am_michael', beats=['cinematic', 'upbeat'], cover='yellow', share=2),
+        'fix':     dict(label='60-SECOND FIX', fill=CORAL, ink=WHITE, palettes=['paper', 'sky'], arcs=['quick_tip', 'number_drop'],
+                        voice='am_puck', beats=['lofi', 'pluck'], cover='paper', share=2),
+        'myth':    dict(label='MYTH OR FACT', fill=NAVY, ink=YEL, palettes=['coral', 'paper'], arcs=['myth_bust', 'number_drop'],
+                        voice='af_bella', beats=['pluck', 'upbeat'], cover='coral', share=1),
+        'holiday': dict(label='12 DAYS OF SANTA', fill=(200, 30, 45), ink=WHITE, palettes=['coral', 'yellow', 'navy'],
+                        arcs=['proof_story', 'quick_tip', 'case_study'], voice='am_michael+am_fenrir', beats=['upbeat'], cover='coral', share=0.5),
+    },
     'forbidden': ['fiverr', '—', '–'],  # never on Business Santa; no em or en dashes anywhere
 }

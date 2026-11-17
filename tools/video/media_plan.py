@@ -91,11 +91,21 @@ def _score(m):
     return (v ** 0.5) * (0.5 + (m.get('watch', 30) or 30) / 100) * (1 + 20 * ((m.get('saves', 0) or 0) + 2 * (m.get('shares', 0) or 0) + 3 * (m.get('follows', 0) or 0)) / v)
 
 
-def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=None):
+def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=None, series=None):
+    """Series (17 Nov 2026: "similarity within a category feels comfortable, different for different"): each of the
+    brand's series keeps its own badge, palettes, narrator voice, beat family and cover palette, so its posts are
+    recognisable; variety comes from rotating series, arcs and hooks. Pass series= to force one (e.g. from the
+    weekly plan); otherwise the least recently used series, weighted by brand['series'][k]['share']."""
     hist = _load(history_path)
     rnd = random.Random(seed if seed is not None else datetime.date.today().toordinal() * 7 + len(hist))
     explore = (len(hist) % 5 == 4) if explore is None else explore
-    arcs = brand.get('arcs') or list(ARCS)
+    sers = brand.get('series', {})
+    if sers and not series:
+        last = [h.get('series') for h in hist]
+        cands = [k for k in sers if k not in last[-1:]] or list(sers)
+        series = rnd.choices(cands, [sers[k].get('share', 1) for k in cands])[0]
+    S = sers.get(series, {})
+    arcs = S.get('arcs') or brand.get('arcs') or list(ARCS)
     tried = {h.get('arc') for h in hist}
     experiment = None
     if explore:
@@ -104,17 +114,18 @@ def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=No
             experiment = rnd.choice(new)
     arc = experiment if experiment in ARCS else _fresh(arcs, [h.get('arc') for h in hist], 2, rnd, _perf(hist, 'arc'))
     hook = _fresh(list(HOOKS), [h.get('hook') for h in hist], 3, rnd, None if explore else _perf(hist, 'hook'))
-    pals = list(brand['palettes'])
+    pals = S.get('palettes') or list(brand['palettes'])
     last_pals = [h.get('palettes', [None])[0] for h in hist]
     first = _fresh(pals, last_pals, 2, rnd)
     seq = [first]
     for _ in ARCS[arc][1:]:
         seq.append(_fresh([p for p in pals if p != seq[-1]], seq, 1, rnd))
     voices = brand.get('voices', {}).get(lang) or ['am_michael']
-    voice = _fresh(voices, [h.get('voice') for h in hist], 3, rnd)
-    beat = _fresh(brand.get('beats', ['upbeat']), [h.get('beat') for h in hist], 2, rnd)
-    cover = _fresh(pals, [h.get('cover') for h in hist], 3, rnd)
-    return {'kind': kind, 'arc': arc, 'scenes': ARCS[arc], 'palettes': seq, 'hook': hook,
+    voice = S.get('voice') or _fresh(voices, [h.get('voice') for h in hist], 3, rnd)   # one narrator per series
+    beat = _fresh(S.get('beats') or brand.get('beats', ['upbeat']), [h.get('beat') for h in hist], 1 if S else 2, rnd)
+    cover = S.get('cover') or _fresh(pals, [h.get('cover') for h in hist], 3, rnd)
+    vlang = S.get('lang') or brand.get('lang') or 'en-us'
+    return {'kind': kind, 'lang': vlang, 'series': series, 'series_label': S.get('label'), 'arc': arc, 'scenes': ARCS[arc], 'palettes': seq, 'hook': hook,
             'hook_rule': HOOKS[hook][0], 'hook_pattern': HOOKS[hook][1], 'voice': voice, 'beat': beat,
             'cover': cover, 'speed': round(rnd.uniform(*brand.get('speed', (1.02, 1.12))), 2),
             'experiment': experiment}
@@ -122,7 +133,7 @@ def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=No
 
 def record(history_path, plan, title=''):
     hist = _load(history_path)
-    hist.append({k: plan.get(k) for k in ('kind', 'arc', 'hook', 'voice', 'beat', 'cover', 'palettes', 'experiment')} |
+    hist.append({k: plan.get(k) for k in ('kind', 'series', 'arc', 'hook', 'voice', 'beat', 'cover', 'palettes', 'experiment')} |
                 {'title': title, 'date': datetime.date.today().isoformat()})
     os.makedirs(os.path.dirname(os.path.abspath(history_path)), exist_ok=True)
     json.dump(hist[-60:], open(history_path, 'w'), indent=1, ensure_ascii=False)
@@ -140,7 +151,7 @@ def score(history_path, title, metrics):
 def report(history_path):
     """For the weekly council: average result per arc, hook, voice, beat and experiment (1.0 = average)."""
     hist = _load(history_path)
-    return {k: dict(sorted(_perf(hist, k).items(), key=lambda kv: -kv[1])) for k in ('arc', 'hook', 'voice', 'beat', 'experiment')}
+    return {k: dict(sorted(_perf(hist, k).items(), key=lambda kv: -kv[1])) for k in ('series', 'arc', 'hook', 'voice', 'beat', 'experiment')}
 
 
 LIMITS = {'instagram': 2200, 'facebook': 5000, 'youtube_title': 100, 'youtube': 5000, 'linkedin': 3000, 'x': 280}

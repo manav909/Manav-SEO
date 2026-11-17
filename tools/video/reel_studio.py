@@ -212,6 +212,18 @@ class Frame:
         m = Image.new('L', logo.size, 0); ImageDraw.Draw(m).ellipse((0, 0, logo.width - 1, logo.height - 1), fill=255); logo.putalpha(ImageChops.multiply(logo.getchannel('A'), m))
         self.paste(logo, (x + 6, y + 6), 'logo')
         self.text((x + h + 8, y + h / 2), name, f, ink, anchor='lm')
+        if SERIES:   # the series badge: same label, colours and size on every post of a series
+            sf = self.F('display', 40 if not small else 34); lab = SERIES['label']; sw = int(self.tw(lab, sf) + 56)
+            sx = x + w + 14
+            if sx + sw > self.x1(y, y + h):   # no room beside the chip: its own row underneath
+                sx, y2 = x, y + h + 12
+            else:
+                y2 = y
+            bf, bi = SERIES.get('fill', p['accent']), SERIES.get('ink', p['accent_ink'])
+            if sum(abs(a - b) for a, b in zip(bf, p['bg'])) < 120:   # badge would vanish into this background
+                bf, bi = bi, bf
+            self.box((sx, y2, sx + sw, y2 + h), h // 2, bf, 'series badge')
+            self.text((sx + 28, y2 + h / 2), lab, sf, bi, anchor='lm')
         return (x, y, x + w, y + h)
 
     # ---- decoration (background layer only)
@@ -719,11 +731,69 @@ def book(brand, cover_img, line, sub=None, pal='primary', fmt='vertical', name='
     return fr.finish(name)
 
 
-FORMATS = dict(book=book, poster=poster, stat=stat, mythfact=mythfact, proof=proof, steps=steps, talk=talk, quote=quote, cta=cta, cover=cover)
+def photo(brand, image, lines, kicker=None, pal='primary', fmt='vertical', name='photo', focus=(0.5, 0.35), credit=None):
+    """People first: a full-bleed photo (a real owner at work, a customer, a street of shops) with the hook set over a
+    soft scrim in the lower part of the safe zone. The photo is decoration (it may run under the platform interface);
+    focus=(fx, fy) keeps the subject's face in view when the photo is cropped to fill the frame. Only photos we may
+    use: our own, a client's with permission, or a free-licence stock photo recorded in assets/people/LICENSES.json.
+    credit: a short credit line when the licence asks for one."""
+    fr = Frame(brand, pal, fmt); p = fr.pal
+    src = Image.open(image).convert('RGB')
+    z = max(fr.W / src.width, fr.H / src.height); im = src.resize((int(src.width * z) + 1, int(src.height * z) + 1), Image.LANCZOS)
+    cx = int(min(max(0, focus[0] * im.width - fr.W / 2), im.width - fr.W)); cy = int(min(max(0, focus[1] * im.height - fr.H * 0.4), im.height - fr.H))
+    fr.bg = im.crop((cx, cy, cx + fr.W, cy + fr.H)); fr.bd = ImageDraw.Draw(fr.bg)
+    scrim = Image.new('L', (1, fr.H))
+    for yy in range(fr.H):
+        t = max(0.0, (yy - fr.H * 0.38) / (fr.H * 0.42)); scrim.putpixel((0, yy), int(235 * min(1, t) ** 1.4))
+    dark = Image.new('RGB', (fr.W, fr.H), p.get('bg2', p['bg']))
+    fr.bg = Image.composite(dark, fr.bg, scrim.resize((fr.W, fr.H))); fr.bd = ImageDraw.Draw(fr.bg)
+    top_scrim = Image.new('L', (1, fr.H))
+    for yy in range(fr.H):
+        top_scrim.putpixel((0, yy), int(150 * max(0, 1 - yy / 520)))
+    fr.bg = Image.composite(dark, fr.bg, top_scrim.resize((fr.W, fr.H))); fr.bd = ImageDraw.Draw(fr.bg)
+    fr.chip()
+    ink = (255, 255, 255)
+
+    def go(s, measure):
+        y0 = 860; sizes = []
+        for ln in lines:
+            plain = ln.replace('*', ''); z = int(150 * s)
+            while z > 40 and fr.tw(plain, fr.F('display', z)) > fr.x1(900, 1390) - fr.x0 - 4:
+                z -= 4
+            sizes.append(z)
+        h = sum(int(z * 1.02) for z in sizes)
+        kb = 0
+        if kicker:
+            kb = fr.para(fr.x0, 1000, kicker, 'body_bold', int(46 * min(s, 1.2)), ink, measure=True)[0] - 1000 + 62
+        top = fr.bottom - 20 - h - kb
+        if top < y0:
+            raise LayoutError('photo text too tall')
+        if measure:
+            return fr.bottom
+        y = top
+        for ln, z in zip(lines, sizes):
+            fr.rich(fr.x0, y, ln, 'display', z, ink, p['accent'] if lum(p['accent']) > 110 else (253, 185, 19), gap=1.02, nowrap=True); y += int(z * 1.02)
+        if kicker:
+            fr.box((fr.x0, y + 30, fr.x0 + 90, y + 38), 4, p['accent'] if lum(p['accent']) > 110 else (253, 185, 19), 'rule')
+            fr.para(fr.x0, y + 58, kicker, 'body_bold', int(46 * min(s, 1.2)), ink)
+        return fr.bottom
+    sc = _fill(go, 0.5, 1.2, name=name); go(sc, False)
+    if credit:
+        fr.text((fr.x1(fr.bottom - 40, fr.bottom) - 4, fr.bottom - 4), credit, fr.F('body', 20), (220, 220, 220), anchor='rd', what='photo credit')
+    return fr.finish(name)
 
 
-def build(brand, scenes):
-    """scenes: list of dicts like {'f': 'poster', 'pal': 'yellow', 'lines': [...], ...} -> list of finished Frames."""
+FORMATS = dict(photo=photo, book=book, poster=poster, stat=stat, mythfact=mythfact, proof=proof, steps=steps, talk=talk, quote=quote, cta=cta, cover=cover)
+
+
+SERIES = None
+
+
+def build(brand, scenes, series=None):
+    """scenes: list of dicts like {'f': 'poster', 'pal': 'yellow', 'lines': [...], ...} -> list of finished Frames.
+    series: a key of brand['series']; its badge rides next to the brand chip on every frame and the cover."""
+    global SERIES
+    SERIES = brand.get('series', {}).get(series) if series else None
     out = []
     for sc in scenes:
         sc = dict(sc); f = FORMATS[sc.pop('f')]
