@@ -57,6 +57,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .by{display:flex;align-items:center;gap:14px;margin:40px 0 0;padding:16px;border-radius:18px;background:var(--soft)}.by img{border-radius:50%;flex:none}.by p{margin:2px 0 0;font-size:.92rem}
 .src{margin-top:10px;font-size:.88rem;color:var(--mut)}
 .also{margin:18px 0 0;padding:14px 18px;background:#f5f7fb;border-radius:12px;font-size:.98rem}.also a{font-weight:600}
+.bsl{display:flex;flex-wrap:wrap;align-items:center;gap:14px 30px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl img{display:block;filter:grayscale(1) brightness(0);opacity:.5}.bsl i{font-style:normal;font-weight:700;font-size:1.12rem;letter-spacing:-.02em;color:#000;opacity:.5;white-space:nowrap}.bsl i em{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;margin:0 .3em}
 .rel{margin:48px 0 0}.rel ul{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;padding:0;list-style:none}.rel a{display:inline-block;padding:8px 14px;border-radius:999px;background:var(--soft);box-shadow:0 0 0 1px var(--line);text-decoration:none;font-size:.92rem}
 .proof{margin-top:18px}.proof .sum{display:flex;align-items:center;gap:12px;margin-bottom:12px}.proof .sum b{font:800 2.2rem var(--fh);color:var(--ink)}.proof .sum span{font-size:.92rem}.st{color:#f5a400;letter-spacing:2px}
 .rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
@@ -163,11 +164,23 @@ SVC_LINKS = [(XH, "Christmas plan 2026"), ("/local-seo", "Local SEO services"), 
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
+# "Listed on" row: the platforms' own logos in grey, with no links and no ratings (Manav, 16 Nov 2026: the profiles show
+# our location and have no reviews yet, so visitors are not sent to them). Logo files in /assets/img/listed, taken from
+# each platform's own site; Pick an Agency's logo is lettering, so it is set in type the same way.
+LISTED = (("clutch", "Clutch", 405.7, 115, 22), ("sortlist", "Sortlist", 283.5, 72.3, 19), (None, "Pick an Agency", 0, 0, 0), ("crunchbase", "Crunchbase", 370, 52.8, 18))
+LST_CSS = ".bsl{display:flex;flex-wrap:wrap;align-items:center;gap:14px 30px;margin:22px 0 0}.bsl span{font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;opacity:.75}.bsl img{display:block;filter:grayscale(1) brightness(0);opacity:.5}.bsl i{font-style:normal;font-weight:700;font-size:1.12rem;letter-spacing:-.02em;color:#000;opacity:.5;white-space:nowrap}.bsl i em{font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:400;margin:0 .3em}"
+def listed_html(extra=""):
+    out = []
+    for f, name, w, h, px in LISTED:
+        if f: out.append(f'<img src="/assets/img/listed/{f}.svg" alt="{E(name)}" width="{round(w * px / h)}" height="{px}" loading="lazy" decoding="async">')
+        else: out.append('<i role="img" aria-label="Pick an Agency">Pick<em>an</em>Agency</i>')
+    return f'<div class="bsl"{extra}><span>Listed on</span>' + "".join(out) + "</div>"
+
 FOOTER = ('<footer class="ft"><div class="w ftg">'
     + _nav("Services", [("/", "Home")] + SVC_LINKS + [("/google-profile-score", "Free profile score"), ("https://seoseason.com/businesssanta", "Services and prices"), ("/#check", "Free check")])
     + _nav("By industry", IND_LINKS) + _nav("Guides", FOOT_GUIDES)
     + _nav("Company", [("/results", "Client results"), ("/white-label-local-seo", "For agencies"), ("/12-days-of-business-santa", "12 Days of Santa"), ("https://seoseason.com/", "SEO Season"), ("https://www.instagram.com/businesssanta", "Instagram"), ("https://www.linkedin.com/showcase/businesssanta", "LinkedIn"), ("https://www.youtube.com/@BusinessSantaofficial", "YouTube"), ("https://www.pickanagency.com/agencies/business-santa?ref=pa-d5e5fdd0d8d4cb21c4815b92b91baa48", "Featured on Pick an Agency"), ("/privacy", "Privacy"), ("/terms", "Terms"), ("mailto:seo@businesssanta.com", "seo@businesssanta.com")])
-    + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
+    + '</div><div class="w">' + listed_html(' style="margin:20px auto 0;max-width:1080px"') + '</div><div class="w ftc">© 2026 Business Santa, powered by SEO Season. Serving small businesses in all 50 states.</div></footer>')
 
 # Who we are, on every page: Google and AI assistants read each page on its own, so each one names the business,
 # its founder and the website, matching the full description on the home page (same @id values).
@@ -748,6 +761,7 @@ def build_results():
 <p class="ans">{E(SAMPLE)}</p>
 <p class="lead">Each story shows the business, the problem, what we did month by month, and the proof: a dated Google check and the client’s own words. Company names are shown; the people behind them stay private.</p>
 {res_cards(PUBLISHED)}
+{listed_html(' style="color:var(--mut)"')}
 <p class="src">New stories are added every week. Want proof for your industry? Ask on the free check and we will send the stories closest to your business.</p>
 {form_html('other', 'business')}"""
     graph = [{"@type": "ItemList", "name": "Business Santa client results", "itemListElement": [{"@type": "ListItem", "position": i + 1, "url": f"{SITE}/results/{r['url']}", "name": r["title"].split(" | ")[0]} for i, r in enumerate(STORIES)]}]
@@ -836,13 +850,13 @@ def _home_cards(cls):
 _HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1321}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px;flex:1}}.{c}c em{{margin-top:auto;padding-top:6px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
 _SAMPLE_LINE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
 _desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
-         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}</style>"
+         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}" + LST_CSS + "#clients .bsl img{filter:grayscale(1) brightness(0) invert(1);opacity:.7}#clients .bsl i{color:#fff;opacity:.7}</style>"
          '<div class="wrap hresw"><span class="eyb">Real client results</span><h2 class="h2">Real US businesses. <em>Real, dated results.</em></h2>'
-         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a></div></section>')
+         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a>' + listed_html(' style="color:#cbd5e1;margin-top:26px"') + '</div></section>')
 _mob = ('<section data-track="client-results" class="sec" id="clients"><style>' + _HCSS.format(c="hrm", cols="repeat(2,minmax(0,1fr))", ih=110, bs=".98rem")
-        + ".hrma{color:#8a5a00!important}</style>"
+        + ".hrma{color:#8a5a00!important}" + LST_CSS + "</style>"
         '<div class="w"><span class="eyb">Real client results</span><h2>Real US businesses, <em class="ac">real results</em></h2>'
-        f'<p class="lead">{_SAMPLE_LINE}</p><div class="hrm">{_home_cards("hrm")}</div><a class="hrma" href="/results">See all client results &rarr;</a></div></section>')
+        f'<p class="lead">{_SAMPLE_LINE}</p><div class="hrm">{_home_cards("hrm")}</div><a class="hrma" href="/results">See all client results &rarr;</a>' + listed_html(' style="color:#475569"') + '</div></section>')
 def _patch_res(path, inner):
     s = open(path).read()
     n = re.sub(r"<!--RESULTS-->.*?<!--/RESULTS-->", lambda m: "<!--RESULTS-->" + inner + "<!--/RESULTS-->", s, count=1, flags=re.S)
