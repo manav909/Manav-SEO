@@ -127,6 +127,13 @@ class Stage:
                 alt = self._lines(x, y, txt, f, step, min(maxw or 10 ** 6, X1_UP - x) - cut)
                 if len(alt) == len(lines) and len(alt[-1].split()) > 1:
                     lines = alt; break
+        if len(lines) > 1 and len(lines[-1].split()) == 1:  # still a widow (e.g. "Set special / hours."): shrink up to 12%
+            for s2 in range(size - 2, int(size * 0.88) - 1, -2):
+                f2 = F(s2, kind); alt = self._lines(x, y, txt, f2, int(s2 * gap), maxw)
+                if len(alt) == 1 or len(alt[-1].split()) > 1:
+                    f, step, lines = f2, int(s2 * gap), alt; break
+            else:
+                print(f'reel_kit: single-word last line left in "{txt}"; reword it')
         for ln in lines:
             self.text((x, y), ln, f, fill); y += step
         return y
@@ -222,11 +229,13 @@ def statement(label, quote, source, accent=YEL):
     return _centered(accent, build, 'statement')
 
 
-def tip(n, title, body, accent=YEL):
+def tip(n, title, body, accent=YEL, label='TIP'):
+    """label: the word beside the number badge ('TIP', or e.g. 'STEP', 'LESSON'); '' shows the badge only."""
     def build(s, y0, k=1.0):
         s.box((X0, y0, X0 + 210, y0 + 210), 105, accent, 'tip badge')
         s.text((X0 + 105, y0 + 110), str(n), F(int(156 * k)), NAVY, anchor='mm')
-        s.text((X0 + 250, y0 + 64), f'TIP {n}', F(int(88 * k)), accent)
+        if label:
+            s.text((X0 + 250, y0 + 64), f'{label} {n}' if label in ('TIP', 'STEP') else label, F(int(88 * k)), accent)
         y = s.para(X0, y0 + 280, title, int(104 * k), WHITE)
         s.box((X0, y + 30, X0 + 260, y + 44), 7, accent, 'rule')
         return s.para(X0, y + 88, body, int(62 * k), MUT)
@@ -234,8 +243,16 @@ def tip(n, title, body, accent=YEL):
 
 
 def shot(image_path, title, date_line, accent=YEL):
-    """A real screenshot, scaled to fit the card without cropping words. Crop the file to the answer first."""
+    """A real screenshot, scaled to fit the card without cropping words. Crop the file to the answer first.
+
+    Readability (16 Nov 2026): a whole ChatGPT answer from an 800 px wide window shrank to about 55% and its text
+    was unreadable on a phone. Keep the scale at 0.95 or more: if the crop is tall, split it into two shot()
+    scenes (for example picks 1 and 2, then picks 3 and 4), each cut between list items, never inside one."""
     sc0 = Image.open(image_path).convert('RGB')
+    _z = min((X1_LOW - X0) / sc0.width, (Y1 - 80 - (Y0 + 110)) / sc0.height)
+    if _z < 0.95:
+        print(f'reel_kit.shot: {os.path.basename(image_path)} would be shown at {_z:.0%}; text may be too small '
+              'to read on a phone. Split it into two shot() scenes.')
     def build(s, y0, k=1.0):
         y = s.para(X0, y0, title, int(60 * k), WHITE)
         top = y + 40; maxw, maxh = X1_LOW - X0, Y1 - 80 - top

@@ -5,13 +5,13 @@ import os, json, html, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import guide_img
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, REST_GUIDES, RETAIL_GUIDES, HOLIDAY_HUB, HOLIDAY_GUIDES, GOOGLE_SPECIAL
+from content import SITE, TODAY, INDUSTRIES, HUB, AI_PAGE, ADS_PAGE, GUIDES, GOOGLE_LOCAL, ROOF_EXTRA, ROOF_GUIDES, DENT_EXTRA, DENT_GUIDES, SALON_EXTRA, SALON_GUIDES, PLUMB_EXTRA, PLUMB_GUIDES, HVAC_EXTRA, REST_GUIDES, RETAIL_GUIDES, HOLIDAY_HUB, HOLIDAY_GUIDES, GOOGLE_SPECIAL
 # Topic clusters: an industry page plus its supporting guides. Add a new cluster here.
 CLUSTER_GUIDES = ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES
-EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA}
+EXTRAS = {"seo-for-roofers": ROOF_EXTRA, "seo-for-dentists": DENT_EXTRA, "seo-for-salons-and-spas": SALON_EXTRA, "seo-for-plumbers": PLUMB_EXTRA, "seo-for-hvac": HVAC_EXTRA}
 ALLG = GUIDES + CLUSTER_GUIDES + HOLIDAY_GUIDES
 XH = "/" + HOLIDAY_HUB["slug"]
-RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"]}
+RES_FOR = {"plumbing": ["us-hvac-durham", "us-remodeling-group"], "roofing": ["us-remodeling-group", "us-hvac-durham"], "hvac": ["us-hvac-durham"]}
 
 OUT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../businesssanta"))
 E = html.escape
@@ -48,7 +48,7 @@ h1 .ac{display:block;color:var(--ink)}h1 .ac span{background:linear-gradient(tra
 .card{padding:18px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line),0 8px 24px rgba(15,23,42,.05)}.card p{margin:6px 0 0;font-size:.97rem}
 ol.steps{counter-reset:s;list-style:none;margin:18px 0 0;padding:0}ol.steps li{counter-increment:s;position:relative;padding:0 0 18px 50px}ol.steps li::before{content:counter(s);position:absolute;left:0;top:0;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:var(--y);color:#111;font:800 .95rem var(--fh)}
 ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-.01em}
-.price{display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px}@media(min-width:700px){.price{grid-template-columns:repeat(3,1fr)}}
+.price{display:grid;grid-template-columns:1fr;gap:10px;margin-top:16px}@media(min-width:600px){.price{grid-template-columns:repeat(2,1fr)}}@media(min-width:1000px){.price{grid-template-columns:repeat(4,1fr)}}
 .price div{padding:16px;border-radius:16px;background:var(--soft);box-shadow:0 0 0 1px var(--line)}.price b{display:block;font:800 1.5rem var(--fh);color:var(--ink)}.price span{font-size:.9rem}
 .faq details{border-bottom:1px solid var(--line)}.faq summary{cursor:pointer;list-style:none;padding:16px 28px 16px 0;position:relative;font:800 1.05rem var(--fh);color:var(--ink);letter-spacing:-.01em}.faq summary::-webkit-details-marker{display:none}
 .faq summary::after{content:"+";position:absolute;right:4px;top:12px;font-size:1.4rem;color:var(--yd)}.faq details[open] summary::after{content:"\\2212"}.faq p{margin:0 0 16px}
@@ -129,6 +129,9 @@ def page_links(cur):
         out.append((XH, "Christmas plan 2026")); sib = HOLIDAY_GUIDES
     elif cur in ind:
         sib = [g for g in CLUSTER_GUIDES if g.get("parent") == cur]
+        out += list(ind[cur].get("more", ()))
+    elif cur == HUB["slug"]:
+        out += list(HUB.get("more", ())); sib = GUIDES
     elif cur == HOLIDAY_HUB["slug"]:
         sib = []
     else:
@@ -184,7 +187,7 @@ FOOTER = ('<footer class="ft"><div class="w ftg">'
 import home_ld
 def _site_nodes():
     keep = {"WebSite": None,
-            "Organization": ["@type", "@id", "name", "alternateName", "url", "logo", "image", "description", "email", "areaServed", "founder", "parentOrganization", "sameAs", "contactPoint"],
+            "Organization": ["@type", "@id", "name", "alternateName", "legalName", "foundingDate", "url", "logo", "image", "description", "email", "areaServed", "founder", "parentOrganization", "sameAs", "contactPoint"],
             "Person": ["@type", "@id", "name", "jobTitle", "url", "worksFor", "description"]}
     out = []
     for n in home_ld.org():
@@ -272,16 +275,17 @@ def service_ld(url, name, desc, stype):
 def price_html():
     return ('<div class="price" data-track="pricing"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>'
             '<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>'
-            '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div></div>'
-            '<p class="src">Monthly SEO, AI search and full packages are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
+            '<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div>'
+            '<div><b>$299/mo</b><span>Monthly local SEO for one location. No contract.</span></div></div>'
+            '<p class="src">More locations, ads and full AI search plans are quoted after the free check. <a href="https://seoseason.com/businesssanta">See every service and price</a>.</p>')
 
 REV = [("Patient, plain-English help", "I\u2019m not a website or technology person at all, so having someone who takes the time to explain things and answer my questions means a lot to me.", "Technical SEO"),
        ("Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website\u2026", "Technical SEO"),
        ("Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package")]
 
-def proof_html(who):
-    cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>Average rating across 2,000+ client reviews, 3,000+ orders over 10+ years</span></div><div class="rv">{cards}</div></div>'
+def proof_html(who, track=None):
+    cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client of Manav S, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>{E(track) if track else "Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years."} Screenshots on request.</span></div><div class="rv">{cards}</div></div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
@@ -334,8 +338,8 @@ def build_industry(p):
 <ul class="qs">{''.join(f'<li>{E(q)}</li>' for q in p['searches'])}</ul>
 <h2>What we fix for <span class="ac">{E(p['noun'])}</span></h2>
 <div class="grid">{fixes}</div>
-{res_block(RES_FOR.get(p['k'], ["us-pet-hospice", "us-hvac-durham"]))}
-{proof_html(p['biz'])}
+{res_block(RES_FOR.get(p['k'], ["us-pet-hospice", "us-hvac-durham"]), **p.get('res', {}))}
+{proof_html(p['biz'], p.get('track'))}
 <h2>How Google picks the <span class="ac">top 3 on the map</span></h2>
 <p>Google ranks local results on three things: <b>relevance</b> (how well your profile matches the search), <b>distance</b> (how close you are to the person searching) and <b>prominence</b> (how well known and well reviewed you are). You cannot move your shop, so we work on relevance and prominence: a complete profile, pages that match each service, steady reviews and consistent listings.</p>
 {google_src()}
@@ -367,8 +371,9 @@ def build_hub(p):
 {res_block(["us-pet-hospice", "us-hvac-durham"])}
 <h2>Local SEO <span class="ac">for your industry</span></h2>
 <div class="grid">{inds}</div>
-<h2>What it <span class="ac">costs</span></h2>
+<h2 id="prices" style="scroll-margin-top:80px">What it <span class="ac">costs</span></h2>
 {price_html()}
+{p.get('cost_note', '')}
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 {cta(p['k'], 'business')}"""
@@ -429,11 +434,14 @@ def build_guide(g):
     items = "".join(f"<li><b>{E(t)}</b>{E(d)}</li>" for t, d in g["items"])
     groups = "".join(f'<h3>{E(n)}</h3><ul class="qs">{"".join(f"<li>{E(q)}</li>" for q in qs)}</ul>' for n, qs in g.get("groups", []))
     groups = f'<h2>The keywords, <span class="ac">by job</span></h2><div class="kw">{groups}</div><h2>How to <span class="ac">use them</span></h2>' if groups else ""
+    sec = lambda k: "".join(f"<h2>{h}</h2>{b}" for h, b in g.get(k, ()))  # optional raw-HTML sections ("pre" after the answer, "post" after the list)
     body = f"""{h1(g['h1'], g['h1ac'])}
 <p class="ans">{E(g['answer'])}</p>
+{sec("pre")}
 {groups}
-{"" if groups else '<h2>The <span class="ac">list</span></h2>'}
+{"" if groups else '<h2>' + g.get("list_h", 'The <span class="ac">list</span>') + '</h2>'}
 <ol class="steps">{items}</ol>
+{sec("post")}
 {also_html(g)}
 {google_src(g.get('src', ()))}
 <h2>Common <span class="ac">questions</span></h2>
@@ -555,7 +563,7 @@ SCORE = {"slug": "google-profile-score",
 
 def build_score():
     p = SCORE; url = SITE + "/" + p["slug"]
-    types = [("plumbing", "Plumber", "Plumber", "plumber"), ("roofing", "Roofer", "Roofing contractor", "roofer"), ("dental", "Dentist", "Cosmetic dentist", "dentist"),
+    types = [("plumbing", "Plumber", "Plumber", "plumber"), ("roofing", "Roofer", "Roofing contractor", "roofer"), ("hvac", "HVAC company", "HVAC contractor", "HVAC company"), ("dental", "Dentist", "Cosmetic dentist", "dentist"),
              ("law", "Law firm", "Personal injury attorney", "lawyer"), ("restaurant", "Restaurant", "Italian restaurant", "restaurant"), ("salon", "Salon or spa", "Hair salon", "salon"),
              ("store", "Store or boutique", "Gift shop", "store"), ("other", "Something else", "Bakery", "business like yours")]
     opts = "".join(f'<option value="{k}" data-cat="{E(c)}" data-one="{E(o)}">{E(n)}</option>' for k, n, c, o in types)
@@ -668,9 +676,9 @@ def build_holiday_hub(p):
 # ---------- Client results: one hub and one page per client story (data in results.json, company names only) ----------
 RES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.json")))
 # Release order: a story is published by adding its slug here (2 a week, after the quality gate in the plan).
-PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la"]
+PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la", "us-headshot-photographer", "us-baby-boutique"]
 STORIES = [RES[k] for k in PUBLISHED]
-SAMPLE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
+SAMPLE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
 
 def thumb16(r):
     """Uniform 16:10 card picture for a story, so cards in a row line up with no empty space.
@@ -691,18 +699,19 @@ def thumb16(r):
         if not os.path.exists(dst): return r["thumb"]
     return ["/assets/img/results/" + name, 1200, 750]
 
-def res_cards(keys):
+def res_cards(keys, sub=False):
     out = ""
     for k in keys:
         if k not in PUBLISHED: continue
         r = RES[k]; src, w, h = thumb16(r)
         out += (f'<a href="/results/{r["url"]}" data-res="{E(r["url"])}"><img src="{src}" alt="{E(r["company"])}: {E(r["hero"])}" width="{w}" height="{h}" loading="lazy" decoding="async">'
-                f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span><span><i>Read the story</i></span></div></a>')
+                f'<div class="t"><b>{E(r["hero"])}</b><span>{E(r["label"])} · {E(r["place"])}</span>{f'<span>{E(r["sub"])}</span>' if sub else ""}<span><i>Read the story</i></span></div></a>')
     return f'<div class="rs">{out}</div>' if out else ""
 
-def res_block(keys, head="Real results <span class=\"ac\">for businesses like yours</span>"):
-    c = res_cards(keys)
-    return f'<h2>{head}</h2><div data-track="results">{c}</div><p class="src">{E(SAMPLE)} <a href="/results">See all client results</a>.</p>' if c else ""
+def res_block(keys, head="Real results <span class=\"ac\">for businesses like yours</span>", after=None, sub=False):
+    c = res_cards(keys, sub)
+    tail = after if after is not None else f'<p class="src">{E(SAMPLE)} <a href="/results">See all client results</a>.</p>'
+    return f'<h2>{head}</h2><div data-track="results">{c}</div>{tail}' if c else ""
 
 MORE_HEAD = 'More client <span class="ac">results</span>'
 def build_story(r):
@@ -839,11 +848,11 @@ def _home_cards(cls):
                    f'<span><small>{E(r["label"])} &middot; {E(r["place"])}</small><b>{E(r["hero"])}</b><em>{E(r["company"])}</em></span></a>')
     return "".join(out)
 _HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1321}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px;flex:1}}.{c}c em{{margin-top:auto;padding-top:6px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
-_SAMPLE_LINE = "A small sample from 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
+_SAMPLE_LINE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
 _desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
-         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}" + LST_CSS + "</style>"
+         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}" + LST_CSS + "#clients .bsl img{filter:grayscale(1) brightness(0) invert(1);opacity:.7}#clients .bsl i{color:#fff;opacity:.7}</style>"
          '<div class="wrap hresw"><span class="eyb">Real client results</span><h2 class="h2">Real US businesses. <em>Real, dated results.</em></h2>'
-         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a>' + listed_html(' style="color:#0b1220;margin-top:26px"') + '</div></section>')
+         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a>' + listed_html(' style="color:#cbd5e1;margin-top:26px"') + '</div></section>')
 _mob = ('<section data-track="client-results" class="sec" id="clients"><style>' + _HCSS.format(c="hrm", cols="repeat(2,minmax(0,1fr))", ih=110, bs=".98rem")
         + ".hrma{color:#8a5a00!important}" + LST_CSS + "</style>"
         '<div class="w"><span class="eyb">Real client results</span><h2>Real US businesses, <em class="ac">real results</em></h2>'

@@ -56,10 +56,10 @@ P["sound"] = '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0
 PK = [("yoast", "WordPress and Yoast SEO", "Titles, content and setup so Google reads every page", "$120"),
       ("gsc", "Fix Google Search Console", "Indexing errors, sitemaps, pages Google skips", "$160"),
       ("full", "Full SEO package", "Research, on-page, technical and off-page in one plan", None),
-      ("monthly", "Monthly SEO", "Steady work every month, with plain-English reports", None),
+      ("monthly", "Monthly local SEO", "Google profile, local pages, listings and a monthly report. No contract.", "$299"),
       ("shopify", "Shopify store SEO", "Products and collections shoppers can find", None),
       ("geo", "Get found on ChatGPT", "Show up when people ask AI for a business like yours", None)]
-packs = "".join(f'<a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content={k}#gig-{k}" data-pk="{k}"><div><b>{n}</b><small>{d}</small></div><em>{("From " + pr) if pr else "Quote"}<small>{"one-time fix" if pr else "after free check"}</small></em>{svg("chev")}</a>' for k, n, d, pr in PK)
+packs = "".join(f'<a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=mobile&amp;utm_campaign=packages&amp;utm_content={k}#gig-{k}" data-pk="{k}"><div><b>{n}</b><small>{d}</small></div><em>{(pr + "/mo" if k == "monthly" else "From " + pr) if pr else "Quote"}<small>{("per month" if k == "monthly" else "one-time fix") if pr else "after free check"}</small></em>{svg("chev")}</a>' for k, n, d, pr in PK)
 inds = "".join(f'<button type="button" data-k="{k}" aria-pressed="false"><i>{svg(k)}</i>{n}</button>' for k, n in TY)
 HT = {}
 for ln in types.splitlines():

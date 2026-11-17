@@ -5,6 +5,24 @@ SITE = "https://www.businesssanta.com"
 TODAY = "2026-11-06"
 
 GOOGLE_LOCAL = ("https://support.google.com/business/answer/7091", "Google Business Profile Help: How to improve your local ranking on Google")
+# Sources for the local SEO cost guide (checked 16 Nov 2026). The Ahrefs figures are the only market figures on that page.
+AHREFS_PRICING = ("https://ahrefs.com/blog/seo-pricing/", "Ahrefs blog: SEO pricing, a survey of 439 SEO service providers (published 17 Dec 2023, updated 15 Aug 2024)")
+GOOGLE_BP = ("https://www.google.com/business/", "Google: Google Business Profile (free)")
+GOOGLE_NOSEO = ("https://developers.google.com/search/docs/fundamentals/do-i-need-seo", "Google Search Central: Do you need an SEO? (no one can guarantee a #1 ranking)")
+
+# HVAC page proof: the one real HVAC result on the site (Hays HVAC, results.json "us-hvac-durham").
+# Every figure is copied from that story with its own source and date. Company name only.
+HVAC_PROOF = ("<p>Hays HVAC has served Durham and the Triangle in North Carolina since 1996. The work started in October 2025 with an audit, keyword research, "
+  "on-page fixes, sitemap, robots and schema, and the owner has renewed it month after month since. "
+  "Here is where it stands, with the source and date for every number.</p>"
+  "<div class=\"tiles\" data-track=\"hvac-proof\"><div><b>#2</b><span>on Google US for \"hvac company durham nc\" (14 Nov 2026)</span></div>"
+  "<div><b>#5</b><span>for \"ac repair cost durham nc\" with a Hays blog page (14 Nov 2026)</span></div>"
+  "<div><b>54.2K</b><span>Google impressions (November 2025 report)</span></div>"
+  "<div><b>24.5</b><span>average Google position, improved from 41.9 (December 2025)</span></div></div>"
+  "<blockquote class=\"qt\">\u201cYes I want to keep working with you.\u201d<small>Owner, Hays HVAC, Durham, NC, January 2026</small></blockquote>"
+  "<p class=\"src\">Sources: #2 and #5 are from a live Google US check on 14 November 2026 (#2 is the first HVAC company website for that search; the same check also found a Hays blog page at #5 for \"hvac maintenance plan durham nc\"). "
+  "Impressions are from the November 2025 report. Average position is for December 2025, where lower is better (roughly from page 5 to page 3). "
+  "Rankings change over time and no one can guarantee them. <a href=\"/results/hvac-seo-durham-nc\">Read the full Hays HVAC story</a> or <a href=\"/results\">see all client results</a>.</p>")
 
 # Each industry page: slug, type key for the free check form, names, the searches people make,
 # what we fix (title, text), the AI answer angle, and its own questions.
@@ -82,6 +100,35 @@ INDUSTRIES = [
    ("What does a roofing SEO agency actually do each month?", "Keeps your Google Business Profile active with job photos and posts, gets new reviews coming in, adds and improves service and town pages, fixes website problems, keeps your listings matching, and reports calls and rankings you can check in your own Google accounts."),
    ("Do you offer SEO services for roofers anywhere in the US?", "Yes. We work remotely with roofing companies in all 50 states. Everything happens in your own Google Business Profile, website and Search Console, so you can see every change and every result yourself."),
    ("Do you handle listing management for roofers?", "Yes. We make your name, address, phone and services match on Google, Bing, Apple Maps, the BBB, Angi, Yelp and the other directories search engines and AI assistants read, and we fix duplicates."),
+  ],
+ },
+ {
+  "slug": "seo-for-hvac", "k": "hvac", "noun": "HVAC companies", "one": "HVAC company", "biz": "HVAC company", "nav": "HVAC companies",
+  "title": "SEO for HVAC Companies: More Calls From Google Maps | Business Santa",
+  "desc": "Local SEO for US HVAC contractors. Show up for \"ac repair near me\", \"furnace repair\" and no-heat emergency searches on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "h1": "SEO for HVAC companies", "h1ac": "that books calls in every season",
+  "answer": "SEO for HVAC companies means getting your heating and cooling business into the top results when someone nearby searches \"ac repair near me\", \"furnace repair\" or \"no heat emergency\". Most of those calls go to the three businesses Google shows on the map, so the work starts with your Google Business Profile, then a page for each service and town, steady reviews, and the listings that ChatGPT and other AI assistants read.",
+  "intro": "HVAC demand follows the weather. The first heat wave fills the phones with AC repair calls, and the first cold snap brings furnace and no-heat calls, often at night. The companies Google shows first that week get the jobs, and many of those jobs turn into maintenance plans and new systems. The work is getting ready before the season turns, not after.",
+  "searches": ["ac repair near me", "furnace repair near me", "hvac company near me", "no heat emergency", "heat pump installation", "ac not blowing cold air"],
+  "fixes": [
+   ("Your Google Business Profile, built for HVAC", "Primary category set to HVAC contractor, secondary categories only for work you really do, every service listed (AC repair, furnace repair, heat pumps, ductwork, maintenance plans, indoor air quality), your real service area, and hours that match when you answer the phone."),
+   ("No-heat and no-AC emergency signals", "If you take after-hours calls, we make sure your profile, website and listings all say so clearly, so you can show up for \"no heat\" and \"emergency ac repair\" searches at night and on weekends."),
+   ("A page for each service and town", "Separate pages for AC repair, furnace repair, heat pump installation and maintenance plans, plus pages for the towns you serve. People search the job and their town, and one \"Services\" page misses most of those searches."),
+   ("Seasonal pages, published early", "AC tune-up and cooling pages before summer, furnace and heat pump pages before the first cold snap, with profile posts that say you are booking. Pages need time to be found, so we publish them weeks ahead."),
+   ("Reviews that name the job", "A simple text link for happy customers after each visit. Reviews that say \"furnace fixed the same night\" or \"new heat pump, clean install\" help you show up for those searches and help the next caller choose you."),
+   ("Listings that match", "Your name, address and phone the same on Google, Bing, Apple Maps, Yelp, the BBB, Angi and the directories AI assistants read. Mismatches make search engines less sure about you."),
+  ],
+  "ai": "Homeowners now ask ChatGPT and Google's AI Overviews things like \"who is a good HVAC company near me for a heat pump\" or \"how much does AC repair cost here\". Those answers are built from listings, reviews, local articles and company websites that answer service and cost questions clearly. We make sure your company, your services and your service area are described clearly and consistently in those places, so AI assistants can name you.",
+  "res": {"head": "Real results <span class=\"ac\">for an HVAC company</span>", "after": HVAC_PROOF, "sub": True},
+  "more": (("/results/hvac-seo-durham-nc", "Hays HVAC case study"), ("/guides/winter-plumbing-and-heating-leads", "Winter plumbing and heating leads"), ("/seo-for-plumbers", "SEO for plumbers"), ("/seo-for-roofers", "SEO for roofers")),
+  "track": "Our founder Manav S has 10+ years in SEO, 3,000+ orders and a 4.9 average from 2,000+ client reviews.",
+  "faq": [
+   ("How long does SEO take for an HVAC company?", "Fixes to your Google Business Profile can start helping within a few weeks. Ranking higher for competitive searches like \"ac repair near me\" usually builds over three to six months, depending on your towns and your competitors. Starting before your busy season matters."),
+   ("Can you help if we only work at customers' homes?", "Yes. Most HVAC companies are service-area businesses. We set up your profile with a service area instead of a public address, which is how Google wants it done."),
+   ("We serve a lot of towns. Can we show up in all of them?", "Within reason, yes. Google favors businesses close to the person searching, so we build pages and proof for each town you really serve, starting with the ones that bring you the best jobs."),
+   ("Can you help us sell more maintenance plans?", "Yes. A clear maintenance plan page, linked from every service page and from your Google profile, makes it easy to sign up. For Hays HVAC in Durham, NC we built a new service plan page from the owner's own PDF (May to June 2026)."),
+   ("What does an HVAC SEO company actually do each month?", "Keeps your Google Business Profile active with job photos and posts, gets new reviews coming in, adds and improves service and town pages, publishes seasonal pages before the rush, fixes website problems, keeps your listings matching, and reports calls and searches you can check in your own Google accounts."),
+   ("Do I need a new website?", "Usually not. We fix the one you have so it loads fast on phones, shows your number at the top and has a page for each service you want calls for. We work on WordPress and most website builders."),
   ],
  },
  {
@@ -198,9 +245,11 @@ HUB = {
   ("Listings and citations", "Your name, address and phone the same on Google, Bing, Apple Maps, Yelp and the directories for your industry."),
   ("AI search (GEO)", "Making sure ChatGPT, Google AI Overviews, Gemini and Perplexity can find and describe your business correctly."),
  ],
+ "more": (("/guides/local-seo-cost", "How much local SEO costs per month (2026)"),),
+ "cost_note": "<p>How do these prices compare? Our guide to <a href=\"/guides/local-seo-cost\">how much local SEO costs per month in 2026</a> sets them next to the survey averages, with the source and date for every number.</p>",
  "faq": [
   ("What is local SEO?", "Local SEO is improving how your business shows up when people nearby search for what you offer, on Google search, Google Maps and AI assistants. It covers your Google Business Profile, website, reviews and listings."),
-  ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly plans are priced after the free check, so you only pay for what your business needs."),
+  ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly local SEO for one location is $299 a month with no contract; bigger plans are quoted after the free check, so you only pay for what your business needs."),
   ("How long does local SEO take?", "Profile and listing fixes can help within a few weeks. Ranking higher for competitive searches usually takes three to six months."),
   ("Can anyone guarantee a #1 ranking?", "No. Google says no one can guarantee a top position. We promise honest work, every change shown to you, and results you can check in your own Google account."),
  ],
@@ -429,6 +478,75 @@ GUIDES = [
    ("Should I ask the customer to post again?", "If a real customer's review never appeared, they can update the Google Maps app and try again. Never write the review for them or post it from your own device."),
   ],
  },
+ {
+  # Local SEO cost (added 16 Nov 2026). Market figures come only from the Ahrefs survey below, each with its source and date.
+  # Business Santa prices are the ones published on /local-seo (price_html) and the Christmas offer.
+  "slug": "guides/local-seo-cost", "date": "2026-11-16", "nav": "Local SEO cost",
+  "src": (AHREFS_PRICING, GOOGLE_BP, GOOGLE_NOSEO),
+  "also": (("/guides/roofing-seo-cost", "Roofing SEO cost"), ("/guides/plumbing-seo-cost", "Plumbing SEO cost"), ("/guides/dental-seo-cost", "Dental SEO cost"), ("/guides/google-business-profile-checklist", "Google Business Profile checklist: 15 steps you can do yourself")),
+  "title": "How Much Does Local SEO Cost per Month? 2026 | Business Santa",
+  "desc": "What local SEO costs a US small business per month: dated Ahrefs survey averages, what drives the price, what a plan should include, red flags and our prices.",
+  "h1": "How much does local SEO cost", "h1ac": "per month in 2026?",
+  "answer": "There is no single price, but survey data gives a clear benchmark. In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it: about $1,819 for agencies and about $1,150 for freelancers. The most common monthly retainer across all SEO providers in that survey was $501 to $1,000. What you pay depends on how many locations you have, how competitive your trade and city are, and how much needs fixing. A Google Business Profile itself is free from Google. Business Santa's monthly local SEO is $299 a month for one location, with no contract.",
+  "pre": [
+   ("The benchmarks, <span class=\"ac\">with their source</span>",
+    "<div class=\"tiles\" data-track=\"cost-benchmarks\"><div><b>$1,557</b><span>a month: average for local SEO, from providers who offer it</span></div>"
+    "<div><b>$1,819</b><span>a month: agencies' average for local SEO (rounded)</span></div>"
+    "<div><b>$1,150</b><span>a month: freelancers' average for local SEO (rounded)</span></div>"
+    "<div><b>$501 to $1,000</b><span>a month: the most common retainer across all SEO providers</span></div></div>"
+    "<p>In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it, about $1,819 for agencies and about $1,150 for freelancers. "
+    "Across all SEO services, the most common monthly retainer in the same survey was $501 to $1,000 (20.4% of respondents), and the most common hourly rate was $75 to $100 an hour (24% of respondents).</p>"
+    "<p>These are survey figures from late 2023, updated in 2024, not 2026 price quotes. We use them because they come from a named survey with a sample size and a date. The prices you are quoted in 2026 can be higher or lower.</p>"
+    "<p class=\"src\">Source: <a href=\"https://ahrefs.com/blog/seo-pricing/\" rel=\"noopener\">Ahrefs blog, \"SEO pricing\"</a>, a survey of 439 SEO service providers, published 17 December 2023, updated 15 August 2024.</p>"
+    "<p>One part costs nothing at all: a <a href=\"https://www.google.com/business/\" rel=\"noopener\">Google Business Profile is free from Google</a>. If a quote includes a fee for the profile, that fee is for someone's work on it, not for Google.</p>"),
+   ("Business Santa's prices, <span class=\"ac\">in public</span>",
+    "<p>We publish our prices so you can compare like for like. They are the same prices shown on our <a href=\"/local-seo#prices\">local SEO services page</a> and in our <a href=\"https://seoseason.com/businesssanta\" rel=\"noopener\">full list of services and prices</a>.</p>"
+    "<div class=\"price\" data-track=\"pricing\"><div><b>Free</b><span>Your first check, from a real person. No card, no contract.</span></div>"
+    "<div><b>From $120</b><span>On-page SEO fixes, one time.</span></div>"
+    "<div><b>From $160</b><span>Technical SEO fixes, one time.</span></div>"
+    "<div><b>$299/mo</b><span>Monthly local SEO for one location. No contract.</span></div></div>"
+    "<p class=\"src\">More locations, ads and full AI search plans are quoted after the free check.</p>"
+    "<p>Our monthly price for one location is below the survey averages above. Whoever you hire, us included, ask for three things in writing: what is done each month, who owns the accounts, and how you will see the results yourself.</p>"),
+  ],
+  "list_h": "What drives the price, <span class=\"ac\">and the red flags</span>",
+  "items": [
+   ("How many locations you have", "Each location has its own Google Business Profile, its own town pages and its own reviews to look after, so the work, and the price, grow with every location."),
+   ("How competitive your trade and city are", "A plumber in a big metro area competes with far more businesses on the map than a salon in a small town, so it takes more pages, more reviews and more time to move up."),
+   ("How much is broken today", "A verified, complete profile and a fast website cost less to improve than a suspended profile, duplicate listings or a slow, one-page site."),
+   ("How many pages and how much content you need", "A page for each main service and each town you really serve takes writing, real photos and upkeep. Some businesses need a few, others need many."),
+   ("Whether ads are included", "Some quotes include running Google or Meta ads and some do not. The ad budget itself is a separate cost that goes to Google or Meta, so ask whether a price covers the work, the ads, or both."),
+   ("Red flag: a guaranteed #1 ranking", "Google says no one can guarantee a #1 ranking on Google. A promise like that tells you more about the seller than about your results."),
+   ("Red flag: a long lock-in contract", "Good work keeps clients without a 12 month contract. If you cannot leave, you cannot judge the work."),
+   ("Red flag: the agency owns your profile or accounts", "You should own your Google Business Profile, website, Google Search Console and ad accounts, and add the agency as a manager. If you leave, everything stays with you."),
+   ("Red flag: bought reviews", "Paying for reviews, or giving a discount for them, breaks Google's rules, and reviews Google removes for that are not restored. Only real reviews from real customers are worth having."),
+   ("Red flag: no reporting", "Every month you should see what was done and what changed in calls, direction requests and website clicks, in numbers you can check in your own Google account."),
+  ],
+  "post": [
+   ("What a monthly plan <span class=\"ac\">should include</span>",
+    "<div class=\"grid\"><div class=\"card\"><h3>Google Business Profile work</h3><p>The right categories, every service listed, a real service area, accurate hours including holidays, fresh photos and regular posts.</p></div>"
+    "<div class=\"card\"><h3>Service and town pages</h3><p>A clear page for each main service and each town you really serve, written in the words your customers type.</p></div>"
+    "<div class=\"card\"><h3>A reviews process</h3><p>A simple way to ask every customer for a review after every job, and a reply to each review, good or bad.</p></div>"
+    "<div class=\"card\"><h3>Listings that match</h3><p>Your name, address or service area and phone the same on Google, Bing, Apple Maps, Yelp and the directories for your trade.</p></div>"
+    "<div class=\"card\"><h3>Reporting you can check</h3><p>Calls, direction requests, website clicks and the searches that found you, taken from your own Google Business Profile and Search Console, every month.</p></div></div>"
+    "<div class=\"mid\"><p>Want a price for your business, not an average?</p><a class=\"btn\" href=\"#check\">Get my free check</a></div>"),
+   ("One-time fixes <span class=\"ac\">or a monthly plan?</span>",
+    "<div class=\"grid\"><div class=\"card\"><h3>One-time fixes fit when</h3><p>Something specific is broken: wrong categories, a missing service area, pages Google cannot read, a slow site on phones. Fix it once and you may not need more for a while. Ours start at $120 for on-page work and $160 for technical work.</p></div>"
+    "<div class=\"card\"><h3>A monthly plan fits when</h3><p>You compete with other businesses on the map every day. Photos, posts, reviews, new pages and listings need steady work, and rankings across a whole area usually build over months, not days. Ours is $299 a month for one location, with no contract.</p></div></div>"),
+   ("Doing it yourself: <span class=\"ac\">the cost is your time</span>",
+    "<p>You can do a lot of local SEO yourself. The main tools are free: your Google Business Profile and Google Search Console cost nothing. What DIY costs is time, every week: adding photos and posts, asking for reviews and replying to them, keeping hours and listings correct, and writing pages for your services and towns. "
+    "The harder part is the website and technical work, which is where many owners hire help. Start with our <a href=\"/guides/google-business-profile-checklist\">Google Business Profile checklist</a>, then see <a href=\"/guides/why-my-business-is-not-on-google-maps\">why a business may not show on Google Maps</a>.</p>"),
+  ],
+  "faq": [
+   ("How much does local SEO cost per month for a small business?", "In Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024), providers who offer local SEO charged an average of $1,557 a month for it, about $1,819 for agencies and about $1,150 for freelancers. The most common monthly retainer across all SEO providers was $501 to $1,000. Business Santa's monthly local SEO is $299 a month for one location, with no contract."),
+   ("What is the most common hourly rate for SEO?", "In the same Ahrefs survey (published 17 December 2023, updated 15 August 2024), the most common hourly rate was $75 to $100 an hour, given by 24% of respondents."),
+   ("Is a Google Business Profile free?", "Yes. Google offers the Business Profile for free. You pay only if you hire someone to work on it, or if you choose to run ads."),
+   ("Why do local SEO prices vary so much?", "Because the work varies: the number of locations, how competitive your trade and city are, how much is broken today, how many pages need writing, and whether ads are part of the plan."),
+   ("Should I sign a long contract for local SEO?", "You do not have to. Business Santa's monthly plan has no contract. If any provider asks for a long lock-in, ask what happens if you are not happy after three months, and who keeps the accounts if you leave."),
+   ("Can I do local SEO myself?", "Yes, much of it. Your Google Business Profile and Google Search Console are free, and our Google Business Profile checklist covers the basics. The cost is your time each week, plus the website and technical work, which is where many owners hire help."),
+   ("Can anyone guarantee a #1 ranking on Google?", "No. Google says no one can guarantee a #1 ranking on Google. Treat any guarantee as a red flag, whatever the price."),
+   ("How much does Business Santa charge for local SEO?", "The first check is free. One-time fixes start at $120 for on-page work and $160 for technical work. Monthly local SEO for one location is $299 a month with no contract. Bigger plans, such as more locations or ads, are quoted after the free check."),
+  ],
+ },
 ]
 
 # ---------- Roofing topic cluster: extra pillar sections and the guides that support it ----------
@@ -532,11 +650,11 @@ ROOF_GUIDES = [
   ],
  },
  {
-  "slug": "guides/roofing-seo-cost", "parent": "seo-for-roofers",
+  "slug": "guides/roofing-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-roofers",
   "title": "How Much Does Roofing SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What roofing SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does roofing SEO cost?", "h1ac": "An honest answer",
-  "answer": "Roofing SEO costs depend on how competitive your market is, how many towns you want to rank in, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your company needs.",
+  "answer": "Roofing SEO costs depend on how competitive your market is, how many towns you want to rank in, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your company needs.",
   "items": [
    ("Your market", "A roofer in a big metro with dozens of competitors needs more work than one in a small town."),
    ("How many towns you serve", "Each town you want to rank in needs its own proof: a page, jobs, photos and reviews."),
@@ -644,11 +762,11 @@ DENT_GUIDES = [
   ],
  },
  {
-  "slug": "guides/dental-seo-cost", "parent": "seo-for-dentists", "nav": "Dental SEO cost",
+  "slug": "guides/dental-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-dentists", "nav": "Dental SEO cost",
   "title": "How Much Does Dental SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What dental SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does dental SEO cost?", "h1ac": "An honest answer",
-  "answer": "Dental SEO costs depend on how competitive your area is, how many locations and treatments you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your practice needs.",
+  "answer": "Dental SEO costs depend on how competitive your area is, how many locations and treatments you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your practice needs.",
   "items": [
    ("Your market", "A practice in a dense city area with dozens of dentists nearby needs more work than one in a small town."),
    ("Locations and treatments", "Each office and each high-value treatment you want to rank for, like implants or Invisalign, needs its own page and proof."),
@@ -760,6 +878,23 @@ PLUMB_EXTRA = [
   "<ol class=\"steps\"><li><b>Will I see every change?</b>A good plumbing SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, direction requests and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>How do you handle emergency searches?</b>Ask how they show you as open for \"emergency plumber\" searches at night, and how they keep that honest.</li></ol>"),
 ]
 
+# ---------- HVAC page: extra pillar sections (no guides of its own yet) ----------
+HVAC_EXTRA = [
+ ("Cooling season and heating season: <span class=\"ac\">two rushes a year</span>",
+  "<div class=\"grid\"><div class=\"card\"><h3>Before summer</h3><p>AC repair, AC tune-up and \"ac not blowing cold air\" pages live and linked, profile posts that say you are booking tune-ups, and fresh photos of real installs. The first hot week is when people search, so the pages need to be found before it.</p></div>"
+  "<div class=\"card\"><h3>Before the first cold snap</h3><p>Furnace repair, heat pump repair and no-heat pages ready, emergency hours checked on your profile, and holiday hours set. See <a href=\"/guides/winter-plumbing-and-heating-leads\">how HVAC companies get found before the freeze</a>.</p></div>"
+  "<div class=\"card\"><h3>The shoulder months</h3><p>Spring and fall are for the pages that bring bigger jobs: system replacement, heat pump installation, financing and maintenance plans. They are also the time to ask busy-season customers for reviews.</p></div>"
+  "<div class=\"card\"><h3>All year: ChatGPT and AI answers</h3><p>Your company, services and towns described the same way on your site and the directories AI assistants read, plus pages that answer cost questions, so they can name you when a homeowner asks who to call.</p></div></div>"),
+ ("No heat at 10pm: <span class=\"ac\">where HVAC companies win or lose</span>",
+  "<p>A family with no heat on a freezing night, or no AC in a heat wave, calls whoever looks open right now. If you take emergency calls, your Google Business Profile hours, your website header and your listings must all say so, and someone must answer or call back within minutes. If you do not take them, say that clearly too, so you do not collect angry reviews from people who could not reach you.</p>"),
+ ("Service areas, <span class=\"ac\">town by town</span>",
+  "<p>Most HVAC companies cover a city and the towns around it, but Google favors the business closest to the person searching. So we set your real service area on your Google Business Profile, build a page for each town that matters to you with the jobs you have done there and how fast you can get there, and get reviews that mention the town. We start with the towns that bring the best jobs, then add more.</p>"),
+ ("Local Services Ads or SEO: <span class=\"ac\">which first?</span>",
+  "<p>Google Local Services Ads put a Google Guaranteed badge above everything else, and you pay per lead. SEO brings the free calls from the map and the regular results, and keeps working when you stop paying. Most HVAC companies do best with both, often with ads turned up in the busy weeks. A strong Google Business Profile and steady reviews help your ads and your free rankings at the same time. See <a href=\"/google-and-meta-ads\">how we run Google and Meta ads</a>.</p>"),
+ ("Choosing an HVAC SEO company: <span class=\"ac\">5 questions to ask</span>",
+  "<ol class=\"steps\"><li><b>Will I see every change?</b>A good HVAC SEO company shows you what it changes on your profile and website, before and after.</li><li><b>Can I check results myself?</b>You should see calls, direction requests and searches in your own Google Business Profile and Search Console, not only in their report.</li><li><b>Do you promise #1?</b>Walk away if they do. Google says no one can guarantee a ranking.</li><li><b>Do I own everything?</b>Your profile, website, pages and reviews should stay yours if you leave.</li><li><b>What happens before each season?</b>Ask how they prepare your cooling and heating pages and your profile before the rush, not after.</li></ol>"),
+]
+
 PLUMB_GUIDES = [
  {
   "slug": "guides/plumbing-seo-keywords", "parent": "seo-for-plumbers", "nav": "Plumbing SEO keywords",
@@ -833,11 +968,11 @@ PLUMB_GUIDES = [
   ],
  },
  {
-  "slug": "guides/plumbing-seo-cost", "parent": "seo-for-plumbers", "nav": "Plumbing SEO cost",
+  "slug": "guides/plumbing-seo-cost", "also": (("/guides/local-seo-cost", "How much local SEO costs per month for any small business (2026 benchmarks)"),), "parent": "seo-for-plumbers", "nav": "Plumbing SEO cost",
   "title": "How Much Does Plumbing SEO Cost? Honest Pricing Guide | Business Santa",
   "desc": "What plumbing SEO costs, what drives the price, what a fair package includes, and red flags to avoid. With Business Santa's own prices: free check, fixes from $120.",
   "h1": "How much does plumbing SEO cost?", "h1ac": "An honest answer",
-  "answer": "Plumbing SEO costs depend on how competitive your area is, how many towns and services you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, and monthly plans are priced after the free check so you only pay for what your business needs.",
+  "answer": "Plumbing SEO costs depend on how competitive your area is, how many towns and services you want to rank for, and the state of your Google Business Profile and website today. With Business Santa, the first check is free, one-time fixes start at $120 for on-page work and $160 for technical work, monthly local SEO for one location is $299 a month with no contract, and bigger plans are priced after the free check so you only pay for what your business needs.",
   "items": [
    ("Your market", "A plumber in a big metro area with dozens of competitors needs more work than one in a small town."),
    ("Towns and services", "Each town and each big job type you want to rank for, like water heaters or sewer lines, needs its own page and proof."),
@@ -1068,6 +1203,7 @@ HOLIDAY_GUIDES = [
    ("Ask every winter job for a review", "Reviews that say fast response and fixed it on a cold night help the next caller choose you."),
    ("Run a small local call ad on cold nights", "A call-only or call-first ad for your area when the forecast drops below freezing."),
   ],
+  "also": (("/seo-for-hvac", "SEO for HVAC companies: heating and cooling calls from Google Maps"), ("/seo-for-plumbers", "SEO for plumbers that makes the phone ring")),
   "src": (GOOGLE_SPECIAL,),
   "faq": [
    ("When should plumbers prepare for winter searches?", "Before the first freeze in your area. Pages and profile updates need a little time to be picked up, so November is the right time."),
