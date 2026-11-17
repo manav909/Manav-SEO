@@ -50,6 +50,10 @@ def main():
             cmd += ['--' + k, str(spec[k])]
     subprocess.run(cmd, check=True)
     durs = json.load(open('durs.json'))
+    if durs[0] > 5.5 or not 15 <= sum(durs) <= 45:
+        qa['problems'].append(f'timing: hook scene {durs[0]:.1f}s (max 5.5), total {sum(durs):.1f}s (15 to 45); shorten the lines')
+        json.dump(qa, open('qa.json', 'w'), indent=1, ensure_ascii=False)
+        sys.exit('QA FAILED: ' + qa['problems'][-1])
     R.render(frames, durs, 'video_only.mp4')
     subprocess.run([sys.executable, os.path.join(HERE, 'finalize.py'), 'video_only.mp4', 'mix.wav', 'final.mp4'], check=True)
     qa['durations'] = durs; qa['voice'] = json.load(open('voice_meta.json'))
