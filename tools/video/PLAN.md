@@ -17,7 +17,7 @@ Mix: industry checks, client stories, basics for every business, and seasonal sp
 | Retail Shops: Get Found on Google Maps and ChatGPT | to create |
 | Law Firms: Get Found on Google Maps and ChatGPT | to create |
 | Home Services: Electricians, Landscapers, Garage Doors, Remodelers | to create |
-| Client Results: Real US Business Stories | to create with the first client story |
+| Client Results: Real US Business Stories | created 17 Nov 2026 |
 | Google and ChatGPT Basics for Every Local Business | to create |
 | Holidays and Seasons for Local Businesses | to create |
 
@@ -26,9 +26,9 @@ Mix: industry checks, client stories, basics for every business, and seasonal sp
 | Ep | Type | Topic | Status |
 | --- | --- | --- | --- |
 | 1 | Industry | Plumbers, Austin TX | Done 15 Nov 2026, https://youtu.be/F2k42karmoA (Short https://youtube.com/shorts/36zMckl8Scs) |
-| 2 | Industry | Roofers, Phoenix AZ | next |
+| 2 | Industry | Roofers, Phoenix AZ | next (will be Episode 3) |
 | 3 | Industry | Dentists, Charlotte NC | |
-| 4 | Client story | Hays HVAC, Durham NC (https://businesssanta.com/results/hvac-seo-durham-nc) | |
+| 4 | Client story | Hays HVAC, Durham NC (https://businesssanta.com/results/hvac-seo-durham-nc) | Done 17 Nov 2026, published as Episode 2 (Google showed a robot check that day, so the industry slot moved): https://youtu.be/J9auh_mLMV0 (scheduled 10 am US Eastern), Short https://youtube.com/shorts/yYRtfMteoEQ (5 pm US Eastern), Reel scheduled 11 am US Eastern |
 | 5 | Seasonal | Thanksgiving hours study results (after the study page is live, 24 or 25 Nov) | |
 | 6 | Industry | HVAC, Denver CO | |
 | 7 | Industry | Salons and spas, Columbus OH | |

@@ -67,7 +67,7 @@ def hook(d, im, s, t, T):
     if p2 > 0:
         d.text((W // 2, 420), '>', font=F(160), fill=MUT, anchor='mm')
         d.text((W // 2 + 330, 420 + int((1 - p2) * 60)), s['a'][1], font=F(300), fill=YEL, anchor='mm')
-        d.text((W // 2, 600), 'on Google, in about 2 hours', font=F(48, 'SemiBold'), fill=MUT, anchor='mm')
+        d.text((W // 2, 600), s.get('sub', 'on Google, in about 2 hours'), font=F(48, 'SemiBold'), fill=MUT, anchor='mm')
     if p3 > 0:
         y = 760 + int((1 - p3) * 50)
         d.rounded_rectangle((W // 2 - 620, y - 60, W // 2 + 620, y + 60), 60, fill=YEL)
@@ -199,14 +199,14 @@ def end(d, im, s, t, T):
     im.paste(logo_b, (W // 2 - 100, 220), logo_b)
     d.text((W // 2, 500), 'Business Santa', font=F(96), fill=WHITE, anchor='mm')
     d.text((W // 2, 590), 'powered by SEO Season', font=F(44, 'SemiBold'), fill=YEL, anchor='mm')
-    d.text((W // 2, 700), 'Comment your trade and city for a future episode', font=F(40, 'SemiBold'), fill=MUT, anchor='mm')
+    d.text((W // 2, 700), s.get('ask', 'Comment your trade and city for a future episode'), font=F(40, 'SemiBold'), fill=MUT, anchor='mm')
     d.text((W // 2, 780), 'businesssanta.com   |   seoseason.com', font=F(36, 'Bold'), fill=WHITE, anchor='mm')
-    d.text((W // 2, 990), f'All results checked by hand on Google and ChatGPT, {CHECKED}.', font=F(24, 'Regular'), fill=MUT, anchor='mm')
+    d.text((W // 2, 880), s.get('foot', f'All results checked by hand on Google and ChatGPT, {CHECKED}.'), font=F(24, 'Regular'), fill=MUT, anchor='mm')
 
 DRAW = dict(hook=hook, title=title, shot=shot, list=listing, compare=compare, compare2=compare2, three=three, quote=quote, fixes=fixes, cta=cta, end=end)
 
 def captions(text, T):
-    for a,b in [('T X','TX'),('A B C','ABC'),('Contractors Ranked','ContractorsRanked'),('business santa dot com','businesssanta.com'),('O and M','O & M'),('seven hundred eighty seven','787'),('four hundred forty one','441'),('sixty three','63'),('eighteen thousand','18,000'),('four point nine','4.9'),('four point eight','4.8'),('seven fifteen in the morning','7:15 in the morning'),('one hundred','100'),('number eleven','number 11'),('number seven','number 7'),('number eight','number 8')]:
+    for a,b in [('T X','TX'),('A B C','ABC'),('Contractors Ranked','ContractorsRanked'),('business santa dot com','businesssanta.com'),('O and M','O & M'),('seven hundred eighty seven','787'),('four hundred forty one','441'),('sixty three','63'),('eighteen thousand','18,000'),('four point nine','4.9'),('four point eight','4.8'),('seven fifteen in the morning','7:15 in the morning'),('one hundred','100'),('number eleven','number 11'),('number seven','number 7'),('number eight','number 8')] + list(getattr(_sc, 'CAPS', [])):
         text=text.replace(a,b)
     sents = re.split(r'(?<=[.?!])\s+', text.strip())
     tot = sum(len(x) for x in sents); out = []; t0 = 0
