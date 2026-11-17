@@ -1464,5 +1464,368 @@
    1200,
    462
   ]
+ },
+ "us-vintage-signs-shop": {
+  "slug": "us-vintage-signs-shop",
+  "title": "Technical SEO for a US Online Shop: 8x Pages Indexed | Business Santa",
+  "sub": "A shop of one-of-a-kind products with just 1 page in Google: the hidden blockers found and fixed, categories indexed and old product links redirected.",
+  "stats": [
+   [
+    "8x",
+    "indexed pages within days of the first fixes (Nov 2025)"
+   ],
+   [
+    "74 of 79",
+    "category pages indexed (Dec 2025)"
+   ],
+   [
+    "1,000",
+    "old product links redirected (Jun 2026)"
+   ],
+   [
+    "#6",
+    "on Google US for \"smokey bear porcelain sign\" (14 Nov 2026)"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "Online shop for one-of-a-kind vintage porcelain signs (vintageporcelainsigns.com), also selling on eBay"
+   ],
+   [
+    "Market",
+    "USA"
+   ],
+   [
+    "Services",
+    "Technical audit, Search Console, sitemap and noindex fixes, on-page and technical fixes, category indexing, 404 redirects, product indexing, on-page clean-up after a catalog rebuild"
+   ],
+   [
+    "Timeline",
+    "November 2025 to July 2026"
+   ]
+  ],
+  "client": "A small US business selling one-of-a-kind vintage porcelain signs. Every item is unique, so products were imported from eBay and deleted when sold, about 20 in and 20 out every day. After a year and a half online, Search Console showed just 1 indexed page, and earlier experts had not been able to fix it.",
+  "goals": [
+   "Get the shop into Google.",
+   "Stop daily product changes from hurting indexing.",
+   "Clean up years of broken product links.",
+   "Keep it simple for a one-person business."
+  ],
+  "phases": [
+   [
+    "Audit and the hidden blockers",
+    "November 2025",
+    [
+     "Technical audit and Search Console review.",
+     "Found an incomplete sitemap and a noindex tag hiding the product pages from Google."
+    ]
+   ],
+   [
+    "Technical and on-page fixes",
+    "November to December 2025",
+    [
+     "Headings, titles, meta data and the sitemap fixed; noindex removed from every product page.",
+     "Within days the owner saw 8 pages indexed, up from 1.",
+     "All 79 category pages submitted; 74 indexed by 5 December."
+    ]
+   ],
+   [
+    "A simpler setup",
+    "Early 2026",
+    [
+     "Advice to keep stable product URLs instead of deleting sold items. The owner moved to a fixed catalog of about 350 products with permanent URLs."
+    ]
+   ],
+   [
+    "Redirects and product indexing",
+    "June 2026",
+    [
+     "1,000 old broken product links redirected (Search Console's limit per round) and 347 products submitted for indexing."
+    ]
+   ],
+   [
+    "On-page clean-up",
+    "June to July 2026",
+    [
+     "A re-audit, then duplicate titles, duplicate meta descriptions and broken internal images fixed."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "Products that changed every day",
+    "Stable URLs and redirects so Google keeps what it has learned."
+   ],
+   [
+    "A hidden noindex tag",
+    "Found and removed from every product page."
+   ],
+   [
+    "Server errors from bot traffic",
+    "Helped the owner trace them with his host."
+   ],
+   [
+    "A tight budget",
+    "Work split into priority rounds the owner could afford."
+   ]
+  ],
+  "results": [
+   [
+    "Indexing",
+    "8x more pages indexed within days of the first fixes (November 2025)"
+   ],
+   [
+    "Categories",
+    "74 of 79 category pages indexed (December 2025)"
+   ],
+   [
+    "Old links",
+    "1,000 old product links redirected and 347 products submitted for indexing (June 2026)"
+   ],
+   [
+    "Live check",
+    "Page 1 of Google US for \"smokey bear porcelain sign\" (#6) and \"vintage porcelain sign shop\" (#8), 14 Nov 2026"
+   ]
+  ],
+  "quotes": [
+   [
+    "Also I already see 8 pages indexed!! Something is working!! Thank you!",
+    "November 2025, days after the first fixes"
+   ],
+   [
+    "Thank you for being very thorough!",
+    "November 2025, on our action plan"
+   ],
+   [
+    "nice work so far!! Love to see results!",
+    "November 2025"
+   ],
+   [
+    "Thank you so much for working with me. That sounds fair.",
+    "November 2025"
+   ]
+  ],
+  "who": "Owner, vintage signs online shop, USA",
+  "diff": [
+   "Found the hidden blocker earlier experts missed.",
+   "Fixed the cause, not just the symptoms.",
+   "Plain-language advice for a one-person business.",
+   "Priority rounds that fit the budget."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-serp-smokey-bear-porcelain-sign.webp",
+    "Live Google US check, 14 November 2026.",
+    1200,
+    1030
+   ],
+   [
+    "/assets/img/results/card-t13-us-vintage-signs.webp",
+    "The client's own message, 18 November 2025.",
+    1200,
+    462
+   ]
+  ],
+  "published": "2026-11-17",
+  "url": "vintage-signs-shop-technical-seo",
+  "company": "VintagePorcelainSigns.com",
+  "label": "Vintage signs online shop (WooCommerce)",
+  "place": "Online store, USA",
+  "h1a": "8x more pages in Google",
+  "h1b": "for a US vintage signs shop",
+  "desc": "How VintagePorcelainSigns.com went from 1 indexed page to 74 of 79 categories in Google, then page 1 on Google US for \"smokey bear porcelain sign\".",
+  "means": "If Google cannot see your pages, nothing else you do online can work. A technical audit finds the hidden blockers, such as a stray noindex tag or an incomplete sitemap. Stable product links and redirects then keep what Google has learned, so every product you add has a real chance to be found.",
+  "k": "store",
+  "biz": "online store",
+  "rel": [
+   "seo-for-retail-stores",
+   "local-seo"
+  ],
+  "hero": "8x more pages in Google",
+  "thumb": [
+   "/assets/img/results/card-serp-smokey-bear-porcelain-sign.webp",
+   1200,
+   1030
+  ]
+ },
+ "uae-event-tech": {
+  "slug": "uae-event-tech",
+  "title": "Event Tech Rental SEO: #1 on Google in Dubai | Business Santa",
+  "sub": "An audit and on-page SEO, then monthly SEO, AI search (GEO) and a Google Ads campaign for a Dubai conference and event technology company.",
+  "stats": [
+   [
+    "#1",
+    "on Google UAE for \"conference microphone rental dubai\" (14 Nov 2026)"
+   ],
+   [
+    "5.2x",
+    "UAE website traffic in one month (Oct to Nov 2025)"
+   ],
+   [
+    "+17%",
+    "WhatsApp leads from Google Ads, Dec to Jan"
+   ],
+   [
+    "+29%",
+    "organic traffic, Dec to Jan"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "Conference and event technology rental company in Dubai: conference microphones, simultaneous interpretation systems, event communication and audio visual (DLC Events)"
+   ],
+   [
+    "Market",
+    "Dubai and the UAE, with a plan for the wider GCC"
+   ],
+   [
+    "Services",
+    "Website audit, backlink and Search Console review, on-page SEO, monthly link building, monthly blogs, GEO (AI search), Google Ads setup and management, contact form, clickable contact details, floating contact button, call and lead tracking"
+   ],
+   [
+    "Timeline",
+    "September 2025 to January 2026, renewed month after month"
+   ]
+  ],
+  "client": "A Dubai company that rents conference and event technology to corporate events, conferences and exhibitions across the UAE. The team had tried one-off SEO projects before and wanted a long-term partner to grow rankings and leads against established local competitors.",
+  "goals": [
+   "Fix the website's foundations and get every important page indexed.",
+   "Rank for the services the company rents in Dubai.",
+   "Turn search into enquiries through Google Ads, WhatsApp and the contact form.",
+   "Build a plan that can grow from the UAE to the wider GCC."
+  ],
+  "phases": [
+   [
+    "Audit and on-page SEO",
+    "September 2025",
+    [
+     "Website audit, backlink review and Search Console review in under a week.",
+     "On-page SEO across the WordPress site, walked through on a 47-minute call.",
+     "Internal pages the team uses for operations kept out of Google."
+    ]
+   ],
+   [
+    "Strategy against named competitors",
+    "October 2025",
+    [
+     "The client's own list of conferencing and communication competitors reviewed.",
+     "A phased plan: UAE foundation, then local authority and leads, then GCC expansion.",
+     "Approved for an initial 3 months straight away."
+    ]
+   ],
+   [
+    "Monthly SEO and AI search",
+    "October 2025 onward",
+    [
+     "Weekly SEO and GEO link building with a written report every week.",
+     "A new service blog most weeks: conference microphones, simultaneous interpretation, teleprompters, communication headsets.",
+     "Every new blog submitted for indexing."
+    ]
+   ],
+   [
+    "Google Ads with lead tracking",
+    "October 2025 onward",
+    [
+     "A conferencing campaign for the UAE, with keywords, images, callouts and the logo.",
+     "A contact form, clickable phone and email, and a floating contact button added to the site.",
+     "Calls, WhatsApp and form leads tracked through Google Tag Manager."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "One-off projects in the past",
+    "A monthly plan with a report every week, so progress is visible."
+   ],
+   [
+    "Strong local competitors",
+    "Service pages and blogs built around the exact equipment people rent."
+   ],
+   [
+    "Spam on old chat tools",
+    "A different contact tool and lead tracking that separates real enquiries."
+   ],
+   [
+    "A busy team at events",
+    "Short calls, written reports and decisions in one message."
+   ]
+  ],
+  "results": [
+   [
+    "Google UAE",
+    "#1 for \"conference microphone rental dubai\", and listed as a top provider in Google's AI Overview (screenshot, 14 Nov 2026)"
+   ],
+   [
+    "More searches",
+    "#2 for \"event communication headsets rental dubai\", #7 for \"simultaneous interpretation equipment rental dubai\", page 1 for \"conference equipment rental dubai\" (14 Nov 2026)"
+   ],
+   [
+    "Traffic",
+    "UAE website traffic up 5.2x in one month (October to November 2025); organic traffic +29% and new users +31% (December to January)"
+   ],
+   [
+    "Leads",
+    "WhatsApp leads from Google Ads up 17% and contact form leads up 27% (December to January)"
+   ],
+   [
+    "Ads efficiency",
+    "CTR above 7% with average cost per click falling to AED 0.66 (November 2025)"
+   ]
+  ],
+  "quotes": [
+   [
+    "I've got approval for the first 3 months, with continuation based on results (which I'm certain won't be an issue",
+    "October 2025"
+   ],
+   [
+    "Appreciate all your work, great results!",
+    "January 2026, after the monthly report"
+   ]
+  ],
+  "who": "Manager, event technology company, Dubai, UAE",
+  "diff": [
+   "One plan for SEO, AI search and Ads.",
+   "A report every week, with the source tool named.",
+   "Content built around the equipment people actually rent.",
+   "A roadmap from the UAE to the wider GCC."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-serp-conference-microphone-rental-dubai.webp",
+    "Live Google UAE check, 14 November 2026.",
+    1200,
+    1885
+   ],
+   [
+    "/assets/img/results/card-t17-uae-event-tech.webp",
+    "The client's own message, 28 January 2026.",
+    1200,
+    411
+   ]
+  ],
+  "published": "2026-11-17",
+  "url": "event-technology-rental-seo-dubai",
+  "company": "DLC Events",
+  "label": "Event technology rental",
+  "place": "Dubai, UAE",
+  "h1a": "#1 on Google in Dubai",
+  "h1b": "for an event technology rental company",
+  "desc": "How DLC Events reached #1 on Google UAE for \"conference microphone rental dubai\" with SEO, AI search work and Google Ads that grew WhatsApp and form leads.",
+  "means": "For a rental or service business, people search for the exact thing they need plus the city. A page and a blog for each piece of equipment you rent, steady links, and ads that track every call, WhatsApp message and form, turn those searches into enquiries you can count. The same pages feed Google's AI answers.",
+  "k": "other",
+  "biz": "rental business",
+  "rel": [
+   "google-and-meta-ads",
+   "ai-search-optimization",
+   "local-seo"
+  ],
+  "hero": "#1 on Google in Dubai",
+  "thumb": [
+   "/assets/img/results/card-serp-conference-microphone-rental-dubai.webp",
+   1200,
+   1885
+  ]
  }
 }
