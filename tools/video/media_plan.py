@@ -53,6 +53,12 @@ ARCS = {
     'teach':       ['poster', 'mythfact', 'steps', 'quote', 'cta'],
     'book_drop':   ['poster', 'book', 'quote', 'cta'],
     'number_drop': ['stat', 'mythfact', 'steps', 'cta'],
+    # knowledge-led arcs with no face (Manu Vishranti, 18 Nov 2026): facts, art and the book that goes deeper
+    'fact_reveal': ['poster', 'art', 'mythfact', 'book', 'cta'],
+    'deep_dive':   ['poster', 'art', 'steps', 'book', 'cta'],
+    'mystery':     ['poster', 'quote', 'art', 'book', 'cta'],
+    'myth_book':   ['poster', 'mythfact', 'art', 'book', 'cta'],
+    'search_demo': ['poster', 'search', 'book', 'cta'],
 }
 
 def _load(path):
@@ -110,6 +116,8 @@ def next_post(brand, history_path, kind='reel', seed=None, lang='en', explore=No
     experiment = None
     if explore:
         new = [a for a in ARCS if a not in tried] + list(brand.get('experiments', []))
+        if brand.get('no_face'):   # never an arc that needs a face or a people photo
+            new = [a for a in new if a not in ARCS or not ({'talk', 'photo'} & set(ARCS[a]))]
         if new:
             experiment = rnd.choice(new)
     arc = experiment if experiment in ARCS else _fresh(arcs, [h.get('arc') for h in hist], 2, rnd, _perf(hist, 'arc'))

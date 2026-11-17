@@ -146,9 +146,10 @@ class Frame:
         sh = sh.filter(ImageFilter.GaussianBlur(blur)); self.bg.paste(sh, (0, 0), sh)
 
     # ---- text layout
-    def lines(self, txt, f, x, y, step, maxw=None):
+    def lines(self, txt, f, x, y, step, maxw=None, margin=0):
         """Greedy wrap that respects the narrower right edge lower down; avoids a one-word last line."""
         def run(cut):
+            cut += margin
             words, out, yy = txt.split(), [], y
             while words:
                 mw = min(maxw or 10 ** 6, self.x1(yy, yy + step) - x) - cut
@@ -179,11 +180,16 @@ class Frame:
             y += step
         return y
 
+    def _lines_margin(self, txt, f, x, y, step):
+        return self.lines(txt, f, x, y, step, None, margin=24)
+
     def rich(self, x, y, txt, role, size, ink, accent, maxw=None, gap=1.0, measure=False, nowrap=False):
         """Words wrapped in *stars* print in the accent colour. Returns the bottom y."""
         f = self.F(role, size); step = int(size * gap)
         plain = txt.replace('*', '')
-        ls = [plain] if nowrap else self.lines(plain, f, x, y, step, maxw)
+        # words are drawn one by one, so leave a small margin for spacing that differs from the whole-line measure
+        mw = (maxw if maxw else None)
+        ls = [plain] if nowrap else self.lines(plain, f, x, y, step, (mw - 24) if mw else None) if mw else [plain] if nowrap else self._lines_margin(plain, f, x, y, step)
         if measure:
             return y + step * len(ls)
         hot = set(); on = False; idx = 0
@@ -269,13 +275,16 @@ class Frame:
         ImageDraw.Draw(lay).ellipse((cx - r, cy - r, cx + r, cy + r), fill=color + (alpha,))
         lay = lay.filter(ImageFilter.GaussianBlur(r // 2)); self.bg.paste(lay, (0, 0), lay)
 
-    def portrait_arch(self, box, what='portrait'):
+    def portrait_arch(self, box, what='portrait', img=None):
         """For brands with a rectangular portrait (brand['portrait'], face centre at brand['face_center'] as fractions):
         the photo fills an arch-topped window inside the safe zone, with a thin accent outline. Never floats, never
         cuts the face: the crop is centred on the face."""
         x0, y0, x1, y1 = [int(v) for v in box]; w, h = x1 - x0, y1 - y0
-        src = Image.open(self.brand['portrait']).convert('RGB')
-        fx, fy = self.brand.get('face_center', (0.5, 0.4))
+        img = img or self.brand.get('portrait') or self.brand.get('art')
+        if not img:
+            raise LayoutError('no image for the arch: pass art_img= (a book cover or artwork); this brand shows no face')
+        src = Image.open(img).convert('RGB')
+        fx, fy = self.brand.get('face_center', (0.5, 0.4)) if img == self.brand.get('portrait') else (0.5, 0.42)
         z = max(w / src.width, h / src.height) * 1.02
         im = src.resize((int(src.width * z), int(src.height * z)), Image.LANCZOS)
         cx = min(max(0, int(fx * im.width - w / 2)), im.width - w); cy = min(max(0, int(fy * im.height - h * 0.45)), im.height - h)
@@ -311,7 +320,10 @@ class Frame:
 
     # ---- output
     def image(self):
-        out = self.bg.convert('RGBA'); out.alpha_composite(self.fg); return out.convert('RGB')
+        out = self.bg.convert('RGBA'); out.alpha_composite(self.fg)
+        if getattr(self, 'typing', None):
+            (tx, ty), q, f, col = self.typing; ImageDraw.Draw(out).text((tx, ty), q, font=f, fill=col, anchor='lm')
+        return out.convert('RGB')
 
     def finish(self, name='frame'):
         a = self.fg.getchannel('A')
@@ -590,14 +602,14 @@ def steps(brand, title, items, pal='primary', fmt='vertical', name='steps', numb
     return fr.finish(name)
 
 
-def talk(brand, line, pal='primary', fmt='vertical', name='talk', tag=None):
+def talk(brand, line, pal='primary', fmt='vertical', name='talk', tag=None, art_img=None):
     """The founder stands on the bottom edge; his line sits in a bubble above, pointing at him."""
     fr = Frame(brand, pal, fmt); p = fr.pal
     fr.deco_gradient(); fr.deco_glow(330, fr.H - 700, 520, p['accent'], 60)
-    if brand.get('person'):
+    if brand.get('person') and not art_img:
         pbox, face = fr.person(int(fr.H * 0.55), 'left', xoff=-20)
     else:
-        pbox, face = fr.portrait_arch((fr.x0 + 30, 830, fr.x0 + 30 + 560, 1388))
+        pbox, face = fr.portrait_arch((fr.x0 + 30, 830, fr.x0 + 30 + 560, 1388), img=art_img)
     fr.chip()
     top = fr.top + 100; bot = int(face[1]) - 70
     x0 = fr.x0; x1 = fr.x1(top, bot)
@@ -652,16 +664,16 @@ def quote(brand, text, attribution=None, pal='primary', fmt='vertical', name='qu
     return fr.finish(name)
 
 
-def cta(brand, headline, offer, url=None, pal='primary', fmt='vertical', name='cta'):
+def cta(brand, headline, offer, url=None, pal='primary', fmt='vertical', name='cta', art_img=None):
     """Closing scene: the ask at the top, the founder standing on the bottom edge, the address as a lower third."""
     fr = Frame(brand, pal, fmt); p = fr.pal
     fr.deco_gradient(); fr.deco_glow(fr.W // 2, fr.H - 500, 560, p['accent'], 70)
-    if brand.get('person'):
+    if brand.get('person') and not art_img:
         pbox, face = fr.person(int(fr.H * 0.60), 'center', xoff=60)
     else:
-        pbox, face = fr.portrait_arch((fr.x0 + 150, 760, fr.x0 + 150 + 540, 1250))
+        pbox, face = fr.portrait_arch((fr.x0 + 150, 760, fr.x0 + 150 + 540, 1250), img=art_img)
     fr.chip()
-    top = fr.top + 104; lim = int(face[1]) - 40
+    top = fr.top + 104; lim = int(min(face[1], pbox[1])) - 40
 
     def go(s, measure):
         yb = fr.rich(fr.x0, top, headline, 'display', int(92 * s), p['ink'], p['accent'], gap=1.04, measure=True)
@@ -783,7 +795,101 @@ def photo(brand, image, lines, kicker=None, pal='primary', fmt='vertical', name=
     return fr.finish(name)
 
 
-FORMATS = dict(photo=photo, book=book, poster=poster, stat=stat, mythfact=mythfact, proof=proof, steps=steps, talk=talk, quote=quote, cta=cta, cover=cover)
+def art(brand, image, title, facts=(), source=None, pal='primary', fmt='vertical', name='art'):
+    """Knowledge hero: a diagram or artwork shown whole (a chakra, a map, a book page, a chart), the title above it
+    and up to 4 fact chips under it ('तत्व: पृथ्वी', 'बीज मंत्र: लं'). source: where the facts come from
+    (a text, a book of his, a page on his site). For facts, not for faces."""
+    fr = Frame(brand, pal, fmt); p = fr.pal
+    fr.deco_gradient(); fr.deco_glow(fr.W // 2, 900, 560, p['accent'], 55); fr.deco_dots(alpha=10)
+    fr.chip()
+    src = Image.open(image).convert('RGBA')
+
+    def go(s, measure):
+        y = fr.top + 108
+        yb = fr.rich(fr.x0, y, title, 'display', int(74 * s), p['ink'], p['accent'], gap=1.08, measure=True)
+        chip_f = fr.F('body_bold', int(38 * min(s, 1.15))); ch = int(38 * min(s, 1.15) * 1.9)
+        rows, row, wsum = [], [], 0
+        maxw = fr.x1(1000, 1400) - fr.x0
+        for f in facts:
+            w = int(fr.tw(f, chip_f) + 56)
+            if row and wsum + w + 16 > maxw:
+                rows.append(row); row, wsum = [], 0
+            row.append((f, w)); wsum += w + 16
+        if row:
+            rows.append(row)
+        chips_h = len(rows) * (ch + 16)
+        src_h = 50 if source else 0
+        top = yb + 34; bot = fr.bottom - 20 - chips_h - src_h - 24
+        aw = fr.x1(top, bot) - fr.x0
+        z = min(aw / src.width, (bot - top) / src.height)
+        if z * src.height < 380:
+            raise LayoutError('art too small')
+        if measure:
+            return bot
+        fr.rich(fr.x0, y, title, 'display', int(74 * s), p['ink'], p['accent'], gap=1.08)
+        im = src.resize((int(src.width * z), int(src.height * z)), Image.LANCZOS)
+        x = fr.x0 + (aw - im.width) // 2; yy = top + (bot - top - im.height) // 2
+        fr.paste(im, (x, yy), 'art')
+        cy = yy + im.height + 30
+        for r in rows:
+            cx = fr.x0
+            for f, w in r:
+                fr.box((cx, cy, cx + w, cy + ch), ch // 2, p['panel'], 'fact chip')
+                fr.text((cx + w / 2, cy + ch / 2), f, chip_f, p['panel_ink'], anchor='mm')
+                cx += w + 16
+            cy += ch + 16
+        if source:
+            fr.text((fr.x0, cy + 6), source, fr.F('body', 30), p['muted'], what='source')
+        return bot
+    sc = _fill(go, 0.6, 1.3, name=name); go(sc, False)
+    return fr.finish(name)
+
+
+def search(brand, query, image, title=None, label=None, pal='primary', fmt='vertical', name='search', region=None, lens=None):
+    """Search demo: a search bar where the query types itself (in the video), then the REAL result as a screenshot,
+    shown whole, with a lens on the key result. Only real searches, captured the same day, with the date in label.
+    Shows viewers how to reach the topic themselves."""
+    fr = Frame(brand, pal, fmt); p = fr.pal
+    sc = Image.open(image).convert('RGB')
+    if region:
+        sc = sc.crop(region)
+    fr.deco_gradient(); fr.deco_dots(alpha=10)
+    fr.chip()
+    y = fr.top + 104
+    if title:
+        y = fr.rich(fr.x0, y, title, 'head', 58, p['ink'], p['accent'], gap=1.12) + 24
+    bar = (fr.x0, y, fr.x1(y, y + 110), y + 110)
+    fr.shadow(bar, 55, 90, 20, 12)
+    fr.box(bar, 55, (255, 255, 255), 'search bar')
+    gx, gy = bar[0] + 60, bar[1] + 55
+    fr.d.ellipse((gx - 20, gy - 20, gx + 14, gy + 14), outline=(90, 96, 110), width=6)
+    fr.d.line((gx + 10, gy + 10, gx + 26, gy + 26), fill=(90, 96, 110), width=7)
+    qf = fr.F('body_bold', 42)
+    while fr.tw(query, qf) > bar[2] - bar[0] - 140 and qf.size > 26:
+        qf = fr.F('body_bold', qf.size - 2)
+    fr.typing = ((bar[0] + 104, gy), query, qf, (30, 34, 44))
+    top = bar[3] + 40; bot = fr.bottom - 80
+    maxw = fr.x1(top, bot) - fr.x0 - 16
+    z = min(maxw / sc.width, (bot - top) / sc.height, 1.4)
+    im = sc.resize((int(sc.width * z), int(sc.height * z)), Image.LANCZOS)
+    x = fr.x0 + 8 + (maxw - im.width) // 2; yy = top + max(0, (bot - top - im.height) // 3)
+    mask = Image.new('L', im.size, 0); ImageDraw.Draw(mask).rounded_rectangle((0, 0, im.width - 1, im.height - 1), 18, fill=255)
+    rim = im.convert('RGBA'); rim.putalpha(mask)
+    fr.shadow((x, yy, x + im.width, yy + im.height), 18, 150, 28, 20)
+    fr.box((x - 8, yy - 8, x + im.width + 8, yy + im.height + 8), 26, p['accent'], 'result frame')
+    fr.paste(rim, (x, yy), 'result')
+    if lens:
+        ox, oy = x + lens[0] * z, yy + lens[1] * z
+        fr.box((ox - 4, oy - 4, ox + (lens[2] - lens[0]) * z + 4, oy + (lens[3] - lens[1]) * z + 4), 8, None, 'lens marker', outline=p['accent'], width=5)
+    if label:
+        f = fr.F('body_bold', 30); w = fr.tw(label, f) + 56; sy = yy + im.height + 28
+        fr.box((fr.x0, sy, fr.x0 + w, sy + 56), 28, p.get('chip', p['ink']), 'label')
+        fr.text((fr.x0 + 28, sy + 28), label, f, p.get('chip_ink', p['bg']), anchor='lm')
+    fr.shot_scale = z
+    return fr.finish(name)
+
+
+FORMATS = dict(art=art, search=search, photo=photo, book=book, poster=poster, stat=stat, mythfact=mythfact, proof=proof, steps=steps, talk=talk, quote=quote, cta=cta, cover=cover)
 
 
 SERIES = None
@@ -836,6 +942,12 @@ def render(frames, durs, out='video_only.mp4', fps=30, crf=26, dissolve=0.18):
             else:
                 b.alpha_composite(fg)
             img = b.convert('RGB')
+            if getattr(fr, 'typing', None):   # the search query types itself in the first 1.6 s, then a caret blinks
+                (tx, ty), q, f, col = fr.typing; td = ImageDraw.Draw(img)
+                shown = q[:max(0, min(len(q), int(len(q) * (te - 0.35) / 1.25)))] if te > 0.35 else ''
+                td.text((tx, ty), shown, font=f, fill=col, anchor='lm')
+                if int(te * 2) % 2 == 0 or len(shown) < len(q):
+                    cx2 = tx + td.textlength(shown, font=f) + 4; td.line((cx2, ty - f.size * 0.55, cx2, ty + f.size * 0.55), fill=col, width=3)
             if prev_last is not None and k < nd:
                 img = Image.blend(prev_last, img, (k + 1) / (nd + 1))
             p.stdin.write(img.tobytes())
