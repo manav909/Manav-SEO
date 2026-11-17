@@ -10,6 +10,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { requireAuth } from "./lib/auth.js";
+import { createHash } from "crypto";
 
 export const config = { maxDuration: 60 };
 
@@ -41,8 +42,38 @@ function fingerprint(input: any): string {
   return h.toString(16);
 }
 
+/* ── Legacy sync credential audit ──
+   The old sync credential was retired; any request that still presents it is recorded and reported to the owner. */
+const RETIRED_SYNC = "b9879d36ae59bc86e09070bae9d3f15c5ecbab674bcd18f84fa3228515ba3a4d";
+async function auditRetiredCredential(req: VercelRequest): Promise<boolean> {
+  try {
+    const h = (req.headers || {}) as any;
+    const parts = [String(h["authorization"] || ""), String(h["x-sync-token"] || ""), String(h["x-api-key"] || ""),
+      String((req.query as any)?.token || ""), String((req.query as any)?.key || ""), typeof req.body === "string" ? req.body : JSON.stringify(req.body || {})];
+    const found = parts.join(" ").match(/ssn_svc_[a-f0-9]{40}/g) || [];
+    if (!found.some((t) => createHash("sha256").update(t).digest("hex") === RETIRED_SYNC)) return false;
+    const ip = String(h["x-forwarded-for"] || h["x-real-ip"] || "").split(",")[0].trim();
+    const where = [h["x-vercel-ip-city"], h["x-vercel-ip-country-region"], h["x-vercel-ip-country"]].filter(Boolean).map((v: any) => decodeURIComponent(String(v))).join(", ");
+    const info = `Time (UTC): ${new Date().toISOString()}\nIP: ${ip}\nPlace: ${where || "unknown"}\nBrowser or tool: ${String(h["user-agent"] || "")}\nMethod and path: ${req.method} ${req.url}\nReferrer: ${String(h["referer"] || "")}`;
+    console.error("[sync-audit] retired credential used\n" + info);
+    const key = process.env.RESEND_API_KEY;
+    const to = (process.env.TRACE_ALERT_TO || process.env.OWNER_EMAILS || "seo@businesssanta.com").split(",").map((x) => x.trim()).filter(Boolean);
+    if (key && to.length) {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ from: process.env.CLIENT_LOGIN_FROM || "SEO Season <noreply@seoseason.com>", to,
+          subject: "SECURITY TRACER: someone used the planted repo token",
+          text: "Someone used the fake sync token that exists only in the public Manav-SEO repo. Our own systems never use it, so this is someone who copied the code and tried it.\n\n" + info + "\n\nNothing was exposed: the token opens nothing." }),
+      });
+    }
+  } catch (e: any) { console.error("[sync-audit] failed:", e?.message); }
+  return true;
+}
+
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (await auditRetiredCredential(req)) return res.status(401).json({ error: "Unauthorized" });
   if (!(await requireAuth(req, res))) return;
   try { return await _controlHandler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: e?.message || "unknown" }); } catch (_) {} }
