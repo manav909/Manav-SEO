@@ -46,7 +46,7 @@ SCENES = [
  dict(kind="shot", img="google.jpg",
       n="And here is Google today. On November fourteenth, twenty twenty six, Hays sat at number two for H V A C company Durham N C, the first H V A C company website in the results. "
         "It was also number five for H V A C maintenance plan Durham, and for A C repair cost Durham, with a Hays blog page.",
-      hl=(80, 904, 1120, 1112), cap="Google US, \"hvac company durham nc\", screenshot 14 Nov 2026. Results vary by location and time."),
+      hl=(80, 904, 1120, 1112), say="Number two, and the first HVAC company website in the results.", cap="Google US, \"hvac company durham nc\", screenshot 14 Nov 2026. Results vary by location and time."),
  dict(kind="quote", title="In the owner's own words",
       lines=["\"Yes the blog post look good. Thanks\"  (Nov 2025)", "\"Yes I want to keep working with you.\"  (Jan 2026)", "\"Everything seems to be going well.\"  (May 2026)"],
       n="In the owner's own words. November: yes the blog post look good, thanks. "

@@ -84,33 +84,58 @@ def heading(d, txt):
     d.rounded_rectangle((120, 278, 300, 286), 4, fill=YEL)
 
 def shot(d, im, s, t, T):
+    """The screenshot is always shown whole (17 Nov 2026: the old camera zoom cut words like "ays Heating" and the
+    box overlapped the brand header). Layout: the whole screenshot on the left, below the header; the highlighted
+    block (s['hl'], whole words, edges in white space) outlined on it and repeated, magnified, in a lens on the right
+    with a connector, plus an optional line under the lens (s['say']) saying what it proves. Without hl the screenshot
+    is centred and as large as the safe zone allows."""
     sc = Image.open(s['img']).convert('RGB')
-    boxw, boxh = 1300, 700
-    hx0, hy0, hx1, hy1 = s['hl']
-    k = ease(t, T * 0.35, 1.6)
-    # source window: from the whole screenshot to a window around the highlight (aspect boxw:boxh)
-    sw0, sh0 = sc.width, sc.width * boxh / boxw
-    cxh, cyh = (hx0 + hx1) / 2, (hy0 + hy1) / 2
-    sw1 = min(max((hx1 - hx0) * 1.6, 360), sc.width * 0.8, sc.height * 0.95 * boxw / boxh); sh1 = sw1 * boxh / boxw
-    sw = sw0 + (sw1 - sw0) * k; shh = sh0 + (sh1 - sh0) * k
-    cx = (sw0 / 2) + (cxh - sw0 / 2) * k; cy = (sh0 / 2) + (cyh - sh0 / 2) * k
-    x0s = max(0, min(sc.width - sw, cx - sw / 2)); y0s = max(0, min(sc.height - shh, cy - shh / 2))
-    crop = sc.crop((int(x0s), int(y0s), int(x0s + sw), int(y0s + shh))).resize((boxw, boxh), Image.LANCZOS)
-    if t > T * 0.25:
-        dd = ImageDraw.Draw(crop); sx = boxw / sw; sy = boxh / shh
-        dd.rounded_rectangle(((hx0 - x0s) * sx, (hy0 - y0s) * sy, (hx1 - x0s) * sx, (hy1 - y0s) * sy), 10, outline=YEL, width=6)
-    x0, y0 = (W - boxw) // 2, 150
-    sh = Image.new('RGBA', (boxw + 40, crop.height + 40), (0, 0, 0, 0))
-    ImageDraw.Draw(sh).rounded_rectangle((20, 20, boxw + 20, crop.height + 20), 18, fill=(0, 0, 0, 140))
-    sh = sh.filter(ImageFilter.GaussianBlur(14)); im.paste(sh, (x0 - 20, y0 - 10), sh)
-    m = Image.new('L', crop.size, 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, crop.width, crop.height), 18, fill=255)
+    hl = s.get('hl')
+    if s.get('title'):
+        heading(d, s['title']); top = 320
+    else:
+        top = 205
+    bot = 890
+    areaw = 980 if hl else 1600
+    z = min(areaw / sc.width, (bot - top) / sc.height, 1.5)
+    shw, shh = int(sc.width * z), int(sc.height * z)
+    k = ease(t, 0.1, 0.5)
+    x0 = 120 if hl else (W - shw) // 2
+    y0 = top + (bot - top - shh) // 2 + int((1 - k) * 40)
+    crop = sc.resize((shw, shh), Image.LANCZOS)
+    sh = Image.new('RGBA', (shw + 60, shh + 60), (0, 0, 0, 0))
+    ImageDraw.Draw(sh).rounded_rectangle((30, 30, shw + 30, shh + 30), 18, fill=(0, 0, 0, 150))
+    sh = sh.filter(ImageFilter.GaussianBlur(16)); im.paste(sh, (x0 - 30, y0 - 18), sh)
+    m = Image.new('L', crop.size, 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, shw - 1, shh - 1), 18, fill=255)
     im.paste(crop, (x0, y0), m)
-    d.rounded_rectangle((x0 - 3, y0 - 3, x0 + boxw + 3, y0 + crop.height + 3), 20, outline=YEL, width=3)
-    d.text((W // 2, y0 + crop.height + 22), s['cap'], font=F(24, 'SemiBold'), fill=MUT, anchor='mt')
+    d.rounded_rectangle((x0 - 4, y0 - 4, x0 + shw + 4, y0 + shh + 4), 20, outline=YEL, width=4)
+    d.text((x0, y0 + shh + 18), s['cap'], font=F(24, 'SemiBold'), fill=MUT, anchor='la')
+    if hl and t > T * 0.22:
+        hx0, hy0, hx1, hy1 = hl
+        rx0, ry0, rx1, ry1 = x0 + hx0 * z, y0 + hy0 * z, x0 + hx1 * z, y0 + hy1 * z
+        d.rounded_rectangle((rx0 - 4, ry0 - 4, rx1 + 4, ry1 + 4), 10, outline=YEL, width=5)
+        kl = ease(t, T * 0.22 + 0.3, 0.6)
+        lx0 = x0 + shw + 90; lw = 1824 - lx0     # the lens takes all the room right of the screenshot
+        piece = sc.crop(hl); lz = min(lw / piece.width, 360 / piece.height, 3.0)
+        pw, ph = int(piece.width * lz), int(piece.height * lz)
+        lx = lx0 + (lw - pw) // 2; ly = top + 40 + int((1 - kl) * 40)
+        if kl > 0:
+            d.line((rx1 + 6, (ry0 + ry1) / 2, lx - 10, ly + ph / 2), fill=YEL, width=5)
+            pc = piece.resize((pw, ph), Image.LANCZOS)
+            sh2 = Image.new('RGBA', (pw + 60, ph + 60), (0, 0, 0, 0))
+            ImageDraw.Draw(sh2).rounded_rectangle((30, 30, pw + 30, ph + 30), 14, fill=(0, 0, 0, 170))
+            sh2 = sh2.filter(ImageFilter.GaussianBlur(14)); im.paste(sh2, (lx - 30, ly - 16), sh2)
+            d.rounded_rectangle((lx - 10, ly - 10, lx + pw + 10, ly + ph + 10), 18, fill=YEL)
+            m2 = Image.new('L', (pw, ph), 0); ImageDraw.Draw(m2).rounded_rectangle((0, 0, pw - 1, ph - 1), 12, fill=255)
+            im.paste(pc, (lx, ly), m2)
+            if s.get('say'):
+                fy = ly + ph + 50
+                for ln in wrap(d, s['say'], F(56), lw):
+                    d.text((lx0, fy), ln, font=F(56), fill=WHITE); fy += 70
 
 def listing(d, im, s, t, T):
     heading(d, s['title'])
-    n = len(s['rows']); rh = 150 if n <= 3 else 100
+    n = len(s['rows']); rh = min(170, (900 - 330) // n - 14)   # rows fill the frame down to the safe bottom
     for k, row in enumerate(s['rows']):
         a0 = 0.6 + k * (T * 0.7 / n)
         if t < a0: continue
@@ -118,9 +143,9 @@ def listing(d, im, s, t, T):
         d.rounded_rectangle((120, y, W - 120, y + rh), 18, fill=(28, 40, 66))
         d.ellipse((150, y + rh // 2 - 34, 218, y + rh // 2 + 34), fill=YEL)
         d.text((184, y + rh // 2), row[0], font=F(40), fill=NAVY, anchor='mm')
-        d.text((250, y + rh // 2), row[1], font=F(46 if n <= 3 else 40, 'Bold'), fill=WHITE, anchor='lm')
+        d.text((250, y + rh // 2), row[1], font=F(50 if n <= 3 else 46, 'Bold'), fill=WHITE, anchor='lm')
         right = row[2] + ('   ' + row[3] if row[3] else '')
-        d.text((W - 160, y + rh // 2), right, font=F(38 if n <= 3 else 34, 'SemiBold'), fill=YEL if 'not' not in row[2] else MUT, anchor='rm')
+        d.text((W - 160, y + rh // 2), right, font=F(42 if n <= 3 else 38, 'SemiBold'), fill=YEL if 'not' not in row[2] else MUT, anchor='rm')
 
 def compare(d, im, s, t, T):
     heading(d, s['title'])
@@ -154,35 +179,37 @@ def three(d, im, s, t, T):
         x = 120 + k * 573
         d_off = int((1 - ease(t, a0)) * 50)
         x = x
-        d.rounded_rectangle((x, 340, x + 533, 780), 26, fill=(28, 40, 66), outline=YEL if k == 2 else (60, 74, 100), width=3)
-        d.text((x + 266, 430), str(k + 1), font=F(90), fill=YEL, anchor='mm')
-        d.text((x + 266, 540), a, font=F(54), fill=WHITE, anchor='mm')
-        for j, ln in enumerate(wrap(d, b, F(34, 'Regular'), 440)):
-            d.text((x + 266, 620 + j * 46), ln, font=F(34, 'Regular'), fill=MUT, anchor='mm')
-    d.text((W // 2, 820), s['cap'], font=F(26, 'SemiBold'), fill=MUT, anchor='mt')
+        d.rounded_rectangle((x, 340, x + 533, 860), 26, fill=(28, 40, 66), outline=YEL if k == 2 else (60, 74, 100), width=3)
+        d.text((x + 266, 460), str(k + 1), font=F(120), fill=YEL, anchor='mm')
+        d.text((x + 266, 600), a, font=F(58), fill=WHITE, anchor='mm')
+        for j, ln in enumerate(wrap(d, b, F(38, 'Regular'), 460)):
+            d.text((x + 266, 690 + j * 50), ln, font=F(38, 'Regular'), fill=MUT, anchor='mm')
+    d.text((W // 2, 885), s['cap'], font=F(26, 'SemiBold'), fill=MUT, anchor='mt')
 
 def quote(d, im, s, t, T):
     heading(d, s['title'])
     for k, ln in enumerate(s['lines']):
         a0 = 0.6 + k * T * 0.28
         if t < a0: continue
-        y = 350 + k * 150 + int((1 - ease(t, a0)) * 50)
-        d.rounded_rectangle((120, y, W - 120, y + 120), 18, fill=(28, 40, 66))
-        d.rounded_rectangle((120, y, 134, y + 120), 7, fill=YEL)
-        d.text((180, y + 60), ln, font=F(46, 'SemiBold'), fill=WHITE, anchor='lm')
+        n = len(s['lines']); slot = (900 - 340) // n; bh = min(170, slot - 26)   # fill the frame, no dead bottom
+        y = 340 + k * slot + int((1 - ease(t, a0)) * 50)
+        d.rounded_rectangle((120, y, W - 120, y + bh), 18, fill=(28, 40, 66))
+        d.rounded_rectangle((120, y, 134, y + bh), 7, fill=YEL)
+        d.text((180, y + bh // 2), ln, font=F(54, 'SemiBold'), fill=WHITE, anchor='lm')
 
 def fixes(d, im, s, t, T):
     heading(d, s['title'])
     for k, ln in enumerate(s['items']):
         a0 = 1.5 + k * T * 0.26
         if t < a0: continue
-        y = 330 + k * 170 + int((1 - ease(t, a0)) * 50)
-        d.rounded_rectangle((120, y, W - 120, y + 150), 18, fill=(28, 40, 66))
-        d.ellipse((150, y + 41, 218, y + 109), fill=YEL)
-        d.text((184, y + 75), str(k + 1), font=F(40), fill=NAVY, anchor='mm')
-        ls = wrap(d, ln, F(40, 'SemiBold'), W - 420)
+        n = len(s['items']); slot = (900 - 330) // n; bh = min(190, slot - 22); cy = y0c = None
+        y = 330 + k * slot + int((1 - ease(t, a0)) * 50); cy = y + bh // 2
+        d.rounded_rectangle((120, y, W - 120, y + bh), 18, fill=(28, 40, 66))
+        d.ellipse((150, cy - 40, 230, cy + 40), fill=YEL)
+        d.text((190, cy), str(k + 1), font=F(48), fill=NAVY, anchor='mm')
+        ls = wrap(d, ln, F(48, 'SemiBold'), W - 440)
         for j, l in enumerate(ls):
-            d.text((250, y + 75 + (j - (len(ls) - 1) / 2) * 50), l, font=F(40, 'SemiBold'), fill=WHITE, anchor='lm')
+            d.text((270, cy + (j - (len(ls) - 1) / 2) * 58), l, font=F(48, 'SemiBold'), fill=WHITE, anchor='lm')
 
 def cta(d, im, s, t, T):
     heading(d, s['title'])
@@ -192,8 +219,10 @@ def cta(d, im, s, t, T):
         d.text((180 + d.textlength(a, font=F(70)) + 30, 420 + j * 120), b, font=F(42, 'SemiBold'), fill=WHITE, anchor='lm')
     d.rounded_rectangle((120, 820, 1180, 916), 48, fill=YEL)
     d.text((650, 868), s['url'], font=F(44), fill=NAVY, anchor='mm')
-    m = manav.copy(); m.thumbnail((520, 600))  # whole photo inside the safe zone (above YouTube's controls)
-    im.paste(m, (1300, 924 - m.height), m)
+    # 17 Nov 2026: the photo floated above the controls; now he stands on the bottom edge of the frame (his face stays
+    # inside the safe zone, his body may run under the player controls, which is decoration only)
+    m = manav.copy(); m.thumbnail((620, 700))
+    im.paste(m, (W - 96 - m.width + 40, H - m.height), m)
 
 def end(d, im, s, t, T):
     im.paste(logo_b, (W // 2 - 100, 220), logo_b)

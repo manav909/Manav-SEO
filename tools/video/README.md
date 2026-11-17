@@ -67,3 +67,25 @@ The 14 Nov Chicago Reel and the 15 Nov 7:19 pm Denver HVAC Reel went out with a 
 - Feed posts on Instagram and Facebook that carry a message (tips, offers, results) go out as short narrated videos
   (10 to 25 seconds, 1080x1350 or 1080x1920, slides animated with the kit, `reel_voice.py` sound, `finalize.py` check),
   not as silent images. LinkedIn carousels (PDF documents) stay as they are.
+
+## Design system v2 (17 Nov 2026): reel_studio, media_plan, make_reel
+
+Why: every Reel was the same small navy card in an empty frame, photos floated or were cropped, the voice never
+changed and captions never said what a post proved. Now:
+
+* `reel_studio.py` is a brand-neutral engine with full-frame layouts: poster (hook), stat, mythfact, proof
+  (screenshot shown whole, plus a magnified lens on the key line), steps, talk (founder standing on the frame edge),
+  quote, book, cta and cover. Five palettes per brand. It checks the safe zone and the fonts' glyphs on every frame.
+* `brand_businesssanta.py` holds the Business Santa identity (palettes, fonts, voices, beats, arcs, banned words).
+* `media_plan.py` picks the next post's story arc, palettes, hook type, voice and beat so neighbours never repeat,
+  and writes the caption with a "What this proves" line plus source and date; `lint()` blocks bad captions.
+* `reel_voice.py --voice --speed --beat` rotates Kokoro voices (blends allowed, e.g. `am_michael+am_fenrir`) and
+  shapes the pace (hook faster, ask slower). `reel_music.py` has five original styles: upbeat, pluck, lofi,
+  cinematic, ambient, at the same loudness.
+* `make_reel.py spec.json out/` builds the whole Reel (frames, cover, voice, beat, video, sound check, sheet.jpg and
+  qa.json) and refuses to finish when a QA rule fails.
+* `render_episode.py` (YouTube 16:9): `shot` scenes show the whole screenshot below the header, with the highlighted
+  block outlined and repeated in a lens (`say=` adds the line it proves); the founder stands on the bottom edge in
+  the CTA; list, quote, three and fixes scenes now fill the frame to the safe bottom.
+
+Evidence screenshots for vertical video: capture them at a phone width (about 430 css px) so they read natively.
