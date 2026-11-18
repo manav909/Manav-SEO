@@ -79,7 +79,21 @@ async function auditRetiredCredential(req: VercelRequest): Promise<boolean> {
    web (organic top 20), maps (Google Maps places with hours). */
 const SERP_TASK_TOKEN_SHA = "83c85ae40f231205cc41dddb9f89467169eadf473b7a258028851bd3ec1b64aa";
 const serpUse = { day: "", n: 0 };
-const SERP_DAILY_CAP = 8; /* Free plan: 250 searches a month */
+const SERP_DAILY_CAP_FALLBACK = 8;
+/* The daily cap follows the SerpAPI plan: a thirtieth of the monthly allowance, never more than what is left.
+   The plan is read from SerpAPI's account endpoint (no search credit) at most once an hour per instance. */
+const serpPlan: { at: number; perMonth: number; left: number } = { at: 0, perMonth: 0, left: 0 };
+async function serpDailyCap(key: string): Promise<number> {
+  if (Date.now() - serpPlan.at > 36e5) {
+    try {
+      const r = await fetch("https://serpapi.com/account?api_key=" + encodeURIComponent(key), { signal: AbortSignal.timeout(8000) });
+      const a: any = await r.json();
+      if (typeof a?.searches_per_month === "number") { serpPlan.perMonth = a.searches_per_month; serpPlan.left = Number(a.plan_searches_left || 0) + Number(a.extra_credits || 0); serpPlan.at = Date.now(); }
+    } catch (_) {}
+  }
+  if (!serpPlan.perMonth) return SERP_DAILY_CAP_FALLBACK;
+  return Math.max(0, Math.min(Math.floor(serpPlan.perMonth / 30), serpPlan.left));
+}
 async function serpCheck(req: VercelRequest, res: VercelResponse) {
   const q = (req.query || {}) as Record<string, any>;
   const tok = String(q.t || "");
@@ -96,7 +110,8 @@ async function serpCheck(req: VercelRequest, res: VercelResponse) {
   }
   const day = new Date().toISOString().slice(0, 10);
   if (serpUse.day !== day) { serpUse.day = day; serpUse.n = 0; }
-  if (serpUse.n >= SERP_DAILY_CAP) return res.status(200).json({ error: "daily cap reached", cap: SERP_DAILY_CAP });
+  const cap = await serpDailyCap(key);
+  if (serpUse.n >= cap) return res.status(200).json({ error: "daily cap reached", cap });
   const mode = ["local", "web", "maps"].includes(String(q.mode)) ? String(q.mode) : "local";
   const query = String(q.q || "").slice(0, 160).trim();
   const location = String(q.loc || "").slice(0, 120).trim();
@@ -124,7 +139,7 @@ async function serpCheck(req: VercelRequest, res: VercelResponse) {
   else if (mode === "local") results = pick(j.local_results, (x, i) => ({ position: x.position || i + 1, title: x.title, rating: x.rating, reviews: x.reviews, type: x.type, address: x.address, website: x.links?.website || x.website || "", hours: x.hours || "" }));
   else results = pick(j.local_results || (j.place_results ? [j.place_results] : []), (x, i) => ({ position: x.position || i + 1, title: x.title, rating: x.rating, reviews: x.reviews, type: x.type, address: x.address, website: x.website || "", open_state: x.open_state || "", hours: x.hours || x.operating_hours || "", place_id: x.place_id || "" }));
   const hit = match ? results.find((r) => norm(r.title).includes(match) || norm(r.website).includes(match) || norm(r.domain).includes(match) || norm(r.link).includes(match)) : null;
-  return res.status(200).json({ checkedAt: new Date().toISOString(), source: "Google via SerpAPI", mode, query, location, gl, matched: match ? (hit ? hit.position : null) : undefined, results, usedToday: serpUse.n });
+  return res.status(200).json({ checkedAt: new Date().toISOString(), source: "Google via SerpAPI", mode, query, location, gl, matched: match ? (hit ? hit.position : null) : undefined, results, usedToday: serpUse.n, dailyCap: cap });
 }
 
 /* ── Safe export ── */
