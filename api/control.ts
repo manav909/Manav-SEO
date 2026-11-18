@@ -79,7 +79,7 @@ async function auditRetiredCredential(req: VercelRequest): Promise<boolean> {
    web (organic top 20), maps (Google Maps places with hours). */
 const SERP_TASK_TOKEN_SHA = "83c85ae40f231205cc41dddb9f89467169eadf473b7a258028851bd3ec1b64aa";
 const serpUse = { day: "", n: 0 };
-const SERP_DAILY_CAP = 150;
+const SERP_DAILY_CAP = 8; /* Free plan: 250 searches a month */
 async function serpCheck(req: VercelRequest, res: VercelResponse) {
   const q = (req.query || {}) as Record<string, any>;
   const tok = String(q.t || "");
