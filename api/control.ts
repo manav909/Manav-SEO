@@ -80,6 +80,8 @@ async function auditRetiredCredential(req: VercelRequest): Promise<boolean> {
 const SERP_TASK_TOKEN_SHA = "83c85ae40f231205cc41dddb9f89467169eadf473b7a258028851bd3ec1b64aa";
 const serpUse = { day: "", n: 0 };
 const SERP_DAILY_CAP_FALLBACK = 8;
+const SERP_TASK_SHARE = 0.5;
+const SERP_PRODUCT_RESERVE = 0.3;
 /* The daily cap follows the SerpAPI plan: a thirtieth of the monthly allowance, never more than what is left.
    The plan is read from SerpAPI's account endpoint (no search credit) at most once an hour per instance. */
 const serpPlan: { at: number; perMonth: number; left: number } = { at: 0, perMonth: 0, left: 0 };
@@ -92,7 +94,12 @@ async function serpDailyCap(key: string): Promise<number> {
     } catch (_) {}
   }
   if (!serpPlan.perMonth) return SERP_DAILY_CAP_FALLBACK;
-  return Math.max(0, Math.min(Math.floor(serpPlan.perMonth / 30), serpPlan.left));
+  /* The same SerpAPI key also runs the SEO Season product (audits, SERP features, knowledge panels).
+     Scheduled tasks may use at most half of the monthly allowance, and stop entirely while what is left
+     is below 30% of the allowance, so the product never runs out because of them. */
+  const reserve = Math.ceil(serpPlan.perMonth * SERP_PRODUCT_RESERVE);
+  const shareCap = Math.floor((serpPlan.perMonth * SERP_TASK_SHARE) / 30);
+  return Math.max(0, Math.min(shareCap, serpPlan.left - reserve));
 }
 async function serpCheck(req: VercelRequest, res: VercelResponse) {
   const q = (req.query || {}) as Record<string, any>;
@@ -105,7 +112,8 @@ async function serpCheck(req: VercelRequest, res: VercelResponse) {
     try {
       const r = await fetch("https://serpapi.com/account?api_key=" + encodeURIComponent(key), { signal: AbortSignal.timeout(15000) });
       const a: any = await r.json();
-      return res.status(200).json({ plan: a.plan_name, searchesPerMonth: a.searches_per_month, searchesLeftThisMonth: a.plan_searches_left, extraCredits: a.extra_credits, usedThisMonth: a.this_month_usage, usedLastHour: a.last_hour_searches, hourlyLimit: a.account_rate_limit_per_hour, checkedAt: new Date().toISOString() });
+      serpPlan.at = 0; const capNow = await serpDailyCap(key);
+      return res.status(200).json({ taskDailyCap: capNow, taskShare: SERP_TASK_SHARE, productReserve: Math.ceil((a.searches_per_month || 0) * SERP_PRODUCT_RESERVE), plan: a.plan_name, searchesPerMonth: a.searches_per_month, searchesLeftThisMonth: a.plan_searches_left, extraCredits: a.extra_credits, usedThisMonth: a.this_month_usage, usedLastHour: a.last_hour_searches, hourlyLimit: a.account_rate_limit_per_hour, checkedAt: new Date().toISOString() });
     } catch (e: any) { return res.status(200).json({ error: "account check failed: " + (e?.message || "unknown") }); }
   }
   const day = new Date().toISOString().slice(0, 10);
