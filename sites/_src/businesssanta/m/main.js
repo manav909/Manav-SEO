@@ -110,7 +110,11 @@ const vRun = v => { if (!vOk) return; if (!v.src) v.src = v.dataset.src; v.play(
 const vio = new IntersectionObserver(es => es.forEach(e => e.isIntersecting ? vRun(e.target) : e.target.pause()), { threshold: .5 });
 const vStart = () => { if (vOk) return; vOk = true; VIDS.forEach(v => { if (onScreen(v)) vRun(v); }); };
 VIDS.forEach(v => vio.observe(v));
-addEventListener("load", () => setTimeout(vStart, 3000));
+/* posters of videos further down load only when they come near the screen, so the first screen gets the whole connection */
+const pio = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.poster = e.target.dataset.poster; pio.unobserve(e.target); } }), { rootMargin: "800px 0px" });
+$$("video[data-poster]").forEach(v => pio.observe(v));
+/* the hero video starts on the visitor's first scroll or touch, or 6 seconds after the page has loaded, so the first screen paints and settles before it downloads */
+addEventListener("load", () => setTimeout(vStart, 6000));
 ["scroll", "pointerdown", "touchstart"].forEach(e => addEventListener(e, vStart, { once: true, passive: true }));
 const sndSet = (b, on) => { b.classList.toggle("on", on); b.lastElementChild.textContent = on ? "Sound on" : b.dataset.t; };
 $$(".snd").forEach(b => {
