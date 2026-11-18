@@ -86,6 +86,14 @@ async function serpCheck(req: VercelRequest, res: VercelResponse) {
   if (!tok || createHash("sha256").update(tok).digest("hex") !== SERP_TASK_TOKEN_SHA) return res.status(401).json({ error: "Unauthorized" });
   const key = (process.env.SERPAPI_KEY || "").trim();
   if (!key) return res.status(200).json({ error: "SERPAPI_KEY is not set in this Vercel project" });
+  if (String(q.mode) === "account") {
+    /* Plan and credits left (SerpAPI's account endpoint costs no search credit). */
+    try {
+      const r = await fetch("https://serpapi.com/account?api_key=" + encodeURIComponent(key), { signal: AbortSignal.timeout(15000) });
+      const a: any = await r.json();
+      return res.status(200).json({ plan: a.plan_name, searchesPerMonth: a.searches_per_month, searchesLeftThisMonth: a.plan_searches_left, extraCredits: a.extra_credits, usedThisMonth: a.this_month_usage, usedLastHour: a.last_hour_searches, hourlyLimit: a.account_rate_limit_per_hour, checkedAt: new Date().toISOString() });
+    } catch (e: any) { return res.status(200).json({ error: "account check failed: " + (e?.message || "unknown") }); }
+  }
   const day = new Date().toISOString().slice(0, 10);
   if (serpUse.day !== day) { serpUse.day = day; serpUse.n = 0; }
   if (serpUse.n >= SERP_DAILY_CAP) return res.status(200).json({ error: "daily cap reached", cap: SERP_DAILY_CAP });
