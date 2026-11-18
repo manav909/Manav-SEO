@@ -3,6 +3,22 @@
 Kept by the daily quality audit (11:07 am India time). Newest first. Read it before you build or post anything,
 so the same mistake is never made twice. Each entry: date, what, where, cause, fix, prevented by.
 
+## 18 Nov 2026
+
+0. **Instagram Reel caption with a YouTube link that cannot be tapped.**
+   Where: Instagram Reel "This Durham, NC HVAC company is No. 2 on Google" (17 Nov, 9:31 pm). The caption says
+   "Full client story on our YouTube channel: https://youtu.be/J9auh_mLMV0"; Instagram does not link URLs in captions,
+   so viewers see a dead address. The Facebook copy of the same Reel is fine (Facebook links URLs).
+   Cause: the caption was written once for Facebook and reused on Instagram; the caption lint only checked for "#" in URLs.
+   Fix: not edited by the audit (the post is otherwise correct; editing live captions is kept for typos); listed for
+   Manav as optional. Prevented by: media_plan.lint(platform='instagram') now refuses any http, https or youtu.be address
+   in an Instagram caption and says what to write instead ("YouTube @BusinessSantaofficial", "businesssanta.com (link in bio)").
+
+   Also audited, no problems: 18 Nov 1:30 am Facebook post (AI answers got our business wrong), 17 Nov 11:00 pm Houston
+   restaurants fake review Reel (Facebook and Instagram) and its YouTube Short, 17 Nov 7:45 pm Thanksgiving hours Reel
+   (9 days to 26 Nov is right), and on businesssanta.com the 2 new client stories, results, guides and the 2 new guides
+   (titles and descriptions in range, no em or en dashes, no banned words, no +91, 78 internal links and images all 200).
+
 ## 16 Nov 2026
 
 0. **Reels published with a silent audio track (found by Manav).**

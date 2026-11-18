@@ -192,6 +192,9 @@ def lint(brand, text, platform='instagram'):
         probs.append('no "What this proves" line')
     if brand['url'].split('.')[0] not in low.replace(' ', '') and platform != 'x':
         probs.append(f'no {brand["url"]} in the text')
+    if platform == 'instagram' and ('http://' in low or 'https://' in low or 'youtu.be/' in low):
+        probs.append('Instagram does not link URLs in captions: name the place (for example "YouTube @BusinessSantaofficial") '
+                     'and write the site as plain businesssanta.com with "(link in bio)"')
     lim = LIMITS.get(platform)
     if lim and len(text) > lim:
         probs.append(f'{len(text)} characters, over the {platform} limit of {lim}')
