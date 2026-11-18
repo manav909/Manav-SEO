@@ -71,9 +71,58 @@ async function auditRetiredCredential(req: VercelRequest): Promise<boolean> {
   return true;
 }
 
+
+/* ── Search check for scheduled tasks (Manav, 18 Nov 2026) ──
+   Google shows robot checks to the home network, so tasks that need a dated Google position read it from SerpAPI
+   here instead of searching Google in a browser. GET only (tasks can only web-fetch), one SerpAPI search per call,
+   read-only, gated by a task token whose sha256 is below. Modes: local (local pack for a trade in a US city),
+   web (organic top 20), maps (Google Maps places with hours). */
+const SERP_TASK_TOKEN_SHA = "83c85ae40f231205cc41dddb9f89467169eadf473b7a258028851bd3ec1b64aa";
+const serpUse = { day: "", n: 0 };
+const SERP_DAILY_CAP = 150;
+async function serpCheck(req: VercelRequest, res: VercelResponse) {
+  const q = (req.query || {}) as Record<string, any>;
+  const tok = String(q.t || "");
+  if (!tok || createHash("sha256").update(tok).digest("hex") !== SERP_TASK_TOKEN_SHA) return res.status(401).json({ error: "Unauthorized" });
+  const key = (process.env.SERPAPI_KEY || "").trim();
+  if (!key) return res.status(200).json({ error: "SERPAPI_KEY is not set in this Vercel project" });
+  const day = new Date().toISOString().slice(0, 10);
+  if (serpUse.day !== day) { serpUse.day = day; serpUse.n = 0; }
+  if (serpUse.n >= SERP_DAILY_CAP) return res.status(200).json({ error: "daily cap reached", cap: SERP_DAILY_CAP });
+  const mode = ["local", "web", "maps"].includes(String(q.mode)) ? String(q.mode) : "local";
+  const query = String(q.q || "").slice(0, 160).trim();
+  const location = String(q.loc || "").slice(0, 120).trim();
+  const match = String(q.match || "").toLowerCase().trim();
+  const gl = String(q.gl || "us").slice(0, 2).toLowerCase();
+  const hl = String(q.hl || "en").slice(0, 5).toLowerCase();
+  if (!query) return res.status(200).json({ error: "q is required" });
+  const u = new URL("https://serpapi.com/search");
+  u.searchParams.set("engine", mode === "maps" ? "google_maps" : mode === "local" ? "google_local" : "google");
+  u.searchParams.set("q", query);
+  if (location) u.searchParams.set("location", location);
+  u.searchParams.set("gl", gl); u.searchParams.set("hl", hl);
+  if (mode === "web") u.searchParams.set("num", "20");
+  if (mode === "maps") u.searchParams.set("type", "search");
+  u.searchParams.set("api_key", key);
+  serpUse.n++;
+  let j: any;
+  try { const r = await fetch(u.toString(), { signal: AbortSignal.timeout(25000) }); j = await r.json(); }
+  catch (e: any) { return res.status(200).json({ error: "SerpAPI request failed: " + (e?.message || "unknown") }); }
+  if (j?.error) return res.status(200).json({ error: String(j.error) });
+  const norm = (s: any) => String(s || "").toLowerCase();
+  const pick = (arr: any[], f: (x: any, i: number) => any) => (Array.isArray(arr) ? arr : []).slice(0, 20).map(f);
+  let results: any[] = [];
+  if (mode === "web") results = pick(j.organic_results, (x, i) => ({ position: x.position || i + 1, title: x.title, link: x.link, domain: (() => { try { return new URL(x.link).hostname.replace(/^www\./, ""); } catch { return ""; } })() }));
+  else if (mode === "local") results = pick(j.local_results, (x, i) => ({ position: x.position || i + 1, title: x.title, rating: x.rating, reviews: x.reviews, type: x.type, address: x.address, website: x.links?.website || x.website || "", hours: x.hours || "" }));
+  else results = pick(j.local_results || (j.place_results ? [j.place_results] : []), (x, i) => ({ position: x.position || i + 1, title: x.title, rating: x.rating, reviews: x.reviews, type: x.type, address: x.address, website: x.website || "", open_state: x.open_state || "", hours: x.hours || x.operating_hours || "", place_id: x.place_id || "" }));
+  const hit = match ? results.find((r) => norm(r.title).includes(match) || norm(r.website).includes(match) || norm(r.domain).includes(match) || norm(r.link).includes(match)) : null;
+  return res.status(200).json({ checkedAt: new Date().toISOString(), source: "Google via SerpAPI", mode, query, location, gl, matched: match ? (hit ? hit.position : null) : undefined, results, usedToday: serpUse.n });
+}
+
 /* ── Safe export ── */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (await auditRetiredCredential(req)) return res.status(401).json({ error: "Unauthorized" });
+  if (req.method === "GET" && String((req.query as any)?.action || "") === "serp_check") { try { return await serpCheck(req, res); } catch (e: any) { return res.status(200).json({ error: e?.message || "unknown" }); } }
   if (!(await requireAuth(req, res))) return;
   try { return await _controlHandler(req, res); }
   catch (e: any) { try { res.status(200).json({ error: e?.message || "unknown" }); } catch (_) {} }
