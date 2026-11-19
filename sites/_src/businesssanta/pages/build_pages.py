@@ -743,7 +743,7 @@ def build_holiday_hub(p):
 <p class="ans">{E(p['answer'])}</p>
 {holiday_offer()}
 <div class="mid" data-track="wish-hub"><p>Dear Business Santa: tell us what you wish for your business this Christmas, and a real person replies with a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
-<div class="mid" data-track="nice-hub"><p>Business Santa's Nice List: 10 US small businesses doing Google right this Christmas, checked by hand.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
+<div class="mid" data-track="nice-hub"><p>Business Santa's Nice List: 10 US small businesses doing Google right this Christmas, each checked on Google on November 19, 2026.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
 <h2>The dates that <span class="ac">matter in 2026</span></h2>
 <div class="tbl"><table><thead><tr><th>Date</th><th>Day</th><th>Have this ready</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Week by week, <span class="ac">from now to New Year</span></h2>
