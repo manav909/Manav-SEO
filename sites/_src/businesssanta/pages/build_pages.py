@@ -531,6 +531,7 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
 <div class="grid">{hc}</div>
 {form}
 <div class="mid"><p>Own a small business? Write to Santa yourself and get a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
+<div class="mid"><p>Looking for ideas? See the businesses already on Business Santa's Nice List.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 <div class="mid"><p>Not nominated, but want it before Christmas? The same tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
@@ -580,12 +581,66 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
 {form}
 <h2>Wishes we <span class="ac">can help with</span></h2>
 <div class="grid">{ic}</div>
+<div class="mid"><p>See which US small businesses made Business Santa's Nice List this week.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
 <div class="mid"><p>Know another small business that deserves a free tune-up? From December 1 to 12 we give one away every day.</p><a class="btn" href="/{NOMINATE['slug']}">Nominate a business</a></div>
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 <div class="mid"><p>Want it done before Christmas? The Holiday Google tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
 {byline()}{js}"""
     return shell(p["slug"], p["title"], p["desc"], body, [faq_ld(url, p["faq"])], "Dear Business Santa")
+
+NICE = {"slug": "nice-list",
+  "title": "Business Santa's Nice List 2026: US Small Businesses Doing Google Right | Business Santa",
+  "desc": "10 US small businesses whose Google profiles help customers find them, each checked on Google on November 19, 2026: strong ratings, real reviews, hours and a website on the profile.",
+  "checked": "November 19, 2026",
+  "list": [("Austin's Greatest Plumbing", "Plumber", "Austin, TX", "plumber", 5.0, 355, 4),
+           ("BenjaminBL Plumbing", "Plumber", "Austin, TX", "plumber", 4.9, 287, 5),
+           ("We Plumb LLC", "Plumber", "Austin, TX", "plumber", 4.9, 192, 1),
+           ("Seedo's Levantine Bakery", "Restaurant", "Chicago, IL", "bakery", 4.9, 228, 9),
+           ("Wake N Bakery Chicago Downtown", "Coffee shop", "Chicago, IL", "bakery", 4.9, 1999, 6),
+           ("D'Amato's Bakery", "Bakery", "Chicago, IL", "bakery", 4.6, 1838, 20),
+           ("Amore Fiori Flowers and Gifts", "Florist", "Denver, CO", "florist", 4.9, 557, 13),
+           ("Babylon Floral", "Florist", "Denver, CO", "florist", 4.9, 200, 6),
+           ("Reeis Air Conditioning, Plumbing & Electrical", "HVAC contractor", "Phoenix, AZ", "hvac", 4.9, 1894, 3),
+           ("Benefit Air Conditioning", "HVAC contractor", "Phoenix, AZ", "hvac", 4.9, 762, 10)],
+  "faq": [("How are businesses picked for the Nice List?", "We check Google's local results for a trade in a US city and pick local businesses that show up in the top 20, have a rating of 4.6 or higher, at least 150 reviews, opening hours on their profile and a website linked. Every figure on this page is dated."),
+          ("Did any business pay to be on the list?", "No. Nobody paid or asked to be listed, and none of them is a Business Santa client. The list only celebrates what they already do well."),
+          ("Is there a naughty list?", "Never. Business Santa only names businesses for good reasons. If a profile needs work, we tell the owner privately in a free check."),
+          ("Can I suggest a business for next week?", "Yes. Send a Dear Business Santa wish for your own business, or nominate another one for the 12 Days of Business Santa. We add new names every week until Christmas."),
+          ("My business is listed and I want it removed or corrected.", "Email seo@businesssanta.com and we will update or remove it the same day.")]}
+
+def build_nice():
+    p = NICE; url = SITE + "/" + p["slug"]
+    def _rv(n): return f"{n:,}"
+    rows = "".join(f'<tr><td><b>{E(n)}</b></td><td>{E(t)}, {E(c)}</td><td>{r:.1f} ★</td><td>{_rv(v)}</td><td>#{pos} for “{E(q)}”</td></tr>' for n, t, c, q, r, v, pos in p["list"])
+    why = [("Found where customers look", "Each one shows up in Google's top 20 local results for its trade in its own city, the list people see on Google Maps."),
+           ("A strong rating", "Every business here holds 4.6 stars or more on Google, across hundreds or thousands of reviews."),
+           ("Real reviews, kept coming", "Between them they have over 8,000 Google reviews, the proof new customers read before they call."),
+           ("A complete profile", "Opening hours are on the profile and the website is linked, so customers can check and click before they drive over.")]
+    wc = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in why)
+    tips = [("Set your holiday hours now", "Add Thanksgiving, Christmas Eve, Christmas Day and New Year hours on your Google profile before the day, so Google does not guess.", "/guides/holiday-hours-on-google"),
+            ("Ask every customer for a review", "Ask in person or by text right after a good job, with your direct review link. Never pay or offer anything for it.", "/guides/google-business-profile-checklist"),
+            ("Link your website and keep it current", "A linked website with your hours, services and city on it helps Google and ChatGPT trust what your profile says.", "/guides/get-found-on-chatgpt-by-holiday-shoppers"),
+            ("Check what customers see", "Search your trade and city on Google Maps from a phone, the way a customer does, and fix anything that looks wrong.", "/google-profile-score")]
+    tc = "".join(f'<div class="card"><h3><a href="{u}">{E(t)}</a></h3><p>{E(d)}</p></div>' for t, d, u in tips)
+    body = f"""{h1("Business Santa's Nice List", "US businesses doing Google right")}
+<p class="ans">Business Santa's Nice List celebrates US small businesses whose Google profiles make them easy to find. Each business below showed up in Google's local results for its trade and city when we checked on {p['checked']}, with a rating of 4.6 or higher, at least 150 reviews, opening hours and a website on its profile. The list is positive only: no business is ever called naughty.</p>
+<h2>The Nice List, <span class="ac">week 1</span></h2>
+<div class="tbl" data-track="nice-list"><table><thead><tr><th>Business</th><th>Google category and city</th><th>Google rating</th><th>Reviews</th><th>Google local position</th></tr></thead><tbody>{rows}</tbody></table></div>
+<p class="src">Source: Google local results, checked {p['checked']} for each trade in each city. Ratings, review counts and positions change every day and depend on where the search is made.</p>
+<h2>Why they made <span class="ac">the list</span></h2>
+<div class="grid">{wc}</div>
+<div class="mid" data-track="nice-wish"><p>Want to know if your business would make the list? Send Santa your wish and get a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
+<h2>What every owner <span class="ac">can copy</span></h2>
+<div class="grid">{tc}</div>
+<div class="mid"><p>Know a small business that deserves a free Holiday Google tune-up? From December 1 to 12 we give one away every day.</p><a class="btn" href="/{NOMINATE['slug']}">Nominate a business</a></div>
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+<div class="mid"><p>Want your own profile in this shape before Christmas? The Holiday Google tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
+{byline()}"""
+    il = {"@type": "ItemList", "@id": url + "#list", "name": "Business Santa's Nice List, week 1 (" + p["checked"] + ")",
+          "itemListElement": [{"@type": "ListItem", "position": i + 1, "item": {"@type": "LocalBusiness", "name": n, "address": {"@type": "PostalAddress", "addressLocality": c.split(", ")[0], "addressRegion": c.split(", ")[1], "addressCountry": "US"}}} for i, (n, t, c, q, r, v, pos) in enumerate(p["list"])]}
+    return shell(p["slug"], p["title"], p["desc"], body, [il, faq_ld(url, p["faq"])], "Business Santa's Nice List")
 
 SCORE = {"slug": "google-profile-score",
   "title": "Free Google Business Profile Score: Check Yours in 2 Minutes | Business Santa",
@@ -688,6 +743,7 @@ def build_holiday_hub(p):
 <p class="ans">{E(p['answer'])}</p>
 {holiday_offer()}
 <div class="mid" data-track="wish-hub"><p>Dear Business Santa: tell us what you wish for your business this Christmas, and a real person replies with a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
+<div class="mid" data-track="nice-hub"><p>Business Santa's Nice List: 10 US small businesses doing Google right this Christmas, checked by hand.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
 <h2>The dates that <span class="ac">matter in 2026</span></h2>
 <div class="tbl"><table><thead><tr><th>Date</th><th>Day</th><th>Have this ready</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Week by week, <span class="ac">from now to New Year</span></h2>
@@ -817,6 +873,7 @@ write("guides", build_guides_hub()); svc.append("guides")
 write(PARTNER["slug"], build_partners()); svc.append(PARTNER["slug"])
 write(NOMINATE["slug"], build_nominate()); svc.append(NOMINATE["slug"])
 write(WISH["slug"], build_wish()); svc.append(WISH["slug"])
+write(NICE["slug"], build_nice()); svc.append(NICE["slug"])
 write(SCORE["slug"], build_score()); svc.append(SCORE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
