@@ -61,6 +61,7 @@ ol.steps b{display:block;color:var(--ink);font-family:var(--fh);letter-spacing:-
 .proof{margin-top:18px}.proof .sum{display:flex;align-items:center;gap:12px;margin-bottom:12px}.proof .sum b{font:800 2.2rem var(--fh);color:var(--ink)}.proof .sum span{font-size:.92rem}.st{color:#f5a400;letter-spacing:2px}
 .rv{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:760px){.rv{grid-template-columns:repeat(3,1fr)}}
 .rv article{padding:16px;border-radius:18px;background:#fff;box-shadow:0 0 0 1px var(--line)}.rv h3{margin:6px 0 0;font-size:1.02rem}.rv blockquote{margin:8px 0 10px;font-size:.95rem;color:var(--ink2)}.rv small{color:var(--mut);font-size:.82rem}
+.cq{margin:18px 0 0;padding:20px 22px;border-radius:18px;background:var(--navy);color:#fff}.cq blockquote{margin:6px 0 10px;font:600 1.08rem/1.5 var(--f);color:#fff}.cq .cqh{display:flex;align-items:center;gap:10px;font-size:.9rem;color:#cbd5e1}.cq .cqh b{font:800 1.3rem var(--fh);color:var(--y)}.cq .cqf{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:.88rem;color:#cbd5e1}.cq a{color:var(--y);font-weight:700}
 .mid{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin:40px 0 0;padding:18px 20px;border-radius:18px;background:#fff3c4}.mid p{margin:0;color:var(--ink);font-weight:700}
 .sct{margin:28px 0;padding:22px 18px;border:1px solid #e2e8f0;border-radius:24px;background:#fff}.sct-t{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-weight:700}.sct select{padding:10px 12px;border:1px solid #cbd5e1;border-radius:12px;font:16px var(--f);background:#fff}
 .scq{list-style:none;margin:18px 0 8px;padding:0;counter-reset:q}.scq li{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:14px 0;border-top:1px solid #eef2f7;counter-increment:q}.scq li>span{flex:1 1 320px}.scq li>span:before{content:counter(q) ". ";font-weight:700;color:var(--navy)}
@@ -270,9 +271,16 @@ REV = [("Patient, plain-English help", "I\u2019m not a website or technology per
        ("Technical problems, solved", "Manav and team were exceptional. I had a lot of technical SEO issues with my new website\u2026", "Technical SEO"),
        ("Worth 5 to 10 times what I paid", "The quality and depth of research was extraordinary, easily worth 5-10 times what I paid", "Full SEO package")]
 
+CLUTCH_Q = "All their reports and pre-meeting materials are well-prepared, and they have good presentations."
+def clutch_html():
+    """Anonymous Clutch quote card (Manav, 19 Nov 2026): client's own words only, no name, company, count or schema."""
+    return ('<figure class="cq" data-track="clutch-review"><div class="cqh"><b>5.0</b><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><span>on Clutch</span></div>'
+            f'<blockquote>\u201c{E(CLUTCH_Q)}\u201d</blockquote><figcaption class="cqf"><span>Manager, Travel Agency</span>'
+            '<a href="https://clutch.co/profile/business-santa" rel="noopener" target="_blank">Read the review on Clutch</a></figcaption></figure>')
+
 def proof_html(who, track=None):
     cards = "".join(f'<article><span class="st" aria-label="5 out of 5 stars">\u2605\u2605\u2605\u2605\u2605</span><h3>{E(h)}</h3><blockquote>\u201c{E(q)}\u201d</blockquote><small>Verified client of Manav S, United States \u00b7 {E(sv)}</small></article>' for h, q, sv in REV)
-    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>{E(track) if track else "Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years."} Screenshots on request.</span></div><div class="rv">{cards}</div></div>'
+    return (f'<h2>What owners <span class="ac">say about us</span></h2><div class="proof" data-track="reviews"><div class="sum"><b>4.9</b><span><span class="st">\u2605\u2605\u2605\u2605\u2605</span><br>{E(track) if track else "Founder Manav S: 4.9 average from 2,000+ client reviews and 3,000+ orders over 10+ years."} Screenshots on request.</span></div><div class="rv">{cards}</div>{clutch_html()}</div>'
             f'<div class="mid"><p>Want to know what is holding your {E(who)} back?</p><a class="btn" href="#check">Get my free check</a></div>')
 
 def form_html(k, who):
@@ -768,7 +776,7 @@ def build_holiday_hub(p):
 # ---------- Client results: one hub and one page per client story (data in results.json, company names only) ----------
 RES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.json")))
 # Release order: a story is published by adding its slug here (2 a week, after the quality gate in the plan).
-PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la", "us-headshot-photographer", "us-baby-boutique", "us-vintage-signs-shop", "uae-event-tech", "eu-nativity-shop", "uk-it-support"]
+PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la", "us-headshot-photographer", "us-baby-boutique", "us-vintage-signs-shop", "uae-event-tech", "eu-nativity-shop", "uk-it-support", "uk-furniture-store", "uk-dental-practice"]
 STORIES = [RES[k] for k in PUBLISHED]
 SAMPLE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
 

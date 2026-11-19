@@ -737,7 +737,7 @@
     "searches the site ranks for (Nov 2025)"
    ]
   ],
-  "means": "For a home services company, the searches that pay are your service plus your city, and the cost questions people ask before they call. A clean site, a page per service and blogs that answer real cost questions win both, and they are the pages ChatGPT and Google’s AI answers draw on.",
+  "means": "For a home services company, the searches that pay are your service plus your city, and the cost questions people ask before they call. A clean site, a page per service and blogs that answer real cost questions win both, and they are the pages ChatGPT and Google\u2019s AI answers draw on.",
   "k": "hvac",
   "biz": "HVAC company",
   "rel": [
@@ -1830,7 +1830,7 @@
  },
  "eu-nativity-shop": {
   "slug": "eu-nativity-shop",
-  "tag": "CASE STUDY  ·  ONLINE SHOP  ·  GERMANY, SWITZERLAND, ITALY",
+  "tag": "CASE STUDY  \u00b7  ONLINE SHOP  \u00b7  GERMANY, SWITZERLAND, ITALY",
   "title": "Online Shop SEO Germany: 5 of 5 Keywords on Page 1 | Business Santa",
   "sub": "Multi-country SEO for a seasonal online shop selling hand-carved nativity scenes, ranking ahead of Amazon.",
   "stats": [
@@ -2011,7 +2011,7 @@
  },
  "uk-it-support": {
   "slug": "uk-it-support",
-  "tag": "CASE STUDY  ·  IT SUPPORT COMPANY  ·  SUSSEX, UK",
+  "tag": "CASE STUDY  \u00b7  IT SUPPORT COMPANY  \u00b7  SUSSEX, UK",
   "title": "IT Support SEO: #1 on Google for IT Support Newhaven | Business Santa",
   "sub": "Foundation SEO in 2 days, then 10 months of links, content and new pages for a Sussex IT company focused on schools.",
   "stats": [
@@ -2079,7 +2079,7 @@
     "June 2026 onward",
     [
      "Search Console and Analytics set up for the owner.",
-     "A wrong \"starting from £1\" line in Google corrected.",
+     "A wrong \"starting from \u00a31\" line in Google corrected.",
      "A canonical setting fixed; GEO added from July 2026."
     ]
    ],
@@ -2188,6 +2188,334 @@
    "/assets/img/results/card-serp-it-support-newhaven.webp",
    1200,
    720
+  ]
+ },
+ "uk-furniture-store": {
+  "slug": "uk-furniture-store",
+  "tag": "CASE STUDY  \u00b7  ONLINE FURNITURE STORE  \u00b7  UNITED KINGDOM",
+  "title": "Furniture Store SEO and Google Ads: Best Sales Week in Months | Business Santa",
+  "sub": "How a new Shopify furniture store got one partner for search, ads and social, and its best sales week in months.",
+  "stats": [
+   [
+    "Best",
+    "sales week \"for quite some time\" after the Google Ads rebuild (October 2025)"
+   ],
+   [
+    "A few days",
+    "to deliver the full audit fixes (March 2025)"
+   ],
+   [
+    "3",
+    "stores the owner trusted to us"
+   ],
+   [
+    "11 mo",
+    "one partner for SEO, ads and social (2025)"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "New Shopify furniture store, plus the owner's two sister stores (Living with Luxury)"
+   ],
+   [
+    "Market",
+    "United Kingdom"
+   ],
+   [
+    "Services",
+    "Audit and fixes, harmful link clean-up, link building, blogs, Google Ads management and tracking, Facebook and Instagram, reels, Meta sale campaign, email marketing checks, GEO"
+   ],
+   [
+    "Timeline",
+    "January to December 2025"
+   ]
+  ],
+  "client": "The owner runs the store on his own. He needed one partner to handle search, ads and social, explain things simply, and make every pound count.",
+  "goals": [
+   "Get a new store found on Google.",
+   "Turn visits into sales through Google Ads and social.",
+   "Keep the site healthy as hundreds of products were added.",
+   "Grow without wasting a tight budget."
+  ],
+  "phases": [
+   [
+    "Audit and fixes in days",
+    "Jan to Mar 2025",
+    [
+     "Full audit and on-page fixes across the store.",
+     "Harmful links cleaned up; a link plan sized to the budget."
+    ]
+   ],
+   [
+    "Content and site health",
+    "Feb to Aug 2025",
+    [
+     "Blogs the owner loved.",
+     "Search Console issues fixed as products were added; a sister store audited too."
+    ]
+   ],
+   [
+    "Google Ads rebuilt",
+    "Apr to Oct 2025",
+    [
+     "Tracking fixed and campaigns optimized.",
+     "Small, in-stock products used to win first-time buyers.",
+     "October 2025: the best sales week \"for quite some time\"."
+    ]
+   ],
+   [
+    "Social, sales and smart advice",
+    "Oct to Dec 2025",
+    [
+     "Facebook and Instagram posts and reels.",
+     "A Meta sale with prices set so the discount did not eat the margin.",
+     "Email marketing setup checked; a discount code issue found."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "A new store, a small budget",
+    "Highest-impact work first."
+   ],
+   [
+    "Ads not tracking sales",
+    "Tracking fixed, then campaigns rebuilt."
+   ],
+   [
+    "Hundreds of new products",
+    "Ongoing health checks."
+   ],
+   [
+    "One person doing everything",
+    "Plain advice beyond SEO: pricing, email, social."
+   ]
+  ],
+  "results": [
+   [
+    "Sales",
+    "Best sales week \"for quite some time\" after the Google Ads rebuild (October 2025)"
+   ],
+   [
+    "Speed",
+    "Full audit fixes delivered in a few days (March 2025)"
+   ],
+   [
+    "Social",
+    "Reels and posts the owner was proud to share"
+   ],
+   [
+    "Trust",
+    "The owner brought us his two other stores"
+   ]
+  ],
+  "quotes": [
+   [
+    "You did ALL of that in a few days!? I'm impressed.",
+    "March 2025"
+   ],
+   [
+    "That was an excellent blog. ... I'm very happy with that.",
+    "February 2025"
+   ],
+   [
+    "I was pleased and said that I wouldn't have thought of that.",
+    "November 2025, on our pricing advice"
+   ],
+   [
+    "The reel is excellent. Someone has already hearted it. It's really good.",
+    "November 2025"
+   ]
+  ],
+  "who": "Owner, online furniture store, UK",
+  "diff": [
+   "Speed, so progress was visible from week one.",
+   "Advice beyond SEO that protected his profit.",
+   "One partner for search, ads and social.",
+   "Warm, plain communication."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-uk-furniture-summary.webp",
+    "Summary from the client's Shopify data and Google Ads reports, 2025.",
+    1200,
+    720
+   ],
+   [
+    "/assets/img/results/card-t7-uk-furniture.webp",
+    "The client's own message, 15 October 2025.",
+    1200,
+    462
+   ]
+  ],
+  "published": "2026-11-19",
+  "url": "furniture-store-seo-google-ads",
+  "company": "Living with Luxury",
+  "label": "Online furniture store",
+  "place": "United Kingdom",
+  "h1a": "Best sales week in months",
+  "h1b": "for an online furniture store",
+  "desc": "How Living with Luxury got one partner for SEO, Google Ads and social, fast audit fixes, and the best sales week \"for quite some time\" after the Ads rebuild.",
+  "means": "If you run your store or shop on your own, you do not need three agencies. One partner who fixes the site fast, makes your Google Ads track real sales and keeps your social posts going can turn the same budget into more orders. Start with tracking: if your ads cannot see sales, they cannot find more buyers.",
+  "k": "store",
+  "biz": "store",
+  "rel": [
+   "google-and-meta-ads",
+   "seo-for-retail-stores"
+  ],
+  "hero": "Best sales week in months",
+  "thumb": [
+   "/assets/img/results/card-uk-furniture-summary.webp",
+   1200,
+   720
+  ]
+ },
+ "uk-dental-practice": {
+  "slug": "uk-dental-practice",
+  "tag": "CASE STUDY  \u00b7  DENTAL PRACTICE  \u00b7  ESSEX, UK",
+  "title": "Dental Implant SEO: #1 on Google for Implants in Manningtree | Business Santa",
+  "sub": "Local SEO, clinically reviewed content and weekly Google and social presence for an implant-focused practice. Results so far.",
+  "stats": [
+   [
+    "#1",
+    "on Google UK for \"dental implants manningtree\" (13 Nov 2026)"
+   ],
+   [
+    "4x",
+    "more backlinks, from 28 to 122"
+   ],
+   [
+    "10",
+    "quality links every week"
+   ],
+   [
+    "Weekly",
+    "Google and social posts"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "Dental practice focused on general dentistry and implants (Manningtree Dental Practice)"
+   ],
+   [
+    "Market",
+    "Manningtree, Essex, United Kingdom"
+   ],
+   [
+    "Services",
+    "Website foundation and speed, monthly SEO (10 links a week, 2 blogs a month), Google Business Profile posts, Facebook and Instagram, guest posts on UK-traffic sites"
+   ],
+   [
+    "Timeline",
+    "September 2025 to now"
+   ]
+  ],
+  "client": "A busy practice that wanted steady, white-hat SEO and meets every contractor weekly. Implants, especially full-arch implants, are the key growth service, and every patient-facing word must be clinically accurate.",
+  "goals": [
+   "Rank for implant searches in Manningtree and across Essex.",
+   "A healthy, fast website.",
+   "Visible every week on Google and social media.",
+   "Accurate, trustworthy patient education."
+  ],
+  "phases": [
+   [
+    "Website foundation",
+    "November 2025",
+    [
+     "Technical fixes, internal linking, updates and faster load times."
+    ]
+   ],
+   [
+    "Monthly SEO and content",
+    "December 2025 onward",
+    [
+     "10 quality links a week and 2 blogs a month.",
+     "Blogs reviewed line by line with the practice for clinical accuracy."
+    ]
+   ],
+   [
+    "Weekly visibility",
+    "Jul to Nov 2026",
+    [
+     "Google Business Profile posts and Facebook and Instagram posts with the practice's own photos.",
+     "Guest posts on UK sites with real readers, including a Big News Network article on full-arch implants."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "Clinical accuracy",
+    "Every blog reviewed with the practice before publishing."
+   ],
+   [
+    "Staying visible every week",
+    "A steady rhythm of Google and social posts."
+   ],
+   [
+    "Links that matter",
+    "Guest posts chosen by real UK traffic."
+   ],
+   [
+    "One high-value treatment",
+    "Implant pages first, including a guest article on full-arch implants."
+   ]
+  ],
+  "results": [
+   [
+    "Google UK",
+    "#1 for \"dental implants manningtree\" (screenshot, 13 Nov 2026)"
+   ],
+   [
+    "Backlinks",
+    "4x more, from 28 to 122"
+   ]
+  ],
+  "quotes": [
+   [
+    "I'm happy with the GMB publications.",
+    "July 2026"
+   ],
+   [
+    "This looks great; please post it on Instagram and FB.",
+    "November 2026"
+   ]
+  ],
+  "who": "Practice lead, dental practice, UK",
+  "diff": [
+   "Accuracy over volume in healthcare content.",
+   "A weekly presence on Google and social.",
+   "Links on sites real UK readers visit."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-serp-dental-implants-manningtree.webp",
+    "Live Google UK screenshot, 13 November 2026.",
+    1200,
+    1030
+   ]
+  ],
+  "published": "2026-11-19",
+  "url": "dental-implants-seo-essex",
+  "company": "Manningtree Dental Practice",
+  "label": "Dental practice",
+  "place": "Essex, UK",
+  "h1a": "#1 on Google for dental implants",
+  "h1b": "for an Essex dental practice",
+  "desc": "How Manningtree Dental Practice reached #1 on Google UK for \"dental implants manningtree\" with clinically reviewed content, weekly links and Google posts.",
+  "means": "For a dental practice, the high-value treatment is the page to win. One strong, clinically accurate implant page, steady links from sites real people read, and a Google profile that posts every week is how a practice in any US town gets found by the patients searching for that treatment.",
+  "k": "dental",
+  "biz": "dental practice",
+  "rel": [
+   "seo-for-dentists",
+   "guides/google-business-profile-for-dentists"
+  ],
+  "hero": "#1 on Google for dental implants",
+  "thumb": [
+   "/assets/img/results/card-serp-dental-implants-manningtree.webp",
+   1200,
+   1030
   ]
  }
 }

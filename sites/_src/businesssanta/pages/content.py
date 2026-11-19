@@ -1381,3 +1381,63 @@ HOLIDAY_GUIDES = [
   ],
  },
 ]
+
+# 19 Nov 2026 (cloud daily run): last-minute Christmas guide, third in the Christmas cluster.
+HOLIDAY_GUIDES.insert(2, {
+ "slug": "guides/last-minute-christmas-marketing",
+ "holiday": True,
+ "date": "2026-11-19",
+ "nav": "Last-minute Christmas marketing",
+ "title": "Last-Minute Christmas Marketing Ideas for Small Business 2026 | Business Santa",
+ "desc": "Eight last-minute Christmas marketing ideas a US small business can still do in December 2026: last order dates, holiday hours, Google offers, gift cards, reviews and AI search.",
+ "h1": "Last-minute Christmas marketing:",
+ "h1ac": "8 ideas that still work in December",
+ "answer": "The best last-minute Christmas marketing for a small business is the work shoppers see the moment they search: your last order and pickup dates, your Christmas Eve and Christmas Day hours on Google, one clear offer posted on your Google profile, gift cards that are easy to buy, and fresh reviews. All of it can be done in a day or two and shows on Google within days, which is why it still pays off in the last weeks before December 25.",
+ "pre": [
+  ("Why the last weeks <span class=\"ac\">still count</span>",
+   "<p>Holiday shoppers are still deciding where to buy in December, and many decide on their phones. In the 2026 American Express Shop Small Impact Study (reported by Small Business Trends on November 13, 2026), 88% of US consumers said they are likely to shop at a small, independently owned business or restaurant this holiday season, 45% said they rely on ratings and reviews to find one, and 35% plan to use AI to find small businesses. Those are stated plans, not sales, but they point to the same thing: the businesses that look current on Google, Maps and AI answers in December get the visit.</p>"),
+ ],
+ "list_h": "8 last-minute ideas, <span class=\"ac\">in the order to do them</span>",
+ "items": [
+  ["Show your last order and pickup dates",
+   "Put them at the top of your website and in a Google profile post. If you ship, USPS recommends sending by December 17 (Ground Advantage), December 18 (Priority Mail) and December 19 (Priority Mail Express) for delivery by Christmas in the lower 48 states."],
+  ["Set Christmas Eve, Christmas Day and New Year hours on Google",
+   "Add them as special hours on your Google Business Profile, even if you keep normal hours, and match them on Apple Maps, Bing, Yelp and Facebook."],
+  ["Post one clear offer on your Google profile",
+   "An Offer post needs a title, dates and times, and Google adds a View offer button for you. Keep it to one simple deal with an end date, so shoppers know it is current."],
+  ["Make gift cards easy to buy",
+   "A gift card is the last-minute gift that never misses a shipping date. Link to it from your home page, your Google profile and every December post."],
+  ["Say what makes you the easy choice",
+   "Open late, same-day pickup, gift wrapping, local delivery, parking: one line near the top of your home page and in your Google profile description."],
+  ["Ask December customers for a review",
+   "Hand out a short review link or QR code at the counter or in your receipt email. A fresh review helps the next shopper pick you the same week."],
+  ["Answer the questions AI assistants get",
+   "Write short, plain answers on your site to what shoppers ask: last order date, gift ideas under $50, holiday menu, emergency service on Christmas. ChatGPT and other assistants quote clear pages like these."],
+  ["Run a short local ad for your busiest days",
+   "If budget allows, a small Google or Meta ad aimed at people near you for the last 10 days before Christmas reaches shoppers today, while the fixes above keep working after it stops."],
+ ],
+ "post": [
+  ("What to skip <span class=\"ac\">this late</span>",
+   "<p>A new website, a brand-new social channel or a big content plan will not pay off before December 25. Put the time into the eight steps above, then plan January: ask your December customers for reviews, post your New Year hours and open January bookings.</p>"),
+ ],
+ "src": [
+  ["https://www.usps.com/holiday/holiday-shipping-dates.htm", "USPS: 2026 holiday shipping deadlines"],
+  ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"],
+  ["https://support.google.com/business/answer/6303076", "Google Business Profile Help: How to set special hours"],
+  ["https://smallbiztrends.com/88-of-consumers-plan-to-shop-small-this-holiday-season/", "Small Business Trends: 2026 American Express Shop Small Impact Study (November 13, 2026)"],
+ ],
+ "also": [
+  ["/guides/holiday-hours-on-google", "How to set holiday hours on Google"],
+  ["/guides/christmas-google-business-profile-posts", "Christmas Google profile post ideas"],
+  ["/guides/holiday-ads-for-small-business", "Holiday ads for small businesses"],
+  ["/guides/get-found-on-chatgpt-by-holiday-shoppers", "Get found on ChatGPT by holiday shoppers"],
+ ],
+ "faq": [
+  ["Is it too late for Christmas marketing in December?",
+   "No. Holiday hours, Google profile posts, offers, photos and review replies can show on Google within days, so they still help in the last two weeks before Christmas."],
+  ["What is the fastest thing to fix?",
+   "Your Christmas Eve and Christmas Day hours on Google. Wrong hours cost visits and bring unhappy reviews, and they take a few minutes to set."],
+  ["Can Business Santa do this for me?",
+   "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, covers holiday hours, Christmas posts and photos on your Google profile and a ChatGPT check, usually done in 3 to 7 days."],
+ ],
+})
