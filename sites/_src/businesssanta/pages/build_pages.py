@@ -159,7 +159,7 @@ GUIDE_LINKS = [("/" + g["slug"], _glabel(g)) for g in ALLG]
 # Footers show a short, curated list plus the guides library, so they stay tidy as guides are added.
 _FG = ["guides/google-business-profile-checklist", "guides/why-my-business-is-not-on-google-maps", "guides/holiday-hours-on-google", "guides/small-business-saturday-checklist", "guides/get-found-on-chatgpt-by-holiday-shoppers"]
 FOOT_GUIDES = [l for l in GUIDE_LINKS if l[0].lstrip("/") in _FG] + [("/guides", f"All {len(ALLG)} guides")]
-SVC_LINKS = [(XH, "Christmas plan 2026"), ("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
+SVC_LINKS = [(XH, "Christmas plan 2026"), ("/dear-business-santa", "Dear Business Santa"), ("/local-seo", "Local SEO services"), ("/ai-search-optimization", "Get recommended by ChatGPT"), ("/google-and-meta-ads", "Google and Meta ads")]
 def _nav(label, links, cls=""):
     return f'<nav aria-label="{label}"{cls}><b>{label}</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in links) + "</nav>"
 
@@ -530,6 +530,7 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
 <h2>How it <span class="ac">works</span></h2>
 <div class="grid">{hc}</div>
 {form}
+<div class="mid"><p>Own a small business? Write to Santa yourself and get a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
 <h2>Common <span class="ac">questions</span></h2>
 {faq_html(p['faq'])}
 <div class="mid"><p>Not nominated, but want it before Christmas? The same tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
@@ -538,6 +539,53 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
           "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "eventStatus": "https://schema.org/EventScheduled",
           "location": {"@type": "VirtualLocation", "url": url}, "organizer": ORG, "isAccessibleForFree": True}
     return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa", og_img="/assets/img/og-12-days.jpg")
+
+WISH = {"slug": "dear-business-santa",
+  "title": "Dear Business Santa: Send Your Small Business Wish | Business Santa",
+  "desc": "US small business owners: tell Business Santa what you wish Google, Google Maps or ChatGPT did for your business this Christmas. A real person replies with a free check.",
+  "faq": [("What happens after I send my wish?", "A real person on our team looks at how your business shows up on Google, Google Maps and ChatGPT and replies by email with a short plain-English check and your top 3 fixes. It is free and there is nothing to buy."),
+          ("What kind of wish can I send?", "Anything about being found online: more calls from Google Maps, showing up when people ask ChatGPT, getting holiday hours right, a profile marked closed, missing reviews or a wrong pin on the map."),
+          ("Is this the same as the 12 Days of Business Santa?", "No, but it helps. Every wish from a US small business is also considered for the 12 Days of Business Santa, when we give one business a day a free Holiday Google tune-up from December 1 to 12."),
+          ("Will you need passwords?", "No. We never ask for passwords. To check your profile we only look at what the public sees."),
+          ("Is my email shared?", "No. We only use your details to reply to your wish. You can ask us to delete them any time.")]}
+
+def build_wish():
+    p = WISH; url = SITE + "/" + p["slug"]
+    ideas = [("More calls from Google Maps", "You want to show up in the map pack when people nearby search for what you do."),
+             ("Found on ChatGPT", "You want AI assistants to name your business when people ask for one like yours."),
+             ("Holiday hours that are right", "You want Google to show the right hours on Thanksgiving, Christmas Eve and New Year."),
+             ("A problem fixed", "Your profile says closed, reviews went missing, or the pin is in the wrong place.")]
+    ic = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in ideas)
+    form = ('<section class="lead-f" id="wish" data-track="wish"><h2>Dear Business Santa, <span class="ac">I wish...</span></h2>'
+            '<p>Tell us in your own words what you wish for your business this Christmas. A real person reads every wish and replies with a free check.</p>'
+            '<form id="wf" novalidate><label class="full">Your wish<textarea id="wfW" rows="4" maxlength="800" placeholder="I wish more people in town found my bakery on Google Maps before Christmas." required></textarea></label>'
+            '<label>Business name<input id="wfB" autocomplete="organization" required></label>'
+            '<label>City and state<input id="wfC" autocomplete="address-level2" placeholder="Austin, TX" required></label>'
+            '<label>Your name<input id="wfN" autocomplete="name" required></label><label>Your email<input id="wfE" type="email" inputmode="email" autocomplete="email" required></label>'
+            '<label class="full">Website or Google profile link <small>(optional)</small><input id="wfS" inputmode="url" autocomplete="url"></label>'
+            '<div class="err full" id="wfErr" role="alert"></div><button class="btn full" type="submit" id="wfX">Send my wish to Santa</button>'
+            '<p class="priv full">We only use your details to reply to your wish. <a href="/privacy">Privacy policy</a></p></form>'
+            '<div class="done" id="wfD" role="status"><b>Your wish is on its way to Santa!</b> A real person on our team will reply by email with your free check. It is also in the running for the 12 Days of Business Santa.</div></section>')
+    js = r"""<script>(function(){var f=document.getElementById('wf');if(!f)return;var $=function(i){return document.getElementById(i)};
+f.addEventListener('submit',function(e){e.preventDefault();var w=$('wfW').value.trim(),b=$('wfB').value.trim(),c=$('wfC').value.trim(),n=$('wfN').value.trim(),m=$('wfE').value.trim(),s=$('wfS').value.trim(),er=$('wfErr'),btn=$('wfX');
+if(!w){er.textContent='Write your wish first.';$('wfW').focus();return}if(!b){er.textContent='Add the business name.';$('wfB').focus();return}if(!c){er.textContent='Add the city and state.';$('wfC').focus();return}
+if(!n){er.textContent='Add your name.';$('wfN').focus();return}if(!/^\S+@\S+\.\S+$/.test(m)){er.textContent='Add an email so we can reply to your wish.';$('wfE').focus();return}
+er.textContent='';btn.disabled=true;btn.textContent='Sending...';var B=window.BST||{};
+fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({_subject:'Dear Business Santa wish: '+b+' ('+c+')',_template:'box',_captcha:'false',_replyto:m,wish:w,business_name:b,city:c,name:n,email:m,website:s,came_from:B.sourceText?B.sourceText():'',page:location.href})})
+.then(function(r){return r.json().catch(function(){return{}}).then(function(j){if(!r.ok||String(j.success)==='false')throw 0})})
+.then(function(){try{B.lead&&B.lead({content_name:'Dear Business Santa wish',method:'Wish form'},{email:m,city:c})}catch(x){}f.style.display='none';$('wfD').style.display='block'})
+.catch(function(){btn.disabled=false;btn.textContent='Send my wish to Santa';er.innerHTML='That did not go through. Email us at <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a>.'})})})();</script>"""
+    body = f"""{h1("Dear Business Santa", "what do you wish for your business?")}
+<p class="ans">Every US small business owner gets one wish this Christmas. Tell Business Santa what you wish Google, Google Maps or ChatGPT did for your business, and a real person on our team replies with a free check and your top 3 fixes.</p>
+{form}
+<h2>Wishes we <span class="ac">can help with</span></h2>
+<div class="grid">{ic}</div>
+<div class="mid"><p>Know another small business that deserves a free tune-up? From December 1 to 12 we give one away every day.</p><a class="btn" href="/{NOMINATE['slug']}">Nominate a business</a></div>
+<h2>Common <span class="ac">questions</span></h2>
+{faq_html(p['faq'])}
+<div class="mid"><p>Want it done before Christmas? The Holiday Google tune-up is $149 until December 10.</p><a class="btn" href="{XH}#offer">See the Christmas offer</a></div>
+{byline()}{js}"""
+    return shell(p["slug"], p["title"], p["desc"], body, [faq_ld(url, p["faq"])], "Dear Business Santa")
 
 SCORE = {"slug": "google-profile-score",
   "title": "Free Google Business Profile Score: Check Yours in 2 Minutes | Business Santa",
@@ -639,6 +687,7 @@ def build_holiday_hub(p):
     body = f"""{h1(p['h1'], p['h1ac'])}
 <p class="ans">{E(p['answer'])}</p>
 {holiday_offer()}
+<div class="mid" data-track="wish-hub"><p>Dear Business Santa: tell us what you wish for your business this Christmas, and a real person replies with a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
 <h2>The dates that <span class="ac">matter in 2026</span></h2>
 <div class="tbl"><table><thead><tr><th>Date</th><th>Day</th><th>Have this ready</th></tr></thead><tbody>{rows}</tbody></table></div>
 <h2>Week by week, <span class="ac">from now to New Year</span></h2>
@@ -767,6 +816,7 @@ write(HOLIDAY_HUB["slug"], build_holiday_hub(HOLIDAY_HUB)); svc.append(HOLIDAY_H
 write("guides", build_guides_hub()); svc.append("guides")
 write(PARTNER["slug"], build_partners()); svc.append(PARTNER["slug"])
 write(NOMINATE["slug"], build_nominate()); svc.append(NOMINATE["slug"])
+write(WISH["slug"], build_wish()); svc.append(WISH["slug"])
 write(SCORE["slug"], build_score()); svc.append(SCORE["slug"])
 for g in ALLG: write(g["slug"], build_guide(g)); gds.append(g["slug"])
 res = ["results"]; write("results", build_results())
@@ -818,7 +868,7 @@ _MTPL = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__))
 _patch(_HOME, '<nav aria-label="Services"><b>Services</b>' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS)
        + '<a href="#check" data-go="check">Free check</a><a href="/google-profile-score">Free profile score</a><a href="https://seoseason.com/businesssanta?utm_source=businesssanta.com&amp;utm_medium=landing&amp;utm_campaign=footer" data-hand="1">Services and prices</a></nav>\n    '
        + _nav("By industry", IND_LINKS) + "\n    " + _nav("Guides", FOOT_GUIDES))
-_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:2] + [("/google-profile-score", "Free profile score")] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
+_patch(_MTPL, '<nav class="fti" aria-label="Services and industries">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in SVC_LINKS[:3] + [("/google-profile-score", "Free profile score")] + IND_LINKS + [("/ai-search-optimization", "ChatGPT and AI search")]) + "</nav>"
        + '<nav class="fti" aria-label="Guides">' + "".join(f'<a href="{u}">{E(t)}</a>' for u, t in FOOT_GUIDES) + "</nav>")
 print("footers updated")
 
