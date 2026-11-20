@@ -1441,3 +1441,67 @@ HOLIDAY_GUIDES.insert(2, {
    "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, covers holiday hours, Christmas posts and photos on your Google profile and a ChatGPT check, usually done in 3 to 7 days."],
  ],
 })
+
+# 20 Nov 2026 (cloud daily run): Black Friday checklist, placed before Small Business Saturday in the Christmas cluster.
+HOLIDAY_GUIDES.insert(1, {
+ "slug": "guides/black-friday-small-business-checklist",
+ "holiday": True,
+ "date": "2026-11-20",
+ "nav": "Black Friday checklist",
+ "title": "Black Friday 2026 Checklist for Small Businesses on Google | Business Santa",
+ "desc": "Black Friday is November 27, 2026. A checklist for US small businesses to get found on Google and Maps: hours, an Offer post, stock, pickup and reviews.",
+ "h1": "Black Friday 2026:",
+ "h1ac": "a checklist to get found on Google",
+ "answer": "Black Friday 2026 is Friday, November 27. To get found that day, set your Thanksgiving and Black Friday hours as special hours on your Google Business Profile, post one clear Black Friday offer with start and end dates, make sure your website shows the same offer at the top on a phone, show pickup or delivery options, and reply to reviews and messages the same day. Shoppers compare businesses on Google in seconds, and the one with current hours, a dated offer and fresh reviews gets the visit or the order.",
+ "pre": [
+  ("Why Black Friday <span class=\"ac\">is a Google day</span>",
+   "<p>The National Retail Federation expects 182.7 million US shoppers between Thanksgiving and Cyber Monday 2026, with Black Friday the busiest day at 126 million. Of the people planning to shop on Black Friday, 89% plan to shop online and 67% in stores (NRF survey released November 19, 2026, reported by Chain Drug Review). Most of them will check a business on their phone before they buy or drive over, so what Google shows about you that morning decides a lot of the weekend.</p>"),
+ ],
+ "list_h": "The Black Friday checklist, <span class=\"ac\">in the order to do it</span>",
+ "items": [
+  ["Set Thanksgiving and Black Friday hours on Google",
+   "Add both days as special hours on your Google Business Profile, even if Friday is a normal day, and match them on Apple Maps, Bing, Yelp, Facebook and your website. Google can review edits before they show, so do it this week, not on Thursday night."],
+  ["Post one Black Friday offer on your Google profile",
+   "Use an Offer post with a short title, the start and end dates, and simple terms. One clear deal with an end date reads as current; a vague sale brings questions and calls you cannot answer on a busy day."],
+  ["Put the same offer at the top of your website",
+   "A shopper who taps through from Google should see the offer, your hours and your address or order button on a phone screen without scrolling. If the website says something different from Google, fix the website."],
+  ["Check stock and limits before you post",
+   "Only promote what you can deliver. If quantities are limited, say so in the offer terms. Sold-out deals are one of the fastest routes to an unhappy review."],
+  ["Show pickup, curbside or local delivery",
+   "If you offer them, say so on your Google profile and near the top of your website. Many Black Friday shoppers want the deal without the line."],
+  ["Add fresh photos of what is on offer",
+   "Real photos of the shop, the holiday display or the products in the deal, taken this month. Shoppers trust a profile that looks recent."],
+  ["Answer reviews and messages the same day",
+   "Black Friday brings more questions than any other weekend. Reply to every review and message quickly, and keep a short answer ready for parking, returns and gift receipts."],
+  ["Plan the weekend, not just the day",
+   "Small Business Saturday is November 28 and Cyber Monday is November 30. Decide now whether the offer runs all weekend or changes each day, and update the Google post and website when it does."],
+ ],
+ "post": [
+  ("If you are a service business, <span class=\"ac\">not a shop</span>",
+   "<p>Plumbers, HVAC companies, salons, dentists and law firms can use Black Friday too: a dated gift card bonus, a winter tune-up price or a free consultation week, posted on your Google profile with clear terms. The same rules apply: correct hours, one simple offer with an end date, and quick replies.</p>"),
+ ],
+ "src": [
+  ["https://support.google.com/business/answer/6303076", "Google Business Profile Help: How to set special hours"],
+  ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"],
+  ["https://chaindrugreview.com/nrf-expects-182-7-million-shoppers-over-thanksgiving-weekend/", "Chain Drug Review: NRF expects 182.7 million shoppers over Thanksgiving weekend (November 19, 2026)"],
+ ],
+ "also": [
+  ["/guides/holiday-hours-on-google", "How to set holiday hours on Google"],
+  ["/guides/small-business-saturday-checklist", "Small Business Saturday 2026 checklist"],
+  ["/guides/christmas-google-business-profile-posts", "Christmas Google profile post ideas"],
+  ["/guides/holiday-ads-for-small-business", "Holiday ads for small businesses"],
+ ],
+ "faq": [
+  ["When is Black Friday 2026?",
+   "Friday, November 27, 2026, the day after Thanksgiving. Small Business Saturday is November 28 and Cyber Monday is November 30."],
+  ["How do I add a Black Friday offer to my Google Business Profile?",
+   "Open your Business Profile on Google, choose to add a post, pick Offer, then add a title, the start and end dates and any terms. If your category does not show Offer, use an Update post with the same details."],
+  ["Is it too late to prepare for Black Friday?",
+   "No. Hours, an Offer post, photos and a clear offer on your website can all be done in an afternoon. Do them early in the week so Google has time to show the changes."],
+  ["Can Business Santa do this for me?",
+   "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, sets your holiday hours, adds Christmas offer posts and fresh photos to your Google profile and includes a ChatGPT check, usually done in 3 to 7 days."],
+ ],
+})
+for _g in HOLIDAY_GUIDES:
+    if _g["slug"] == "guides/small-business-saturday-checklist" and not _g.get("also"):
+        _g["also"] = (("/guides/black-friday-small-business-checklist", "Black Friday 2026 checklist for small businesses"), ("/guides/holiday-hours-on-google", "How to set holiday hours on Google"), ("/guides/christmas-google-business-profile-posts", "Christmas Google profile post ideas"))

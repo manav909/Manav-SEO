@@ -1,290 +1,302 @@
 {
  "": [
-  "508ec524e310947e6882bcc79853d49f984517c2",
-  "2026-11-19"
+  "a8b442017f8476548dc88270bcb57469c8b4ec2d",
+  "2026-11-20"
  ],
  "12-days-of-business-santa": [
-  "0c11b2aedd6989cdfa7d10183bb3ae769f61973f",
-  "2026-11-19"
+  "5a68b248dd3e4c2831fbdbb0c2d82b8af5b101b6",
+  "2026-11-20"
  ],
  "ai-search-optimization": [
-  "27cf7e66bb02cf7f394048af192f8ffc3a208157",
-  "2026-11-19"
+  "0d1529d3b6128a4d1426c92a160244722b5f4d9f",
+  "2026-11-20"
  ],
  "christmas-marketing-for-small-business": [
-  "86ffb6a2f2214b1608fa8892c9aa1e7c280a3c1f",
-  "2026-11-19"
+  "12465a262dd0ba8ff4d266a0a4ee0fcc71219f9e",
+  "2026-11-20"
  ],
  "dear-business-santa": [
-  "5f2ee9bfda4308d5f0cfea502d7d4e54a466446c",
-  "2026-11-19"
+  "a36e2283c3195677504dcc1b57f845e104626111",
+  "2026-11-20"
  ],
  "google-and-meta-ads": [
-  "7cff141fa951d8f45adfa14f40b6c10623a0cd50",
-  "2026-11-19"
+  "77552adfbda18e48f4cdedc37739f28592a49869",
+  "2026-11-20"
  ],
  "google-profile-score": [
-  "5ec91af8e80a2112d73e816f74256c525b8a8daa",
-  "2026-11-19"
+  "d73f739bed9373cd9a33cde537f40f55a898318f",
+  "2026-11-20"
  ],
  "guides": [
-  "3bf85f1d8240c50ffe3210e704da588f546ee0a3",
-  "2026-11-19"
+  "9bdc23c7e113a2b2034880a2831d3a98a760b626",
+  "2026-11-20"
+ ],
+ "guides/black-friday-small-business-checklist": [
+  "c5f30cc05a168b0965d6a27facd5f1eb9ae0ffda",
+  "2026-11-20"
  ],
  "guides/christmas-google-business-profile-posts": [
-  "a917151b4b11ba30dec0070324540621847b3b77",
-  "2026-11-19"
+  "683cb8e78930d6fd703ea7d772b006f2c9d860be",
+  "2026-11-20"
  ],
  "guides/dental-reviews-hipaa": [
-  "c904ec7e634561c11a62bf8729d9982bc0d1225f",
-  "2026-11-19"
+  "40146845e91344b530294a3e273a0e4959f6fb02",
+  "2026-11-20"
  ],
  "guides/dental-seo-cost": [
-  "264dfb03de7b9ed6865f9092d3c0bd9b28094f7e",
-  "2026-11-19"
+  "7926c3a2ec6d9ce02dc07e4e54743f12548ffa29",
+  "2026-11-20"
  ],
  "guides/dental-seo-keywords": [
-  "4b4d5fd3405ae2087db7740754fa9d2c21505ada",
-  "2026-11-19"
+  "fd7b792c302502c76a210c1e96d1b06b1e18301c",
+  "2026-11-20"
  ],
  "guides/duplicate-google-business-profile": [
-  "3dfb78b46f3754dc701342e1c57702c737208c00",
-  "2026-11-19"
+  "951377744ecd1d0b578c79e2d68f40b4eb631ca6",
+  "2026-11-20"
  ],
  "guides/emergency-plumber-seo": [
-  "67a5dac33c7b0046361dd6b47c5884603bb49f18",
-  "2026-11-19"
+  "83b2e396063e4fa6ebe9f707fc59b2933038f6c1",
+  "2026-11-20"
  ],
  "guides/get-found-on-chatgpt-by-holiday-shoppers": [
-  "a5477c4470a4fa4047fcdff24eef4bcf5df0bec3",
-  "2026-11-19"
+  "cd3b6742f692cc410c23f489a3d569e6fe5d0a9d",
+  "2026-11-20"
  ],
  "guides/google-business-profile-calls-dropped": [
-  "3a3377a49e7ddde9f73a69e601d9389bd5178db1",
-  "2026-11-19"
+  "27dbc07500dcf2b00bde90f08e06e24a81344b3d",
+  "2026-11-20"
  ],
  "guides/google-business-profile-checklist": [
-  "5b1ea990c5152fc89bd98f9725d0d9c6d3217a78",
-  "2026-11-19"
+  "8f6a9b8405e8bad6712c85f9d4fb199a4127e208",
+  "2026-11-20"
  ],
  "guides/google-business-profile-for-dentists": [
-  "560e03bf291a546757702a414584e71ba39963f4",
-  "2026-11-19"
+  "ba7a32e7b22436fda7a18f427be3a78bcf3b3695",
+  "2026-11-20"
  ],
  "guides/google-business-profile-for-roofers": [
-  "d2450c02409b45c37f5fa2e3a7a3fccfb893bfaf",
-  "2026-11-19"
+  "35f6c71dbfadb62b5d296df78b289e57426f07d5",
+  "2026-11-20"
  ],
  "guides/google-business-profile-for-salons": [
-  "53f5529c9ed3f8a3573cc8bc65362c3398c877b4",
-  "2026-11-19"
+  "3cb9c753344113af9f0b2c87fc28281513b6f79c",
+  "2026-11-20"
  ],
  "guides/google-business-profile-marked-closed": [
-  "a322b5fbfc9079d1a657766b2ded069e81e7f08a",
-  "2026-11-19"
+  "6fb243045e4ae4c537546cc612ae070c1ba12ced",
+  "2026-11-20"
  ],
  "guides/google-business-profile-suspended": [
-  "24ae0727dbffbd6727d80db66cae0200df62126e",
-  "2026-11-19"
+  "86350b2e3764bdf3b447c4ce4eec1458cb162cc5",
+  "2026-11-20"
  ],
  "guides/google-business-profile-verification-problems": [
-  "91e4cc13069e3a2e08fd093fd05687325a63d28d",
-  "2026-11-19"
+  "8217d0425514af1bc229f501aaf8702161dafac6",
+  "2026-11-20"
  ],
  "guides/google-maps-for-restaurants-and-caterers": [
-  "455a794c0df11cd3f98138c276dc552ca177cfe3",
-  "2026-11-19"
+  "bb2189a2c1c4f851fbe8b2b5eafe693e5dd9e8ae",
+  "2026-11-20"
  ],
  "guides/google-maps-seo-for-plumbers": [
-  "c2de199464f9d100aa37ecae950a6a09c391748d",
-  "2026-11-19"
+  "a8f201090076573a2be8230da1b51ed97f772e1a",
+  "2026-11-20"
  ],
  "guides/google-reviews-disappeared": [
-  "0f5c04554697e6bad190d5046a97bd23fae54f72",
-  "2026-11-19"
+  "f0ab8c0e8ba8a15afd383da38a826417f69a1503",
+  "2026-11-20"
  ],
  "guides/holiday-ads-for-small-business": [
-  "b9a838581de1da865595fc3e792a37bd61f1b109",
-  "2026-11-19"
+  "34f480a6047601f915b38e92d30bdd0b851831ee",
+  "2026-11-20"
  ],
  "guides/holiday-hours-on-google": [
-  "bb8a67de93589c7f9fe7e035dedd6bb1be86d025",
-  "2026-11-19"
+  "f8b83b78161b6cd02170978c55ed6a4103474f75",
+  "2026-11-20"
  ],
  "guides/how-salons-get-found-on-ai-search": [
-  "918c7fc81cea874c3d2440fa4f1bb49e9e827b90",
-  "2026-11-19"
+  "bdc18f9ff0f5169cfc16cf6e8e31c5e8b9bba59c",
+  "2026-11-20"
  ],
  "guides/last-minute-christmas-marketing": [
-  "55cea31779069c9d6a31d603898ea55dda3f5c09",
-  "2026-11-19"
+  "44b87b4b48006ba4225a64952a9cae468a839406",
+  "2026-11-20"
  ],
  "guides/local-seo-cost": [
-  "bb14a56f86b34a72b8b3c02357b72f2e79e361b4",
-  "2026-11-19"
+  "8fcece39e6890a4a9edce9297159c701ed30ec50",
+  "2026-11-20"
  ],
  "guides/local-store-pages": [
-  "1295e3e7a3ccb24c832bdfb4505b8e5eb2ca30f7",
-  "2026-11-19"
+  "8fdc91025a05a8f9c5afcc93ecf2e81114cb330b",
+  "2026-11-20"
  ],
  "guides/plumbing-seo-cost": [
-  "40d99c00ec5b6f95b25e9d7be61c76cbad58bf4a",
-  "2026-11-19"
+  "8d031129a44f9b04bcffa36fe6cd606cc353f67d",
+  "2026-11-20"
  ],
  "guides/plumbing-seo-keywords": [
-  "d503ba28e247dd39e937d03b9d4022b33d8f6fe2",
-  "2026-11-19"
+  "7fe1f7054451e31df1aafc18655fdf17d43993cd",
+  "2026-11-20"
  ],
  "guides/remove-fake-google-reviews": [
-  "422f311b51c906de566f4908e2816365be8dea55",
-  "2026-11-19"
+  "801eab805c6f237ce1c46cba5d6407a5d3418d35",
+  "2026-11-20"
  ],
  "guides/roofing-leads-after-a-storm": [
-  "dead8f00987fac04da18988ac0fe28a60199d654",
-  "2026-11-19"
+  "7427dd2d734f6868cf3480be782d7f271eafe96b",
+  "2026-11-20"
  ],
  "guides/roofing-seo-cost": [
-  "74c42c44a4fbdef7b13010d86bda04108a490ac3",
-  "2026-11-19"
+  "5745541f395b681088722997151bcc509fe79970",
+  "2026-11-20"
  ],
  "guides/roofing-seo-keywords": [
-  "f691f7fe6d4072aad361adf8ede7c7645b992c5c",
-  "2026-11-19"
+  "f16cc9f5452c71a4fb69786cef1e25512059bfa6",
+  "2026-11-20"
  ],
  "guides/salon-seo-keywords": [
-  "7e03a7864306b78c2f49b3c66eedf5d2484314a8",
-  "2026-11-19"
+  "39763183c3761dde5d644b94cd3ee00d07391817",
+  "2026-11-20"
  ],
  "guides/small-business-saturday-checklist": [
-  "92c8f06cf183ee605603e59303009a4feb1b7d10",
-  "2026-11-19"
+  "39366eadab64e69c8e284da43301534f3e4a76c4",
+  "2026-11-20"
  ],
  "guides/why-my-business-is-not-on-google-maps": [
-  "4a99672ae4e764dace917ba32cbffd10069deb2a",
-  "2026-11-19"
+  "6f4168f419bc673cfba136673241e94dc85c7997",
+  "2026-11-20"
  ],
  "guides/winter-plumbing-and-heating-leads": [
-  "a47301a27dc75158a7bcc7b69c334b86457836d8",
-  "2026-11-19"
+  "df1b2773cd06fc0b4590f2761036542a34d78467",
+  "2026-11-20"
  ],
  "guides/winter-roofing-leads": [
-  "4fcfee45886a0a4bc5260e8dfe7c673964d286bf",
-  "2026-11-19"
+  "c71203fbe0a51e838c3efb0e38a5fb25c8cd38f2",
+  "2026-11-20"
  ],
  "guides/wrong-location-on-google-maps": [
-  "252cb40c4111ce11112ff2f06db861c07561c106",
-  "2026-11-19"
+  "50652066a587db3e2e0a6f7552a46bbabfd558d8",
+  "2026-11-20"
  ],
  "local-seo": [
-  "191a25f25edebfdabfb342046c299d40fa05a318",
-  "2026-11-19"
+  "525227b5e17974a4383d6d06534a074d2c406fbb",
+  "2026-11-20"
  ],
  "nice-list": [
-  "ff5a16eac422c368822280ca0fda96e4ea15f91a",
-  "2026-11-19"
+  "8d8481cce8a711bd845e161930aef1479291de5d",
+  "2026-11-20"
  ],
  "privacy": [
   "1e6c75a914264857a7959b8adb04bd741f26bdad",
   "2026-11-19"
  ],
  "results": [
-  "1079144753927515faeca3e598dca26e6a4c252a",
-  "2026-11-19"
+  "fd716d1ec34bc206c3f9ba90217d49db53cf53b2",
+  "2026-11-20"
  ],
  "results/barbershop-seo-los-angeles": [
-  "3627215c98062cdcc87fe6e3d31892d1c0f49406",
-  "2026-11-19"
+  "f5a38a0f76744d7f9dc2603ccc2b133227e06dde",
+  "2026-11-20"
  ],
  "results/custom-closet-leads-nyc": [
-  "e347640896fc0aa2222ded774b2f82d254bce594",
-  "2026-11-19"
+  "a8955f3920e5b3a804d567fa068f8010f5e52a96",
+  "2026-11-20"
  ],
  "results/dental-implants-seo-essex": [
-  "3c0f6cc267055a1bf2ccc6600ec227005415e86f",
-  "2026-11-19"
+  "6cc6ed914da2d1b277e9ae083fda5090295b1845",
+  "2026-11-20"
  ],
  "results/event-technology-rental-seo-dubai": [
-  "75c324884826664a40e693ef180ceccd7dac8537",
-  "2026-11-19"
+  "fe95bb307b160c360389c749fb11900cc2e36a5c",
+  "2026-11-20"
  ],
  "results/furniture-store-seo-google-ads": [
-  "164c38585a6d378640a3b8a0fb41af93f37aa9e4",
-  "2026-11-19"
+  "46c721463a9c77fb2f933b9773d6a4debb59b546",
+  "2026-11-20"
+ ],
+ "results/google-shopping-orders-skincare-store": [
+  "4d3634f1bbb95d08592e171cf822e51edba552e7",
+  "2026-11-20"
  ],
  "results/headshot-photographer-seo-glendale-ca": [
-  "3bb762b1229017bb10ac57950209ca6958cbb424",
-  "2026-11-19"
+  "90d01f812dd2c090643659774d9ee05a4b00ab86",
+  "2026-11-20"
  ],
  "results/hvac-seo-durham-nc": [
-  "7333e192e099ba4b4845a075fe473891db6d4cce",
-  "2026-11-19"
+  "df2b44a3835de768ce1d8630fba98ab2b5e62b85",
+  "2026-11-20"
  ],
  "results/it-support-seo-sussex": [
-  "2df949b6764a85ce90a206650bfb2f16b7c049e8",
-  "2026-11-19"
+  "3cdcb7b0bf84b39f57ad25dea1c128029868a516",
+  "2026-11-20"
  ],
  "results/nativity-scenes-shop-seo-germany": [
-  "2ee6849ebd464f02da14e75e71fb4cd858107a4f",
-  "2026-11-19"
+  "d05b9923d7700c1f6133a18ffb12c0675c4ae9c1",
+  "2026-11-20"
+ ],
+ "results/new-online-store-seo-google-traffic": [
+  "f3e6891eb9a146585661f00959194f8ec633895d",
+  "2026-11-20"
  ],
  "results/pet-hospice-seo-9-us-cities": [
-  "454e98f12a2636bcae50b79cdff2e5329b45ad06",
-  "2026-11-19"
+  "e6c7682e9787831ed79acbef8411fcabac207cf8",
+  "2026-11-20"
  ],
  "results/remodeling-contractor-leads-seattle": [
-  "fc12e924bc7b2d1baf40703119e289754b4534c9",
-  "2026-11-19"
+  "222a4cb7b05f114d746cc6736c76d51980abea30",
+  "2026-11-20"
  ],
  "results/seo-traffic-drop-recovery": [
-  "a10a21e42587e2bdd39e9eec6d6616b9f02afcaf",
-  "2026-11-19"
+  "7a55d53d9f83d1a45475b97f681e4972701cb1b2",
+  "2026-11-20"
  ],
  "results/shopify-seo-baby-boutique": [
-  "2113ff6fbfe7ba7646e38c0fa616c027fb9122c8",
-  "2026-11-19"
+  "4675e30d76cee0f4ede880350991f36b6a4bc382",
+  "2026-11-20"
  ],
  "results/vintage-signs-shop-technical-seo": [
-  "a1ad0e4a6a9551567f97f2efd60430b2a9d866e9",
-  "2026-11-19"
+  "b48b36920a77af3510b9b8f20796cdee86791417",
+  "2026-11-20"
  ],
  "seo-for-dentists": [
-  "6ed67827b9f99cc10030fbcdd52d66ca6dacd31d",
-  "2026-11-19"
+  "7c1fec54cfe05062446263193066962ff9bb344e",
+  "2026-11-20"
  ],
  "seo-for-hvac": [
-  "5931e88cbf76101c1c409a45b438897ddebcd57b",
-  "2026-11-19"
+  "cd0dcfdf0bb27a2cdb93b3ac539c8c829aeb8f65",
+  "2026-11-20"
  ],
  "seo-for-law-firms": [
-  "c0dc6f117f9168d352e255835630f825802d8aa1",
-  "2026-11-19"
+  "6eda095618384a6a63da4d7b88b919ba3c93828a",
+  "2026-11-20"
  ],
  "seo-for-plumbers": [
-  "050a27c529f46b251c7983c9560cc6be8cb8e595",
-  "2026-11-19"
+  "638887e42566f45426d94afda24a8f59fb7e1c39",
+  "2026-11-20"
  ],
  "seo-for-restaurants": [
-  "e1c28e45572e3dccd09e02fe939ac8a2fc0d8d14",
-  "2026-11-19"
+  "708a02139c3cac71717880b8893605bb7418a045",
+  "2026-11-20"
  ],
  "seo-for-retail-stores": [
-  "26f5318420e4e560ddb38fbfee36539c66a9de12",
-  "2026-11-19"
+  "1ceb0f86bc8cdc953801260654c986f3f60d8174",
+  "2026-11-20"
  ],
  "seo-for-roofers": [
-  "14570703f078339afa6a3b93765ba27fec0f6613",
-  "2026-11-19"
+  "b690ad37a6aa24d64ce10aace419e24e7a21460f",
+  "2026-11-20"
  ],
  "seo-for-salons-and-spas": [
-  "c1f5db8b0728207969910824bd2db26263419ac0",
-  "2026-11-19"
+  "831c2258d956ae8277d093d1bf5c2b4bd2a60c1a",
+  "2026-11-20"
  ],
  "terms": [
   "3336e33eefd71e3d0ac77daed9cb4fff8bcce206",
   "2026-11-19"
  ],
  "white-label-local-seo": [
-  "c020afd0064dd375fafec453c7627df728485c70",
-  "2026-11-19"
+  "ecd4159a1ff3d6f388e69aa120434cb38e1bb786",
+  "2026-11-20"
  ]
 }
