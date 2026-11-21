@@ -187,7 +187,7 @@ INDUSTRIES = [
  {
   "slug": "seo-for-salons-and-spas", "k": "salon", "noun": "salons and spas", "one": "salon", "biz": "salon or spa",
   "title": "Salon SEO for Hair & Nail Salons, Spas and Barbers | Business Santa",
-  "desc": "SEO for hair salons, nail salons, barbershops and spas in the US. Show up for \"hair salon near me\" and \"walk in\" searches on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "desc": "SEO for US hair salons, nail salons, barbershops and spas. Show up for \"hair salon near me\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "SEO for salons and spas", "h1ac": "that fills your calendar",
   "answer": "Salon SEO means getting your salon, spa or barbershop into the top results when people nearby search \"hair salon near me\", \"haircut open now\" or \"nail salon walk in\". Most bookings start on Google Maps, so the work centers on your Google Business Profile, your booking link, photos of your work and reviews.",
   "intro": "People pick a salon by looking at the work. They scroll photos, check if they can book today and read what others say about the stylists. A profile with old photos and no booking link loses them in seconds.",
@@ -737,7 +737,7 @@ ROOF_GUIDES = [
  {
   "slug": "guides/google-business-profile-for-roofers", "parent": "seo-for-roofers",
   "title": "Google Business Profile Optimization for Roofers: Google Maps Guide | Business Santa",
-  "desc": "Google Business Profile optimization for roofers: the category, services, service area, photos, reviews and posts that help a roofing company rank on Google Maps, plus what gets profiles suspended.",
+  "desc": "Google Business Profile optimization for roofers: category, services, service area, photos, reviews and posts that rank a roofing company on Google Maps.",
   "nav": "Google profile for roofers",
   "also": (("/seo-for-roofers", "SEO services for roofers"), ("/guides/google-business-profile-verification-problems", "Verification problems, and how to fix them"), ("/guides/google-reviews-disappeared", "Google reviews disappeared? Why and what to do")),
   "h1": "Google Business Profile optimization for roofers:", "h1ac": "rank on Google Maps",
@@ -826,7 +826,7 @@ DENT_GUIDES = [
  {
   "slug": "guides/dental-seo-keywords", "parent": "seo-for-dentists", "nav": "Dental SEO keywords",
   "title": "Dental SEO Keywords: 50+ Searches Patients Use | Business Santa",
-  "desc": "The dental SEO keywords patients actually type, grouped by need: booking, emergencies, cleanings, cosmetic, Invisalign, implants, insurance and kids. Plus how to turn them into pages.",
+  "desc": "The dental SEO keywords patients actually type, grouped by need: booking, emergencies, cosmetic, implants, insurance and kids, and how to turn them into pages.",
   "h1": "Dental SEO keywords:", "h1ac": "what patients really search",
   "answer": "The best dental SEO keywords are the ones patients type when they are ready to book: \"dentist near me\", \"emergency dentist open now\", \"dentist that takes [insurance]\", \"teeth cleaning near me\" and \"dental implants cost\", plus the same searches with your city's name. Group them by the need they describe, give each group its own page, and use the patient's words in your titles, headings and Google Business Profile services.",
   "groups": [
@@ -935,10 +935,10 @@ SALON_EXTRA = [
 SALON_GUIDES = [
  {
   "slug": "guides/salon-seo-keywords", "parent": "seo-for-salons-and-spas", "nav": "Salon SEO keywords",
-  "title": "Salon SEO Keywords: What Hair, Nail & Spa Clients Search | Business Santa",
-  "desc": "The salon SEO keywords clients actually type, grouped for hair salons, nail salons, barbershops and spas, plus how to turn them into pages and Google profile services.",
-  "h1": "Salon SEO keywords:", "h1ac": "what clients really search",
-  "answer": "The best salon SEO keywords are the ones clients type when they want to book: \"hair salon near me\", \"nail salon walk in\", \"barber open now\", \"balayage near me\" and \"massage near me\", plus the same searches with your town's name. Group them by service, give each group its own page, and use the client's words in your titles, headings and Google Business Profile services.",
+  "title": "Hair Salon Keywords for SEO: What Salon Clients Search | Business Santa",
+  "desc": "The hair salon keywords clients actually type, grouped for hair salons, nail salons, barbershops and spas, plus how to use them on your pages and Google profile.",
+  "h1": "Hair salon keywords:", "h1ac": "what salon clients really search",
+  "answer": "The best hair salon keywords for SEO are the ones clients type when they want to book: \"hair salon near me\", \"nail salon walk in\", \"barber open now\", \"balayage near me\" and \"massage near me\", plus the same searches with your town's name. Group them by service, give each group its own page, and use the client's words in your titles, headings and Google Business Profile services.",
   "groups": [
    ("Ready to book", ["hair salon near me", "salon open now", "best hair salon in [town]", "walk in hair salon", "salon open Sunday", "book haircut today", "hair salon near me open late", "salons that take walk ins"]),
    ("Color and styling", ["balayage near me", "highlights near me", "hair color salon", "blonde specialist", "keratin treatment near me", "hair extensions near me", "curly hair salon", "bridal hair near me"]),
@@ -958,7 +958,10 @@ SALON_GUIDES = [
    ("What is the most important salon keyword?", "Usually \"hair salon near me\", \"nail salon near me\" or \"barber near me\". They show up on Google Maps, so they depend mostly on your Google Business Profile, reviews and how close you are."),
    ("Should a nail salon and a hair salon use the same keywords?", "No. The approach is the same, but the words are different. Build your pages around the services you really offer."),
    ("Do we need a page for every keyword?", "No. One page per service group is enough. Similar searches like \"gel manicure\" and \"gel nails near me\" belong on the same page."),
+   ("What are the best keywords for a hair salon website?", "Your main service plus your town, written the way clients say it: \"hair salon in [town]\", \"balayage [town]\", \"curly hair salon [town]\" and \"walk in hair salon\". Put the main one in your home page title and first heading, and give color, cuts and extensions their own pages."),
+   ("Where do hair salon keywords go on Google Maps?", "In your Google Business Profile: the primary category (Hair salon), the services list with prices, your description, and the posts and photo captions you add each month. Reviews that name the service, such as \"great balayage\", help too."),
   ],
+  "also": (("/guides/google-business-profile-for-salons", "Google Business Profile for salons: get booked from Maps"), ("/guides/how-salons-get-found-on-ai-search", "How salons get found on ChatGPT and AI search"), ("/results/barbershop-seo-los-angeles", "Client result: two Los Angeles barbershops found for exactly what they do best")),
  },
  {
   "slug": "guides/google-business-profile-for-salons", "parent": "seo-for-salons-and-spas", "nav": "Google profile for salons",
@@ -1505,3 +1508,70 @@ HOLIDAY_GUIDES.insert(1, {
 for _g in HOLIDAY_GUIDES:
     if _g["slug"] == "guides/small-business-saturday-checklist" and not _g.get("also"):
         _g["also"] = (("/guides/black-friday-small-business-checklist", "Black Friday 2026 checklist for small businesses"), ("/guides/holiday-hours-on-google", "How to set holiday hours on Google"), ("/guides/christmas-google-business-profile-posts", "Christmas Google profile post ideas"))
+
+# 21 Nov 2026 (cloud daily run): Cyber Monday guide, placed after Small Business Saturday in the Christmas cluster.
+_CM = {
+ "slug": "guides/cyber-monday-small-business",
+ "holiday": True,
+ "date": "2026-11-21",
+ "nav": "Cyber Monday plan",
+ "title": "Cyber Monday 2026 for Small Businesses: Get Found on Google | Business Santa",
+ "desc": "Cyber Monday is November 30, 2026. How US small businesses and local shops get found on Google that day: one offer, product listings, pickup, gift cards and reviews.",
+ "h1": "Cyber Monday 2026:",
+ "h1ac": "how a small business gets found on Google",
+ "answer": "Cyber Monday 2026 is Monday, November 30. A small business gets found that day by running one clear online offer with an end date, posting it on its Google Business Profile, putting it at the top of its website with a checkout that works on a phone, showing its products on Google (free local listings are free for stores with a physical location), and making gift cards, local pickup and delivery easy to find. You do not need a big online store: a local shop, salon or service business can sell gift cards, prepaid packages and pickup orders the same way.",
+ "pre": [
+  ("Why Cyber Monday <span class=\"ac\">matters for local businesses</span>",
+   "<p>The National Retail Federation expects 182.7 million US shoppers from Thanksgiving through Cyber Monday 2026 (NRF survey released November 19, 2026, reported by Chain Drug Review). Last year NRF named Cyber Monday the second most popular day of that weekend, with 73.9 million people planning to shop (NRF, November 20, 2025). Many of those shoppers search Google for a gift, a deal or a local option they can pick up, so a small business with a clear offer on Google competes on the same screen as the big brands.</p>"),
+ ],
+ "list_h": "The Cyber Monday plan, <span class=\"ac\">in the order to do it</span>",
+ "items": [
+  ["Pick one online offer with an end date",
+   "One simple deal, such as 20% off gift cards, a holiday bundle or free local delivery, with clear dates and terms. Use the same wording everywhere so shoppers trust it."],
+  ["Post it on your Google Business Profile",
+   "Add an Offer post with a short title, the start and end dates and the terms. If your category does not show Offer, use an Update post with the same details."],
+  ["Put it at the top of your website",
+   "The offer, the price and an order or book button should be visible on a phone without scrolling. Test the whole checkout on your own phone before Monday."],
+  ["Show your products on Google",
+   "If you have a store, Google Merchant Center can show the products on your shelves on Search, Maps and your Business Profile through free local listings, at no cost. If you only sell online, Merchant Center is also where Google product listings start."],
+  ["Sell gift cards and prepaid packages",
+   "Service businesses win Cyber Monday with gift cards: a salon package, a spa day, a dental whitening voucher, an HVAC tune-up. Put the gift card link on your Google profile and your home page."],
+  ["Say how people get it",
+   "Local pickup, curbside, same-day delivery or email delivery for gift cards. Say it in the offer and near the top of your website, so a shopper does not have to ask."],
+  ["Be ready for questions",
+   "Answer Google messages, reviews and calls the same day, with a short ready answer for shipping, returns and gift receipts."],
+  ["Plan the next date",
+   "After Cyber Monday, update the offer for December: your last day to order for Christmas delivery, Christmas Eve hours and gift cards for last-minute buyers."],
+ ],
+ "post": [
+  ("If you are a service business, <span class=\"ac\">not a store</span>",
+   "<p>Plumbers, HVAC companies, roofers, dentists, salons and law firms can use Cyber Monday too: a dated gift card bonus, a winter maintenance plan at a holiday price, or a free consultation week booked online. Post it on your Google profile with clear terms, and make the booking or gift card link the first thing people see on your website.</p>"),
+ ],
+ "src": [
+  ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"],
+  ["https://support.google.com/merchants/answer/15310605?hl=en", "Google Merchant Center Help: Benefits of free local listings"],
+  ["https://support.google.com/merchants/answer/14615117?hl=en", "Google Merchant Center Help: Local inventory ads and free local listings overview"],
+  ["https://nrf.com/media-center/press-releases/thanksgiving-weekend-expected-to-draw-largest-number-of-shoppers-on-record", "NRF: Thanksgiving weekend expected to draw largest number of shoppers on record (November 20, 2025)"],
+  ["https://chaindrugreview.com/nrf-expects-182-7-million-shoppers-over-thanksgiving-weekend/", "Chain Drug Review: NRF expects 182.7 million shoppers over Thanksgiving weekend (November 19, 2026)"],
+ ],
+ "also": [
+  ["/guides/black-friday-small-business-checklist", "Black Friday 2026 checklist for small businesses"],
+  ["/guides/small-business-saturday-checklist", "Small Business Saturday 2026 checklist"],
+  ["/guides/holiday-hours-on-google", "How to set holiday hours on Google"],
+  ["/guides/last-minute-christmas-marketing", "Last-minute Christmas marketing ideas"],
+ ],
+ "faq": [
+  ["When is Cyber Monday 2026?",
+   "Monday, November 30, 2026, the Monday after Thanksgiving. Black Friday is November 27 and Small Business Saturday is November 28."],
+  ["Can a local business without an online store use Cyber Monday?",
+   "Yes. Sell gift cards or prepaid packages online, offer local pickup, or take bookings at a holiday price. Post the offer on your Google profile so local shoppers see it when they search."],
+  ["Are Google product listings free?",
+   "Free local listings are free: Google shows the in-store products of eligible stores across Search, Maps and the Business Profile at no cost. Local inventory ads are the paid option, and you can use either or both."],
+  ["Can Business Santa do this for me?",
+   "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, sets your holiday hours, adds Christmas offer posts and fresh photos to your Google profile and includes a ChatGPT check, usually done in 3 to 7 days."],
+ ],
+}
+HOLIDAY_GUIDES.insert(next(i for i, _g in enumerate(HOLIDAY_GUIDES) if _g["slug"] == "guides/small-business-saturday-checklist") + 1, _CM)
+for _g in HOLIDAY_GUIDES:
+    if _g["slug"] in ("guides/black-friday-small-business-checklist", "guides/small-business-saturday-checklist") and _g.get("also") and not any(u == "/guides/cyber-monday-small-business" for u, _ in _g["also"]):
+        _g["also"] = tuple(_g["also"]) + (("/guides/cyber-monday-small-business", "Cyber Monday 2026 plan for small businesses"),)

@@ -737,7 +737,7 @@
     "searches the site ranks for (Nov 2025)"
    ]
   ],
-  "means": "For a home services company, the searches that pay are your service plus your city, and the cost questions people ask before they call. A clean site, a page per service and blogs that answer real cost questions win both, and they are the pages ChatGPT and Google\u2019s AI answers draw on.",
+  "means": "For a home services company, the searches that pay are your service plus your city, and the cost questions people ask before they call. A clean site, a page per service and blogs that answer real cost questions win both, and they are the pages ChatGPT and Google’s AI answers draw on.",
   "k": "hvac",
   "biz": "HVAC company",
   "rel": [
@@ -1830,7 +1830,7 @@
  },
  "eu-nativity-shop": {
   "slug": "eu-nativity-shop",
-  "tag": "CASE STUDY  \u00b7  ONLINE SHOP  \u00b7  GERMANY, SWITZERLAND, ITALY",
+  "tag": "CASE STUDY  ·  ONLINE SHOP  ·  GERMANY, SWITZERLAND, ITALY",
   "title": "Online Shop SEO Germany: 5 of 5 Keywords on Page 1 | Business Santa",
   "sub": "Multi-country SEO for a seasonal online shop selling hand-carved nativity scenes, ranking ahead of Amazon.",
   "stats": [
@@ -2011,7 +2011,7 @@
  },
  "uk-it-support": {
   "slug": "uk-it-support",
-  "tag": "CASE STUDY  \u00b7  IT SUPPORT COMPANY  \u00b7  SUSSEX, UK",
+  "tag": "CASE STUDY  ·  IT SUPPORT COMPANY  ·  SUSSEX, UK",
   "title": "IT Support SEO: #1 on Google for IT Support Newhaven | Business Santa",
   "sub": "Foundation SEO in 2 days, then 10 months of links, content and new pages for a Sussex IT company focused on schools.",
   "stats": [
@@ -2079,7 +2079,7 @@
     "June 2026 onward",
     [
      "Search Console and Analytics set up for the owner.",
-     "A wrong \"starting from \u00a31\" line in Google corrected.",
+     "A wrong \"starting from £1\" line in Google corrected.",
      "A canonical setting fixed; GEO added from July 2026."
     ]
    ],
@@ -2192,7 +2192,7 @@
  },
  "uk-furniture-store": {
   "slug": "uk-furniture-store",
-  "tag": "CASE STUDY  \u00b7  ONLINE FURNITURE STORE  \u00b7  UNITED KINGDOM",
+  "tag": "CASE STUDY  ·  ONLINE FURNITURE STORE  ·  UNITED KINGDOM",
   "title": "Furniture Store SEO and Google Ads: Best Sales Week in Months | Business Santa",
   "sub": "How a new Shopify furniture store got one partner for search, ads and social, and its best sales week in months.",
   "stats": [
@@ -2373,7 +2373,7 @@
  },
  "uk-dental-practice": {
   "slug": "uk-dental-practice",
-  "tag": "CASE STUDY  \u00b7  DENTAL PRACTICE  \u00b7  ESSEX, UK",
+  "tag": "CASE STUDY  ·  DENTAL PRACTICE  ·  ESSEX, UK",
   "title": "Dental Implant SEO: #1 on Google for Implants in Manningtree | Business Santa",
   "sub": "Local SEO, clinically reviewed content and weekly Google and social presence for an implant-focused practice. Results so far.",
   "stats": [
@@ -2520,7 +2520,7 @@
  },
  "au-skincare-store": {
   "slug": "au-skincare-store",
-  "tag": "CASE STUDY  \u00b7  K-BEAUTY ONLINE STORE  \u00b7  MELBOURNE, AUSTRALIA",
+  "tag": "CASE STUDY  ·  K-BEAUTY ONLINE STORE  ·  MELBOURNE, AUSTRALIA",
   "title": "Google Shopping Orders Within 3 Weeks | Business Santa",
   "sub": "Foundation SEO, monthly content and links, then Google Shopping and retargeting for a new Korean and Japanese skincare store.",
   "stats": [
@@ -2708,7 +2708,7 @@
  },
  "au-safes-store": {
   "slug": "au-safes-store",
-  "tag": "CASE STUDY  \u00b7  ONLINE SAFES STORE  \u00b7  AUSTRALIA",
+  "tag": "CASE STUDY  ·  ONLINE SAFES STORE  ·  AUSTRALIA",
   "title": "New Store SEO: 4.4x Google Clicks in 2 Months | Business Santa",
   "sub": "A 24-month SEO and AI search roadmap, Google Shopping and local presence for a brand-new store. Results so far.",
   "stats": [
@@ -2865,6 +2865,374 @@
    "/assets/img/results/card-au-safes-summary.webp",
    1200,
    720
+  ]
+ },
+ "uk-golf-camps": {
+  "slug": "uk-golf-camps",
+  "tag": "CASE STUDY  ·  JUNIOR GOLF CAMPS (SQUARESPACE)  ·  UK",
+  "title": "Website Move Without Losing Google: #2 for Golf Camps | Business Santa",
+  "sub": "A Shopify to Squarespace move with the SEO built in before launch, then six months of links and content that put the camps on page 1 for their key searches.",
+  "stats": [
+   [
+    "#2",
+    "on Google UK for \"junior golf camps scotland\""
+   ],
+   [
+    "80% to 92%",
+    "site health score in the first week"
+   ],
+   [
+    "24+",
+    "blog articles for the main site"
+   ],
+   [
+    "2",
+    "websites on Google: the camps and a sister business"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "Junior golf camp provider with residential camps in St Andrews, Scotland, plus programmes in London and Florida (RV Golf Schools), and a sister sports education business"
+   ],
+   [
+    "Market",
+    "UK families, plus international campers"
+   ],
+   [
+    "Services",
+    "SEO-safe move from Shopify to Squarespace, foundation SEO, six months of off-page SEO and blogs, page content optimization, audit and SEO for a second website"
+   ],
+   [
+    "Timeline",
+    "October 2025 to June 2026"
+   ]
+  ],
+  "client": "A junior golf camp business in the UK, run by a coach who also runs a sports education business. Two years earlier a platform move had cost the site its rankings and sales. A second move, from Shopify back to Squarespace, was days away, and the owner wanted it done right this time, while catching up with established camps in the same towns.",
+  "goals": [
+   "Move platforms without losing Google visibility.",
+   "Rank alongside the established camps he competes with.",
+   "Fill camp places through Google search.",
+   "Bring a second business up to the same standard."
+  ],
+  "phases": [
+   [
+    "Calls first, then a plan",
+    "October 2025",
+    [
+     "Two video calls to understand the history, the competitors and the launch date.",
+     "Clear advice to hold the domain switch until the new site was optimized, which the owner followed."
+    ]
+   ],
+   [
+    "Foundation SEO before launch",
+    "October 2025",
+    [
+     "Audit, keyword research, on-page SEO and schema on the new Squarespace site before the domain moved.",
+     "Every page re-checked once the site went live, plus the owner's own new blog optimized."
+    ]
+   ],
+   [
+    "Six months of links and content",
+    "October 2025 to April 2026",
+    [
+     "Weekly backlinks and blog articles, with weekly reports.",
+     "Site health score up from 80% to 92% after the first week, with impressions, clicks and first rankings following.",
+     "Home page and St Andrews camp page content rewritten for search, plus a new Florida camp page optimized.",
+     "The monthly plan sized up and down around the camp season and budget."
+    ]
+   ],
+   [
+    "A second website",
+    "February to June 2026",
+    [
+     "Audit and on-page SEO for the sister sports education site, then 2 months of off-page SEO and blogs.",
+     "Keyword targets agreed with the owner before any work went live."
+    ]
+   ],
+   [
+    "Protecting the main site",
+    "April 2026",
+    [
+     "Spotted copies of camp pages on another site, which the owner then removed to avoid duplicate content issues."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "A platform move that had hurt before",
+    "SEO built into the new site before the domain switch, not after."
+   ],
+   [
+    "Strong, established competitors",
+    "Named by the owner on day one and tracked keyword by keyword."
+   ],
+   [
+    "A seasonal business with a busy owner",
+    "Plans that scaled with the camp calendar and content sent for quick approval."
+   ],
+   [
+    "Duplicate content risk",
+    "Found and resolved before it could cause a problem."
+   ]
+  ],
+  "results": [
+   [
+    "Top rankings",
+    "#2 on Google UK for \"junior golf camps scotland\", \"summer golf camps scotland\" and \"residential golf camp scotland\" (13 Nov 2026)"
+   ],
+   [
+    "More page 1 terms",
+    "#3 \"junior golf summer camps\" and \"junior golf schools\", #4 \"st andrews golf camp\", #5 \"golf schools scotland\" and \"junior golf camps uk\""
+   ],
+   [
+    "Sign-ups",
+    "The owner reported camp sign-ups coming through Google search (June 2026)"
+   ],
+   [
+    "Partnership",
+    "Trusted with a second website; the owner asked for a 6-month plan to keep the rankings high"
+   ]
+  ],
+  "quotes": [
+   [
+    "Thanks it was very helpful speaking to you.",
+    "October 2025, after our first call"
+   ],
+   [
+    "We have seen some good progress on sign ups coming through google search and so I want to ensure we keep at the top of the search.",
+    "June 2026"
+   ],
+   [
+    "We have been pleased with the progress of the seo on RV Golf Schools.",
+    "July 2026"
+   ],
+   [
+    "Ok so I am happy with the progress of the last 2 months getting RV Sport & Education functioning properly on google.",
+    "June 2026, on the second website"
+   ]
+  ],
+  "who": "Owner, junior golf camps, UK",
+  "diff": [
+   "SEO done before the domain moved, not after.",
+   "Competitors the owner named, tracked from the start.",
+   "A plan that followed the camp calendar.",
+   "Two businesses looked after, not just one."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-serp-junior-golf-camps-scotland.webp",
+    "Live Google UK check, 13 November 2026.",
+    1200,
+    1030
+   ],
+   [
+    "/assets/img/results/card-t11-uk-golf-camps.webp",
+    "The client's own message, 9 June 2026.",
+    1200,
+    513
+   ]
+  ],
+  "published": "2026-11-21",
+  "url": "junior-golf-camps-seo-website-migration",
+  "company": "RV Golf Schools",
+  "label": "Junior golf camps",
+  "place": "United Kingdom",
+  "h1a": "#2 on Google for \"junior golf camps scotland\"",
+  "h1b": "after a safe website move",
+  "desc": "How RV Golf Schools moved from Shopify to Squarespace with SEO built in first, then reached #2 on Google UK for \"junior golf camps scotland\".",
+  "means": "If you are about to change website platforms or redesign your site, the order matters more than the platform. Build the SEO into the new site before the domain switches, check every page once it is live, and keep publishing after launch. That is how a US camp, studio, clinic or shop moves to Squarespace, Wix, Shopify or WordPress without losing the Google calls and bookings it already earns.",
+  "k": "other",
+  "biz": "business",
+  "rel": [
+   "local-seo",
+   "ai-search-optimization",
+   "google-and-meta-ads"
+  ],
+  "hero": "#2 on Google for its main search after a website move",
+  "thumb": [
+   "/assets/img/results/card-serp-junior-golf-camps-scotland.webp",
+   1200,
+   1030
+  ]
+ },
+ "ee-art-shop": {
+  "slug": "ee-art-shop",
+  "tag": "CASE STUDY  ·  ONLINE ART SHOP (SHOPIFY)  ·  ESTONIA, SELLING TO THE USA",
+  "title": "Shopify SEO: First in Google US Popular Products | Business Santa",
+  "sub": "Foundation SEO, product-by-product optimization, an art glossary and monthly links for a new Shopify store selling framed canvas and digital art.",
+  "stats": [
+   [
+    "1st",
+    "in Google US Popular products for \"dancing ballerina modern art canvas\""
+   ],
+   [
+    "1st",
+    "for \"samurai warrior modern art canvas\", ahead of Etsy sellers"
+   ],
+   [
+    "9 mo",
+    "partnership, renewed month after month"
+   ],
+   [
+    "#1",
+    "on Google for the brand name"
+   ]
+  ],
+  "glance": [
+   [
+    "Client",
+    "New online art shop selling framed canvas prints and instant digital art downloads (PaintFu)"
+   ],
+   [
+    "Market",
+    "Based in Tallinn, Estonia, selling online to the USA and Europe"
+   ],
+   [
+    "Services",
+    "Foundation SEO and audit, keyword research, on-page SEO for every new product batch, monthly link building, monthly blogs, an art glossary page with internal links, Search Console setup and indexing, duplicate content fixes"
+   ],
+   [
+    "Timeline",
+    "June 2025 to March 2026, renewed month after month"
+   ]
+  ],
+  "client": "A young online art shop from Tallinn with a large catalog of framed canvases and digital prints, competing with big wall art retailers and marketplaces. The owner adds new artwork in batches and wanted every product found on Google, with a steady, sustainable SEO plan.",
+  "goals": [
+   "A clean SEO foundation for a new Shopify store.",
+   "Every new artwork optimized as soon as it is added.",
+   "Content that builds topical authority around art styles and collections.",
+   "Steady authority growth without risky links."
+  ],
+  "phases": [
+   [
+    "Foundation SEO",
+    "June 2025",
+    [
+     "Audit, keyword research and on-page fixes across the store.",
+     "Walked through on a call, followed by a written off-page plan."
+    ]
+   ],
+   [
+    "Monthly authority and content",
+    "July 2025 onward",
+    [
+     "Quality links every week with a weekly report.",
+     "Blogs written around the shop's art styles and collections, edited with the owner.",
+     "Search Console set up and pages submitted for indexing."
+    ]
+   ],
+   [
+    "Every new artwork optimized",
+    "August 2025 onward",
+    [
+     "Each batch of new products optimized: titles, descriptions and image alt text.",
+     "Duplicate product pages found and fixed with the owner.",
+     "Old collection names and links updated in the backend."
+    ]
+   ],
+   [
+    "An art glossary for topical authority",
+    "October to November 2025",
+    [
+     "An Ultimate Glossary for Framed Canvases and Digital Art, built with the owner.",
+     "Every collection added, with internal links to the shop's collection pages.",
+     "Published and refined after the owner's review."
+    ]
+   ]
+  ],
+  "challenges": [
+   [
+    "A large, growing catalog",
+    "New product batches optimized as soon as they were added."
+   ],
+   [
+    "A new store on a careful budget",
+    "A monthly plan sized to the business, scaled step by step."
+   ],
+   [
+    "Competing with big wall art retailers",
+    "Product-level SEO for each artwork's exact name and style."
+   ],
+   [
+    "Content the owner could trust",
+    "Every blog and the glossary reviewed with the owner before publishing."
+   ]
+  ],
+  "results": [
+   [
+    "Google US products",
+    "First in Popular products for \"dancing ballerina modern art canvas\", ahead of Wayfair (screenshot, 14 Nov 2026)"
+   ],
+   [
+    "Google US products",
+    "First in Popular products for \"samurai warrior modern art canvas\", ahead of Etsy sellers (screenshot, 14 Nov 2026)"
+   ],
+   [
+    "Brand",
+    "#1 on Google for the brand name, and listed as a store filter beside big home decor brands in Google's product results (14 Nov 2026)"
+   ],
+   [
+    "Content",
+    "An art glossary page with every collection linked, plus monthly blogs"
+   ],
+   [
+    "Partnership",
+    "Monthly SEO renewed for 9 months"
+   ]
+  ],
+  "quotes": [
+   [
+    "I really appreciate the clarity and structured approach you've taken.",
+    "July 2025, on our SEO plan"
+   ],
+   [
+    "Checked the glossary, looks good. Should positively affect SEO.",
+    "November 2025"
+   ]
+  ],
+  "who": "Owner, online art shop, Tallinn, Estonia",
+  "diff": [
+   "Product-level SEO for every new artwork.",
+   "A glossary that links every collection.",
+   "Content reviewed with the owner before it goes live.",
+   "A plan sized to a new store's budget."
+  ],
+  "images": [
+   [
+    "/assets/img/results/card-serp-dancing-ballerina-modern-art-canvas.webp",
+    "Live Google US check, 14 November 2026.",
+    1200,
+    1274
+   ],
+   [
+    "/assets/img/results/card-t18-ee-art-shop.webp",
+    "The client's own message, 7 July 2025.",
+    1200,
+    462
+   ]
+  ],
+  "published": "2026-11-21",
+  "url": "shopify-art-store-google-shopping-usa",
+  "company": "PaintFu",
+  "label": "Online art shop selling to the USA",
+  "place": "Estonia",
+  "h1a": "First in Google US Popular products",
+  "h1b": "for a growing Shopify art shop",
+  "desc": "How PaintFu, a Shopify art shop selling to the USA, reached first in Google US Popular products, ahead of Wayfair, with product-by-product SEO.",
+  "means": "US shoppers compare products on Google before they ever open a marketplace. A small store can sit first in Google's Popular products, ahead of big retailers, when every product has a title, description and image text written the way people search, new items are optimized the day they are added, and a guide page links every collection. The same approach works for any US Shopify or online store with a large catalog.",
+  "k": "retail",
+  "biz": "online store",
+  "rel": [
+   "seo-for-retail-stores",
+   "local-seo",
+   "ai-search-optimization"
+  ],
+  "hero": "First in Google US Popular products, ahead of Wayfair",
+  "thumb": [
+   "/assets/img/results/card-serp-dancing-ballerina-modern-art-canvas.webp",
+   1200,
+   1274
   ]
  }
 }
