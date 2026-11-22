@@ -29,8 +29,9 @@ HVAC_PROOF = ("<p>Hays HVAC has served Durham and the Triangle in North Carolina
 INDUSTRIES = [
  {
   "slug": "seo-for-plumbers", "k": "plumbing", "noun": "plumbers", "one": "plumber", "biz": "plumbing business",
+  "more": (("/local-seo", "Local SEO for local service businesses that want more repair customers"),),
   "title": "SEO for Plumbers: Get More Calls From Google Maps | Business Santa",
-  "desc": "Local SEO for plumbers in the US. Show up when people search \"plumber near me\" and \"emergency plumber\" on Google, Google Maps and ChatGPT. Free check, fixes from $120.",
+  "desc": "Local SEO for US plumbers: show up for \"plumber near me\" and \"emergency plumber\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "SEO for plumbers", "h1ac": "that makes the phone ring",
   "answer": "SEO for plumbers means getting your plumbing business into the top results when someone nearby searches \"plumber near me\" or \"emergency plumber open now\". Most of those calls go to the three businesses Google shows on the map, so the work starts with your Google Business Profile, then your website, your reviews and the listings that AI assistants read.",
   "intro": "Plumbing calls are urgent. A homeowner with a burst pipe does not compare ten websites. They tap the first business on the map that looks open, trusted and close. Our job is to make that business yours.",
@@ -54,7 +55,7 @@ INDUSTRIES = [
  {
   "slug": "seo-for-dentists", "k": "dental", "noun": "dentists", "one": "dentist", "biz": "dental practice",
   "title": "Dental SEO: Get New Patients From Google Maps | Business Santa",
-  "desc": "Dental SEO for US practices. Show up for \"dentist near me\", \"emergency dentist\" and \"dentist taking new patients\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "desc": "Dental SEO for US practices: show up for \"dentist near me\" and \"emergency dentist\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "Dental SEO", "h1ac": "for practices that want new patients",
   "answer": "Dental SEO means getting your practice into the top results when people nearby search \"dentist near me\", \"emergency dentist today\" or \"dentist taking new patients\". The biggest wins usually come from a complete Google Business Profile, a page for each treatment, steady patient reviews, and listings that match across the web.",
   "intro": "People choose a dentist on trust. They read reviews, look at photos of the office and check whether you take their insurance before they ever call. If that information is missing, they book somewhere else.",
@@ -77,6 +78,7 @@ INDUSTRIES = [
  },
  {
   "slug": "seo-for-roofers", "k": "roofing", "noun": "roofers", "one": "roofer", "biz": "roofing company",
+  "more": (("/local-seo", "Local SEO for local service businesses that want more repair customers"),),
   "title": "SEO Agency for Roofers: Local Roofing SEO | Business Santa",
   "desc": "A local SEO agency for roofing companies in the US: Google Maps, storm season pages, reviews and ChatGPT. Free check, fixes from $120, $299 a month.",
   "h1": "SEO services for roofers", "h1ac": "from a local roofing SEO agency",
@@ -108,7 +110,7 @@ INDUSTRIES = [
  {
   "slug": "seo-for-hvac", "k": "hvac", "noun": "HVAC companies", "one": "HVAC company", "biz": "HVAC company", "nav": "HVAC companies",
   "title": "SEO for HVAC Companies: More Calls From Google Maps | Business Santa",
-  "desc": "Local SEO for US HVAC contractors. Show up for \"ac repair near me\", \"furnace repair\" and no-heat emergency searches on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "desc": "Local SEO for US HVAC contractors: show up for \"ac repair near me\" and \"furnace repair\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "SEO for HVAC companies", "h1ac": "that books calls in every season",
   "answer": "SEO for HVAC companies means getting your heating and cooling business into the top results when someone nearby searches \"ac repair near me\", \"furnace repair\" or \"no heat emergency\". Most of those calls go to the three businesses Google shows on the map, so the work starts with your Google Business Profile, then a page for each service and town, steady reviews, and the listings that ChatGPT and other AI assistants read.",
   "intro": "HVAC demand follows the weather. The first heat wave fills the phones with AC repair calls, and the first cold snap brings furnace and no-heat calls, often at night. The companies Google shows first that week get the jobs, and many of those jobs turn into maintenance plans and new systems. The work is getting ready before the season turns, not after.",
@@ -123,7 +125,7 @@ INDUSTRIES = [
   ],
   "ai": "Homeowners now ask ChatGPT and Google's AI Overviews things like \"who is a good HVAC company near me for a heat pump\" or \"how much does AC repair cost here\". Those answers are built from listings, reviews, local articles and company websites that answer service and cost questions clearly. We make sure your company, your services and your service area are described clearly and consistently in those places, so AI assistants can name you.",
   "res": {"head": "Real results <span class=\"ac\">for an HVAC company</span>", "after": HVAC_PROOF, "sub": True},
-  "more": (("/results/hvac-seo-durham-nc", "Hays HVAC case study"), ("/guides/winter-plumbing-and-heating-leads", "Winter plumbing and heating leads"), ("/seo-for-plumbers", "SEO for plumbers"), ("/seo-for-roofers", "SEO for roofers")),
+  "more": (("/results/hvac-seo-durham-nc", "Hays HVAC case study"), ("/local-seo", "Local SEO for local service businesses that want more repair customers"), ("/guides/winter-plumbing-and-heating-leads", "Winter plumbing and heating leads"), ("/seo-for-plumbers", "SEO for plumbers"), ("/seo-for-roofers", "SEO for roofers")),
   "track": "Our founder Manav S has 10+ years in SEO, 3,000+ orders and a 4.9 average from 2,000+ client reviews.",
   "faq": [
    ("How long does SEO take for an HVAC company?", "Fixes to your Google Business Profile can start helping within a few weeks. Ranking higher for competitive searches like \"ac repair near me\" usually builds over three to six months, depending on your towns and your competitors. Starting before your busy season matters."),
@@ -163,7 +165,7 @@ INDUSTRIES = [
  {
   "slug": "seo-for-restaurants", "k": "restaurant", "noun": "restaurants", "one": "restaurant", "biz": "restaurant",
   "title": "Restaurant SEO: Fill More Tables From Google Maps | Business Santa",
-  "desc": "Restaurant SEO for US restaurants and cafes. Show up for \"restaurant near me\", \"takeout near me\" and AI dining suggestions on Google, Maps and ChatGPT. Free check, fixes from $120.",
+  "desc": "Restaurant SEO for US restaurants and cafes: show up for \"restaurant near me\" and \"takeout near me\" on Google, Maps and ChatGPT. Free check.",
   "h1": "Restaurant SEO", "h1ac": "for fuller tables",
   "answer": "Restaurant SEO means getting your restaurant into the top results when people nearby search \"restaurant near me\", \"takeout near me\" or a dish they are craving. Most diners decide from Google Maps, so the work centers on your Google Business Profile: hours, menu, photos, reviews and ordering links.",
   "intro": "Diners decide fast. They open Google Maps, look at photos, check the menu and the hours, read a few reviews and go. If your hours are wrong or your menu is missing, they pick the place that looks ready.",
@@ -186,6 +188,7 @@ INDUSTRIES = [
  },
  {
   "slug": "seo-for-salons-and-spas", "k": "salon", "noun": "salons and spas", "one": "salon", "biz": "salon or spa",
+  "more": (("/guides/how-salons-get-found-on-ai-search", "How salons and spas get found on AI search"),),
   "title": "Salon SEO for Hair & Nail Salons, Spas and Barbers | Business Santa",
   "desc": "SEO for US hair salons, nail salons, barbershops and spas. Show up for \"hair salon near me\" on Google, Maps and ChatGPT. Free check, fixes from $120.",
   "h1": "SEO for salons and spas", "h1ac": "that fills your calendar",
@@ -210,8 +213,9 @@ INDUSTRIES = [
  },
  {
   "slug": "seo-for-retail-stores", "k": "store", "noun": "retail stores and boutiques", "one": "store", "biz": "store",
+  "more": (("/guides/local-store-pages", "Store address pages for every location"),),
   "title": "Retail Store SEO: Get More Shoppers in the Door | Business Santa",
-  "desc": "Local SEO for US shops, boutiques and retail stores. Show up for \"gift shop near me\" and \"store open Sunday\" on Google, Maps and ChatGPT, with your products on Google. Free check.",
+  "desc": "Local SEO for US shops and boutiques: show up for \"gift shop near me\" on Google, Maps and ChatGPT, with your products on Google. Free check.",
   "h1": "SEO for retail stores", "h1ac": "that brings shoppers in",
   "answer": "Local SEO for retail stores means getting your shop into the top results when people nearby search \"gift shop near me\", \"store open Sunday\" or the products you sell. The work combines a complete Google Business Profile with your products on Google through free product listings, so shoppers see what is on your shelves before they visit.",
   "intro": "Shoppers check before they drive. Is it open? Do they have it? Is it worth the trip? The stores that answer those questions on Google get the visit.",
@@ -237,10 +241,10 @@ INDUSTRIES = [
 # The local SEO hub page (the "every local business" option).
 HUB = {
  "slug": "local-seo", "k": "other",
- "title": "Local SEO Services for Small Businesses in the US | Business Santa",
- "desc": "Local SEO services for US small businesses: Google Business Profile, Google Maps ranking, website fixes, reviews and AI search. Free check from a real team, fixes from $120.",
- "h1": "Local SEO services", "h1ac": "for small businesses",
- "answer": "Local SEO is the work that gets your business into the results people see when they search for something near them, like \"plumber near me\" or \"best tacos in Austin\". It covers your Google Business Profile, your position on Google Maps, your website, your reviews, your listings across the web, and now the answers AI assistants like ChatGPT give.",
+ "title": "Local SEO Services for Small and Local Service Businesses | Business Santa",
+ "desc": "Local SEO and marketing for US small and local service businesses that want more customers and repair calls: Google Maps, website, reviews, AI search.",
+ "h1": "Local SEO services", "h1ac": "for small and local service businesses",
+ "answer": "If you want someone to handle your marketing and bring in more customers and repair calls from people nearby, local SEO is where to start. It is the work that gets your business into the results people see when they search for something near them, like \"plumber near me\", \"furnace repair\" or \"best tacos in Austin\". It covers your Google Business Profile, your position on Google Maps, your website, your reviews, your listings across the web, and now the answers AI assistants like ChatGPT give.",
  "intro": "Most people choose from the first few businesses they see. Local SEO is how you become one of them, without paying for every click.",
  "parts": [
   ("Google Business Profile", "The box with your hours, photos, reviews and directions. We fill in every field, pick the right categories and keep it fresh."),
@@ -257,6 +261,9 @@ HUB = {
   ("How much does local SEO cost?", "With us, the first check is free. One-time fixes start at $120 for on-page work and $160 for technical fixes. Monthly local SEO for one location is $299 a month with no contract; bigger plans are quoted after the free check, so you only pay for what your business needs."),
   ("How long does local SEO take?", "Profile and listing fixes can help within a few weeks. Ranking higher for competitive searches usually takes three to six months."),
   ("Can anyone guarantee a #1 ranking?", "No. Google says no one can guarantee a top position. We promise honest work, every change shown to you, and results you can check in your own Google account."),
+   ("Can you handle the marketing for a local service business?", "Yes. We handle the parts that bring calls from people nearby: your Google Business Profile, Google Maps, website fixes, reviews, listings and AI search, plus Google and Meta ads if you want them. You approve every change and see the results in your own Google accounts."),
+   ("How does local SEO bring in more repair customers?", "Most people who need a repair search the job and their town, for example \"water heater repair\" or \"garage door repair near me\", and call one of the first businesses they see. Local SEO puts your business there: the right categories and services on Google, a page for each repair you do, reviews that name the job, and hours that show when you answer."),
+   ("Do you work with home service and repair businesses?", "Yes. Plumbers, HVAC companies, roofers, electricians, garage door and appliance repair companies, and other service-area businesses are a big part of our work. We set up your profile with a service area instead of a public address when you work at customers' homes, which is how Google wants it done."),
  ],
 }
 
@@ -704,7 +711,7 @@ ROOF_GUIDES = [
  {
   "slug": "guides/roofing-seo-keywords", "parent": "seo-for-roofers",
   "title": "Roofing SEO Keywords: 56 Keywords for Roofing Companies | Business Santa",
-  "desc": "Roofing SEO keywords for roofing companies: 56 roofer keywords homeowners type, grouped by job, which to target first, and how to see your own roofing keyword data free.",
+  "desc": "Roofing SEO keywords: 56 roofer keywords homeowners type, grouped by job, which to target first, and how to see your own roofing keyword data free.",
   "also": (("/seo-for-roofers", "SEO services for roofers: what we do for roofing companies"), ("/results/hvac-seo-durham-nc", "Case study: #2 on Google for \"hvac company durham nc\""), ("/guides/google-business-profile-for-roofers", "Google Business Profile optimization for roofers")),
   "h1": "Roofing SEO keywords:", "h1ac": "56 keywords for roofing companies",
   "answer": "The best roofing SEO keywords for a roofing company are the ones homeowners type when they are ready to hire: \"roofer near me\", \"roof leak repair\", \"roof replacement cost\", \"storm damage roof repair\" and the same searches with your town's name. Group them by the job they describe, give each group its own page, and use the homeowner's words in your titles, headings and Google Business Profile services.",
@@ -961,7 +968,7 @@ SALON_GUIDES = [
    ("What are the best keywords for a hair salon website?", "Your main service plus your town, written the way clients say it: \"hair salon in [town]\", \"balayage [town]\", \"curly hair salon [town]\" and \"walk in hair salon\". Put the main one in your home page title and first heading, and give color, cuts and extensions their own pages."),
    ("Where do hair salon keywords go on Google Maps?", "In your Google Business Profile: the primary category (Hair salon), the services list with prices, your description, and the posts and photo captions you add each month. Reviews that name the service, such as \"great balayage\", help too."),
   ],
-  "also": (("/guides/google-business-profile-for-salons", "Google Business Profile for salons: get booked from Maps"), ("/guides/how-salons-get-found-on-ai-search", "How salons get found on ChatGPT and AI search"), ("/results/barbershop-seo-los-angeles", "Client result: two Los Angeles barbershops found for exactly what they do best")),
+  "also": (("/guides/google-business-profile-for-salons", "Google Business Profile for salons: get booked from Maps"), ("/guides/how-salons-get-found-on-ai-search", "How salons and spas get found on AI search"), ("/results/barbershop-seo-los-angeles", "Client result: two Los Angeles barbershops found for exactly what they do best")),
  },
  {
   "slug": "guides/google-business-profile-for-salons", "parent": "seo-for-salons-and-spas", "nav": "Google profile for salons",
@@ -989,10 +996,10 @@ SALON_GUIDES = [
  },
  {
   "slug": "guides/how-salons-get-found-on-ai-search", "parent": "seo-for-salons-and-spas", "nav": "Salons on ChatGPT and AI search",
-  "title": "How Salons and Spas Get Found on ChatGPT and AI Search | Business Santa",
-  "desc": "How hair salons, nail salons, barbershops and spas get recommended by ChatGPT, Google AI Overviews and other AI assistants, and the simple steps that help.",
-  "h1": "How salons and spas get found", "h1ac": "on ChatGPT and AI search",
-  "answer": "AI assistants like ChatGPT and Google's AI Overviews recommend salons using what is written about them across the web: Google and Bing listings, Yelp and booking sites, reviews, local articles and the salon's own website. A salon gets named when those places describe it clearly and the same way: what services it offers, where it is, what it costs, and what clients say. There is no separate trick for AI. It rewards the same clear, consistent information that local SEO builds.",
+  "title": "How Salons and Spas Get Found on AI Search like ChatGPT | Business Santa",
+  "desc": "How salons and spas get found on AI search: what ChatGPT and Google AI Overviews read, and 6 steps that get hair salons, nail salons and spas named.",
+  "h1": "How salons and spas get found on AI search", "h1ac": "like ChatGPT and Google",
+  "answer": "Salons and spas get found on AI search when ChatGPT, Google AI Overviews and other assistants can read clear, matching facts about them across the web: Google and Bing listings, Yelp and booking sites, reviews, local articles and the salon's own website. A salon gets named when those places describe it the same way: what services it offers, where it is, what it costs and what clients say. There is no separate trick for AI. It rewards the same clear, consistent information that local SEO builds.",
   "items": [
    ("Say plainly what you do", "\"Curly hair specialists in Austin, open Sundays\" is something an AI assistant can repeat. \"Where beauty meets passion\" is not."),
    ("Be on the listings AI reads", "Google, Bing, Apple Maps and Yelp, plus the booking sites your clients use. Bing matters more than most salons think, because some AI assistants draw on it."),
@@ -1005,6 +1012,9 @@ SALON_GUIDES = [
    ("Can I pay to be recommended by ChatGPT?", "No. AI assistants build their answers from what is published about you. The way in is clear listings, reviews and mentions."),
    ("Do I need a website for AI search?", "It helps a lot. Your website is the one place you control completely, and AI assistants read it to understand your services and prices."),
    ("How do I check if AI recommends my salon?", "Ask ChatGPT, Google and Bing something like \"best nail salon in [your town]\" and see who is named. Our free check includes this."),
+   ("How do salons get recommended by ChatGPT?", "When ChatGPT searches the web for an answer, it leans on listings, review sites, local articles and salon websites that say plainly what each salon does. A salon with a complete Google and Bing listing, recent reviews that name services, and a website that lists services, prices and hours gives it the most to work with."),
+   ("Do spas and nail salons get found on AI search the same way as hair salons?", "Yes. The steps are the same for hair salons, nail salons, barbershops, med spas and day spas: say what you offer in plain words, keep your details the same on every listing, and earn reviews that describe the service. Only the words change, for example \"gel manicure walk ins\" or \"couples massage\"."),
+   ("How long does it take for AI search to start naming my salon?", "There is no fixed timeline. Assistants that search the web live, like ChatGPT search, Perplexity and Google AI Overviews, can pick up a fixed listing or a new page once it has been crawled, often within weeks. What an assistant knows without searching updates far less often, so clear listings and reviews matter most."),
   ],
  },
 ]
@@ -1167,10 +1177,10 @@ REST_GUIDES = [
 RETAIL_GUIDES = [
  {
   "slug": "guides/local-store-pages", "parent": "seo-for-retail-stores", "nav": "Local store pages",
-  "title": "Local Store Pages: How Shops Show Up in Local Search | Business Santa",
-  "desc": "How US retail stores and boutiques build local store pages that rank on Google and Maps: what to include, how many you need, products, hours, schema and common mistakes.",
-  "h1": "Local store pages:", "h1ac": "how shops show up in local search",
-  "answer": "A local store page is a page on your website for one physical store: its address, hours, phone, directions, what it sells, photos and reviews. It gives Google and shoppers one clear place to confirm the store is real, open and nearby. Every store location needs its own page, linked from its Google Business Profile, with details that match the profile exactly.",
+  "title": "Store Address Pages: Local Store Pages That Rank on Google | Business Santa",
+  "desc": "Store address pages for US shops: what each local store page needs (address, hours, phone, directions), how to list several store addresses, and mistakes.",
+  "h1": "Store address pages:", "h1ac": "local store pages that show up in local search",
+  "answer": "A store address page is the page on your website for one physical store: its full street address, hours, phone, directions, what it sells, photos and reviews. Every store address you have needs its own local store page, linked from that location's Google Business Profile, with details that match the profile exactly. It gives Google and shoppers one clear place to confirm the store is real, open and nearby.",
   "items": [
    ("One page per real store", "Each location gets its own page with its own address and phone. Never make pages for towns where you have no store."),
    ("Put the basics at the top", "Address, today's hours, phone and a directions button, readable on a phone in two seconds."),
@@ -1185,6 +1195,9 @@ RETAIL_GUIDES = [
    ("Does a single-location shop need a store page?", "Yes, though it can be your contact or visit page. It should hold the full address, hours, directions and what you sell, matching your Google profile."),
    ("Can store pages show products?", "Yes. Showing popular products and brands helps, and free product listings through Google Merchant Center can put your items on Google and Maps."),
    ("What are the most common store page mistakes?", "Different hours from the Google profile, missing phone numbers, no directions, and copy that is the same on every location page."),
+   ("How should I list several store addresses on my website?", "Give every store its own page with its own web address, for example /stores/austin, and list all of them on one locations page with each store's address, phone and today's hours. Link each store's Google Business Profile to its own page, not to the locations list."),
+   ("What should a store address page show first?", "The street address written exactly as it is on Google, today's hours, a tap-to-call phone number and a directions button, all visible on a phone without scrolling. Shoppers checking a store address usually want to know if it is open and how to get there."),
+   ("Do I need a store locator page?", "If you have more than a few stores, yes: a store locator or locations page helps shoppers find the nearest store and helps Google find every store page. With one or two stores, a short list of store addresses on your contact page linking to each store page is enough."),
   ],
  },
 ]
@@ -1226,7 +1239,7 @@ HOLIDAY_GUIDES = [
  {
   "slug": "guides/holiday-hours-on-google", "holiday": True, "date": XMAS_DATE, "nav": "Holiday hours on Google",
   "title": "Holiday Hours on Google: Set Them Right for 2026 | Business Santa",
-  "desc": "How to set holiday hours on your Google Business Profile for Thanksgiving, Christmas and New Year 2026, why to confirm them even when you are open, and the mistakes to avoid.",
+  "desc": "How to set holiday hours on Google for Thanksgiving, Christmas and New Year 2026, why to confirm them even when you are open, and mistakes to avoid.",
   "h1": "Holiday hours on Google:", "h1ac": "set them right for Christmas 2026",
   "answer": "Set holiday hours as special hours on your Google Business Profile: open Edit profile, then Hours, then Special hours, pick the date and enter your hours or mark it closed. Google says to confirm hours for official holidays even when they are the same as usual, so shoppers can see your hours are accurate. Special hours only show when your profile is set to Open with main hours.",
   "items": [
@@ -1240,7 +1253,7 @@ HOLIDAY_GUIDES = [
    ("Check after saving", "Google may review changes before they show. Search for your business a day later and check the hours on Search and Maps."),
   ],
   "src": (GOOGLE_SPECIAL,),
-  "also": (("/guides/google-business-profile-calls-dropped", "Calls from Google dropped after a holiday? What to check first"),),
+  "also": (("/guides/google-business-profile-calls-dropped", "Calls from Google dropped after a holiday? What to check first"), ("/guides/local-store-pages", "Store address pages: keep each store's address and hours matching Google")),
   "faq": [
    ("When should I set Christmas hours on Google?", "As early as you know them. Set Thanksgiving through New Year's Day in one sitting in November, then adjust if plans change."),
    ("Why do my holiday hours not show on Google?", "Usually because the profile is not set to Open with main hours, or because Google is still reviewing the edit. Check both, then search again the next day."),
@@ -1250,7 +1263,7 @@ HOLIDAY_GUIDES = [
  {
   "slug": "guides/small-business-saturday-checklist", "holiday": True, "date": XMAS_DATE, "nav": "Small Business Saturday checklist",
   "title": "Small Business Saturday 2026 Checklist for Local Shops | Business Santa",
-  "desc": "Small Business Saturday is November 28, 2026. A plain-English checklist to get found on Google and Maps that weekend: hours, offer posts, photos, reviews and online orders.",
+  "desc": "Small Business Saturday is November 28, 2026. A checklist to get found on Google and Maps that weekend: hours, offer posts, photos, reviews and orders.",
   "h1": "Small Business Saturday 2026:", "h1ac": "a checklist to get found on November 28",
   "answer": "Small Business Saturday 2026 is Saturday, November 28, the day after Black Friday. To get found that weekend, confirm your holiday hours on Google, post your offer on your Google Business Profile with clear dates, add fresh photos of the shop, make online orders and pickup easy to find, and reply to reviews quickly. Shoppers searching near me that weekend pick businesses whose details look current.",
   "items": [
@@ -1316,6 +1329,7 @@ HOLIDAY_GUIDES = [
  },
  {
   "slug": "guides/get-found-on-chatgpt-by-holiday-shoppers", "holiday": True, "date": XMAS_DATE, "nav": "ChatGPT and holiday shoppers",
+  "also": (("/guides/how-salons-get-found-on-ai-search", "How salons and spas get found on AI search"), ("/ai-search-optimization", "AI search optimization for small businesses")),
   "title": "Get Found on ChatGPT by Holiday Shoppers: A Local Guide | Business Santa",
   "desc": "More holiday shoppers ask ChatGPT and other AI assistants where to buy and who to call. How a US local business makes sure it is the one they recommend this Christmas.",
   "h1": "Get found on ChatGPT", "h1ac": "by holiday shoppers",
@@ -1575,3 +1589,74 @@ HOLIDAY_GUIDES.insert(next(i for i, _g in enumerate(HOLIDAY_GUIDES) if _g["slug"
 for _g in HOLIDAY_GUIDES:
     if _g["slug"] in ("guides/black-friday-small-business-checklist", "guides/small-business-saturday-checklist") and _g.get("also") and not any(u == "/guides/cyber-monday-small-business" for u, _ in _g["also"]):
         _g["also"] = tuple(_g["also"]) + (("/guides/cyber-monday-small-business", "Cyber Monday 2026 plan for small businesses"),)
+# 22 Nov 2026: in-body link to the store address pages guide from the Small Business Saturday guide (striking distance push).
+for _g in HOLIDAY_GUIDES:
+    if _g["slug"] == "guides/small-business-saturday-checklist" and not any(u == "/guides/local-store-pages" for u, _ in _g.get("also", ())):
+        _g["also"] = tuple(_g.get("also", ())) + (("/guides/local-store-pages", "Store address pages for shoppers who visit in person"),)
+
+# 22 Nov 2026 (cloud daily run): Christmas promotion ideas guide, in the Christmas cluster after Cyber Monday.
+# Targets the fixed cluster query "small business christmas promotions"; offer ideas by industry, each posted on Google.
+HOLIDAY_GUIDES.insert(next(i for i, _g in enumerate(HOLIDAY_GUIDES) if _g["slug"] == "guides/cyber-monday-small-business") + 1, {
+ "slug": "guides/christmas-promotion-ideas-for-small-business",
+ "holiday": True,
+ "date": "2026-11-22",
+ "nav": "Christmas promotion ideas",
+ "title": "Christmas Promotion Ideas for Small Businesses 2026: 12 Offers | Business Santa",
+ "desc": "12 Christmas promotion ideas for US small businesses in 2026, with examples for shops, salons, restaurants and home services, and how to post each on Google.",
+ "h1": "Christmas promotion ideas for small businesses:",
+ "h1ac": "12 offers that work in 2026",
+ "answer": "The best Christmas promotions for a small business are simple, dated and easy to find on Google: a gift card bonus, a holiday bundle, a last order or booking date, a pickup or delivery promise, and a thank you offer that brings people back in January. Pick two or three that fit your business, give each one a clear end date, and post them on your Google Business Profile and at the top of your website, so shoppers who search in December see them first.",
+ "pre": [
+  ("The 2026 Christmas calendar <span class=\"ac\">for your promotions</span>",
+   "<p>Thanksgiving is Thursday, November 26, Black Friday November 27, Small Business Saturday November 28, Cyber Monday November 30 and Giving Tuesday December 1. The last Saturday before Christmas is December 19, Christmas Eve is a Thursday and Christmas Day a Friday. Plan each promotion around one of these dates, and set your <a href=\"/guides/holiday-hours-on-google\">holiday hours on Google</a> before the first one.</p>"),
+ ],
+ "list_h": "12 Christmas promotion ideas, <span class=\"ac\">and who they suit</span>",
+ "items": [
+  ["Gift card bonus",
+   "Buy a $100 gift card, get a $20 bonus card for January. It suits salons, spas, restaurants, shops and even dentists and HVAC companies, and it brings the buyer back after the holidays."],
+  ["A holiday bundle",
+   "Two or three things people already buy together, at one holiday price: a cut and color with a take-home product, a dinner for four, a furnace check plus a filter change. One price is easier to say on Google than a list of discounts."],
+  ["A last order or booking date",
+   "\"Order by December 18 for Christmas delivery\" or \"Book by December 20 for a Christmas Eve appointment\". A clear deadline is a promotion on its own, and it stops angry calls on December 23."],
+  ["Christmas Eve pickup",
+   "Online or phone orders ready to collect on Christmas Eve, with the pickup hours set as special hours on Google. It suits bakeries, restaurants, florists, gift shops and liquor stores."],
+  ["Free gift wrapping or a gift receipt",
+   "Small, cheap and loved by busy shoppers. Say it in the offer post and at the till, and add a photo of your wrapped gifts to your Google profile."],
+  ["A Giving Tuesday partner",
+   "On December 1, give part of the day's sales to a named local charity, school or food bank, and say exactly how much. Partners often share it with their own followers."],
+  ["A twelve days countdown",
+   "One small daily deal from December 1 to 12, each with its own Google post. It gives people a reason to check your profile every day and gives you fresh posts to show."],
+  ["A winter readiness check",
+   "For plumbers, HVAC companies and roofers: a fixed-price furnace, pipe or roof check before the holidays, so guests do not arrive to a cold house or a leak. Post it before the first cold snap."],
+  ["A holiday party package",
+   "For restaurants, bars, event spaces and caterers: a set menu for office and family parties with a booking deadline. Put the menu on your website and link it from your Google profile."],
+  ["Gifts from a local business",
+   "A \"gifts under $50\" or \"gifts for him\" page or table, with real products and prices. People search that way in December, and Google can show your products for free with free local listings."],
+  ["A New Year booking offer",
+   "Book in December for January at a holiday price: a cleaning, a consultation, a service plan. It fills the quiet first weeks of the year."],
+  ["A thank you and a review request",
+   "After each December sale or job, send a short thank you with your review link. December reviews help you show up in January, when many people search for a new provider."],
+ ],
+ "post": [
+  ("How to post a Christmas promotion <span class=\"ac\">on Google</span>",
+   "<ol class=\"steps\"><li><b>Use an Offer post</b>On your Google Business Profile, add a post, choose Offer, and write a short title, the start and end dates and the terms. If your category does not show Offer, use an Update post with the same details.</li><li><b>Add one good photo</b>A real photo of the product, the bundle or your team, not a stock picture.</li><li><b>Put the same offer on your website</b>The same words and dates near the top of your home page on a phone, with one button to buy, book or call.</li><li><b>Set your holiday hours</b>Special hours for every day the promotion changes your hours, so Google does not show you as open when you are closed.</li><li><b>Update it when it ends</b>Swap the post when the date passes, so nobody finds an expired offer.</li></ol>"),
+  ("Promotions to <span class=\"ac\">avoid</span>",
+   "<p>Offers you cannot keep, a fake \"was\" price, \"ends tonight\" that never ends, and discounts so deep that a busy December loses money. Google also asks that offer posts are real and accurate. One honest offer with a date beats five vague ones.</p>"),
+ ],
+ "also": (("/guides/christmas-google-business-profile-posts", "Christmas Google profile post ideas"), ("/guides/last-minute-christmas-marketing", "Last-minute Christmas marketing ideas"), ("/guides/cyber-monday-small-business", "Cyber Monday 2026 plan for small businesses"), ("/12-days-of-business-santa", "Nominate a business for the 12 Days of Business Santa")),
+ "src": [
+  ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"],
+  list(GOOGLE_SPECIAL),
+  ["https://support.google.com/merchants/answer/15310605?hl=en", "Google Merchant Center Help: Benefits of free local listings"],
+ ],
+ "faq": [
+  ["What is a good Christmas promotion for a small business?",
+   "One that is simple, dated and fits what customers already buy from you: a gift card bonus, a holiday bundle, a last order date or a pickup promise. Post it on your Google Business Profile and your website with a clear end date."],
+  ["When should a small business start Christmas promotions?",
+   "Before Thanksgiving if you can, and no later than the first week of December. Shoppers start comparing on Black Friday weekend, and posts and pages need a few days to be seen."],
+  ["Do service businesses need Christmas promotions?",
+   "They help. Plumbers, HVAC companies, roofers, dentists and law firms can offer a winter check, a gift card, a New Year booking price or a free consultation week, posted on Google with dates and terms."],
+  ["Can Business Santa set up my Christmas promotion on Google?",
+   "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, sets your holiday hours, adds Christmas offer posts and fresh photos to your Google profile and includes a ChatGPT check, usually done in 3 to 7 days."],
+ ],
+})

@@ -776,7 +776,7 @@ def build_holiday_hub(p):
 # ---------- Client results: one hub and one page per client story (data in results.json, company names only) ----------
 RES = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "results.json")))
 # Release order: a story is published by adding its slug here (2 a week, after the quality gate in the plan).
-PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la", "us-headshot-photographer", "us-baby-boutique", "us-vintage-signs-shop", "uae-event-tech", "eu-nativity-shop", "uk-it-support", "uk-furniture-store", "uk-dental-practice", "au-skincare-store", "au-safes-store", "uk-golf-camps", "ee-art-shop"]
+PUBLISHED = ["us-pet-hospice", "us-hvac-durham", "us-metal-buildings", "us-remodeling-group", "us-closets-nyc", "us-barbershop-la", "us-headshot-photographer", "us-baby-boutique", "us-vintage-signs-shop", "uae-event-tech", "eu-nativity-shop", "uk-it-support", "uk-furniture-store", "uk-dental-practice", "au-skincare-store", "au-safes-store", "uk-golf-camps", "ee-art-shop", "us-bully-breeder"]
 STORIES = [RES[k] for k in PUBLISHED]
 SAMPLE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result here is dated and was checked live."
 
