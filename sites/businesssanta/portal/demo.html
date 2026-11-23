@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Your live preview · Business Santa client portal</title>
+<link rel="icon" href="/favicon.png">
+<style>
+:root{--bg:#0b0d14;--panel:#151823;--raise:#1c202d;--line:#2a2f3d;--ink:#f7f7f9;--sub:#ccd2dd;--mut:#a0a8b8;--y:#FDB913;--ok:#34d399;--warn:#fbbf24;--bad:#f87171;--f:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f)}
+a{color:var(--y)}a:hover{color:#ffd35c}
+.wrap{max-width:1280px;margin:0 auto;padding:24px}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid var(--line);background:#10131d}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink)}
+.brand img{width:34px;height:34px;border-radius:50%}
+.brand b{display:block;font-size:17px;line-height:1.1}.brand small{display:block;color:var(--mut);font-size:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.chip.y{background:rgba(253,185,19,.15);color:var(--y)}.chip.ok{background:rgba(52,211,153,.13);color:var(--ok)}.chip.bad{background:rgba(248,113,113,.13);color:var(--bad)}.chip.n{background:var(--raise);color:var(--sub)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+.lbl{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+h1{font-size:clamp(26px,3.4vw,36px);line-height:1.15;margin:6px 0 8px;letter-spacing:-.01em}
+h2{font-size:19px;margin:0 0 12px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 18px;border-radius:11px;font:600 15px var(--f);text-decoration:none;border:1px solid var(--line);background:var(--raise);color:var(--ink);cursor:pointer}
+.btn.pri{background:var(--y);border-color:var(--y);color:#0b0d14}.btn:disabled{opacity:.6;cursor:default}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13.5px;font-weight:600;color:var(--sub)}
+input,select{min-height:46px;padding:0 12px;border-radius:11px;border:1px solid var(--line);background:var(--raise);color:var(--ink);font:15px var(--f);width:100%}
+input:focus,select:focus,.btn:focus-visible,.mod:focus-visible{outline:2px solid var(--y);outline-offset:2px}
+.grid{display:grid;gap:14px}
+.form{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:900px){.form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.form{grid-template-columns:minmax(0,1fr)}.wrap{padding:16px}}
+.steps{display:flex;flex-direction:column;gap:2px;max-width:640px}
+.step{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #20242f;font-size:15px;color:var(--sub)}
+.step i{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:12px}
+.step.run i{border-color:var(--y);border-top-color:transparent;animation:sp 0.9s linear infinite}
+.step.done i{background:var(--ok);border-color:var(--ok);color:#0b0d14}.step.done i::after{content:"\2713";font-weight:800}
+.step.skip i{background:var(--raise)}.step.skip i::after{content:"\2013";color:var(--mut)}
+.step.done{color:var(--ink)}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.step.run i{animation:none}}
+.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:480px){.kpis{grid-template-columns:minmax(0,1fr)}}
+.kpi b{display:block;font-size:34px;line-height:1.1;margin:8px 0 4px;letter-spacing:-.01em}
+.kpi .s{font-size:13.5px;color:var(--mut)}
+.kpi a.p{display:inline-block;margin-top:8px;font-size:13px;font-weight:600}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px}
+@media(max-width:860px){.two{grid-template-columns:minmax(0,1fr)}}
+.fl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.fl li{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid #20242f;font-size:14.5px;color:var(--sub)}
+.fl li:last-child{border-bottom:0}
+.fl .d{flex:none;width:9px;height:9px;border-radius:50%;margin-top:7px}
+.fl a{font-size:13px;font-weight:600;white-space:nowrap}
+.lay{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-start}
+.mods{flex:999 1 600px;min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:700px){.mods{grid-template-columns:minmax(0,1fr)}}
+.mod{display:flex;flex-direction:column;gap:9px;text-align:left;width:100%;border-radius:14px;padding:16px;cursor:pointer;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line)}
+.mod.on{background:rgba(253,185,19,.07);border-color:var(--y)}
+.mod .t{display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.tr{flex:none;width:46px;height:27px;border-radius:99px;background:#363b4b;position:relative;transition:background .2s}
+.tr::after{content:"";position:absolute;top:3px;left:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:left .2s}
+.mod.on .tr{background:var(--y)}.mod.on .tr::after{left:22px}
+.mod p{margin:0;font-size:14px;color:var(--sub)}.mod p b{color:var(--ink)}
+.plan{flex:1 1 320px;max-width:420px;position:sticky;top:16px;border-color:var(--y)}
+@media(max-width:960px){.plan{position:static;max-width:none}}
+.meter{height:10px;border-radius:99px;background:var(--raise);overflow:hidden}.meter i{display:block;height:100%;background:var(--y);transition:width .3s}
+.pages{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.pr{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:14px;color:var(--sub);border-bottom:1px solid #20242f}
+.pr b{color:var(--ink);text-align:right}
+.hide{display:none!important}
+.note{padding:12px 14px;border-radius:11px;background:var(--raise);font-size:14px;color:var(--sub)}
+.err{color:var(--bad);font-size:14px;margin-top:8px}
+footer.f{max-width:1280px;margin:0 auto;padding:10px 24px 30px;font-size:13px;color:var(--mut);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+details.sales{margin-top:14px;font-size:13.5px;color:var(--mut)}details.sales summary{cursor:pointer;min-height:32px}
+@media print{header.top .chip,.noprint,details.sales{display:none!important}body{background:#fff;color:#111}.card,.mod{background:#fff;border-color:#ccc;color:#111}.mod p,.fl li,.kpi .s,.pr{color:#333}.plan{position:static}}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="https://www.businesssanta.com/"><img src="/assets/img/logo-96.webp" alt=""><span><b>Business Santa</b><small>Client portal · live preview</small></span></a>
+  <span class="chip y" id="srcChip">Built only from public information</span>
+</header>
+
+<main class="wrap" id="app">
+  <section id="start">
+    <div class="lbl">Free live preview</div>
+    <h1>See your business the way Google and your customers see it</h1>
+    <p style="margin:0 0 18px;color:var(--sub);max-width:70ch">Type the business and we read what is public right now: your website, its speed on phones, your Google profile and where you show on Google Maps. Every number links to its proof.</p>
+    <form class="card" id="f" novalidate>
+      <div class="grid form">
+        <label class="f">Type of business<select id="type"></select></label>
+        <label class="f">Business name<input id="name" autocomplete="organization" required></label>
+        <label class="f">Website<input id="website" inputmode="url" autocomplete="url"></label>
+        <label class="f">City and state<input id="city" autocomplete="address-level2"></label>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px">
+        <button class="btn pri" id="go" type="submit">Build my live preview</button>
+        <span style="font-size:13.5px;color:var(--mut)">Takes about 30 seconds. Nothing is stored.</span>
+      </div>
+      <div class="err" id="ferr" role="alert"></div>
+      <details class="sales"><summary>Business Santa team</summary>
+        <label class="f" style="max-width:320px;margin-top:8px">Sales code (opens Google Maps data)<input id="code" type="password" autocomplete="off"></label>
+      </details>
+    </form>
+  </section>
+
+  <section id="loading" class="hide" aria-live="polite">
+    <div class="lbl">Reading public information</div>
+    <h1 id="lTitle">Building your preview</h1>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section id="result" class="hide" style="display:flex;flex-direction:column;gap:18px"></section>
+</main>
+<footer class="f"><span>Business Santa · get found on Google, Maps and AI search</span><span>Powered by SEO Season</span></footer>
+
+<script>
+(() => {
+  /* Published Business Santa prices (businesssanta.com). The portal price is set by Manav; while it is empty, the portal line stays hidden. */
+  const PRICES = { monthly: { label: "Monthly local SEO, one location", value: "$299 a month, no contract" }, onPage: "from $120, one time", technical: "from $160, one time", quote: "Quoted after the free check",
+    holiday: { label: "Holiday Google tune-up", value: "$149 until Dec 10", until: "2026-12-10" }, portal: null };
+  const TYPES = [
+    ["Plumber", "plumber", "Lone Star Plumbing", "lonestarplumbing.com", "Austin, TX"],
+    ["HVAC (heating and cooling)", "HVAC company", "Comfort Air Heating and Cooling", "comfortairhvac.com", "Phoenix, AZ"],
+    ["Electrician", "electrician", "Bright Wire Electric", "brightwireelectric.com", "Charlotte, NC"],
+    ["Roofer", "roofer", "Summit Roofing Co", "summitroofingco.com", "Denver, CO"],
+    ["Dentist", "dentist", "Bright Smile Dental", "brightsmiledental.com", "Tampa, FL"],
+    ["Law firm", "lawyer", "Carter and Lane Law", "carterlanelaw.com", "Atlanta, GA"],
+    ["Restaurant", "restaurant", "Maple Street Kitchen", "maplestreetkitchen.com", "Columbus, OH"],
+    ["Salon or spa", "hair salon", "Glow Studio Salon", "glowstudiosalon.com", "Nashville, TN"],
+    ["Auto repair", "auto repair shop", "Precision Auto Care", "precisionautocare.com", "Dallas, TX"],
+    ["Other local business", "", "Your Business Name", "yourbusiness.com", "Your City, ST"]
+  ];
+  const MODS = [
+    { id:"maps", name:"Google Maps visibility", gets:"Your Google profile fixed and kept active, and a weekly check of where you show on Maps.", page:"Maps", watch:3 },
+    { id:"site", name:"A website that brings calls", gets:"Pages for each service and city, faster pages, and a call button where phones need it.", page:"Search", watch:4 },
+    { id:"reviews", name:"Reviews and reputation", gets:"Polite review requests, a review tracker and reply drafts for every review.", page:"Reviews", watch:3 },
+    { id:"ai", name:"AI search (ChatGPT and Google AI)", gets:"A monthly check of the questions buyers ask AI, and pages written to be quoted.", page:"AI visibility", watch:2 },
+    { id:"social", name:"Social posts and Reels", gets:"Posts on your channels, each checked before it goes out, with monthly numbers.", page:"Calendar and social", watch:3 },
+    { id:"ads", name:"Google and Meta ads", gets:"Ads set up and tuned to calls and leads, with a spend limit you choose.", page:"Ad results", watch:3 }
+  ];
+  const $ = id => document.getElementById(id), esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const sel = $("type"); sel.innerHTML = TYPES.map((t, i) => `<option value="${i}">${esc(t[0])}</option>`).join("");
+  const setPh = () => { const t = TYPES[+sel.value]; $("name").placeholder = "For example: " + t[2]; $("website").placeholder = t[3]; $("city").placeholder = t[4]; };
+  sel.onchange = setPh; setPh();
+  try{ $("code").value = localStorage.getItem("bs.demoCode") || ""; }catch(e){}
+
+  const STEPS = [["site","Opening your website"],["code","Reading your page titles and business details"],["speed","Running Google's phone speed test"],["map","Counting the pages Google can find"],["gbp","Finding your Google Business Profile"],["rank","Checking where you show on Google Maps"],["comp","Comparing you with nearby competitors"],["social","Looking for your social profiles"]];
+  let timer = null;
+  function showLoading(name){
+    $("start").classList.add("hide"); $("result").classList.add("hide"); $("loading").classList.remove("hide");
+    $("lTitle").textContent = "Building the preview for " + name;
+    $("steps").innerHTML = STEPS.map(([k, t]) => `<div class="step" id="st-${k}"><i aria-hidden="true"></i><span>${esc(t)}</span></div>`).join("");
+    let n = 0; const tick = () => { if(n > 0) { const p = $("st-" + STEPS[n - 1][0]); if(p && p.classList.contains("run")){ p.classList.remove("run"); p.classList.add("done"); } } if(n < STEPS.length - 1){ const c = $("st-" + STEPS[n][0]); c.classList.add("run"); n++; timer = setTimeout(tick, 2600); } else { $("st-" + STEPS[n][0]).classList.add("run"); } };
+    tick();
+  }
+  function finishSteps(d){
+    clearTimeout(timer);
+    const g = d.google && d.google.status === "ok", ok = { site:!!d.site, code:!!d.site, speed:d.speed && d.speed.status === "ok", map:!!d.sitemap, gbp:g && !!d.google.place, rank:g && !!d.google.rank, comp:g && d.google.rank && d.google.rank.competitors.length > 0, social:!!d.site };
+    STEPS.forEach(([k]) => { const e = $("st-" + k); e.classList.remove("run"); e.classList.add(ok[k] ? "done" : "skip"); });
+  }
+
+  $("f").onsubmit = async e => {
+    e.preventDefault(); $("ferr").textContent = "";
+    const t = TYPES[+sel.value], name = $("name").value.trim(), website = $("website").value.trim(), city = $("city").value.trim(), code = $("code").value.trim();
+    if(!name && !website){ $("ferr").textContent = "Type the business name or its website."; return; }
+    try{ localStorage.setItem("bs.demoCode", code); }catch(e){}
+    showLoading(name || website);
+    try{
+      const r = await fetch("/api/portal-scan", { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify({ name, website, city, service:t[1], code }) });
+      const d = await r.json(); if(!r.ok || !d.ok) throw new Error(d.error || "The check did not finish");
+      finishSteps(d); setTimeout(() => render(d, t), 700);
+    }catch(err){ clearTimeout(timer); $("loading").classList.add("hide"); $("start").classList.remove("hide"); $("ferr").textContent = "The preview could not be built: " + (err.message || err) + ". Check the website address and try again."; }
+  };
+
+  let state = { on:{}, showPrice:false, d:null, t:null };
+  function render(d, t){
+    state.d = d; state.t = t;
+    const gaps = d.findings.filter(f => f.level === "gap"), byMod = m => gaps.filter(f => f.module === m.id);
+    state.on = {}; MODS.forEach(m => { if(byMod(m).length) state.on[m.id] = true; }); if(!Object.keys(state.on).length) state.on.maps = true;
+    $("loading").classList.add("hide"); const R = $("result"); R.classList.remove("hide");
+    const s = d.site || {}, g = d.google || {}, place = g.place, rank = g.rank, sp = d.speed || {}, when = new Date(d.at).toLocaleString("en-US", { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+    const nm = (place && place.name) || d.input.name || (d.input.website || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+    const topComp = rank && rank.competitors.length ? rank.competitors.slice().sort((a, b) => (b.reviews || 0) - (a.reviews || 0))[0] : null;
+    const kp = [];
+    if(g.status === "ok" && place) kp.push(["Google rating", place.rating ? place.rating + " ★" : "No rating yet", `${(place.reviews || 0).toLocaleString("en-US")} reviews${topComp ? ` · ${esc(topComp.name)} has ${(topComp.reviews || 0).toLocaleString("en-US")}` : ""}`, place.proof]);
+    if(g.status === "ok" && rank) kp.push(["Google Maps position", rank.position ? "#" + rank.position : "Not in top " + (rank.checked || 20), `for "${esc(rank.query)}"`, rank.proof]);
+    if(sp.status === "ok") kp.push(["Speed on phones", sp.score + "/100", `Google's own test${sp.lcp ? " · main content shows in " + esc(sp.lcp) : ""}`, sp.proof]);
+    else if(d.input.website) kp.push(["Speed on phones", "Not measured", esc(sp.why || "Google's test did not answer") + ". Run it again in a minute", sp.proof]);
+    if(d.sitemap) kp.push(["Pages Google can find", d.sitemap.count ? d.sitemap.count.toLocaleString("en-US") : "No sitemap", d.sitemap.count ? "listed in your sitemap" : "a sitemap helps Google find every page", d.sitemap.source]);
+    if(d.site){ const sc = Object.keys(s.socials || {}); kp.push(["Social profiles linked", String(sc.length), sc.length ? sc.map(x => x[0].toUpperCase() + x.slice(1)).join(", ") : "none linked from your website", s.finalUrl]); }
+    kp.push(["Things to fix", String(gaps.length), `${d.findings.filter(f => f.level === "good").length} things already working well`, ""]);
+    const lockNote = g.status === "locked" ? `<div class="note">Google Maps rating, reviews and ranking are shown when a Business Santa advisor opens this preview with you.</div>` : g.status === "unavailable" ? `<div class="note">Google Maps data did not load this time (${esc(g.why || "no answer")}). Try again in a minute.</div>` : "";
+    const fItem = f => `<li><span class="d" style="background:${f.level === "gap" ? "var(--bad)" : f.level === "good" ? "var(--ok)" : "var(--mut)"}"></span><span style="flex:1">${esc(f.text)}</span>${f.proof ? `<a href="${esc(f.proof)}" target="_blank" rel="noopener">Proof</a>` : ""}</li>`;
+    R.innerHTML = `
+      <section style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
+        <div><div class="lbl">Your live preview · read ${esc(when)}</div><h1>${esc(nm)}${d.input.city ? " · " + esc(d.input.city) : ""}</h1>
+        <p style="margin:0;color:var(--sub);max-width:72ch">This is how your business looks in public today. Switch on what you want fixed below, and see what your portal will track for you every week.</p></div>
+        <div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="again" type="button">Check another business</button><button class="btn" id="print" type="button">Save as PDF</button></div>
+      </section>
+      <section class="grid kpis">${kp.map(([l, v, sub, p]) => `<article class="card kpi"><div class="lbl">${esc(l)}</div><b>${esc(v)}</b><div class="s">${sub}</div>${p ? `<a class="p" href="${esc(p)}" target="_blank" rel="noopener">See the proof</a>` : ""}</article>`).join("")}</section>
+      ${lockNote}
+      <section class="two">
+        <article class="card"><h2>What is holding you back</h2>${gaps.length ? `<ul class="fl">${gaps.map(fItem).join("")}</ul>` : `<p style="color:var(--sub);margin:0">We found nothing broken in public. The next step is growth: more searches, more reviews, more calls.</p>`}</article>
+        <article class="card"><h2>What is already working</h2><ul class="fl">${d.findings.filter(f => f.level !== "gap").map(fItem).join("") || `<li>Nothing to show yet.</li>`}</ul>
+          <div class="note" style="margin-top:12px"><b style="color:var(--ink)">When you connect your accounts</b>, your portal also shows your real Google clicks and searches, calls and direction requests from Maps, website visits and post views. It takes about 2 minutes.</div></article>
+      </section>
+      <div class="lbl" style="margin-top:4px">Choose what Business Santa takes care of</div>
+      <section class="lay"><div class="mods" id="mods"></div><aside class="card plan" id="plan"></aside></section>`;
+    $("again").onclick = () => { R.classList.add("hide"); $("start").classList.remove("hide"); window.scrollTo(0, 0); };
+    $("print").onclick = () => window.print();
+    drawMods(); window.scrollTo(0, 0);
+  }
+  function drawMods(){
+    const d = state.d, gaps = d.findings.filter(f => f.level === "gap");
+    $("mods").innerHTML = MODS.map(m => { const fs = d.findings.filter(f => f.module === m.id && f.level === "gap"), on = !!state.on[m.id];
+      const found = fs.length ? fs[0].text + (fs.length > 1 ? ` And ${fs.length - 1} more.` : "") : (m.id === "ai" ? "Not part of the free preview: checked from your first week." : m.id === "ads" ? "Ads are checked against what competitors run once you start." : "Nothing broken found here. This keeps it that way and grows it.");
+      return `<button type="button" class="mod${on ? " on" : ""}" data-m="${m.id}" aria-pressed="${on}"><span class="t"><span>${esc(m.name)}</span><span class="tr" aria-hidden="true"></span></span>
+        <p><b>Found:</b> ${esc(found)}</p><p><b>You get:</b> ${esc(m.gets)}</p>
+        <span style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip y">Adds the ${esc(m.page)} page</span><span class="chip n">${m.watch} things watched weekly</span>${fs.length ? `<span class="chip bad">${fs.length} to fix</span>` : ""}</span></button>`; }).join("");
+    document.querySelectorAll("#mods .mod").forEach(b => b.onclick = () => { state.on[b.dataset.m] = !state.on[b.dataset.m]; drawMods(); });
+    const chosen = MODS.filter(m => state.on[m.id]), watch = chosen.reduce((n, m) => n + m.watch, 0) + 2, all = MODS.reduce((n, m) => n + m.watch, 0) + 2;
+    const fixes = gaps.filter(f => state.on[f.module]).length, pages = ["Overview", "Reports"].concat(chosen.map(m => m.page));
+    const lines = [];
+    if(state.on.maps || state.on.site) lines.push([PRICES.monthly.label, PRICES.monthly.value]);
+    if(state.on.site && gaps.some(f => f.kind === "page")) lines.push(["On-page fixes found above", PRICES.onPage]);
+    if(state.on.site && gaps.some(f => f.kind === "tech")) lines.push(["Technical fixes found above", PRICES.technical]);
+    chosen.filter(m => !["maps", "site"].includes(m.id)).forEach(m => lines.push([m.name, PRICES.quote]));
+    if(PRICES.portal) lines.push(["Your live client portal", PRICES.portal]);
+    const holiday = new Date().toISOString().slice(0, 10) <= PRICES.holiday.until;
+    $("plan").innerHTML = `<div class="lbl">Your plan</div>
+      <div style="margin-top:8px"><b style="font-size:46px;line-height:1;color:var(--y)">${watch}</b><div style="font-size:14px;color:var(--sub)">things we watch and improve for you every week</div></div>
+      <div class="meter" style="margin:12px 0 14px"><i style="width:${Math.round(100 * watch / all)}%"></i></div>
+      <div style="font-size:15px"><b>${fixes}</b> <span style="color:var(--sub)">problems from this preview fixed first</span></div>
+      <div style="margin-top:12px;font-size:15px"><b>${pages.length}</b> <span style="color:var(--sub)">pages in your portal</span><div class="pages">${pages.map(p => `<span class="chip n">${esc(p)}</span>`).join("")}</div></div>
+      <div class="note" style="margin-top:14px"><b style="color:var(--ink)">Always included:</b> your live portal, a monthly strategy report and a real person to talk to.</div>
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+        <button type="button" class="btn" id="pbtn" aria-expanded="${state.showPrice}" style="width:100%;justify-content:space-between"><span>Monthly investment</span><span style="color:var(--mut)">${state.showPrice ? "hide" : "show"}</span></button>
+        <div class="${state.showPrice ? "" : "hide"}" style="padding-top:8px">${lines.map(([a, b]) => `<div class="pr"><span>${esc(a)}</span><b>${esc(b)}</b></div>`).join("")}
+          ${holiday ? `<div class="pr" style="border-bottom:0"><span>${esc(PRICES.holiday.label)}</span><b style="color:var(--y)">${esc(PRICES.holiday.value)}</b></div>` : ""}
+          <p style="font-size:13px;color:var(--mut);margin:8px 0 0">You see the exact price before anything starts. No long contracts.</p></div>
+      </div>
+      <a class="btn pri" style="width:100%;margin-top:14px" href="https://www.businesssanta.com/#check">Start with the free check</a>`;
+    $("pbtn").onclick = () => { state.showPrice = !state.showPrice; drawMods(); };
+  }
+})();
+</script>
+</body>
+</html>
