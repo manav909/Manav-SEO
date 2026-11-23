@@ -1,3 +1,4 @@
+import { isClassic } from '@/lib/workspaces';
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
@@ -170,7 +171,7 @@ export default function Index() {
 
   
   const handlePortal = () => {
-    if(user&&isApproved){navigate('/dashboard');return;}
+    if(user&&isApproved){navigate(isClassic()?'/dashboard':'/start');return;}
     setShowModal(true);
   };
 

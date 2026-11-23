@@ -12,6 +12,7 @@ import {
   FileText, Search, Heart, Eye, Kanban, UserPlus,
   DollarSign, Bot, Palette, Map, FlaskConical, ClipboardCheck,
 } from 'lucide-react';
+import { WORKSPACES, inWorkspace, isClassic, setClassic } from '@/lib/workspaces';
 
 interface Props {
   clientName?:        string;
@@ -101,7 +102,19 @@ const EMPIRE_SECTIONS = [
   },
 ];
 
+const WS_ICONS: Record<string, any> = { today: Sparkles, win: Target, work: Rocket, clients: Heart, insights: Eye };
+
 export default function PortalNav({ clientName, companyName, onProjectChange }: Props) {
+  /* Simple mode is the default; the classic menu stays one switch away. */
+  const classic = isClassic();
+  const primaryItems = classic ? PRIMARY : [
+    { href: '/start', label: 'Home', icon: Sparkles, desc: 'Start here', perm: null },
+    ...WORKSPACES.map(w => ({ href: '/start/' + w.id, label: w.name, icon: WS_ICONS[w.id] || Layers, desc: w.sentence, perm: null })),
+  ];
+  const sections = classic ? EMPIRE_SECTIONS : [
+    { label: 'Earlier home pages', items: PRIMARY.filter(i => !inWorkspace.has(i.href)) },
+    ...EMPIRE_SECTIONS.map(sec => ({ ...sec, items: sec.items.filter(i => !inWorkspace.has(i.href)) })),
+  ].filter(sec => sec.items.length);
   const navigate  = useNavigate();
   const location  = useLocation();
   const { staffPermissions, isOwner, signOut } = useAuth();
@@ -123,8 +136,12 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
     return staffPermissions?.[perm] === true;
   };
 
-  const isActive = (href: string) => path === href || path.startsWith(href + '/');
-  const activeEmpire = EMPIRE_SECTIONS.flatMap(s => s.items).find(l => isActive(l.href));
+  const isActive = (href: string) => {
+    if (path === href || (href !== '/start' && path.startsWith(href + '/'))) return true;
+    if (!classic && href.startsWith('/start/')) { const w = WORKSPACES.find(x => '/start/' + x.id === href); return !!w && w.tools.some(t => path === t.href || path.startsWith(t.href + '/')); }
+    return false;
+  };
+  const activeEmpire = sections.flatMap(s => s.items).find(l => isActive(l.href));
   const displayClient = selectedClient?.name || selectedClient?.company || clientName || companyName || '';
 
   // Calculate dropdown position from button so it always aligns correctly
@@ -162,7 +179,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
           <div className="flex items-center justify-between h-14 gap-4">
 
             {/* Brand */}
-            <button onClick={() => navigate(isOwner ? '/oval' : '/bde-panel')}
+            <button onClick={() => navigate(classic ? (isOwner ? '/oval' : '/bde-panel') : '/start')}
               className="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
               <div className="relative">
                 <img src="/manav.jpg" alt="SEO Season"
@@ -184,7 +201,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
 
             {/* Primary nav */}
             <nav className="hidden md:flex items-center gap-0.5 flex-1 justify-center">
-              {PRIMARY.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon, desc }) => {
+              {primaryItems.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon, desc }) => {
                 const active = isActive(href);
                 return (
                   <button key={href} onClick={() => navigate(href)} title={desc}
@@ -211,7 +228,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 }`}>
                 {activeEmpire
                   ? <><activeEmpire.icon className="h-3.5 w-3.5"/><span>{activeEmpire.label}</span></>
-                  : <><Crown className="h-3.5 w-3.5"/><span>Empire</span></>
+                  : <><Crown className="h-3.5 w-3.5"/><span>{classic ? 'Empire' : 'More tools'}</span></>
                 }
                 <ChevronDown className={`h-3 w-3 transition-transform duration-150 ${moreOpen ? 'rotate-180' : ''}`}/>
               </button>
@@ -259,8 +276,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                   {safeProjects.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               )}
-              <div className="text-xs font-bold text-muted-foreground/40 uppercase tracking-widest px-2 pb-1">Core</div>
-              {PRIMARY.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon }) => (
+              <div className="text-xs font-bold text-muted-foreground/40 uppercase tracking-widest px-2 pb-1">{classic ? 'Core' : 'Workspaces'}</div>
+              {primaryItems.filter(item => canAccess(item.perm)).map(({ href, label, icon: Icon }) => (
                 <button key={href} onClick={() => { navigate(href); setMobileOpen(false); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                     isActive(href) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
@@ -268,7 +285,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                   <Icon className="h-4 w-4 shrink-0"/>{label}
                 </button>
               ))}
-              {EMPIRE_SECTIONS.map(section => {
+              {sections.map(section => {
                 const visible = section.items.filter(item => canAccess(item.perm));
                 if (!visible.length) return null;
                 return (
@@ -307,7 +324,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
               backgroundColor: 'hsl(var(--card))',
               boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 0 1px hsl(var(--border))' }}>
             <div className="grid grid-cols-3 gap-2">
-              {EMPIRE_SECTIONS.map(section => {
+              {sections.map(section => {
                 const visible = section.items.filter(item => canAccess(item.perm));
                 if (!visible.length) return null;
                 return (
@@ -331,6 +348,11 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                   </div>
                 );
               })}
+            </div>
+            <div className="border-t border-border/60 mt-3 pt-3 flex items-center justify-between gap-3 px-2">
+              <span className="text-[11px] text-muted-foreground">{classic ? 'You are on the classic menu.' : 'Every earlier page is here. Nothing was removed.'}</span>
+              <button onClick={() => { setClassic(!classic); setMoreOpen(false); window.location.assign(classic ? '/start' : path); }}
+                className="text-[11px] font-semibold text-primary hover:underline shrink-0">{classic ? 'Switch to Simple mode' : 'Switch to classic menu'}</button>
             </div>
           </div>
         </>

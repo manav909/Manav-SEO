@@ -85,6 +85,7 @@ import TeamOffers     from "@/pages/TeamOffers";
 import TeamMyDay      from "@/pages/TeamMyDay";
 import TeamCalls      from "@/pages/TeamCalls";
 import TeamChecks     from "@/pages/TeamChecks";
+import Start          from "@/pages/Start";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
@@ -216,6 +217,8 @@ const AppRoutes = () => {
           <Route path="/team/calls" element={<StaffGuard perm="staff"><B name="team-calls"><TeamCalls /></B></StaffGuard>} />
           <Route path="/team/offers" element={<StaffGuard perm="staff"><B name="team-offers"><TeamOffers /></B></StaffGuard>} />
           <Route path="/team/inbox" element={<StaffGuard perm="staff"><B name="team-inbox"><TeamInbox /></B></StaffGuard>} />
+          <Route path="/start" element={<StaffGuard perm="staff"><B name="start"><Start /></B></StaffGuard>} />
+          <Route path="/start/:ws" element={<StaffGuard perm="staff"><B name="start-ws"><Start /></B></StaffGuard>} />
           <Route path="/kanban" element={<StaffGuard perm="staff"><KanbanBoard /></StaffGuard>} />
           <Route path="*"               element={<NotFound />} />
       </Routes></div>
