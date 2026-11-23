@@ -40,18 +40,26 @@ export async function scanBrand(b, why){
 }
 
 async function brandView(id, role){
-  const [b, work, todo, first] = await mgetJ([K.brand(id), K.work(id), K.todo(id), K.first(id)]);
+  const [b, work, todo, first, conn] = await mgetJ([K.brand(id), K.work(id), K.todo(id), K.first(id), K.conn(id)]);
   if(!b) return null;
   const [latest] = await listJ(K.scans(id), 1);
   const series = (await listJ(K.scans(id) + ":c", 200)).reverse();
   const brand = Object.assign({}, b); if(role !== "admin") delete brand.notes;
-  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [] };
+  const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(u => u && !u.revoked && (u.brands || []).includes(id));
+  const people = users.map(u => ({ name:u.name, role:u.role || "owner", lastSeen:u.lastSeen || null }));
+  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [], conn:conn || { items:{}, team:[] }, people };
 }
 async function allBrands(){ const ids = await cmd("SMEMBERS", K.brands); return (await mgetJ(ids.map(K.brand))).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name)); }
 async function summaries(brands){
   if(!brands.length) return [];
   const heads = await pipe(brands.map(b => ["LINDEX", K.scans(b.id) + ":c", 0]));
-  return brands.map((b, i) => ({ id:b.id, name:b.name, city:b.city, website:b.website, service:b.service, type:b.type || "", modules:b.modules || {}, lastScanAt:b.lastScanAt || null, latest:heads[i] ? JSON.parse(heads[i]) : null }));
+  const conns = await mgetJ(brands.map(b => K.conn(b.id)));
+  return brands.map((b, i) => ({ pending:pendingOf(conns[i]), id:b.id, name:b.name, city:b.city, website:b.website, service:b.service, type:b.type || "", modules:b.modules || {}, lastScanAt:b.lastScanAt || null, latest:heads[i] ? JSON.parse(heads[i]) : null }));
+}
+const CONN = ["gbp", "gsc", "ga", "web", "meta", "gads"], ANS = ["added", "help", "notsure", "none", "someone", "skip"];
+function pendingOf(c){
+  if(!c) return 0;
+  return Object.values(c.items || {}).filter(it => it.at && (!it.adminAt || it.at > it.adminAt)).length + (c.team || []).filter(t => !t.done).length + (c.calls || []).filter(t => !t.done).length;
 }
 function cleanBrand(x, old){
   const url = normUrl(x.website);
@@ -71,7 +79,7 @@ async function saveList(key, item, del){
   if(del){ if(i >= 0) list.splice(i, 1); } else if(i >= 0) list[i] = Object.assign(list[i], item); else list.unshift(item);
   await setJ(key, list.slice(0, 300)); return list;
 }
-const publicUser = u => ({ uid:u.uid, name:u.name, email:u.email, brands:u.brands || [], createdAt:u.createdAt, lastSeen:u.lastSeen || null, revoked:!!u.revoked, link:u.link || null });
+const publicUser = u => ({ uid:u.uid, name:u.name, email:u.email, role:u.role || "owner", brands:u.brands || [], createdAt:u.createdAt, lastSeen:u.lastSeen || null, revoked:!!u.revoked, link:u.link || null });
 const linkUrl = (request, t) => new URL("/portal/in/" + t, request.url).toString();
 
 async function handle(request){
@@ -129,6 +137,29 @@ async function handle(request){
     const id = str(P("id"), 60); if(!mine(id)) return bad("Not found", 404);
     const v = await brandView(id, who.role); return v ? out(Object.assign({ ok:true }, v)) : bad("Not found", 404);
   }
+  if(a === "conn-answer" && post){
+    const id = str(q.brand, 60), key = str(q.key, 10); if(!mine(id)) return bad("Not found", 404);
+    if(!CONN.includes(key) || !ANS.includes(q.answer)) return bad("Choose one of the options");
+    const c = (await getJ(K.conn(id))) || { items:{}, team:[] }, old = c.items[key] || {};
+    const it = Object.assign({}, old, { answer:q.answer, note:str(q.note, 800), contactName:str(q.contactName, 120), contactEmail:str(q.contactEmail, 200), callWhen:str(q.callWhen, 120), tz:str(q.tz, 60), at:new Date().toISOString(), by:isAdmin ? "Business Santa" : who.user.name });
+    if(old.status === "issue" || old.status === "optional") delete it.status;
+    it.history = (old.history || []).concat([{ at:it.at, by:it.by, answer:it.answer, note:it.note }]).slice(-20);
+    c.items[key] = it; await setJ(K.conn(id), c); return out({ ok:true, conn:c });
+  }
+  if(a === "team-ask" && post){
+    const id = str(q.brand, 60); if(!mine(id)) return bad("Not found", 404);
+    const name = str(q.name, 120); if(!name) return bad("Tell us the person's name");
+    const c = (await getJ(K.conn(id))) || { items:{}, team:[] };
+    c.team = (c.team || []).concat([{ id:rid(6), name, email:str(q.email, 200), role:q.role === "owner" ? "owner" : "team", note:str(q.note, 500), at:new Date().toISOString(), by:isAdmin ? "Business Santa" : who.user.name, done:false }]).slice(-50);
+    await setJ(K.conn(id), c); return out({ ok:true, conn:c });
+  }
+  if(a === "call-ask" && post){
+    const id = str(q.brand, 60); if(!mine(id)) return bad("Not found", 404);
+    const when = str(q.when, 120); if(!when) return bad("Pick a time that works for you");
+    const c = (await getJ(K.conn(id))) || { items:{}, team:[] };
+    c.calls = (c.calls || []).concat([{ id:rid(6), when, tz:str(q.tz, 60), topic:str(q.topic, 120), phone:str(q.phone, 40), note:str(q.note, 600), at:new Date().toISOString(), by:isAdmin ? "Business Santa" : who.user.name, done:false }]).slice(-30);
+    await setJ(K.conn(id), c); return out({ ok:true, conn:c });
+  }
   if(a === "todo-done" && post){
     const id = str(q.brand, 60); if(!mine(id)) return bad("Not found", 404);
     const list = (await getJ(K.todo(id))) || [], it = list.find(x => x.id === q.id);
@@ -148,7 +179,7 @@ async function handle(request){
   }
   if(a === "brand-delete" && post){
     const id = str(q.id, 60);
-    await pipe([["SREM", K.brands, id], ["DEL", K.brand(id), K.scans(id), K.scans(id) + ":c", K.first(id), K.work(id), K.todo(id)]]);
+    await pipe([["SREM", K.brands, id], ["DEL", K.brand(id), K.scans(id), K.scans(id) + ":c", K.first(id), K.work(id), K.todo(id), K.conn(id)]]);
     const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(Boolean);
     for(const usr of users) if((usr.brands || []).includes(id)){ usr.brands = usr.brands.filter(x => x !== id); await setJ(K.user(usr.uid), usr); }
     return out({ ok:true });
@@ -168,6 +199,16 @@ async function handle(request){
     const list = await saveList(kind === "work" ? K.work(id) : K.todo(id), item, del);
     return out({ ok:true, list });
   }
+  if(a === "conn-set" && post){
+    const id = str(q.brand, 60), key = str(q.key, 10); if(!(await getJ(K.brand(id)))) return bad("Not found", 404);
+    const c = (await getJ(K.conn(id))) || { items:{}, team:[] };
+    if(q.team || q.call){ const t = (q.team ? c.team || [] : c.calls || []).find(x => x.id === (q.team || q.call)); if(t){ t.done = true; t.doneAt = new Date().toISOString(); t.reply = str(q.adminNote, 400); } }
+    else { if(!CONN.includes(key)) return bad("Unknown account");
+      const it = c.items[key] || {}, st = str(q.status, 12);
+      if(["connected", "issue", "optional"].includes(st)) it.status = st; else delete it.status;
+      it.adminNote = str(q.adminNote, 800); it.adminAt = new Date().toISOString(); c.items[key] = it; }
+    await setJ(K.conn(id), c); return out({ ok:true, conn:c });
+  }
   if(a === "users"){
     const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(Boolean).map(publicUser);
     users.forEach(x => { if(x.link) x.url = linkUrl(request, x.link); });
@@ -176,7 +217,7 @@ async function handle(request){
   if(a === "user-save" && post){
     const uid = str(q.uid, 40), old = uid ? await getJ(K.user(uid)) : null; if(uid && !old) return bad("Not found", 404);
     const ids = new Set(await cmd("SMEMBERS", K.brands));
-    const usr = Object.assign({}, old || { uid:rid(8), createdAt:new Date().toISOString(), rev:1 }, { name:str(q.name, 120), email:str(q.email, 200), brands:(Array.isArray(q.brands) ? q.brands : []).map(x => str(x, 60)).filter(x => ids.has(x)) });
+    const usr = Object.assign({}, old || { uid:rid(8), createdAt:new Date().toISOString(), rev:1 }, { name:str(q.name, 120), email:str(q.email, 200), role:q.role === "team" ? "team" : "owner", brands:(Array.isArray(q.brands) ? q.brands : []).map(x => str(x, 60)).filter(x => ids.has(x)) });
     if(!usr.name) return bad("Give the person's name");
     await setJ(K.user(usr.uid), usr); await cmd("SADD", K.users, usr.uid);
     return out({ ok:true, user:publicUser(usr) });

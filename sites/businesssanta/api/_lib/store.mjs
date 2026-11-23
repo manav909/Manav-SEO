@@ -25,7 +25,7 @@ const P = "bsp:";
 export const K = {
   brand:id => P + "brand:" + id, brands:P + "brands",
   scans:id => P + "scans:" + id, first:id => P + "first:" + id,
-  work:id => P + "work:" + id, todo:id => P + "todo:" + id,
+  work:id => P + "work:" + id, todo:id => P + "todo:" + id, conn:id => P + "conn:" + id,
   user:id => P + "user:" + id, users:P + "users",
   link:t => P + "link:" + t, sess:t => P + "sess:" + t,
   usage:(what, ym) => P + "usage:" + what + ":" + ym, rl:k => P + "rl:" + k, cronLock:P + "cron:lock", log:P + "log"

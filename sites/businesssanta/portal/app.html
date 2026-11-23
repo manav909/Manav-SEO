@@ -62,6 +62,23 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
 .td pre{white-space:pre-wrap;font:14px/1.5 var(--f);color:var(--sub);background:var(--raise);border-radius:10px;padding:10px 12px;margin:6px 0 0}
 #loading{display:grid;place-items:center;min-height:50vh;gap:12px;color:var(--mut)}
 .pg{display:flex;flex-direction:column;gap:16px;min-width:0}
+.acc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px}
+.acc-r{display:flex;flex-direction:column;gap:12px;min-width:0;border-left:1px solid var(--soft);padding-left:22px}
+.acc-chip2{display:none}
+@media(max-width:860px){.acc{grid-template-columns:minmax(0,1fr);gap:12px}.acc-r{border-left:0;padding-left:0;border-top:1px solid var(--soft);padding-top:14px}}
+.steps{background:var(--raise);border-radius:12px;padding:12px 14px}
+.steps ol{margin:0 0 10px;padding-left:20px;color:var(--sub);font-size:14.5px;display:flex;flex-direction:column;gap:6px}
+details.ans>summary{cursor:pointer;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);min-height:30px;display:flex;align-items:center;gap:6px;list-style:none}
+details.ans>summary::after{content:"+";font-size:16px;color:var(--y)}details.ans[open]>summary::after{content:"\2212"}
+.acc-f{display:flex;flex-direction:column;gap:12px;margin-top:6px}
+.acc-f .more{display:flex;flex-direction:column;gap:10px}
+.picks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+@media(max-width:420px){.picks{grid-template-columns:minmax(0,1fr)}}
+label.pick input:focus{outline:none}label.pick:focus-within{outline:2px solid var(--y);outline-offset:2px}
+label.pick{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:99px;background:var(--raise);border:1px solid var(--line);font-size:13.5px;color:var(--sub);cursor:pointer;min-height:40px}
+label.pick input{width:16px;height:16px;accent-color:var(--y)}
+label.pick:has(input:checked){border-color:var(--y);color:var(--ink);background:rgba(253,185,19,.08)}
+details>summary::-webkit-details-marker{display:none}
 </style>
 </head>
 <body>
@@ -80,6 +97,7 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
   <main id="main" class="pg"></main>
 </div>
 <footer class="pf"><span>Business Santa · your team for Google, Maps and AI search · <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></span><span>Powered by SEO Season</span></footer>
+<script src="/portal/catalog.js"></script>
 <script>
 (() => {
   const $ = id => document.getElementById(id);
@@ -92,7 +110,7 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
   const api = async (a, body) => { const r = await fetch("/api/portal?a=" + a, body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), credentials:"same-origin" } : { credentials:"same-origin" }); const d = await r.json().catch(() => ({})); if(r.status === 401){ location.replace("/portal"); throw new Error("signed out"); } if(!r.ok) throw new Error(d.error || "Request failed"); return d; };
   const toast = t => { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 2600); };
   const MODN = { maps:"Google Maps", site:"Website", reviews:"Reviews", ai:"AI search", social:"Social posts", ads:"Ads" };
-  const PAGES = [["overview", "Overview"], ["maps", "Maps and reviews"], ["site", "Website"], ["work", "Work plan"], ["todo", "Your to-do"], ["reports", "Reports"]];
+  const PAGES = [["overview", "Overview"], ["maps", "Maps and reviews"], ["site", "Website"], ["work", "Work plan"], ["todo", "Your to-do"], ["access", "Access and connections"], ["reports", "Reports"]];
   let ME = null, V = null, cur = { id:"", page:"overview" };
 
   /* Small line for a KPI card. lowerBetter flips the picture so "up" always means better. */
@@ -149,10 +167,10 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
     $("loading").classList.add("hide"); $("shell").classList.remove("hide");
   }
   function drawChrome(){
-    const b = V.brand, open = V.todo.filter(t => t.who === "you" && !t.done).length;
+    const b = V.brand, open = V.todo.filter(t => t.who === "you" && !t.done).length, accN = conns().filter(c => c.need && (c.st === "todo" || c.st === "issue")).length;
     $("swWrap").innerHTML = ME.brands.length > 1 ? `<label class="hide" for="sw">Business</label><select id="sw" class="sw" aria-label="Choose a business">${ME.brands.map(x => `<option value="${esc(x.id)}"${x.id === b.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : `<span class="bname" style="font-weight:600;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;display:inline-block">${esc(b.name)}</span>`;
     if($("sw")) $("sw").onchange = e => { location.hash = "#/" + e.target.value + "/" + cur.page; };
-    const links = PAGES.map(([k, t]) => `<a href="#/${esc(b.id)}/${k}" class="${k === cur.page ? "on" : ""}"${k === cur.page ? ' aria-current="page"' : ""}><span>${t}</span>${k === "todo" && open ? `<span class="badge">${open}</span>` : ""}</a>`).join("");
+    const links = PAGES.map(([k, t]) => `<a href="#/${esc(b.id)}/${k}" class="${k === cur.page ? "on" : ""}"${k === cur.page ? ' aria-current="page"' : ""}><span>${t}</span>${k === "todo" && open ? `<span class="badge">${open}</span>` : ""}${k === "access" && accN ? `<span class="badge">${accN}</span>` : ""}</a>`).join("");
     $("side").innerHTML = links + `<div class="sep"></div><a href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}"><span>Talk to your strategist</span></a>`;
     $("tabs").innerHTML = links; const ta = $("tabs").querySelector("a.on"); if(ta) $("tabs").scrollLeft = ta.offsetLeft - 14;
     if(b.lastScanAt){ $("live").textContent = "Checked " + ago(b.lastScanAt); $("live").classList.remove("hide"); } else $("live").classList.add("hide");
@@ -189,9 +207,10 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
 
   function draw(){
     const x = facts(), b = V.brand, m = $("main");
-    const P = { overview, maps, site, work, todo, reports }[cur.page];
+    const P = { overview, maps, site, work, todo, access, reports }[cur.page];
     m.innerHTML = P(x, b);
     m.querySelectorAll("[data-print]").forEach(e => e.onclick = () => window.print());
+    if(cur.page === "access") wireAccess(b);
     m.querySelectorAll("input[data-todo]").forEach(e => e.onchange = async () => {
       e.disabled = true;
       try{ const d = await api("todo-done", { brand:b.id, id:e.dataset.todo, done:e.checked }); V.todo = d.todo; drawChrome(); draw(); toast(e.checked ? "Marked as done. Thank you." : "Marked as not done."); }
@@ -207,9 +226,10 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
   function overview(x, b){
     const { S, last } = x;
     const tot = last ? last.gaps.length + last.good.length : 0;
-    let line = !last ? "Your first check is being prepared. Numbers appear here as soon as it is done." :
+    const hr = new Date().getHours(), hi = ME.role === "admin" ? "" : `${hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"}, ${esc((ME.user.name || "").split(" ")[0])}. `;
+    let line = hi + (!last ? "Your first check is being prepared. Numbers appear here as soon as it is done." :
       `<b>${last.good.length} of ${tot}</b> public checks pass today.` + (x.fixed.length ? ` <b>${x.fixed.length}</b> problem${x.fixed.length === 1 ? "" : "s"} fixed since you started on ${esc(fmt(S[0].at))}.` : "") +
-      (S.length === 1 ? ` This first check is your starting point.` : "") + (x.next ? ` Next check: ${esc(short(x.next))}.` : "");
+      (S.length === 1 ? ` This first check is your starting point.` : "") + (x.next ? ` Next check: ${esc(short(x.next))}.` : ""));
     const you = V.todo.filter(t => t.who === "you" && !t.done).sort((a, c) => (a.due || "9").localeCompare(c.due || "9"));
     const done = V.work.filter(w => w.status === "done").sort((a, c) => (c.date || c.at).localeCompare(a.date || a.at)).slice(0, 5);
     const next = V.work.filter(w => w.status !== "done").sort((a, c) => (a.status === "doing" ? -1 : 1) - (c.status === "doing" ? -1 : 1) || (a.date || "9").localeCompare(c.date || "9")).slice(0, 5);
@@ -229,7 +249,7 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
           ${x.next ? `<div class="note" style="margin-top:12px">Next weekly check: <b>${esc(fmt(x.next, { weekday:"long", month:"short", day:"numeric" }))}</b>. Every number on this page updates then.</div>` : ""}</article>
       </section>
       ${comp && comp.competitors.length ? `<section class="card"><h2>You and the businesses next to you on Google Maps</h2><p class="sub">For "${esc(comp.query)}", read ${esc(fmt(x.L.at))}.</p>${vsBars(x)}<a class="btn sm" style="margin-top:14px" href="#/${esc(b.id)}/maps">See Maps and reviews</a></section>` : ""}
-      ${connect()}`;
+      ${connectSummary(b)}`;
   }
   function vsBars(x){
     const g = x.L.google, me = g.place, rows = (me ? [{ name:me.name, reviews:me.reviews || 0, rating:me.rating, me:true }] : []).concat(g.rank.competitors.map(c => ({ name:c.name, reviews:c.reviews || 0, rating:c.rating })));
@@ -305,6 +325,100 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
       </tbody></table></div></section>
       ${x.fixed.length ? `<section class="card"><h2>Fixed since you started</h2><ul class="list">${x.fixed.map(f => fItem(f, true)).join("")}</ul></section>` : ""}`;
   }
+  /* Access and connections: what we can see, what each account unlocks, and the one step left. */
+  const TZN = { "America/New_York":"Eastern", "America/Detroit":"Eastern", "America/Indiana/Indianapolis":"Eastern", "America/Kentucky/Louisville":"Eastern", "America/Chicago":"Central", "America/Denver":"Mountain", "America/Boise":"Mountain", "America/Phoenix":"Arizona", "America/Los_Angeles":"Pacific", "America/Anchorage":"Alaska", "Pacific/Honolulu":"Hawaii" };
+  const myTz = () => { try{ const z = Intl.DateTimeFormat().resolvedOptions().timeZone; return TZN[z] ? TZN[z] + " time" : z; }catch(e){ return ""; } };
+  const TIMES = ["Weekday morning", "Weekday afternoon", "Weekday evening", "Saturday morning", "Any time"];
+  const ZONES = ["Eastern time", "Central time", "Mountain time", "Arizona time", "Pacific time", "Alaska time", "Hawaii time", "Outside the US"];
+  const tzSel = (v) => { const d = v || myTz(); return `<select name="tz"><option value="">Choose one</option>${ZONES.map(z => `<option${z === d ? " selected" : ""}>${z}</option>`).join("")}</select>`; };
+  function conns(){
+    const mods = (V && V.brand.modules) || {}, items = (V && V.conn && V.conn.items) || {}, anyPlan = Object.keys(mods).some(k => mods[k]);
+    return BSP.ITEMS.map(c => { const it = items[c.key] || {}, need = c.for.some(m => mods[m]) || (!anyPlan && ["gbp", "gsc"].includes(c.key));
+      let st = it.status || (it.answer === "added" ? "checking" : it.answer === "help" ? "call" : ["notsure", "none", "someone"].includes(it.answer) ? "ours" : it.answer === "skip" ? "skipped" : need ? "todo" : "optional");
+      return Object.assign({}, c, { it, need, st }); });
+  }
+  const stChip = st => `<span class="chip ${BSP.STATUS[st].cls}">${esc(BSP.STATUS[st].label)}</span>`;
+  function connectSummary(b){
+    const C = conns(), need = C.filter(c => c.need), ok = need.filter(c => c.st === "connected").length, left = need.filter(c => c.st !== "connected");
+    return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Access and connections</h2><span class="mut" style="font-size:13.5px">${ok} of ${need.length} accounts your plan uses are connected</span></div>
+      <div class="meter" style="margin:12px 0 4px"><i style="width:${need.length ? Math.round(100 * ok / need.length) : 0}%;background:var(--ok)"></i></div>
+      ${left.length ? `<ul class="list">${left.slice(0, 3).map(c => `<li><span class="d ${c.st === "todo" || c.st === "issue" ? "y" : ""}"></span><span class="tx"><b>${esc(c.name)}</b><div class="meta">Unlocks: ${esc(c.unlocks.slice(0, 2).join(", ").toLowerCase())}</div></span>${stChip(c.st)}</li>`).join("")}</ul>` : `<p class="sub" style="margin:10px 0 0">Everything your plan uses is connected. Thank you!</p>`}
+      <a class="btn sm" style="margin-top:12px" href="#/${esc(b.id)}/access">${left.some(c => c.st === "todo") ? "See the simple steps" : "Open Access and connections"}</a></section>`;
+  }
+  function access(x, b){
+    const C = conns(), need = C.filter(c => c.need), ok = need.filter(c => c.st === "connected").length;
+    const cnt = k => need.filter(c => c.st === k).length, conn = V.conn || {}, calls = (conn.calls || []).slice().reverse(), team = (conn.team || []).slice().reverse();
+    const card = c => { const it = c.it, A = BSP.ANSWERS[it.answer], open = c.st === "todo" || c.st === "issue";
+      const answered = !!A && c.st !== "connected";
+      return `<article class="card acc" id="acc-${c.key}">
+        <div class="acc-l">
+          <div class="row" style="justify-content:space-between;align-items:flex-start"><div style="min-width:0"><h2 style="margin:0">${esc(c.name)}</h2><div class="mut" style="font-size:13.5px">${esc(c.short)}</div></div><span class="acc-chip">${stChip(c.st)}</span></div>
+          <div style="font-size:13.5px;margin-top:8px" class="${c.need ? "" : "mut"}">${c.need ? `Your plan uses this for <b style="color:var(--ink)">${esc([...new Set(c.for.filter(m => (b.modules || {})[m]).map(m => MODN[m]))].join(", ") || "your weekly report")}</b>` : "Not needed for your current plan. Connecting it later adds more detail."}</div>
+          <ul class="list" style="margin-top:6px">${c.unlocks.map(u => `<li style="padding:5px 0;border:0"><span class="d ok" style="margin-top:8px"></span><span class="tx">${esc(u)}</span></li>`).join("")}</ul>
+        </div>
+        <div class="acc-r">
+          <div class="acc-chip2">${stChip(c.st)}</div>
+          ${c.st === "connected" ? `<div class="note" style="border-left:3px solid var(--ok)"><b>You're all set.</b> ${esc(it.adminNote || "This now feeds your portal and reports. Thank you!")}</div>` : ""}
+          ${c.st === "issue" ? `<div class="note" style="border-left:3px solid var(--bad)"><b>A quick look is needed.</b> ${esc(it.adminNote || "We could not see the access yet. Please check the steps once more, or choose \"I'd like help\".")}</div>` : ""}
+          ${answered ? `<div class="note"><b>You told us:</b> ${esc(A.label)} · ${esc(short(it.at))}${it.contactName ? ` · ${esc(it.contactName)}` : ""}${it.callWhen ? ` · ${esc(it.callWhen.toLowerCase())}` : ""}<br>${esc(it.adminNote && c.st !== "issue" ? it.adminNote : A.reply)}</div>` : ""}
+          ${c.st === "todo" && c.need ? `<p class="sub" style="margin:0;font-size:14px">One small step, about ${c.mins} minutes. You don't need to be technical: the steps tell you exactly what to click.</p>` : ""}
+          ${c.st !== "connected" ? `<div class="row" style="flex-wrap:wrap;gap:8px"><button class="btn sm${c.st === "todo" && c.need ? " pri" : ""}" type="button" data-steps="${c.key}" aria-expanded="false">Show me the steps</button>${c.link ? `<a class="btn sm" href="${esc(c.link)}" target="_blank" rel="noopener">${esc(c.linkLabel)}</a>` : ""}</div>
+          <div class="steps hide" id="steps-${c.key}"><ol>${c.steps.map(t => `<li>${esc(t).replace("{email}", `<b style="color:var(--ink)">${esc(BSP.ACCESS_EMAIL)}</b>`)}</li>`).join("")}</ol><button class="btn sm" type="button" data-copy-email>Copy our email</button></div>
+          <details class="ans"${c.need && c.st === "todo" ? " open" : ""}><summary>${answered ? "Change my answer" : "Where are you with this?"}</summary>
+          <form class="acc-f" data-key="${c.key}" novalidate>
+            <div class="picks">${Object.entries(BSP.ANSWERS).map(([k, a]) => `<label class="pick"><input type="radio" name="ans" value="${k}"${it.answer === k ? " checked" : ""}><span>${esc(a.label)}</span></label>`).join("")}</div>
+            <div class="more hide">
+              <div class="grid g2 ex-someone hide"><label class="f">Their name<input name="cn" value="${esc(it.contactName)}" placeholder="Mike at Main Street Web"></label><label class="f">Their email<input name="ce" type="email" value="${esc(it.contactEmail)}" placeholder="mike@example.com"></label></div>
+              <div class="grid g2 ex-help hide"><label class="f">A good time for a 15-minute call<select name="when">${TIMES.map(t => `<option${it.callWhen === t ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label><label class="f">Your time zone${tzSel(it.tz)}</label></div>
+              <label class="f">Anything we should know? (optional)<textarea name="note" placeholder="For example: my nephew set this up years ago">${esc(it.note)}</textarea></label>
+              <div class="row" style="flex-wrap:wrap"><button class="btn pri" type="submit">Send to Business Santa</button><span class="mut" style="font-size:13px">We read every message and reply by email.</span></div>
+            </div></form></details>` : ""}
+        </div>
+      </article>`; };
+    return head(x, b, "Access and connections", `Here is everything we are connected to, what each account unlocks, and the one small step left for the rest. <b>No tech skills needed:</b> if anything feels unclear, choose "I'd like help" and we do it together on a short call.`) + `
+      <section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px"><div><h2 style="margin:0">${ok} of ${need.length} accounts your plan uses are connected</h2><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">${["connected", "todo", "checking", "ours", "call", "issue"].filter(k => cnt(k)).map(k => `<span class="chip ${BSP.STATUS[k].cls}">${cnt(k)} ${esc(BSP.STATUS[k].label.toLowerCase())}</span>`).join("")}</div></div>
+        <div class="note" style="max-width:460px"><b>Always invite this email:</b> <span style="color:var(--y);font-weight:700">${esc(BSP.ACCESS_EMAIL)}</span> <button class="btn sm" type="button" data-copy-email style="margin-left:6px">Copy</button><br>We never ask for your passwords. You stay the owner, and you can remove us any time.</div></div>
+        <div class="meter" style="margin-top:14px"><i style="width:${need.length ? Math.round(100 * ok / need.length) : 0}%;background:var(--ok)"></i></div></section>
+      <section class="grid">${C.filter(c => c.need).map(card).join("")}</section>
+      ${C.some(c => !c.need) ? `<div class="lbl">Optional for your plan</div><section class="grid">${C.filter(c => !c.need).map(card).join("")}</section>` : ""}
+      <section class="grid g2">
+        <article class="card"><h2>Who can see this portal</h2>
+          ${(V.people || []).length ? `<ul class="list">${V.people.map(p => `<li><span class="av" style="width:32px;height:32px;font-size:12px">${esc(p.name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase())}</span><span class="tx"><b>${esc(p.name)}</b><div class="meta">${p.role === "team" ? "Team member: can see everything here" : "Owner"}${p.lastSeen ? " · last opened " + esc(short(p.lastSeen)) : " · has not opened the portal yet"}</div></span></li>`).join("")}</ul>` : `<p class="sub">Only Business Santa can see this portal right now.</p>`}
+          <div class="note" style="margin-top:10px"><b>Your Business Santa team</b> runs your account, and SEO Season, our partner, runs the checks behind every number. Email <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a> any time.</div>
+          ${team.length ? `<ul class="list" style="margin-top:8px">${team.slice(0, 4).map(t => `<li><span class="d ${t.done ? "ok" : "y"}"></span><span class="tx"><b>${esc(t.name)}</b><div class="meta">${t.done ? "Added" + (t.reply ? ": " + esc(t.reply) : "") : "Requested " + esc(short(t.at)) + ". We send them their own sign-in link."}</div></span></li>`).join("")}</ul>` : ""}
+          <form id="teamF" style="display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--soft);padding-top:12px;margin-top:12px" novalidate><div class="lbl">Add a teammate</div>
+            <div class="grid g2"><label class="f">Name<input name="name" placeholder="For example: Sarah, office manager"></label><label class="f">Email<input name="email" type="email" placeholder="sarah@example.com"></label></div>
+            <label class="f">What they can do<select name="role"><option value="team">See everything here and tick to-dos</option><option value="owner">Owner: the same, plus ask for changes</option></select></label>
+            <button class="btn" type="submit">Ask us to add them</button></form></article>
+        <article class="card"><h2>Prefer to talk it through?</h2><p class="sub">Book a free 15-minute call about access or anything else. Tell us when suits you and we confirm by email.</p>
+          <form id="callF" style="display:flex;flex-direction:column;gap:10px" novalidate>
+            <label class="f">What is it about?<select name="topic"><option>Connecting my accounts</option><option>My results and reports</option><option>Adding more to my plan</option><option>Something else</option></select></label>
+            <div class="grid g2"><label class="f">A good time<select name="when">${TIMES.map(t => `<option>${esc(t)}</option>`).join("")}</select></label><label class="f">Your time zone${tzSel()}</label></div>
+            <label class="f">Best phone number (optional)<input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(512) 555-0134"></label>
+            <label class="f">Anything we should know? (optional)<textarea name="note"></textarea></label>
+            <button class="btn pri" type="submit">Request my call</button></form>
+          ${calls.length ? `<ul class="list" style="margin-top:12px">${calls.slice(0, 3).map(t => `<li><span class="d ${t.done ? "ok" : "y"}"></span><span class="tx"><b>${esc(t.topic || "Call")}</b><div class="meta">${t.done ? "Confirmed" + (t.reply ? ": " + esc(t.reply) : "") : "Requested " + esc(short(t.at)) + " for " + esc(t.when.toLowerCase()) + (t.tz ? " (" + esc(t.tz) + ")" : "") + ". We confirm by email."}</div></span></li>`).join("")}</ul>` : ""}</article>
+      </section>`;
+  }
+  function wireAccess(b){
+    const m = $("main"), first = (ME.user.name || "").split(" ")[0];
+    m.querySelectorAll("[data-copy-email]").forEach(e => e.onclick = async () => { try{ await navigator.clipboard.writeText(BSP.ACCESS_EMAIL); toast("Copied " + BSP.ACCESS_EMAIL); }catch(err){ toast(BSP.ACCESS_EMAIL); } });
+    m.querySelectorAll("[data-steps]").forEach(e => e.onclick = () => { const st = $("steps-" + e.dataset.steps), on = st.classList.toggle("hide"); e.setAttribute("aria-expanded", String(!on)); e.textContent = on ? "Show me the steps" : "Hide the steps"; });
+    m.querySelectorAll("form.acc-f").forEach(f => {
+      const sync = () => { const v = (f.querySelector("input[name=ans]:checked") || {}).value; f.querySelector(".more").classList.toggle("hide", !v); f.querySelector(".ex-someone").classList.toggle("hide", v !== "someone"); f.querySelector(".ex-help").classList.toggle("hide", v !== "help"); };
+      f.querySelectorAll("input[name=ans]").forEach(r => r.onchange = sync);
+      f.onsubmit = async e => { e.preventDefault(); const v = (f.querySelector("input[name=ans]:checked") || {}).value; if(!v) return toast("Choose the option that fits."); if(v === "help" && !f.tz.value) return toast("Choose your time zone, so we call at the right time.");
+        const btn = f.querySelector("[type=submit]"); btn.disabled = true; btn.textContent = "Sending";
+        try{ const d = await api("conn-answer", { brand:b.id, key:f.dataset.key, answer:v, note:f.note.value, contactName:f.cn.value, contactEmail:f.ce.value, callWhen:v === "help" ? f.when.value : "", tz:v === "help" ? f.tz.value : "" });
+          V.conn = d.conn; drawChrome(); draw(); toast((first ? "Thanks, " + first + ". " : "Thank you. ") + BSP.ANSWERS[v].reply); const el = $("acc-" + f.dataset.key); if(el) el.scrollIntoView({ block:"center" }); }
+        catch(err){ btn.disabled = false; btn.textContent = "Send to Business Santa"; toast(err.message); } };
+    });
+    const tf = $("teamF"); tf.onsubmit = async e => { e.preventDefault(); if(!tf.name.value.trim()) return toast("Tell us the person's name.");
+      try{ const d = await api("team-ask", { brand:b.id, name:tf.name.value, email:tf.email.value, role:tf.role.value }); V.conn = d.conn; draw(); toast("Got it. We'll send " + tf.name.value.trim().split(" ")[0] + " a private sign-in link."); }catch(err){ toast(err.message); } };
+    const cf = $("callF"); cf.onsubmit = async e => { e.preventDefault(); if(!cf.tz.value) return toast("Choose your time zone, so we call at the right time."); const btn = cf.querySelector("[type=submit]"); btn.disabled = true;
+      try{ const d = await api("call-ask", { brand:b.id, topic:cf.topic.value, when:cf.when.value, tz:cf.tz.value, phone:cf.phone.value, note:cf.note.value }); V.conn = d.conn; draw(); toast((first ? "Thanks, " + first + "! " : "Thank you! ") + "We'll confirm your call by email."); }catch(err){ btn.disabled = false; toast(err.message); } };
+  }
+
   boot();
 })();
 </script>
