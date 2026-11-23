@@ -12,7 +12,7 @@ import {
   FileText, Search, Heart, Eye, Kanban, UserPlus,
   DollarSign, Bot, Palette, Map, FlaskConical, ClipboardCheck,
 } from 'lucide-react';
-import { WORKSPACES, inWorkspace, isClassic, setClassic } from '@/lib/workspaces';
+import { WORKSPACES, inWorkspace, ADVANCED_GROUPS, getMode, setMode } from '@/lib/workspaces';
 
 interface Props {
   clientName?:        string;
@@ -106,12 +106,14 @@ const WS_ICONS: Record<string, any> = { today: Sparkles, win: Target, work: Rock
 
 export default function PortalNav({ clientName, companyName, onProjectChange }: Props) {
   /* Simple mode is the default; the classic menu stays one switch away. */
-  const classic = isClassic();
+  const mode = getMode(), classic = mode === 'classic', advanced = mode === 'advanced';
   const primaryItems = classic ? PRIMARY : [
     { href: '/start', label: 'Home', icon: Sparkles, desc: 'Start here', perm: null },
     ...WORKSPACES.map(w => ({ href: '/start/' + w.id, label: w.name, icon: WS_ICONS[w.id] || Layers, desc: w.sentence, perm: null })),
   ];
-  const sections = classic ? EMPIRE_SECTIONS : [
+  const sections = classic ? EMPIRE_SECTIONS : advanced
+    ? ADVANCED_GROUPS.map(g => ({ label: g.name, items: g.tools.map(t => ({ ...t, icon: Layers, desc: t.what })) }))
+    : [
     { label: 'Earlier home pages', items: PRIMARY.filter(i => !inWorkspace.has(i.href)) },
     ...EMPIRE_SECTIONS.map(sec => ({ ...sec, items: sec.items.filter(i => !inWorkspace.has(i.href)) })),
   ].filter(sec => sec.items.length);
@@ -131,7 +133,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
   // Owners (server-checked) see everything
   const canAccess = (perm: string | null): boolean => {
     if (isOwner) return true;
-    if (perm === null) return true;               // always visible (themes, tour)
+    if (perm === null || perm === 'staff') return true; // always visible to the team
     if (perm === 'hod_only') return false;        // never visible to staff
     return staffPermissions?.[perm] === true;
   };
@@ -228,7 +230,7 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 }`}>
                 {activeEmpire
                   ? <><activeEmpire.icon className="h-3.5 w-3.5"/><span>{activeEmpire.label}</span></>
-                  : <><Crown className="h-3.5 w-3.5"/><span>{classic ? 'Empire' : 'More tools'}</span></>
+                  : <><Crown className="h-3.5 w-3.5"/><span>{classic ? 'Empire' : advanced ? 'Advanced' : 'More tools'}</span></>
                 }
                 <ChevronDown className={`h-3 w-3 transition-transform duration-150 ${moreOpen ? 'rotate-180' : ''}`}/>
               </button>
@@ -349,10 +351,16 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
                 );
               })}
             </div>
-            <div className="border-t border-border/60 mt-3 pt-3 flex items-center justify-between gap-3 px-2">
-              <span className="text-[11px] text-muted-foreground">{classic ? 'You are on the classic menu.' : 'Every earlier page is here. Nothing was removed.'}</span>
-              <button onClick={() => { setClassic(!classic); setMoreOpen(false); window.location.assign(classic ? '/start' : path); }}
-                className="text-[11px] font-semibold text-primary hover:underline shrink-0">{classic ? 'Switch to Simple mode' : 'Switch to classic menu'}</button>
+            <div className="border-t border-border/60 mt-3 pt-3 flex items-center justify-between gap-3 px-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground">{classic ? 'Classic menu.' : advanced ? 'Advanced: every tool, grouped by job.' : 'Every earlier page is here. Nothing was removed.'}</span>
+              <span className="flex items-center gap-1">
+                {(['simple', 'advanced', 'classic'] as const).map(m => (
+                  <button key={m} onClick={() => { setMode(m); setMoreOpen(false); window.location.assign(m === 'classic' ? path : '/start'); }}
+                    className={`text-[11px] font-semibold px-2 py-1 rounded-md ${mode === m ? 'bg-primary text-primary-foreground' : 'text-primary hover:bg-primary/10'}`}>
+                    {m === 'simple' ? 'Simple' : m === 'advanced' ? 'Advanced' : 'Classic'}
+                  </button>
+                ))}
+              </span>
             </div>
           </div>
         </>

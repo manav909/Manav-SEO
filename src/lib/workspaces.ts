@@ -47,9 +47,77 @@ export const WORKSPACES: Workspace[] = [
 
 export const inWorkspace = new Set(WORKSPACES.flatMap(w => w.tools.map(t => t.href)));
 
-export function isClassic(): boolean {
-  try { return localStorage.getItem("ss.classic") === "1"; } catch { return false; }
+export function isClassic(): boolean { return getMode() === "classic"; }
+export function setClassic(on: boolean) { setMode(on ? "classic" : "simple"); }
+
+/* Advanced mode: the same workspaces plus every other tool, grouped by the job it serves.
+   "overlaps" marks tools that do the same job as another one; they are folded into one in the consolidation step. */
+export type AdvTool = Tool & { overlaps?: string };
+export const ADVANCED_GROUPS: { id: string; name: string; sentence: string; tools: AdvTool[] }[] = [
+  { id: "command", name: "Command and overview", sentence: "Owner views of the whole business: every project, every pipeline, every alert.",
+    tools: [
+      { href: "/oval", label: "The Oval", what: "The owner's strategic suite: competition, priorities and the big picture.", perm: "hod_only" },
+      { href: "/empire", label: "Empire command", what: "One view of everything running across the business.", perm: "hod_only", overlaps: "The Oval, Mission control" },
+      { href: "/mission-control", label: "Mission control", what: "Every project's pipeline, sortable, with a jump into its plan.", perm: "dashboard" },
+      { href: "/morning-brief", label: "Morning brief", what: "The daily briefing of what changed and what matters.", perm: "morning_brief", overlaps: "My day" },
+      { href: "/alerts", label: "Alert center", what: "Live alerts across projects.", perm: "staff" },
+      { href: "/command", label: "S.E.A.S.O.N. war room", what: "The assistant's two-mode war room with widgets for a project.", perm: "data_room" },
+      { href: "/build", label: "Build dashboard", what: "Owner build notes and alerts for the platform itself.", perm: "hod_only" },
+    ] },
+  { id: "strategy", name: "Strategy and planning", sentence: "Shape each project's strategy and plan before the work starts.",
+    tools: [
+      { href: "/playground", label: "Canvas", what: "Strategy and execution canvas for a project.", perm: "playground" },
+      { href: "/launchpad", label: "Launchpad", what: "A project's launch plan built from its analysis, with estimated value marked clearly.", perm: "playground" },
+      { href: "/planning", label: "Planning", what: "Planning view built on the project data room.", perm: "data_room", overlaps: "Project manager" },
+      { href: "/kanban", label: "Kanban board", what: "Tasks on a board, from to do to done.", perm: "staff", overlaps: "Project manager" },
+      { href: "/brand-studio", label: "Brand studio", what: "A brand's narrative, voice and anchors for all its content.", perm: "dashboard" },
+    ] },
+  { id: "content", name: "Content", sentence: "Briefs, writing and documents for every project.",
+    tools: [
+      { href: "/content-hub", label: "Content hub", what: "Content briefs for each project.", perm: "staff", overlaps: "Content writer" },
+      { href: "/documents", label: "Documents", what: "Every report and document produced, in one searchable place.", perm: "data_room" },
+    ] },
+  { id: "clientsplus", name: "Clients, deeper", sentence: "Detailed client views and conversation tools.",
+    tools: [
+      { href: "/client-dashboard", label: "Client dashboard", what: "A client's numbers as the team sees them.", perm: "dashboard", overlaps: "Client portal" },
+      { href: "/client-comms", label: "Client comms", what: "Analyse and answer client conversations.", perm: "bde_panel", overlaps: "Client inbox, Deal workspace" },
+      { href: "/bde-panel", label: "BDE panel", what: "Sales team tools: replies, leads with close chances, documents.", perm: "bde_panel", overlaps: "Deal workspace" },
+      { href: "/hod", label: "HoD console", what: "How the sales team converts, deal by deal.", perm: "hod_only" },
+    ] },
+  { id: "brain", name: "Brain and data", sentence: "What the system has learned, and the raw data behind every project.",
+    tools: [
+      { href: "/ask", label: "Ask the empire", what: "Ask any question about your data in plain words.", perm: "staff" },
+      { href: "/brain-command", label: "Brain command", what: "How fast the system is learning.", perm: "brain_learning" },
+      { href: "/brain-learning", label: "Brain learning", what: "Review and manage what the system learned from past work.", perm: "brain_learning" },
+      { href: "/desk", label: "Brain desk", what: "Everything the brain has produced, searchable and exportable.", perm: "brain_learning", overlaps: "Documents" },
+      { href: "/data-room", label: "Data room", what: "All raw data for a project in one place.", perm: "data_room" },
+    ] },
+  { id: "business", name: "Team and revenue", sentence: "The team, its access, and the money side.",
+    tools: [
+      { href: "/staff-command", label: "Staff command", what: "The team's work at a glance.", perm: "staff_command" },
+      { href: "/admin?tab=staff", label: "Staff and access", what: "Create team logins and set what each person can open.", perm: "staff_command" },
+      { href: "/profile", label: "My profile", what: "Your own profile and work.", perm: "staff" },
+      { href: "/revenue", label: "Revenue BI", what: "Monthly revenue and pipeline.", perm: "hod_only" },
+      { href: "/revenue-proof", label: "Revenue proof", what: "Proof of results to show clients and leads.", perm: "hod_only" },
+      { href: "/scale-control", label: "Scale control", what: "What to scale next.", perm: "hod_only" },
+    ] },
+  { id: "system", name: "System", sentence: "Settings, costs and how the platform runs.",
+    tools: [
+      { href: "/admin", label: "Admin", what: "All owner settings in one place.", perm: "hod_only" },
+      { href: "/season-settings", label: "S.E.A.S.O.N. settings", what: "How the assistant behaves.", perm: "data_room" },
+      { href: "/cost-control", label: "Cost control", what: "What the AI and data services cost, and the limits.", perm: "system_control" },
+      { href: "/system-control", label: "System control", what: "Platform health and switches.", perm: "system_control" },
+      { href: "/themes", label: "Themes", what: "Look and feel.", perm: null },
+      { href: "/tour", label: "Guided tour", what: "A walk-through for new team members.", perm: null },
+      { href: "/manifesto", label: "Manifesto", what: "What SEO Season stands for.", perm: "staff" },
+    ] },
+];
+
+export type Mode = "simple" | "advanced" | "classic";
+export function getMode(): Mode {
+  try { const m = localStorage.getItem("ss.mode"); if (m === "advanced" || m === "classic") return m; if (localStorage.getItem("ss.classic") === "1") return "classic"; } catch { /* ignore */ }
+  return "simple";
 }
-export function setClassic(on: boolean) {
-  try { on ? localStorage.setItem("ss.classic", "1") : localStorage.removeItem("ss.classic"); } catch { /* ignore */ }
+export function setMode(m: Mode) {
+  try { localStorage.setItem("ss.mode", m); localStorage.removeItem("ss.classic"); } catch { /* ignore */ }
 }
