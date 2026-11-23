@@ -240,9 +240,9 @@ async function handle(request){
     return out({ ok:true });
   }
   if(a === "usage"){
-    const [serp, ours] = await Promise.all([serpAccount().catch(e => ({ error:String(e.message || e) })), cmd("HGETALL", K.usage("serpapi", ym()))]);
-    const o = {}; for(let i = 0; i < (ours || []).length; i += 2) o[ours[i]] = +ours[i + 1];
-    return out({ ok:true, month:ym(), serpapi:serp, portalSearches:o, floor:SERP_FLOOR });
+    const [serp, ours, up] = await Promise.all([serpAccount().catch(e => ({ error:String(e.message || e) })), cmd("HGETALL", K.usage("serpapi", ym())), cmd("HGETALL", K.usage("upstash", ym()))]);
+    const hash = a => { const o = {}; for(let i = 0; i < (a || []).length; i += 2) o[a[i]] = +a[i + 1]; return o; };
+    return out({ ok:true, month:ym(), serpapi:serp, portalSearches:hash(ours), storage:hash(up), storageLimit:500000, floor:SERP_FLOOR });
   }
   return bad("Unknown request", 404);
 }

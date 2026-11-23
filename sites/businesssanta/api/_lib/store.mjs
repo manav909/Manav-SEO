@@ -18,8 +18,16 @@ async function call(path, body){
   if(!r.ok || !j) throw new Error("Storage did not answer (" + r.status + ")");
   return j;
 }
-export async function cmd(...args){ const j = await call("", args.map(String)); if(j.error) throw new Error(j.error); return j.result; }
-export async function pipe(list){ if(!list.length) return []; const j = await call("/pipeline", list.map(a => a.map(String))); return j.map(x => { if(x.error) throw new Error(x.error); return x.result; }); }
+/* Our own count of storage commands (the free plan allows 500K a month). Counts are added to the next pipeline
+   we send anyway, or sent on their own once 25 build up; a few may be lost when a function shuts down, so it reads "about". */
+let PEND = 0;
+function meter(n){ PEND += n; if(PEND >= 25){ const c = PEND; PEND = 0; call("/pipeline", meterOps(c)).catch(() => {}); } }
+function meterOps(c){ const now = new Date(), k = "bsp:usage:upstash:" + now.toISOString().slice(0, 7), d = "d" + now.toISOString().slice(8, 10);
+  return [["HINCRBY", k, "total", String(c + 3)], ["HINCRBY", k, d, String(c + 3)], ["EXPIRE", k, String(60 * 60 * 24 * 400)]]; }
+export async function cmd(...args){ meter(1); const j = await call("", args.map(String)); if(j.error) throw new Error(j.error); return j.result; }
+export async function pipe(list){ if(!list.length) return []; const c = PEND + list.length; PEND = 0;
+  const j = await call("/pipeline", list.map(a => a.map(String)).concat(meterOps(c)));
+  return j.slice(0, list.length).map(x => { if(x.error) throw new Error(x.error); return x.result; }); }
 
 const P = "bsp:";
 export const K = {

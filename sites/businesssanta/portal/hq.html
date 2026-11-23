@@ -112,7 +112,7 @@
         ${g.note ? `<div class="note2">${esc(g.note)}</div>` : ""}`}</div>
       <div class="num">${live ? "-" : num(act)}<small class="mut">now</small></div></div>`;
   }
-  const VIEWS = [["overview", "Overview"], ["goals", "Goals and history"], ["channels", "Channels"], ["dates", "Key dates"], ["activity", "Activity"]];
+  const VIEWS = [["overview", "Overview"], ["goals", "Goals and history"], ["channels", "Channels"], ["dates", "Key dates"], ["activity", "Activity"], ["resources", "Usage and limits"]];
   const viewNow = () => { const h = location.hash.slice(1); return VIEWS.some(v => v[0] === h) ? h : "overview"; };
   const isBrand = t => { t = String(t || "").toLowerCase(); return brand === "BS" ? /santa/.test(t) : /vishranti|manu/.test(t); };
   const nOf = v => { if(typeof v === "number") return v; if(typeof v === "string"){ const m = v.replace(/,/g, "").match(/^\s*[$₹]?\s*(-?\d+(\.\d+)?)/); return m ? +m[1] : null; } return null; };
@@ -194,11 +194,41 @@
         <div class="filt">${[["all", "All tasks"], ["brand", "Only " + BR[brand]]].map(([k, v]) => `<button type="button" data-f="${k}" class="${actF === k ? "on" : ""}">${esc(v)}</button>`).join("")}</div></div>
       ${h.length ? `<ul class="list" style="margin-top:10px">${h.filter(x => actF === "all" || isBrand(JSON.stringify(x))).map(x => `<li><span class="d ${ok(x) ? "ok" : "bad"}"></span><span class="tx"><b>${esc(x.name || x.task || x.key || x.id)}</b><div class="meta">${esc(String(x.summary || x.result || x.status || "").slice(0, 220))}</div></span><span class="meta" style="white-space:nowrap">${esc(fmt(x.lastRunAt || x.at))}</span></li>`).join("")}</ul>` : `<p class="sub">No run records in the portal yet. They arrive with each Portal sync run.</p>`}</section>`;
   }
+  let USE = null, useErr = "";
+  function loadUse(){ fetch("/api/portal?a=usage", { credentials:"same-origin" }).then(r => r.json()).then(d => { if(!d.ok) throw new Error(d.error || "not readable"); USE = d; }).catch(e => { useErr = e.message; USE = USE || {}; }).then(() => { if(viewNow() === "resources") draw({}); }); }
+  function meterCard(title, used, limit, opts){
+    const now = new Date(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate(), day = now.getDate();
+    const proj = used != null ? Math.round(used / Math.max(1, opts.daysCounted || day) * dim) : null;
+    const pct = used != null && limit ? Math.min(100, 100 * used / limit) : null, ppct = proj != null && limit ? Math.min(100, 100 * proj / limit) : null;
+    const ok = proj == null || !limit || (opts.daysCounted != null && opts.daysCounted < 3) ? null : proj <= limit * 0.85 ? "ok" : proj <= limit ? "warn" : "bad";
+    const say = ok === "ok" ? "Will last the month" : ok === "warn" ? "Tight: close to the limit by month end" : ok === "bad" ? "Will run out before month end at this pace" : "Not enough data yet";
+    return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px"><h2 style="margin:0">${esc(title)}</h2>${ok ? `<span class="chip ${ok}">${say}</span>` : `<span class="chip n">${say}</span>`}</div>
+      <div class="grid g4" style="margin-top:12px">
+        <div class="note"><b style="font-size:24px">${num(used)}</b><br>used this month${opts.about ? " (about)" : ""}</div>
+        <div class="note"><b style="font-size:24px">${limit ? num(Math.max(0, limit - (used || 0))) : "-"}</b><br>left of ${num(limit)}</div>
+        <div class="note"><b style="font-size:24px">${used != null ? num(Math.round(used / Math.max(1, opts.daysCounted || day))) : "-"}</b><br>a day on average</div>
+        <div class="note"><b style="font-size:24px">${num(proj)}</b><br>expected by ${esc(new Date(now.getFullYear(), now.getMonth(), dim).toLocaleDateString("en-IN", { day:"numeric", month:"short" }))} at this pace</div>
+      </div>
+      ${pct != null ? `<div class="track" style="margin-top:14px"><i style="width:${pct.toFixed(1)}%"></i>${ppct != null ? `<em class="pace" style="left:calc(${ppct.toFixed(1)}% - 1px);background:#5b8def" title="Expected by month end"></em>` : ""}</div><div class="tl"><span>Used</span><span style="color:#8fb0f5">Expected by month end</span><span>Limit ${num(limit)}</span></div>` : ""}
+      ${opts.note ? `<p class="note2">${opts.note}</p>` : ""}</section>`;
+  }
+  function plainKV(o){ return Object.entries(o || {}).filter(([k, v]) => v != null && typeof v !== "object").slice(0, 16); }
+  function vResources(){
+    if(!USE){ loadUse(); return `<section class="card"><span class="spin"></span></section>`; }
+    const s = USE.serpapi || {}, p = USE.portalSearches || {}, st = USE.storage || {};
+    const dayKeys = Object.keys(st).filter(k => /^d\d\d$/.test(k)), serpOther = s.used != null ? Math.max(0, s.used - (p.total || 0)) : null;
+    const eco = S.cr.docs["meta/economy"], plan = S.cr.docs["meta/planusage"];
+    return `${useErr ? `<p class="err">Usage could not be read just now: ${esc(useErr)}</p>` : ""}
+      ${meterCard("Google searches (SerpAPI)", s.used != null ? s.used : null, s.perMonth || null, { note:`${s.plan ? "Plan: " + esc(s.plan) + ". " : ""}The portal used ${num(p.total || 0)} this month (live previews ${num(p.preview || 0)}, check now ${num(p.admin || 0)}, weekly checks ${num(p.weekly || 0)})${serpOther != null ? `; ${num(serpOther)} came from other work on the same account` : ""}. Each Google Maps check uses 2 searches; below ${num(USE.floor)} left, checks skip Maps on their own. The expected figure assumes the plan resets with the calendar month.${s.error ? " Account not readable: " + esc(s.error) : ""}` })}
+      ${meterCard("Portal storage (Upstash)", st.total != null ? st.total : null, USE.storageLimit || 500000, { about:true, daysCounted:dayKeys.length || null, note:`Free plan: 500,000 commands a month. Counted by the portal itself since ${dayKeys.length ? esc(fmt(USE.month + "-" + dayKeys.sort()[0].slice(1))) : "today"}, so the first month reads low. Opening this panel costs a few dozen commands; each Portal sync run costs about one per record it sends.` })}
+      ${eco || plan ? `<section class="card"><h2>Claude and task budget</h2><p class="mini" style="margin:0 0 10px">As reported by the scheduled tasks in the Control Room.</p><div class="tw"><table class="t"><tbody>${plainKV(eco).concat(plainKV(plan)).map(([k, v]) => `<tr><td class="mut">${esc(k.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase()))}</td><td><b>${esc(typeof v === "number" ? num(v) : v)}</b></td></tr>`).join("")}</tbody></table></div></section>` : `<section class="card"><h2>Claude and task budget</h2><p class="sub" style="margin:0">Arrives with the Portal sync task (the Control Room's economy and plan usage records).</p></section>`}
+      <section class="card"><h2>Free services</h2><ul class="list"><li><span class="d ok"></span><span class="tx"><b>Google PageSpeed</b><div class="meta">Speed tests in every check. Free with the key, with a large daily allowance; nothing to pay or watch.</div></span></li><li><span class="d ok"></span><span class="tx"><b>Vercel hosting</b><div class="meta">Free plan: 100 deployments a day across both sites. Changes are bundled into one push per work block to stay well under it.</div></span></li></ul></section>`;
+  }
   function draw(j){
     const m = $("main");
     if(!S){ m.innerHTML = `<section><div class="lbl">Advanced panel</div><h1>Your brands, strategy and every step</h1></section><div class="card"><h2>The first snapshot has not arrived yet</h2><p class="sub">${esc((j && j.error) || "")}</p><p class="sub" style="margin:0">This page fills in as the Portal sync task reports.</p></div>`; return; }
     const v = viewNow(), at = new Date(S.at).toLocaleString("en-IN", { timeZone:"Asia/Kolkata", day:"numeric", month:"short", hour:"numeric", minute:"2-digit" });
-    const body = v === "goals" ? vGoals() : v === "channels" ? vChannels() : v === "dates" ? vDates() : v === "activity" ? vActivity() : vOverview();
+    const body = v === "goals" ? vGoals() : v === "channels" ? vChannels() : v === "dates" ? vDates() : v === "activity" ? vActivity() : v === "resources" ? vResources() : vOverview();
     m.innerHTML = `
       <section class="row" style="justify-content:space-between;flex-wrap:wrap;align-items:flex-end"><div><div class="lbl">Advanced panel · data as of ${esc(at)} IST</div><h1>Your brands, strategy and every step</h1></div>
         <div class="tabsB" role="tablist">${Object.entries(BR).map(([k, x]) => `<button type="button" data-b="${k}" class="${k === brand ? "on" : ""}" aria-selected="${k === brand}">${x}</button>`).join("")}</div></section>
