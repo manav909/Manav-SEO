@@ -52,9 +52,12 @@
   try{ brand = localStorage.getItem("bsp.hqBrand") || "BS"; }catch(e){}
 
   async function load(){
-    const r = await fetch("/api/portal-hq?a=data", { credentials:"same-origin" });
-    if(r.status === 401){ location.replace("/portal?team=1"); return; }
-    const j = await r.json(); S = j.ok ? j.snap : null; draw(j);
+    const [r1, r2, r3] = await Promise.all(["cr", "cc"].map(sp => fetch("/api/ops?a=snapshot&space=" + sp, { credentials:"same-origin" })).concat([fetch("/api/ops?a=beats", { credentials:"same-origin" })]));
+    if(r1.status === 401){ location.replace("/portal?team=1"); return; }
+    const a = await r1.json(), b = await r2.json(), c = await r3.json().catch(() => ({}));
+    const has = a.ok && Object.keys(a.snap.cols).length;
+    S = has ? { at:a.at || b.at, cr:a.snap, cc:b.ok ? b.snap : { docs:{}, cols:{} }, beats:c.beats || {} } : null;
+    draw(a.ok ? { error:"No task has reported to the portal yet." } : a);
   }
   /* Where the number should be today if it moves in a straight line from its start to the first target. */
   function pace(g, m1){
@@ -84,7 +87,7 @@
   }
   function draw(j){
     const m = $("main");
-    if(!S){ m.innerHTML = `<section><div class="lbl">Advanced panel</div><h1>Your brands, strategy and every step</h1></section><div class="card"><h2>The first snapshot has not arrived yet</h2><p class="sub">${esc((j && j.error) || "")}</p><p class="sub" style="margin:0">The portal mirror task locks a fresh copy of the Control Room and Command Center data and sends it here a few times a day. It shows here as soon as the first one lands.</p></div>`; return; }
+    if(!S){ m.innerHTML = `<section><div class="lbl">Advanced panel</div><h1>Your brands, strategy and every step</h1></section><div class="card"><h2>The first snapshot has not arrived yet</h2><p class="sub">${esc((j && j.error) || "")}</p><p class="sub" style="margin:0">Every scheduled task now sends its records straight to the portal after each run. This page fills in as they report.</p></div>`; return; }
     const cr = S.cr || { docs:{}, cols:{} }, cc = S.cc || { docs:{}, cols:{} }, gt = cr.docs["meta/growthTargets"] || {}, ms = gt.milestones || [];
     const goals = (gt.goals || []).filter(g => g.brand === brand);
     const open = (cr.cols.handoff || []).reduce((n, h) => n + ((h.data.items || []).filter(i => !i.done && String(i.brand || i.project || "").toUpperCase().includes(brand === "BS" ? "SANTA" : "VISHRANTI")).length), 0);
@@ -108,8 +111,15 @@
         <a class="door" href="/portal/hq/command-center"><b>Command Center</b><span>Projects, sprints, goals, wins, reports and the library for both brands.</span><em>Open the mirror</em></a>
       </section>
       ${wins.length ? `<section class="card"><h2>Recent wins</h2><ul class="list">${wins.map(w => `<li><span class="d ok"></span><span class="tx"><b>${esc(w.data.title || w.data.what || w.data.text || w.id)}</b>${w.data.detail || w.data.why ? `<div class="meta">${esc(w.data.detail || w.data.why)}</div>` : ""}</span><span class="meta" style="white-space:nowrap">${esc(fmt(w.data.at))}</span></li>`).join("")}</ul></section>` : ""}
-      <p class="mut" style="font-size:13px;margin:0">The mirrors are read-only copies, refreshed a few times a day. To change anything, use the live Control Room or a chat with Claude.</p>`;
+      ${beatsCard()}
+      <p class="mut" style="font-size:13px;margin:0">Every task writes here directly after each run. Buttons in the Control Room and Command Center pages stay read-only until the tasks also read from the portal (next step).</p>`;
     m.querySelectorAll("[data-b]").forEach(b => b.onclick = () => { brand = b.dataset.b; try{ localStorage.setItem("bsp.hqBrand", brand); }catch(e){} draw(j); });
+  }
+  function beatsCard(){
+    const B = Object.entries(S.beats || {}).sort((a, b) => String(b[1].at).localeCompare(String(a[1].at)));
+    if(!B.length) return "";
+    const age = t => { const h = (Date.now() - Date.parse(t)) / 36e5; return h < 1 ? Math.max(1, Math.round(h * 60)) + " min ago" : h < 48 ? Math.round(h) + " h ago" : Math.round(h / 24) + " days ago"; };
+    return `<section class="card"><h2>Tasks reporting to the portal</h2><div class="tw"><table class="t"><thead><tr><th>Task</th><th>Last report</th><th>Result</th></tr></thead><tbody>${B.map(([k, v]) => `<tr><td>${esc(v.name || k)}</td><td>${esc(age(v.at))}</td><td>${/^(Done|Skipped)/.test(v.result) ? `<span class="chip ok">${esc(v.result.slice(0, 60))}</span>` : `<span class="chip bad">${esc(v.result.slice(0, 60))}</span>`}</td></tr>`).join("")}</tbody></table></div></section>`;
   }
   load().catch(e => { $("main").innerHTML = `<div class="card"><h2>The panel did not open</h2><p class="sub">${esc(e.message)}</p></div>`; });
 })();
