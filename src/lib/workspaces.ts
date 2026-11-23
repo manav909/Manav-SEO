@@ -3,7 +3,7 @@
    Every older page still works and stays reachable under "More tools"; nothing is deleted.
    Classic menu: set localStorage "ss.classic" to "1" (there is a switch in More tools). */
 
-export type Tool = { href: string; label: string; what: string; perm: string | null };
+export type Tool = { href: string; label: string; what: string; perm: string | null; steps?: string[] };
 export type Workspace = { id: string; name: string; sentence: string; tools: Tool[] };
 
 export const WORKSPACES: Workspace[] = [
@@ -15,19 +15,19 @@ export const WORKSPACES: Workspace[] = [
     ] },
   { id: "win", name: "Win clients", sentence: "Turn a lead into a signed client: audit their site, shape the offer, close the deal.",
     tools: [
-      { href: "/intake", label: "Lead intake", what: "Paste a lead's website and get a client-ready SEO audit report to send.", perm: "lead_intel" },
-      { href: "/wizard", label: "Engagement wizard", what: "From a client brief to research, a full report and a proposal.", perm: null },
-      { href: "/deals", label: "Deal workspace", what: "Paste a client chat and get the best reply, the offer and the next step.", perm: "bde_panel" },
+      { href: "/intake", label: "Lead intake", what: "Paste a lead's website and get a client-ready SEO audit report to send.", perm: "lead_intel" , steps: ["Type the prospect's website and, if you like, their name.", 'Run the check and wait for the audit to finish.', 'Copy the client-ready report and send it to the lead.'] },
+      { href: "/wizard", label: "Engagement wizard", what: "From a client brief to research, a full report and a proposal.", perm: null , steps: ['Paste the full client chat or brief.', 'Add the keywords that matter, separated by commas.', 'Choose how deep to go, then build the audit, report and proposal.'] },
+      { href: "/deals", label: "Deal workspace", what: "Paste a client chat and get the best reply, the offer and the next step.", perm: "bde_panel" , steps: ['Paste the client chat, or add a call transcript.', 'Read the suggested reply, the offer and the next step.', 'Build the engagement timeline so nothing is missed.'] },
       { href: "/team/offers", label: "Offers and orders", what: "Confirm offers and follow every order from start to delivery.", perm: null },
     ] },
   { id: "work", name: "Do the work", sentence: "Plan, run and check the SEO work for every client project.",
     tools: [
       { href: "/workspace", label: "Intelligence workspace", what: "Run the deep research steps for a project and see the findings by pillar.", perm: "playground" },
-      { href: "/audit", label: "Site audit", what: "A full SEO audit of a site with clear, ranked fixes.", perm: "audit_tools" },
+      { href: "/audit", label: "Site audit", what: "A full SEO audit of a site with clear, ranked fixes.", perm: "audit_tools" , steps: ['Enter the site address and the company name.', 'Run the audit.', 'Work through the fixes from the top: they are ranked by impact.'] },
       { href: "/pm", label: "Project manager", what: "Plan the tasks for a project, run them and verify they are done.", perm: "playground" },
-      { href: "/site-manager", label: "Site manager", what: "Manage many pages of a client site at once.", perm: "playground" },
-      { href: "/content-writer", label: "Content writer", what: "Write and track the content for each project.", perm: "playground" },
-      { href: "/qa-desk", label: "QA desk", what: "Check the delivery before it goes to the client.", perm: "playground" },
+      { href: "/site-manager", label: "Site manager", what: "Manage many pages of a client site at once.", perm: "playground" , steps: ['Enter the brand name and the site address.', 'Upload the file with the pages to work on.', 'Watch it go page by page; you can stop after the current page at any time.'] },
+      { href: "/content-writer", label: "Content writer", what: "Write and track the content for each project.", perm: "playground" , steps: ['Enter a keyword or topic.', 'Generate the brief.', 'Write the piece and track it under the project.'] },
+      { href: "/qa-desk", label: "QA desk", what: "Check the delivery before it goes to the client.", perm: "playground" , steps: ['Give the client a short unique handle.', 'Paste what the client said in chat or on a call: it sets what QA checks.', 'Load the work, review it, then download the reviewed workbook.'] },
     ] },
   { id: "clients", name: "Look after clients", sentence: "Show clients their progress and keep every account healthy.",
     tools: [

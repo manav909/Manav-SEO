@@ -13,6 +13,7 @@ import {
   DollarSign, Bot, Palette, Map, FlaskConical, ClipboardCheck,
 } from 'lucide-react';
 import { WORKSPACES, inWorkspace, ADVANCED_GROUPS, getMode, setMode } from '@/lib/workspaces';
+import ToolGuide from '@/components/ToolGuide';
 
 interface Props {
   clientName?:        string;
@@ -314,6 +315,8 @@ export default function PortalNav({ clientName, companyName, onProjectChange }: 
           </div>
         )}
       </div>
+
+      {!classic && <ToolGuide path={path} navigate={navigate} />}
 
       {/* Empire dropdown — rendered outside nav stacking context via portal-style fixed positioning */}
       {moreOpen && (
