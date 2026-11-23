@@ -2,9 +2,8 @@
    ?a=pub   public key (safe to share: it can only lock data, not open it)
    ?a=data  the decrypted snapshot, admin only
    ?p=cr|cc the Control Room or Command Center page, served read-only from the snapshot, admin only */
-import fs from "node:fs";
 import { store, whoIs } from "./_lib/store.mjs";
-import { hqKeys, fingerprint, hqSnapshot } from "./_lib/hq.mjs";
+import { hqKeys, fingerprint, hqSnapshot, hqPages } from "./_lib/hq.mjs";
 
 const J = { "content-type":"application/json", "cache-control":"private, no-store", "x-robots-tag":"noindex" };
 const out = (b, s) => new Response(JSON.stringify(b), { status:s || 200, headers:J });
@@ -66,7 +65,7 @@ async function handle(request){
   }
   if(a === "data"){ try{ return out({ ok:true, snap:await hqSnapshot(u.searchParams.has("fresh")) }); }catch(e){ return out({ ok:false, error:String(e.message || e) }, 200); } }
   if(PAGES[p]){
-    let html = fs.readFileSync(new URL("./_hq/" + PAGES[p].file, import.meta.url), "utf8");
+    let html; try{ html = (await hqPages())[p].html; }catch(e){ return new Response("<!doctype html><meta name=robots content=noindex><body style='font:16px sans-serif;background:#0b0d14;color:#f7f7f9;padding:40px'><h1>Not ready yet</h1><p>" + String(e.message || e) + "</p><p><a style='color:#FDB913' href='/portal/hq'>Back to the advanced panel</a></p>", { status:200, headers:{ "content-type":"text/html; charset=utf-8", "cache-control":"no-store" } }); }
     const s = shim(p, PAGES[p]), i = html.search(/<script\b/i);
     html = i >= 0 ? html.slice(0, i) + s + html.slice(i) : html.replace(/<\/head>/i, s + "</head>");
     html = html.replace(/<head>/i, '<head><meta name="robots" content="noindex, nofollow">');

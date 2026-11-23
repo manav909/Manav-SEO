@@ -142,8 +142,7 @@
       "maxDuration": 300
     },
     "api/portal-hq.mjs": {
-      "maxDuration": 30,
-      "includeFiles": "api/_hq/**"
+      "maxDuration": 30
     }
   },
   "crons": [
@@ -154,7 +153,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "portal-data": false
+      "portal-data": false,
+      "portal-pages": false
     }
   }
 }

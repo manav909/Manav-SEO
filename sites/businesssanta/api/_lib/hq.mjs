@@ -7,6 +7,15 @@ import { cmd, getJ, setJ } from "./store.mjs";
 
 const PFX = Buffer.from("302a300506032b656e032100", "hex"), KEY = "bsp:hq:key", CACHE = "bsp:hq:snap";
 export const SNAP_URL = "https://raw.githubusercontent.com/manav909/Manav-SEO/portal-data/hq.enc.json";
+const PAGES_URL = "https://raw.githubusercontent.com/manav909/Manav-SEO/portal-pages/pages.enc.json";
+let PAGES = null;
+export async function hqPages(){
+  if(PAGES && Date.now() - PAGES.at < 600000) return PAGES.p;
+  const r = await fetch(PAGES_URL + "?t=" + Math.floor(Date.now() / 600000));
+  if(!r.ok) throw new Error("Panel pages not uploaded yet (" + r.status + ")");
+  const k = await hqKeys(), p = openBox(await r.json(), k.priv);
+  PAGES = { at:Date.now(), p }; return p;
+}
 export async function hqKeys(){
   let k = await getJ(KEY);
   if(!k){
