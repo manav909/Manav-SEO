@@ -80,6 +80,14 @@
       "destination": "/api/portal?a=open&t=:t"
     },
     {
+      "source": "/portal/hq/control-room",
+      "destination": "/api/portal-hq?p=cr"
+    },
+    {
+      "source": "/portal/hq/command-center",
+      "destination": "/api/portal-hq?p=cc"
+    },
+    {
       "source": "/",
       "has": [
         {
@@ -132,6 +140,10 @@
     },
     "api/portal-cron.mjs": {
       "maxDuration": 300
+    },
+    "api/portal-hq.mjs": {
+      "maxDuration": 30,
+      "includeFiles": "api/_hq/**"
     }
   },
   "crons": [
@@ -139,5 +151,10 @@
       "path": "/api/portal-cron",
       "schedule": "17 10 * * *"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "portal-data": false
+    }
+  }
 }

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Advanced panel · Business Santa client portal</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/portal/portal.css">
+<style>
+.wrap{max-width:1320px;margin:0 auto;padding:22px 24px;display:flex;flex-direction:column;gap:16px}
+@media(max-width:560px){.wrap{padding:14px}}
+.doors{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+@media(max-width:760px){.doors{grid-template-columns:minmax(0,1fr)}}
+.door{display:flex;flex-direction:column;gap:6px;text-decoration:none;color:var(--ink);border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel);transition:border-color .15s}
+.door:hover{border-color:var(--y);color:var(--ink)}
+.door b{font-size:19px}.door span{color:var(--sub);font-size:14px}.door em{font-style:normal;color:var(--y);font-weight:700;font-size:14px;margin-top:6px}
+.tabsB{display:flex;gap:8px;flex-wrap:wrap}
+.tabsB button{min-height:40px;padding:0 16px;border-radius:99px;border:1px solid var(--line);background:var(--raise);color:var(--sub);font-weight:600;cursor:pointer}
+.tabsB button.on{background:var(--y);border-color:var(--y);color:#0b0d14}
+.goal{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,2fr) auto;gap:16px;align-items:center;padding:14px 0;border-bottom:1px solid var(--soft)}
+.goal:last-child{border-bottom:0}
+@media(max-width:860px){.goal{grid-template-columns:minmax(0,1fr)}}
+.goal .nm b{display:block;color:var(--ink);font-size:15px}.goal .nm span{font-size:12.5px;color:var(--mut)}
+.track{position:relative;height:14px;border-radius:99px;background:var(--raise)}
+.track i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:var(--y)}
+.track em{position:absolute;top:-5px;width:2px;height:24px;background:var(--sub);border-radius:2px}
+.track .pace{background:#5b8def}
+.tl{display:flex;justify-content:space-between;font-size:12px;color:var(--mut);margin-top:8px;gap:8px;flex-wrap:wrap}
+.num{font-size:22px;font-weight:700;text-align:right;white-space:nowrap}
+.num small{display:block;font-size:12px;font-weight:600}
+.note2{font-size:13px;color:var(--mut);margin-top:6px}
+.legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
+.legend span{display:inline-flex;align-items:center;gap:6px}.legend i{width:12px;height:8px;border-radius:3px;display:inline-block}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/portal/hq"><img src="/assets/img/logo-96.webp" alt=""><span><b>Business Santa</b><small>Advanced panel</small></span></a>
+  <div class="row" style="gap:8px"><a class="btn sm" href="/portal/admin">Admin console</a><a class="btn sm" href="/portal/app">Client view</a></div>
+</header>
+<main class="wrap" id="main"><div style="display:grid;place-items:center;min-height:40vh"><span class="spin"></span></div></main>
+<footer class="pf"><span>Advanced panel · only you can open it</span><span>Powered by SEO Season</span></footer>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const num = n => n == null ? "-" : Number(n).toLocaleString("en-US");
+  const fmt = s => s ? new Date(s.length === 10 ? s + "T12:00:00" : s).toLocaleDateString("en-IN", { day:"numeric", month:"short" }) : "";
+  const BR = { BS:"Business Santa", MV:"Manu Vishranti" };
+  let S = null, brand = "BS";
+  try{ brand = localStorage.getItem("bsp.hqBrand") || "BS"; }catch(e){}
+
+  async function load(){
+    const r = await fetch("/api/portal-hq?a=data", { credentials:"same-origin" });
+    if(r.status === 401){ location.replace("/portal?team=1"); return; }
+    const j = await r.json(); S = j.ok ? j.snap : null; draw(j);
+  }
+  /* Where the number should be today if it moves in a straight line from its start to the first target. */
+  function pace(g, m1){
+    if(g.baseline == null || !g.baselineAt || g.t1 == null) return null;
+    const a = Date.parse(g.baselineAt), b = Date.parse(m1), now = Date.now();
+    if(!(b > a)) return null; const f = Math.max(0, Math.min(1, (now - a) / (b - a)));
+    return g.baseline + (g.t1 - g.baseline) * f;
+  }
+  function goalRow(g, ms){
+    const m1 = (ms[0] || {}).at, m2 = (ms[1] || {}).at, live = !!g.live;
+    const t1 = g.t1 != null ? g.t1 : null, t2 = g.t2 != null ? g.t2 : null, act = g.actual != null ? g.actual : null;
+    const top = Math.max(1, t2 || 0, act || 0, t1 || 0), p = pace(g, m1);
+    const pct = v => Math.max(0, Math.min(100, 100 * v / top)).toFixed(1) + "%";
+    let st = "";
+    if(live) st = `<span class="chip n">Measured live</span>`;
+    else if(act == null) st = `<span class="chip n">Waiting for data</span>`;
+    else if(t2 != null && act >= t2) st = `<span class="chip ok">Christmas target passed</span>`;
+    else if(t1 != null && act >= t1) st = `<span class="chip ok">First target passed</span>`;
+    else if(p != null && act >= p) st = `<span class="chip ok">On pace</span>`;
+    else if(p != null) st = `<span class="chip bad">Behind pace</span>`;
+    return `<div class="goal"><div class="nm"><b>${esc(g.label)}</b><span>${esc(g.source || "")}${g.actualAt ? " · read " + esc(fmt(g.actualAt)) : ""}</span><div style="margin-top:6px">${st}</div></div>
+      <div>${live || act == null && g.t1x ? `<div class="note2">${esc(g.note || "This goal is measured live from the channel in the Control Room.")}${g.t1x ? ` Targets: the channel's own average by ${esc(fmt(m1))}, ${Math.round((g.t2x - 1) * 100)}% above it by ${esc(fmt(m2))}.` : ""}</div>` : `
+        <div class="track">${act != null ? `<i style="width:${pct(act)}"></i>` : ""}${p != null && act != null ? `<em class="pace" style="left:${pct(p)};background:#5b8def" title="Pace today"></em>` : ""}${t1 != null ? `<em style="left:${pct(t1)}" title="${esc(fmt(m1))} target"></em>` : ""}${t2 != null ? `<em style="left:calc(${pct(t2)} - 2px)" title="${esc(fmt(m2))} target"></em>` : ""}</div>
+        <div class="tl"><span>Start ${num(g.baseline)}${g.baselineAt ? " (" + esc(fmt(g.baselineAt)) + ")" : ""}</span>${p != null ? `<span style="color:#8fb0f5">Pace today ${num(Math.round(p))}</span>` : ""}<span>${esc(fmt(m1))}: ${num(t1)}</span><span>${esc(fmt(m2))}: ${num(t2)}</span></div>
+        ${g.note ? `<div class="note2">${esc(g.note)}</div>` : ""}`}</div>
+      <div class="num">${live ? "-" : num(act)}<small class="mut">now</small></div></div>`;
+  }
+  function draw(j){
+    const m = $("main");
+    if(!S){ m.innerHTML = `<section><div class="lbl">Advanced panel</div><h1>Your brands, strategy and every step</h1></section><div class="card"><h2>The first snapshot has not arrived yet</h2><p class="sub">${esc((j && j.error) || "")}</p><p class="sub" style="margin:0">The portal mirror task locks a fresh copy of the Control Room and Command Center data and sends it here a few times a day. It shows here as soon as the first one lands.</p></div>`; return; }
+    const cr = S.cr || { docs:{}, cols:{} }, cc = S.cc || { docs:{}, cols:{} }, gt = cr.docs["meta/growthTargets"] || {}, ms = gt.milestones || [];
+    const goals = (gt.goals || []).filter(g => g.brand === brand);
+    const open = (cr.cols.handoff || []).reduce((n, h) => n + ((h.data.items || []).filter(i => !i.done && String(i.brand || i.project || "").toUpperCase().includes(brand === "BS" ? "SANTA" : "VISHRANTI")).length), 0);
+    const wins = (cr.cols.wins || []).filter(w => { const t = JSON.stringify(w.data).toLowerCase(); return brand === "BS" ? t.includes("santa") : t.includes("vishranti") || t.includes("manu"); }).slice(0, 6);
+    const at = new Date(S.at).toLocaleString("en-IN", { timeZone:"Asia/Kolkata", day:"numeric", month:"short", hour:"numeric", minute:"2-digit" });
+    const behind = goals.filter(g => { const p = pace(g, (ms[0] || {}).at); return !g.live && g.actual != null && p != null && g.actual < p && !(g.t1 != null && g.actual >= g.t1); }).length;
+    m.innerHTML = `
+      <section class="row" style="justify-content:space-between;flex-wrap:wrap;align-items:flex-end"><div><div class="lbl">Advanced panel · data as of ${esc(at)} IST</div><h1>Your brands, strategy and every step</h1></div>
+        <div class="tabsB" role="tablist">${Object.entries(BR).map(([k, v]) => `<button type="button" data-b="${k}" class="${k === brand ? "on" : ""}" aria-selected="${k === brand}">${v}</button>`).join("")}</div></section>
+      <section class="grid g4">
+        <div class="card kpi"><div class="lbl">Goals tracked</div><div style="font-size:30px;font-weight:700">${goals.length}</div><div class="mut" style="font-size:13.5px">${behind ? behind + " behind pace" : "none behind pace"}</div></div>
+        <div class="card kpi"><div class="lbl">Next milestone</div><div style="font-size:30px;font-weight:700">${esc(fmt((ms.find(x => Date.parse(x.at) > Date.now()) || ms[ms.length - 1] || {}).at))}</div><div class="mut" style="font-size:13.5px">${esc((ms.find(x => Date.parse(x.at) > Date.now()) || {}).label || "")}</div></div>
+        <div class="card kpi"><div class="lbl">Waiting for you</div><div style="font-size:30px;font-weight:700">${open}</div><div class="mut" style="font-size:13.5px">to-do items for ${esc(BR[brand])}</div></div>
+        <div class="card kpi"><div class="lbl">Recent wins</div><div style="font-size:30px;font-weight:700">${wins.length}</div><div class="mut" style="font-size:13.5px">in the latest snapshot</div></div>
+      </section>
+      <section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">${esc(BR[brand])} goals</h2>
+        <div class="legend"><span><i style="background:var(--y)"></i>Now</span><span><i style="background:#5b8def"></i>Pace today</span><span><i style="background:var(--sub)"></i>Targets</span></div></div>
+        ${goals.length ? goals.map(g => goalRow(g, ms)).join("") : `<p class="sub">No goals for this brand in the snapshot.</p>`}</section>
+      <section class="doors">
+        <a class="door" href="/portal/hq/control-room"><b>Control Room</b><span>Jobs, schedule, calendar, channels, insights, economy, messages and your to-do, exactly as you know it.</span><em>Open the mirror</em></a>
+        <a class="door" href="/portal/hq/command-center"><b>Command Center</b><span>Projects, sprints, goals, wins, reports and the library for both brands.</span><em>Open the mirror</em></a>
+      </section>
+      ${wins.length ? `<section class="card"><h2>Recent wins</h2><ul class="list">${wins.map(w => `<li><span class="d ok"></span><span class="tx"><b>${esc(w.data.title || w.data.what || w.data.text || w.id)}</b>${w.data.detail || w.data.why ? `<div class="meta">${esc(w.data.detail || w.data.why)}</div>` : ""}</span><span class="meta" style="white-space:nowrap">${esc(fmt(w.data.at))}</span></li>`).join("")}</ul></section>` : ""}
+      <p class="mut" style="font-size:13px;margin:0">The mirrors are read-only copies, refreshed a few times a day. To change anything, use the live Control Room or a chat with Claude.</p>`;
+    m.querySelectorAll("[data-b]").forEach(b => b.onclick = () => { brand = b.dataset.b; try{ localStorage.setItem("bsp.hqBrand", brand); }catch(e){} draw(j); });
+  }
+  load().catch(e => { $("main").innerHTML = `<div class="card"><h2>The panel did not open</h2><p class="sub">${esc(e.message)}</p></div>`; });
+})();
+</script>
+</body>
+</html>
