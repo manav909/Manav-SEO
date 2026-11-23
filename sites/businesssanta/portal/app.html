@@ -62,6 +62,11 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
 .td pre{white-space:pre-wrap;font:14px/1.5 var(--f);color:var(--sub);background:var(--raise);border-radius:10px;padding:10px 12px;margin:6px 0 0}
 #loading{display:grid;place-items:center;min-height:50vh;gap:12px;color:var(--mut)}
 .pg{display:flex;flex-direction:column;gap:16px;min-width:0}
+.kg.k4{grid-template-columns:repeat(4,minmax(0,1fr))}.kg.k3{grid-template-columns:repeat(3,minmax(0,1fr))}.kg.k2{grid-template-columns:repeat(2,minmax(0,1fr))}
+@media(max-width:1100px){.kg.k4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.kg.k3{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:480px){.kg.k4,.kg.k2{grid-template-columns:minmax(0,1fr)}}
+.g2.top{align-items:start}
 .acc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:22px}
 .acc-r{display:flex;flex-direction:column;gap:12px;min-width:0;border-left:1px solid var(--soft);padding-left:22px}
 .acc-chip2{display:none}
@@ -138,6 +143,7 @@ details>summary::-webkit-details-marker{display:none}
     </svg>`;
   }
   function delta(a, b, lowerBetter, unit){
+    if(!V || V.series.length < 2) return "";
     if(a == null || b == null || a === b) return a != null && b != null ? `<span class="chip n">no change</span>` : "";
     const up = b > a, good = lowerBetter ? !up : up, d = Math.abs(Math.round((b - a) * 10) / 10);
     return `<span class="chip ${good ? "ok" : "bad"}">${up ? "+" : "-"}${num(d)}${unit || ""} since start</span>`;
@@ -148,7 +154,7 @@ details>summary::-webkit-details-marker{display:none}
     $("av").textContent = (ME.user.name || "?").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase(); $("av").title = ME.user.name;
     if(ME.role === "admin") $("adminbar").classList.remove("hide");
     $("out").onclick = async () => { try{ await api("logout", {}); }catch(e){} location.replace("/portal?s=out"); };
-    if(!ME.brands.length){
+    if(!ME.brands.length){ $("editLink").classList.add("hide");
       $("loading").innerHTML = ME.role === "admin" ? `<div class="card" style="max-width:520px;text-align:center"><h2>No businesses yet</h2><p class="sub">Add the first one in the admin console, or save a live preview as a client.</p><a class="btn pri" href="/portal/admin">Open the admin console</a></div>` : `<div class="card" style="max-width:520px;text-align:center"><h2>Your business is being set up</h2><p class="sub">Business Santa is preparing your portal. It shows here as soon as the first check is done.</p><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div>`;
       return;
     }
@@ -197,7 +203,8 @@ details>summary::-webkit-details-marker{display:none}
     if(lastG && lastG.query){
       out.push({ l:"Google Maps position", v:lastG.rank ? "#" + lastG.rank : `<small>Not in top ${lastG.rankOf || 20}</small>`, s:`for "${esc(lastG.query)}"`, d:delta(firstG.rank, lastG.rank, true), sp:spark(S.filter(s => s.google).map(s => s.rank), true), p:mapsUrl(lastG.query) });
       out.push({ l:"Google reviews", v:num(lastG.reviews), s:lastG.rating ? `rated ${lastG.rating} ★ on Google` : "no rating yet", d:delta(firstG.reviews, lastG.reviews), sp:spark(S.filter(s => s.google).map(s => s.reviews)), p:L && L.google && L.google.place ? L.google.place.proof : "" });
-    } else out.push({ l:"Google Maps", v:"<small>First check soon</small>", s:"Your Maps position and reviews show after the first full check.", d:"", sp:"", p:"" });
+    } else if(!V.brand.city || !V.brand.service) out.push({ l:"Google Maps", v:"<small>Not tracked yet</small>", s:ME.role === "admin" ? "Add the city and main search in the admin console to start tracking Maps." : "We start tracking where you show on Maps once your city and main service are set.", d:"", sp:"", p:"" });
+    else out.push({ l:"Google Maps", v:"<small>First check soon</small>", s:"Your Maps position and reviews show after the next weekly check.", d:"", sp:"", p:"" });
     out.push({ l:"Speed on phones", v:last && last.speed != null ? last.speed + "<small>/100</small>" : "<small>Not measured</small>", s:last && last.lcp ? "main content shows in " + esc(last.lcp) : "Google's own test", d:delta(first && first.speed, last && last.speed), sp:spark(S.map(s => s.speed)), p:L && L.speed && L.speed.proof });
     const tot = last ? last.gaps.length + last.good.length : 0;
     out.push({ l:"Checks passing", v:last ? last.good.length + "<small>/" + tot + "</small>" : "-", s:x.fixed.length ? `${x.fixed.length} fixed since you started` : "public checks on your website and Google", d:delta(first && first.good.length, last && last.good.length), sp:spark(S.map(s => s.good.length)), p:"" });
@@ -235,15 +242,15 @@ details>summary::-webkit-details-marker{display:none}
     const next = V.work.filter(w => w.status !== "done").sort((a, c) => (a.status === "doing" ? -1 : 1) - (c.status === "doing" ? -1 : 1) || (a.date || "9").localeCompare(c.date || "9")).slice(0, 5);
     const comp = x.L && x.L.google && x.L.google.rank ? x.L.google.rank : null;
     return head(x, b, "Overview", line) + `
-      <section class="grid g4">${kpis(x).map(kpiCard).join("")}</section>
+      ${(() => { const K = kpis(x); return `<section class="grid kg k${K.length}">${K.map(kpiCard).join("")}</section>`; })()}
       ${last ? `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Health of your public presence</h2><span class="mut" style="font-size:13.5px">${last.good.length} of ${tot} checks pass</span></div><div class="meter" style="margin-top:12px"><i style="width:${tot ? Math.round(100 * last.good.length / tot) : 0}%"></i></div></section>` : ""}
-      <section class="grid g2">
+      <section class="grid g2 top">
         <article class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Waiting for you</h2>${you.length ? `<span class="badge">${you.length}</span>` : ""}</div>
           ${you.length ? `<ul class="list" style="margin-top:6px">${you.slice(0, 4).map(t => `<li><span class="d y"></span><span class="tx"><b>${esc(t.text)}</b>${t.due ? `<div class="meta">${dueTxt(t.due)}</div>` : ""}</span></li>`).join("")}</ul><a class="btn sm" style="margin-top:10px" href="#/${esc(b.id)}/todo">Open your to-do</a>` : `<p class="sub" style="margin:10px 0 0">Nothing is waiting for you. We tell you here when we need something.</p>`}</article>
         <article class="card"><h2>Done recently</h2>${done.length ? `<ul class="list">${done.map(w => `<li><span class="d ok"></span><span class="tx"><b>${esc(w.title)}</b>${w.detail ? `<div class="meta">${esc(w.detail.split("\n")[0])}</div>` : ""}</span><span class="meta" style="white-space:nowrap">${esc(short(w.date || w.at))}</span></li>`).join("")}</ul>` : `<p class="sub" style="margin:0">The first fixes show here with their date${x.fixed.length ? "" : " as soon as they are live"}.</p>`}
           ${x.fixed.length ? `<ul class="list" style="margin-top:8px">${x.fixed.slice(0, 3).map(f => fItem(f, true)).join("")}</ul>` : ""}</article>
       </section>
-      <section class="grid g2">
+      <section class="grid g2 top">
         <article class="card"><h2>What still holds you back</h2>${x.gaps.length ? `<ul class="list">${x.gaps.slice(0, 6).map(f => fItem(f)).join("")}</ul>${x.gaps.length > 6 ? `<p class="mut" style="margin:8px 0 0;font-size:13.5px">And ${x.gaps.length - 6} more on the Maps and Website pages.</p>` : ""}` : `<p class="sub" style="margin:0">Nothing broken in public right now. The work now is growth: more searches, more reviews, more calls.</p>`}</article>
         <article class="card"><h2>Coming up</h2>${next.length ? `<ul class="list">${next.map(w => `<li><span class="d ${w.status === "doing" ? "y" : ""}"></span><span class="tx"><b>${esc(w.title)}</b><div class="meta">${w.status === "doing" ? "In progress" : "Up next"}${w.date ? " · " + esc(short(w.date)) : ""}</div></span></li>`).join("")}</ul>` : `<p class="sub" style="margin:0">Your strategist adds the next steps here.</p>`}
           ${x.next ? `<div class="note" style="margin-top:12px">Next weekly check: <b>${esc(fmt(x.next, { weekday:"long", month:"short", day:"numeric" }))}</b>. Every number on this page updates then.</div>` : ""}</article>
