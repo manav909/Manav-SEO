@@ -1660,3 +1660,137 @@ HOLIDAY_GUIDES.insert(next(i for i, _g in enumerate(HOLIDAY_GUIDES) if _g["slug"
    "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, sets your holiday hours, adds Christmas offer posts and fresh photos to your Google profile and includes a ChatGPT check, usually done in 3 to 7 days."],
  ],
 })
+
+# 23 Nov 2026 (cloud daily run): striking distance upgrades (optimiser note 22 Nov) and a new Christmas cluster guide.
+_ALL23 = GUIDES + ROOF_GUIDES + DENT_GUIDES + SALON_GUIDES + PLUMB_GUIDES + REST_GUIDES + RETAIL_GUIDES + HOLIDAY_GUIDES
+def _g23(slug): return next(_g for _g in _ALL23 if _g["slug"] == slug)
+def _also23(slug, link):
+    _g = _g23(slug)
+    if not any(u == link[0] for u, _ in _g.get("also", ())):
+        _g["also"] = tuple(tuple(x) for x in _g.get("also", ())) + (link,)
+def _more23(slug, link):
+    _p = next(_i for _i in INDUSTRIES if _i["slug"] == slug)
+    if not any(u == link[0] for u, _ in _p.get("more", ())):
+        _p["more"] = tuple(_p.get("more", ())) + (link,)
+
+# (1) "temporarily closed business" (position 27, 28 days to 21 Nov) on the closed profile guide.
+_mc = _g23("guides/google-business-profile-marked-closed")
+_mc["title"] = "Temporarily Closed Business on Google? How to Fix It | Business Santa"
+_mc["desc"] = "Temporarily closed business on Google, or marked permanently closed by mistake? How to reopen it, when not to, and why holiday closures need special hours."
+_mc["h1"], _mc["h1ac"] = "Temporarily closed business on Google?", "How to fix it"
+_mc["answer"] = ("If Google shows your business as temporarily closed and you are open, reopen it in your Business Profile: choose Edit profile, then Hours, then Open with main hours, set your days and times and save. "
+                 "The same steps work for a business marked permanently closed by mistake, but if it was marked closed because you moved or changed your name, do not reopen it. "
+                 "For short closures such as Thanksgiving or Christmas, Google says to use special hours, not a temporarily closed status.")
+_mc["faq"] = list(_mc["faq"]) + [
+ ("What does temporarily closed mean on Google?", "It means the Business Profile is set to closed for now, so Google shows Temporarily closed on Search and Maps. Google says it is meant for closures longer than 7 days, and temporarily closed businesses can rank below open ones for broad searches."),
+ ("How do I remove permanently closed from my Google listing?", "If you are still open at the same place under the same name, open your Business Profile, choose Edit profile, then Hours, choose Open with main hours and save. If you moved or changed your name, add and verify a new profile instead."),
+]
+for _s in ("guides/holiday-hours-on-google", "guides/why-my-business-is-not-on-google-maps", "guides/christmas-promotion-ideas-for-small-business"):
+    _also23(_s, ("/guides/google-business-profile-marked-closed", "Temporarily closed business on Google? How to fix it"))
+
+# (2) Emergency plumber guide (page average position 10): winter angle, 2 more FAQs, 3 internal links.
+_ep = _g23("guides/emergency-plumber-seo")
+_ep["title"] = "Emergency Plumber SEO: Get 24 Hour and Frozen Pipe Calls | Business Santa"
+_ep["desc"] = "Emergency plumber SEO for US plumbing companies: show up for \"emergency plumber\", \"24 hour plumber\" and frozen pipe searches on Google, Maps and ChatGPT."
+_ep["answer"] = ("Emergency plumber SEO means showing up first when someone searches \"emergency plumber\" or \"24 hour plumber\" with water on the floor. "
+                 "Your Google Business Profile hours must show you as open when people search, your website needs a clear emergency page with a tap-to-call button at the top, your listings must say you take emergency calls, and someone must actually answer. "
+                 "Google shows businesses that look open and close to the searcher first, so honest hours and fast answers matter as much as rankings, and in winter that includes frozen and burst pipe searches.")
+_ep["pre"] = [("Winter is <span class=\"ac\">emergency season</span>",
+  "<p>Cold snaps bring frozen and burst pipe calls, no heat and no hot water, often at night and over the holidays. Before the first freeze, add a frozen pipes section to your emergency page, post a winter tip on your Google profile, and set your Thanksgiving, Christmas and New Year hours as special hours, so Google shows you as open on the nights you take calls. See <a href=\"/guides/winter-plumbing-and-heating-leads\">winter plumbing and heating leads</a> for the full plan.</p>")]
+_ep["faq"] = list(_ep["faq"]) + [
+ ("How do I rank for \"24 hour plumber near me\"?", "Only list 24 hour hours if you really answer around the clock, name the towns you cover on your profile and website, and collect reviews that mention night or weekend jobs. Distance still matters, so you show up most where you are close to the searcher."),
+ ("Should my emergency page mention frozen pipes?", "Yes, in winter. People search for the problem, such as \"frozen pipe burst\" or \"no hot water\", so a short section that names each problem, what to do while waiting and your number helps you show up and get the call."),
+]
+_also23("guides/winter-plumbing-and-heating-leads", ("/guides/emergency-plumber-seo", "Emergency plumber SEO: get the 24 hour and frozen pipe calls"))
+_also23("guides/google-maps-seo-for-plumbers", ("/guides/emergency-plumber-seo", "Emergency plumber SEO for 24 hour calls"))
+_more23("seo-for-plumbers", ("/guides/emergency-plumber-seo", "Emergency plumber SEO: 24 hour and frozen pipe calls"))
+
+# (3) Google Maps for restaurants and caterers (page average position 10): holiday catering angle, 2 more FAQs, 3 internal links.
+_rc = _g23("guides/google-maps-for-restaurants-and-caterers")
+_rc["title"] = "Google Maps Tips for Restaurants and Catering Companies | Business Santa"
+_rc["desc"] = "Google Maps listing tips for US restaurants and catering companies: categories, menus, hours, photos, order links and holiday party catering."
+_rc["pre"] = [("Holiday party season <span class=\"ac\">starts on Google Maps</span>",
+  "<p>Office and family parties are booked in late November and early December, and many planners start with a Google search for catering near them. Add a holiday party or catering menu with a booking deadline, post it on your Google profile as an Offer or Update, and set special hours for Christmas Eve and New Year's Eve. Our <a href=\"/guides/christmas-promotion-ideas-for-small-business\">Christmas promotion ideas</a> include a party package you can copy.</p>")]
+_rc["faq"] = list(_rc["faq"]) + [
+ ("How do caterers get holiday party orders from Google?", "Show a holiday catering menu with prices or a starting price, a clear booking deadline and a short inquiry form, then post it on your Google profile and answer inquiries the same day. Reviews that mention office parties help you show up for those searches."),
+ ("What category should a catering company use on Google Maps?", "Use Caterer as the main category if you do not serve walk-in diners. A restaurant that also caters keeps its restaurant type as the main category and adds Caterer as an extra one where Google offers it."),
+]
+_more23("seo-for-restaurants", ("/guides/google-maps-for-restaurants-and-caterers", "Google Maps tips for restaurants and catering companies"))
+_also23("guides/christmas-promotion-ideas-for-small-business", ("/guides/google-maps-for-restaurants-and-caterers", "Holiday catering on Google Maps for restaurants and caterers"))
+_also23("guides/christmas-google-business-profile-posts", ("/guides/google-maps-for-restaurants-and-caterers", "Google Maps tips for restaurants and catering companies"))
+
+# (4) Wrong map pin (query "my business address on google maps is right but the map pin is wrong", position 6.3): answer that exact case.
+_wl = _g23("guides/wrong-location-on-google-maps")
+_wl["title"] = "Wrong Location on Google Maps? Fix a Wrong Map Pin | Business Santa"
+_wl["faq"] = [("My address is right but the map pin is wrong. What do I do?", "Keep the address and move only the marker: in your Business Profile choose Edit profile, then Location, choose Adjust and drag the map until the marker sits on your door, then save. Check it again from a phone after a few days.")] + list(_wl["faq"])
+
+# (5) New Christmas cluster guide: Christmas shipping deadlines 2026 (USPS dates from its 22 Sep 2026 release).
+USPS_2026 = ("https://about.usps.com/newsroom/national-releases/2026/0922-usps-recommends-2026-holiday-mailing-shipping-dates.htm", "USPS newsroom: USPS recommends 2026 holiday mailing and shipping dates (September 22, 2026)")
+FEDEX_2026 = ("https://www.fedex.com/content/dam/fedex/us-united-states/services/2026_Peak_Last_Day_to_ship.pdf", "FedEx: 2026 last day to ship for arrival by December 24, 2026 (PDF)")
+HOLIDAY_GUIDES.insert(next(i for i, _g in enumerate(HOLIDAY_GUIDES) if _g["slug"] == "guides/christmas-promotion-ideas-for-small-business") + 1, {
+ "slug": "guides/christmas-shipping-deadlines-2026",
+ "holiday": True,
+ "date": "2026-11-23",
+ "nav": "Christmas shipping deadlines 2026",
+ "title": "Christmas Shipping Deadlines 2026 for Small Businesses | Business Santa",
+ "desc": "USPS Christmas 2026 ship-by dates (December 17 to 19) and how a small business turns them into a last order date on Google, its website and order emails.",
+ "h1": "Christmas shipping deadlines 2026:",
+ "h1ac": "set your last order date",
+ "answer": ("For delivery before December 25, 2026, USPS recommends shipping by Thursday, December 17 for USPS Ground Advantage and First-Class Mail, Friday, December 18 for Priority Mail and Saturday, December 19 for Priority Mail Express, within the lower 48 states. "
+            "Set your own last order date a day or two before the deadline of the service you use, then show that date on your Google Business Profile, at the top of your website and in every order email, so shoppers know when to buy and you avoid refunds after Christmas."),
+ "pre": [
+  ("USPS ship-by dates <span class=\"ac\">for Christmas 2026</span>",
+   "<div class=\"tbl\"><table><thead><tr><th>USPS service</th><th>Ship by (lower 48 states)</th><th>Last order date if you need one day to pack</th></tr></thead><tbody>"
+   "<tr><td><b>USPS Ground Advantage</b></td><td>Thursday, December 17</td><td>Wednesday, December 16</td></tr>"
+   "<tr><td><b>First-Class Mail</b></td><td>Thursday, December 17</td><td>Wednesday, December 16</td></tr>"
+   "<tr><td><b>Priority Mail</b></td><td>Friday, December 18</td><td>Thursday, December 17</td></tr>"
+   "<tr><td><b>Priority Mail Express</b></td><td>Saturday, December 19</td><td>Friday, December 18</td></tr>"
+   "</tbody></table></div><p>Dates from the USPS release of September 22, 2026, for expected delivery before December 25. USPS says Ground Advantage to Alaska, Hawaii and US territories can take 10 days or more, so set an earlier date for those buyers. FedEx publishes its own chart of last days to ship for arrival by December 24, 2026, and UPS publishes its own holiday schedule: check the carrier you use before you set your date.</p>"),
+ ],
+ "list_h": "How to set and show your <span class=\"ac\">last order date</span>",
+ "items": [
+  ["Start from the service you really use", "Look at how most of your December orders ship: Ground Advantage, Priority Mail, FedEx or UPS. Your last order date comes from that service, not the fastest one you could pay for."],
+  ["Work back from the carrier date", "If you need a day to pack, your last order date is one working day before the ship-by date. For USPS Ground Advantage that is Wednesday, December 16."],
+  ["Offer a faster option for late buyers", "After your normal cutoff, offer Priority Mail or Priority Mail Express at checkout until their dates, with the extra cost shown clearly."],
+  ["Post the date on your Google profile", "Add an Update or Offer post such as \"Order by December 16 for Christmas delivery\" with a photo, and refresh it in the week before the date."],
+  ["Put it at the top of your website", "One short line above the fold on phones and on every product page, so nobody has to search for it."],
+  ["Add it to checkout and order emails", "Show the date in the cart and in order confirmations, and say plainly when an order placed today will arrive."],
+  ["Give late shoppers a plan B", "After the last shipping date, point people to local pickup, local delivery or a gift card they can print. Set Christmas Eve pickup times as special hours on Google."],
+  ["Tell far away buyers earlier", "Alaska, Hawaii, US territories and overseas buyers need earlier dates. Put them in your shipping policy and your FAQ."],
+  ["Change the message the day after", "When the date passes, swap every banner and post to your plan B, so no one orders expecting a delivery you cannot make."],
+ ],
+ "post": [
+  ("Copy this wording <span class=\"ac\">for your site and Google post</span>",
+   "<ol class=\"steps\"><li><b>Banner</b>Order by Wednesday, December 16 for Christmas delivery in the lower 48 states. Need it later? Choose Priority Mail at checkout until December 17.</li><li><b>Google post</b>Last day to order for Christmas delivery: Wednesday, December 16. Missed it? Pick up in store on Christmas Eve or send a gift card today.</li><li><b>After the date</b>Shipping for Christmas has closed. Pick up in store until 3 pm on Christmas Eve, or send a gift card by email in two minutes.</li></ol><p>Change the dates and times to match your own carrier, packing time and Christmas Eve hours.</p>"),
+ ],
+ "also": (("/guides/christmas-promotion-ideas-for-small-business", "Christmas promotion ideas for small businesses"), ("/guides/last-minute-christmas-marketing", "Last-minute Christmas marketing ideas"), ("/guides/holiday-hours-on-google", "How to set holiday hours on Google"), ("/guides/cyber-monday-small-business", "Cyber Monday 2026 plan for small businesses")),
+ "src": [list(USPS_2026), list(FEDEX_2026), ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"], list(GOOGLE_SPECIAL)],
+ "faq": [
+  ["What is the last day to ship for Christmas 2026 with USPS?",
+   "USPS recommends Saturday, December 19 for Priority Mail Express, Friday, December 18 for Priority Mail, and Thursday, December 17 for USPS Ground Advantage and First-Class Mail, for delivery before December 25 within the lower 48 states."],
+  ["What last order date should a small business use?",
+   "One working day before your carrier's ship-by date if you need a day to pack, or the same day if you ship orders the day they come in. For USPS Ground Advantage that usually means Wednesday, December 16."],
+  ["How do I show my holiday shipping cutoff on Google?",
+   "Add an Update or Offer post on your Google Business Profile with the date and a photo, keep it fresh until the date, then replace it with your pickup or gift card message."],
+  ["Can Business Santa set this up for me?",
+   "Yes. Our one-time $149 Holiday Google tune-up, available until December 10, 2026, sets your holiday hours, adds Christmas offer posts and fresh photos to your Google profile and includes a ChatGPT check, usually done in 3 to 7 days."],
+ ],
+})
+for _s in ("guides/christmas-promotion-ideas-for-small-business", "guides/last-minute-christmas-marketing", "guides/cyber-monday-small-business"):
+    _also23(_s, ("/guides/christmas-shipping-deadlines-2026", "Christmas shipping deadlines 2026 and your last order date"))
+
+# 23 Nov 2026 (quality audit): meta descriptions over 160 characters trimmed, same meaning, query words kept first.
+for _s, _d in (
+ ("guides/google-business-profile-checklist", "A plain-English Google Business Profile checklist for US small businesses: categories, services, hours, photos and reviews. 15 steps to rank higher on Maps."),
+ ("guides/remove-fake-google-reviews", "A fake review on your Google Business Profile? What Google removes, how to report it in the Reviews Management Tool, how to appeal and what to do meanwhile."),
+ ("guides/google-business-profile-verification-problems", "Stuck on Google Business Profile verification? Video rejected, Get verified showing again or a Review issues notice: what each means and how to fix it."),
+ ("guides/google-reviews-disappeared", "Google reviews disappeared, or a new review is not showing? The reasons Google gives for missing and delayed reviews, and how to keep the reviews you earn."),
+ ("guides/google-business-profile-for-salons", "How hair salons, nail salons, barbershops and spas set up a Google Business Profile that ranks on Maps: categories, services, Book button, photos, reviews."),
+ ("guides/dental-reviews-hipaa", "How dental practices get more Google reviews and reply to good and bad ones without revealing patient information, with safe replies and HIPAA cases."),
+ ("guides/last-minute-christmas-marketing", "Eight last-minute Christmas marketing ideas a US small business can still do in December 2026: last order dates, holiday hours, Google offers and gift cards."),
+ ("guides/christmas-google-business-profile-posts", "Christmas post ideas for your Google Business Profile by business type: offers, events and updates that help shoppers choose you on Search and Maps."),
+ ("guides/get-found-on-chatgpt-by-holiday-shoppers", "More holiday shoppers ask ChatGPT where to buy and who to call. How a US local business makes sure it is the one AI assistants recommend this Christmas."),
+ ("guides/plumbing-seo-keywords", "The plumbing SEO keywords homeowners type, grouped by job: emergencies, drains, water heaters, leaks, sewer lines and remodels, and how to use them."),
+):
+    _g23(_s)["desc"] = _d
+AI_PAGE["desc"] = "AI search optimization (GEO) for US small businesses: get named in ChatGPT, Google AI Overviews, Gemini and Perplexity answers. Free check from a real team."
