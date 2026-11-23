@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Admin console · Business Santa client portal</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/portal/portal.css">
+<style>
+.wrap{max-width:1320px;margin:0 auto;padding:22px 24px;display:flex;flex-direction:column;gap:16px}
+@media(max-width:560px){.wrap{padding:14px}}
+.fg{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.fg .w2{grid-column:span 2}.fg .w4{grid-column:1/-1}
+@media(max-width:900px){.fg{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.fg{grid-template-columns:minmax(0,1fr)}.fg .w2{grid-column:auto}}
+.mods{display:flex;flex-wrap:wrap;gap:8px}
+.mods label,.bl label{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--raise);font-size:14px;color:var(--sub);cursor:pointer;min-height:40px}
+.bcard{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,2fr) auto;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid var(--soft)}
+.bcard:last-child{border-bottom:0}
+.bcard .nm b{display:block;font-size:15.5px;color:var(--ink)}
+.bcard .nm span{font-size:13px;color:var(--mut)}
+.bcard .st{display:flex;gap:6px;flex-wrap:wrap}
+.bcard .ac{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:900px){.bcard{grid-template-columns:minmax(0,1fr)}.bcard .ac{justify-content:flex-start}}
+.it{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--soft)}
+.it:last-child{border-bottom:0}
+.it .tx{flex:1;min-width:0;font-size:14px;color:var(--sub);overflow-wrap:anywhere}
+.it .tx b{color:var(--ink);font-size:14.5px}
+.it .ac{display:flex;gap:6px;flex-wrap:wrap;flex:none}
+@media(max-width:620px){.it{flex-direction:column}}
+.link{font:13px ui-monospace,Menlo,monospace;background:var(--raise);border-radius:8px;padding:6px 8px;color:var(--sub);word-break:break-all}
+.sec{scroll-margin-top:80px}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/portal/admin"><img src="/assets/img/logo-96.webp" alt=""><span><b>Business Santa</b><small>Admin console</small></span></a>
+  <div class="row" style="gap:8px"><a class="btn sm" href="/portal/app">Client view</a><a class="btn sm" href="/portal/demo">Live preview</a><button class="btn sm ghost" id="out" type="button">Sign out</button></div>
+</header>
+<main class="wrap" id="main"><div style="display:grid;place-items:center;min-height:40vh"><span class="spin"></span></div></main>
+<footer class="pf"><span>Business Santa client portal · admin</span><span>Powered by SEO Season</span></footer>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const fmt = s => s ? new Date(s.length === 10 ? s + "T12:00:00" : s).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric" }) : "";
+  const api = async (a, body) => { const r = await fetch("/api/portal?a=" + a, body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), credentials:"same-origin" } : { credentials:"same-origin" }); const d = await r.json().catch(() => ({})); if(r.status === 401){ location.replace("/portal?team=1"); throw new Error("signed out"); } if(!r.ok) throw new Error(d.error || "Request failed"); return d; };
+  const toast = t => { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 2800); };
+  const MODS = [["maps", "Google Maps"], ["site", "Website"], ["reviews", "Reviews"], ["ai", "AI search"], ["social", "Social posts"], ["ads", "Ads"]];
+  const TYPES = [["Plumber", "plumber"], ["HVAC", "HVAC company"], ["Electrician", "electrician"], ["Roofer", "roofer"], ["Dentist", "dentist"], ["Law firm", "lawyer"], ["Restaurant", "restaurant"], ["Salon or spa", "hair salon"], ["Auto repair", "auto repair shop"], ["Other", ""]];
+  const ST = { done:"Done", doing:"In progress", next:"Up next" };
+  let ME, USERS = [], USAGE = null, EDIT = null;
+  $("out").onclick = async () => { try{ await api("logout", {}); }catch(e){} location.replace("/portal?s=out"); };
+  const busy = async (btn, label, fn) => { const t = btn.textContent; btn.disabled = true; btn.textContent = label; try{ await fn(); }catch(e){ toast(e.message); } finally{ btn.disabled = false; btn.textContent = t; } };
+
+  async function load(){
+    ME = await api("me"); if(ME.role !== "admin"){ location.replace("/portal/app"); return; }
+    const [u, g] = await Promise.all([api("users"), api("usage").catch(() => null)]); USERS = u.users; USAGE = g;
+    draw();
+    const id = location.hash.slice(1); if(id && ME.brands.some(b => b.id === id)) openEdit(id);
+    window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if(h && h !== EDIT && ME.brands.some(b => b.id === h)) openEdit(h); });
+  }
+  function usage(){
+    if(!USAGE) return "";
+    const s = USAGE.serpapi, p = USAGE.portalSearches || {};
+    const left = s && !s.error && s.left != null ? s.left : null, per = s && s.perMonth;
+    return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Google Maps searches (SerpAPI) this month</h2><span class="mut" style="font-size:13.5px">Speed tests are free. Each Google Maps check uses 2 searches.</span></div>
+      <div class="grid g4" style="margin-top:12px">
+        <div class="note"><b style="font-size:24px">${left != null ? left.toLocaleString("en-US") : "-"}</b><br>searches left${per ? " of " + per.toLocaleString("en-US") : ""}${s && s.error ? " (account not readable: " + esc(s.error) + ")" : ""}</div>
+        <div class="note"><b style="font-size:24px">${p.total || 0}</b><br>used by the portal in ${esc(new Date(USAGE.month + "-15").toLocaleDateString("en-US", { month:"long" }))}</div>
+        <div class="note" style="display:flex;flex-direction:column;gap:2px"><span class="row" style="justify-content:space-between"><span>Live previews</span><b>${p.preview || 0}</b></span><span class="row" style="justify-content:space-between"><span>Check now</span><b>${p.admin || 0}</b></span><span class="row" style="justify-content:space-between"><span>Weekly checks</span><b>${p.weekly || 0}</b></span></div>
+        <div class="note"><b style="font-size:24px">${left != null ? Math.floor(left / 2) : "-"}</b><br>Google Maps checks still possible. Below ${USAGE.floor} left, checks skip Maps.</div>
+      </div></section>`;
+  }
+  function brandForm(b){
+    b = b || {};
+    return `<div class="fg">
+      <label class="f w2">Business name<input name="name" value="${esc(b.name)}" required></label>
+      <label class="f w2">Website<input name="website" value="${esc(b.website)}" inputmode="url" placeholder="example.com"></label>
+      <label class="f">City and state<input name="city" value="${esc(b.city)}" placeholder="Austin, TX"></label>
+      <label class="f">Type of business<select name="typeSel">${TYPES.map(([t, s]) => `<option value="${esc(s)}" data-t="${esc(t)}"${(b.type === t) ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      <label class="f">Main search on Maps<input name="service" value="${esc(b.service)}" placeholder="plumber"></label>
+      <label class="f">Started on<input name="startedAt" type="date" value="${esc(b.startedAt || new Date().toISOString().slice(0, 10))}"></label>
+      <label class="f w2">Owner or contact<input name="contact" value="${esc(b.contact)}"></label>
+      <div class="f w2"><span style="font-size:13.5px;font-weight:600;color:var(--sub)">Plan</span><div class="mods">${MODS.map(([k, t]) => `<label><input type="checkbox" name="m-${k}"${b.modules && b.modules[k] ? " checked" : ""}>${t}</label>`).join("")}</div></div>
+      <label class="f w4">Private notes (clients never see these)<textarea name="notes">${esc(b.notes)}</textarea></label>
+    </div>`;
+  }
+  const readBrand = f => { const o = { name:f.name.value, website:f.website.value, city:f.city.value, service:f.service.value, contact:f.contact.value, notes:f.notes.value, startedAt:f.startedAt.value, modules:{} };
+    const opt = f.typeSel.selectedOptions[0]; o.type = opt ? opt.dataset.t : ""; MODS.forEach(([k]) => { if(f["m-" + k].checked) o.modules[k] = true; }); return o; };
+  function draw(){
+    const B = ME.brands;
+    $("main").innerHTML = `
+      <section><div class="lbl">Super admin</div><h1>Client portal admin</h1><p class="sub" style="margin:0">Add businesses, check them, log the work and to-dos, and give each client a private sign-in link to their own businesses.</p></section>
+      ${usage()}
+      <section class="card sec" id="biz"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Businesses (${B.length})</h2><button class="btn sm pri" id="addB" type="button">Add a business</button></div>
+        <form id="newB" class="hide" style="margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:12px" novalidate>${brandForm()}<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" type="submit">Save and run the first check</button><button class="btn ghost" type="button" id="cancelB">Cancel</button><span class="mut" style="font-size:13.5px">The first check takes about 40 seconds.</span></div></form>
+        <div style="margin-top:6px">${B.length ? B.map(b => { const l = b.latest; return `<div class="bcard"><div class="nm"><b>${esc(b.name)}</b><span>${esc([b.city, b.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")].filter(Boolean).join(" · "))}</span></div>
+          <div class="st">${l ? `<span class="chip n">Checked ${esc(fmt(b.lastScanAt))}</span>${l.google ? `<span class="chip ${l.rank && l.rank <= 3 ? "ok" : "warn"}">Maps ${l.rank ? "#" + l.rank : "not top " + (l.rankOf || 20)}</span><span class="chip n">${(l.reviews || 0).toLocaleString("en-US")} reviews</span>` : `<span class="chip n">Maps not checked</span>`}${l.speed != null ? `<span class="chip ${l.speed >= 90 ? "ok" : l.speed >= 50 ? "warn" : "bad"}">Speed ${l.speed}</span>` : ""}<span class="chip ${l.gaps.length ? "bad" : "ok"}">${l.gaps.length} to fix</span>` : `<span class="chip warn">Not checked yet</span>`}
+            ${USERS.filter(u => u.brands.includes(b.id) && !u.revoked).map(u => `<span class="chip y">${esc(u.name)}</span>`).join("")}</div>
+          <div class="ac"><a class="btn sm" href="/portal/app#/${esc(b.id)}/overview">Dashboard</a><button class="btn sm" type="button" data-scan="${esc(b.id)}">Check now</button><button class="btn sm pri" type="button" data-edit="${esc(b.id)}">Manage</button></div></div>`; }).join("") : `<div class="empty" style="margin-top:12px">No businesses yet. Add one here, or open the live preview and save it as a client.</div>`}</div></section>
+      <section class="card sec hide" id="edit"></section>
+      <section class="card sec" id="people"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Client sign-ins (${USERS.length})</h2><button class="btn sm pri" id="addU" type="button">Add a person</button></div>
+        <p class="sub" style="font-size:13.5px;margin:6px 0 0">Each person gets a private link. Opening it signs them in for 30 days and shows only the businesses ticked for them. A new link stops the old one; "Stop access" signs them out everywhere.</p>
+        <form id="newU" class="hide" style="margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:12px" novalidate>${userForm()}<div class="row" style="margin-top:12px"><button class="btn pri" type="submit">Save and make a link</button><button class="btn ghost" type="button" id="cancelU">Cancel</button></div></form>
+        <div style="margin-top:6px">${USERS.length ? USERS.map(u => `<div class="it"><div class="tx"><b>${esc(u.name)}</b>${u.email ? ` · <a href="mailto:${esc(u.email)}">${esc(u.email)}</a>` : ""}<br>
+          ${u.brands.map(id => { const b = B.find(x => x.id === id); return b ? `<span class="chip n" style="margin:4px 4px 0 0">${esc(b.name)}</span>` : ""; }).join("") || `<span class="mut">No business ticked yet</span>`}
+          <div class="mut" style="font-size:13px;margin-top:6px">${u.revoked ? `<span class="bad-t">Access stopped</span>` : u.lastSeen ? "Last opened " + esc(fmt(u.lastSeen)) : "Has not opened the link yet"}</div>
+          ${u.url && !u.revoked ? `<div class="link" style="margin-top:8px">${esc(u.url)}</div>` : ""}</div>
+          <div class="ac">${u.url && !u.revoked ? `<button class="btn sm pri" type="button" data-copy="${esc(u.url)}">Copy link</button>` : ""}<button class="btn sm" type="button" data-link="${esc(u.uid)}">${u.url && !u.revoked ? "New link" : "Make a link"}</button><button class="btn sm" type="button" data-uedit="${esc(u.uid)}">Edit</button>${!u.revoked ? `<button class="btn sm danger" type="button" data-revoke="${esc(u.uid)}">Stop access</button>` : `<button class="btn sm danger" type="button" data-udel="${esc(u.uid)}">Delete</button>`}</div></div>`).join("") : `<div class="empty" style="margin-top:12px">No client sign-ins yet.</div>`}</div></section>`;
+    wire();
+  }
+  function userForm(u){
+    u = u || { brands:[] };
+    return `<div class="fg"><label class="f w2">Name<input name="name" value="${esc(u.name)}" required></label><label class="f w2">Email (for your records)<input name="email" type="email" value="${esc(u.email)}"></label>
+      <div class="f w4"><span style="font-size:13.5px;font-weight:600;color:var(--sub)">Businesses this person can see</span><div class="bl mods">${ME.brands.map(b => `<label><input type="checkbox" name="b" value="${esc(b.id)}"${u.brands.includes(b.id) ? " checked" : ""}>${esc(b.name)}</label>`).join("") || `<span class="mut">Add a business first.</span>`}</div></div></div>`;
+  }
+  const readUser = f => ({ name:f.name.value, email:f.email.value, brands:[...f.querySelectorAll("input[name=b]:checked")].map(x => x.value) });
+  function wire(){
+    const nb = $("newB"), nu = $("newU");
+    $("addB").onclick = () => { nb.classList.remove("hide"); nb.name.focus(); };
+    $("cancelB").onclick = () => nb.classList.add("hide");
+    nb.typeSel.onchange = () => { if(!nb.service.value) nb.service.value = nb.typeSel.value; };
+    nb.onsubmit = e => { e.preventDefault(); const btn = nb.querySelector("[type=submit]"); busy(btn, "Saving and checking", async () => {
+      const d = await api("brand-save", readBrand(nb)); toast("Saved. Running the first check.");
+      if(d.brand.website || d.brand.name) await api("scan", { id:d.brand.id }).catch(err => toast(err.message));
+      await reload(); openEdit(d.brand.id); }); };
+    $("addU").onclick = () => { nu.classList.remove("hide"); nu.name.focus(); };
+    $("cancelU").onclick = () => nu.classList.add("hide");
+    nu.onsubmit = e => { e.preventDefault(); busy(nu.querySelector("[type=submit]"), "Saving", async () => { const d = await api("user-save", readUser(nu)); const l = await api("link-new", { uid:d.user.uid }); await copy(l.url, "Link made and copied. Send it to " + d.user.name + "."); await reload(); }); };
+    document.querySelectorAll("[data-scan]").forEach(b => b.onclick = () => busy(b, "Checking", async () => { const d = await api("scan", { id:b.dataset.scan }); toast("Checked" + (d.google === "ok" ? " with Google Maps" : "") + "."); await reload(); }));
+    document.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => openEdit(b.dataset.edit));
+    document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copy(b.dataset.copy, "Link copied."));
+    document.querySelectorAll("[data-link]").forEach(b => b.onclick = () => busy(b, "Making", async () => { const l = await api("link-new", { uid:b.dataset.link }); await copy(l.url, "New link copied. The old link no longer works."); await reload(); }));
+    document.querySelectorAll("[data-revoke]").forEach(b => b.onclick = () => { if(b.dataset.sure){ busy(b, "Stopping", async () => { await api("user-revoke", { uid:b.dataset.revoke }); toast("Access stopped."); await reload(); }); } else { b.dataset.sure = "1"; b.textContent = "Tap again to stop"; } });
+    document.querySelectorAll("[data-udel]").forEach(b => b.onclick = () => { if(b.dataset.sure){ busy(b, "Deleting", async () => { await api("user-delete", { uid:b.dataset.udel }); await reload(); }); } else { b.dataset.sure = "1"; b.textContent = "Tap again to delete"; } });
+    document.querySelectorAll("[data-uedit]").forEach(b => b.onclick = () => { const u = USERS.find(x => x.uid === b.dataset.uedit); const it = b.closest(".it");
+      it.innerHTML = `<form style="flex:1" novalidate>${userForm(u)}<div class="row" style="margin-top:10px"><button class="btn pri sm" type="submit">Save</button><button class="btn ghost sm" type="button">Cancel</button></div></form>`;
+      const f = it.querySelector("form"); f.querySelector(".ghost").onclick = draw;
+      f.onsubmit = e => { e.preventDefault(); busy(f.querySelector("[type=submit]"), "Saving", async () => { await api("user-save", Object.assign({ uid:u.uid }, readUser(f))); toast("Saved."); await reload(); }); }; });
+  }
+  async function copy(t, msg){ try{ await navigator.clipboard.writeText(t); toast(msg); }catch(e){ prompt("Copy this link:", t); } }
+  async function reload(){ ME = await api("me"); USERS = (await api("users")).users; USAGE = await api("usage").catch(() => USAGE); draw(); if(EDIT) openEdit(EDIT, true); }
+
+  async function openEdit(id, quiet){
+    EDIT = id; history.replaceState(null, "", "#" + id);
+    const v = await api("brand&id=" + encodeURIComponent(id)), b = v.brand, E = $("edit");
+    E.classList.remove("hide");
+    const work = v.work, todo = v.todo;
+    E.innerHTML = `<div class="row" style="justify-content:space-between;flex-wrap:wrap"><div><div class="lbl">Manage</div><h2 style="margin:2px 0 0">${esc(b.name)}</h2></div><div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn sm" href="/portal/app#/${esc(b.id)}/overview">See the client dashboard</a><button class="btn sm ghost" type="button" id="closeE">Close</button></div></div>
+      <form id="fb" style="margin-top:14px" novalidate>${brandForm(b)}<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" type="submit">Save details</button><button class="btn danger ghost" type="button" id="delB">Delete this business</button><span class="mut" style="font-size:13px">${v.series.length} check${v.series.length === 1 ? "" : "s"} saved${b.lastScanAt ? ", last " + esc(fmt(b.lastScanAt)) : ""}${b.source === "preview" ? " · saved from a live preview" : ""}</span></div></form>
+      <div class="grid g2" style="margin-top:18px">
+        <div><h3>Work log (the client sees this)</h3>
+          <form id="fw" style="display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px" novalidate>
+            <label class="f">What<input name="title" placeholder="Google profile categories fixed" required></label>
+            <label class="f">Detail (optional)<textarea name="detail" placeholder="One or two plain lines the owner understands"></textarea></label>
+            <div class="fg" style="grid-template-columns:repeat(3,minmax(0,1fr))"><label class="f">Status<select name="status"><option value="done">Done</option><option value="doing">In progress</option><option value="next">Up next</option></select></label>
+              <label class="f">Date<input name="date" type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
+              <label class="f">Area<select name="module"><option value="">General</option>${MODS.map(([k, t]) => `<option value="${k}">${t}</option>`).join("")}</select></label></div>
+            <label class="f">Proof link (optional)<input name="proof" inputmode="url" placeholder="https://"></label>
+            <button class="btn pri" type="submit">Add to the work log</button></form>
+          <div style="margin-top:8px">${work.map(w => `<div class="it"><div class="tx"><b>${esc(w.title)}</b> <span class="chip ${w.status === "done" ? "ok" : w.status === "doing" ? "y" : "n"}">${ST[w.status]}</span><br><span class="mut" style="font-size:13px">${esc(fmt(w.date || w.at))}${w.module ? " · " + esc((MODS.find(m => m[0] === w.module) || [, ""])[1]) : ""}</span>${w.detail ? `<div style="margin-top:4px;white-space:pre-line">${esc(w.detail)}</div>` : ""}</div>
+            <div class="ac">${w.status !== "done" ? `<button class="btn sm" type="button" data-wdone="${esc(w.id)}">Mark done</button>` : ""}<button class="btn sm danger" type="button" data-wdel="${esc(w.id)}">Remove</button></div></div>`).join("") || `<div class="empty" style="margin-top:8px">No work logged yet.</div>`}</div></div>
+        <div><h3>To-dos</h3>
+          <form id="ft" style="display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px" novalidate>
+            <label class="f">To-do<input name="text" placeholder="Approve the new Google profile photos" required></label>
+            <label class="f">Steps, written out (the client opens these)<textarea name="steps" placeholder="1. Open the link below.&#10;2. Click Approve.&#10;3. Tick this to-do."></textarea></label>
+            <div class="fg" style="grid-template-columns:repeat(2,minmax(0,1fr))"><label class="f">For<select name="who"><option value="you">The client</option><option value="us">Business Santa</option></select></label><label class="f">Due<input name="due" type="date"></label></div>
+            <label class="f">Link to the exact page (optional)<input name="link" inputmode="url" placeholder="https://"></label>
+            <button class="btn pri" type="submit">Add the to-do</button></form>
+          <div style="margin-top:8px">${todo.map(t => `<div class="it"><div class="tx"><b${t.done ? ' style="text-decoration:line-through;color:var(--mut)"' : ""}>${esc(t.text)}</b> <span class="chip ${t.who === "you" ? "y" : "n"}">${t.who === "you" ? "Client" : "Business Santa"}</span><br><span class="mut" style="font-size:13px">${t.done ? "Done " + esc(fmt(t.doneAt)) + (t.doneBy ? " by " + esc(t.doneBy) : "") : t.due ? "Due " + esc(fmt(t.due)) : "No due date"}</span></div>
+            <div class="ac"><button class="btn sm" type="button" data-tdone="${esc(t.id)}" data-v="${t.done ? "" : "1"}">${t.done ? "Reopen" : "Mark done"}</button><button class="btn sm danger" type="button" data-tdel="${esc(t.id)}">Remove</button></div></div>`).join("") || `<div class="empty" style="margin-top:8px">No to-dos yet.</div>`}</div></div>
+      </div>`;
+    if(!quiet) E.scrollIntoView({ behavior:"smooth", block:"start" });
+    $("closeE").onclick = () => { EDIT = null; E.classList.add("hide"); history.replaceState(null, "", location.pathname); };
+    const fb = $("fb"); fb.onsubmit = e => { e.preventDefault(); busy(fb.querySelector("[type=submit]"), "Saving", async () => { await api("brand-save", Object.assign({ id:b.id }, readBrand(fb))); toast("Saved."); await reload(); }); };
+    $("delB").onclick = e => { const btn = e.target; if(btn.dataset.sure){ busy(btn, "Deleting", async () => { await api("brand-delete", { id:b.id }); EDIT = null; history.replaceState(null, "", location.pathname); await reload(); toast("Deleted."); }); } else { btn.dataset.sure = "1"; btn.textContent = "Tap again: deletes every check, log and to-do"; } };
+    const fw = $("fw"); fw.onsubmit = e => { e.preventDefault(); if(!fw.title.value.trim()) return toast("Write what was done."); busy(fw.querySelector("[type=submit]"), "Adding", async () => { await api("work-save", { brand:b.id, item:{ title:fw.title.value, detail:fw.detail.value, status:fw.status.value, date:fw.date.value, module:fw.module.value, proof:fw.proof.value } }); toast("Added to the work log."); openEdit(b.id); }); };
+    const ft = $("ft"); ft.onsubmit = e => { e.preventDefault(); if(!ft.text.value.trim()) return toast("Write the to-do."); busy(ft.querySelector("[type=submit]"), "Adding", async () => { await api("todo-save", { brand:b.id, item:{ text:ft.text.value, steps:ft.steps.value, who:ft.who.value, due:ft.due.value, link:ft.link.value } }); toast("To-do added."); openEdit(b.id); }); };
+    E.querySelectorAll("[data-wdone]").forEach(x => x.onclick = () => busy(x, "Saving", async () => { const w = work.find(i => i.id === x.dataset.wdone); await api("work-save", { brand:b.id, item:Object.assign({}, w, { status:"done", date:new Date().toISOString().slice(0, 10) }) }); openEdit(b.id); }));
+    E.querySelectorAll("[data-wdel]").forEach(x => x.onclick = () => busy(x, "Removing", async () => { await api("work-del", { brand:b.id, item:{ id:x.dataset.wdel } }); openEdit(b.id); }));
+    E.querySelectorAll("[data-tdone]").forEach(x => x.onclick = () => busy(x, "Saving", async () => { await api("todo-done", { brand:b.id, id:x.dataset.tdone, done:!!x.dataset.v }); openEdit(b.id); }));
+    E.querySelectorAll("[data-tdel]").forEach(x => x.onclick = () => busy(x, "Removing", async () => { await api("todo-del", { brand:b.id, item:{ id:x.dataset.tdel } }); openEdit(b.id); }));
+  }
+  load().catch(e => { if(e.message !== "signed out") $("main").innerHTML = `<div class="card"><h2>The console did not open</h2><p class="sub">${esc(e.message)}</p></div>`; });
+})();
+</script>
+</body>
+</html>

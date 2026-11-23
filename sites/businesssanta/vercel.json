@@ -76,6 +76,10 @@
   ],
   "rewrites": [
     {
+      "source": "/portal/in/:t",
+      "destination": "/api/portal?a=open&t=:t"
+    },
+    {
       "source": "/",
       "has": [
         {
@@ -122,6 +126,18 @@
   "functions": {
     "api/portal-scan.mjs": {
       "maxDuration": 90
+    },
+    "api/portal.mjs": {
+      "maxDuration": 120
+    },
+    "api/portal-cron.mjs": {
+      "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/portal-cron",
+      "schedule": "17 10 * * *"
+    }
+  ]
 }

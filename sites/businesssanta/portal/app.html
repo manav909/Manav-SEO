@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Client portal · Business Santa</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/portal/portal.css">
+<style>
+.shell{max-width:1320px;margin:0 auto;display:grid;grid-template-columns:220px minmax(0,1fr);gap:22px;padding:22px 24px}
+nav.side{position:sticky;top:78px;align-self:start;display:flex;flex-direction:column;gap:2px}
+nav.side a{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:10px;color:var(--sub);text-decoration:none;font-size:14.5px;font-weight:500;min-height:44px}
+nav.side a:hover{background:var(--raise);color:var(--ink)}
+nav.side a.on{background:rgba(253,185,19,.1);color:var(--y);font-weight:600}
+nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
+.badge{min-width:22px;height:22px;padding:0 7px;border-radius:99px;background:var(--y);color:#0b0d14;font-size:12px;font-weight:800;display:inline-grid;place-items:center}
+.tabs{display:none}
+@media(max-width:980px){.shell{grid-template-columns:minmax(0,1fr);padding:14px 14px 18px;gap:14px}nav.side{display:none}
+  .tabs{display:flex;gap:6px;overflow-x:auto;padding:10px 14px;border-bottom:1px solid var(--line);background:#10131d;position:sticky;top:57px;z-index:15;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs a{flex:none;display:inline-flex;align-items:center;gap:6px;padding:0 14px;min-height:38px;border-radius:99px;background:var(--raise);color:var(--sub);text-decoration:none;font-size:14px;font-weight:600;white-space:nowrap}
+  .tabs a.on{background:var(--y);color:#0b0d14}.tabs a.on .badge{background:#0b0d14;color:var(--y)}}
+.hdr-r{display:flex;align-items:center;gap:10px;min-width:0}
+.sw{max-width:280px;min-height:40px;font-weight:600}
+.av{width:36px;height:36px;border-radius:50%;background:var(--raise);border:1px solid var(--line);display:grid;place-items:center;font-size:13px;font-weight:700;color:var(--sub);flex:none}
+@media(max-width:620px){.hdr-r .live,.brand span{display:none}.sw{max-width:190px}.bname{max-width:150px!important}}
+.adminbar{background:rgba(253,185,19,.1);border-bottom:1px solid rgba(253,185,19,.3);color:var(--y);font-size:13.5px;padding:8px 24px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:end}
+@media(max-width:760px){.hero{grid-template-columns:minmax(0,1fr)}}
+.hero .lead{font-size:16px;color:var(--sub);max-width:78ch;margin:0}
+.hero .lead b{color:var(--ink)}
+.acts{display:flex;gap:10px;flex-wrap:wrap}
+.kpi{display:flex;flex-direction:column;gap:4px}
+.kpi .v{font-size:32px;line-height:1.1;font-weight:700;letter-spacing:-.01em;margin-top:4px}
+.kpi .v small{font-size:15px;color:var(--mut);font-weight:600}
+.kpi .s{font-size:13.5px;color:var(--mut);overflow-wrap:anywhere}
+.kpi .ft{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin-top:auto;padding-top:10px}.kpi .ft>span{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.kpi .ft a{font-size:13px;font-weight:600;white-space:nowrap}
+.spark{width:110px;height:32px;flex:none}
+.meter{height:10px;border-radius:99px;background:var(--raise);overflow:hidden}.meter i{display:block;height:100%;background:var(--y)}
+.vs{display:flex;flex-direction:column;gap:10px}
+.vs .r{display:grid;grid-template-columns:minmax(0,220px) minmax(0,1fr) auto;gap:10px;align-items:center;font-size:14px;color:var(--sub)}
+.vs .r span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vs .r.me{color:var(--ink);font-weight:600}
+.vs .b{height:12px;border-radius:99px;background:var(--raise);overflow:hidden}.vs .b i{display:block;height:100%;background:#4a5168;border-radius:99px}.vs .r.me .b i{background:var(--y)}
+@media(max-width:620px){.vs .r{grid-template-columns:minmax(0,1fr) auto;row-gap:6px}.vs .r .b{grid-column:1/-1;grid-row:2}}
+.chart{width:100%;height:auto;display:block}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media(max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+.wk{background:var(--raise);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.wk:last-child{margin-bottom:0}
+.wk b{display:block;color:var(--ink);font-size:14.5px}
+.wk p{font-size:13.5px;color:var(--sub);margin:4px 0 0;white-space:pre-line}
+.wk .meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12.5px;color:var(--mut)}
+.td{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-bottom:1px solid var(--soft)}
+.td:last-child{border-bottom:0}
+.td .tx{flex:1;min-width:0}
+.td .tx b{color:var(--ink);font-size:15px}
+.td.done .tx b{text-decoration:line-through;color:var(--mut)}
+.td details{margin-top:6px}.td summary{cursor:pointer;font-size:13.5px;color:var(--y);min-height:28px}
+.td pre{white-space:pre-wrap;font:14px/1.5 var(--f);color:var(--sub);background:var(--raise);border-radius:10px;padding:10px 12px;margin:6px 0 0}
+#loading{display:grid;place-items:center;min-height:50vh;gap:12px;color:var(--mut)}
+.pg{display:flex;flex-direction:column;gap:16px;min-width:0}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="row" style="gap:14px">
+    <a class="brand" href="/portal/app"><img src="/assets/img/logo-96.webp" alt=""><span><b>Business Santa</b><small>Client portal</small></span></a>
+    <span id="swWrap"></span>
+  </div>
+  <div class="hdr-r"><span class="chip ok live hide" id="live"></span><span class="av" id="av" title=""></span><button class="btn sm ghost" id="out" type="button">Sign out</button></div>
+</header>
+<div class="adminbar hide noprint" id="adminbar"><span>Admin view: you see every business. Clients see only the ones assigned to them.</span><span class="row" style="gap:8px"><a class="btn sm" id="editLink" href="/portal/admin">Edit this business</a><a class="btn sm" href="/portal/admin">Admin console</a></span></div>
+<nav class="tabs" id="tabs" aria-label="Portal pages"></nav>
+<div id="loading"><span class="spin"></span><span>Opening your portal</span></div>
+<div class="shell hide" id="shell">
+  <nav class="side" id="side" aria-label="Portal pages"></nav>
+  <main id="main" class="pg"></main>
+</div>
+<footer class="pf"><span>Business Santa · your team for Google, Maps and AI search · <a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></span><span>Powered by SEO Season</span></footer>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const num = n => n == null ? "" : Number(n).toLocaleString("en-US");
+  const DAY = 864e5;
+  const fmt = (s, o) => s ? new Date(s.length === 10 ? s + "T12:00:00" : s).toLocaleDateString("en-US", o || { month:"short", day:"numeric", year:"numeric" }) : "";
+  const short = s => fmt(s, { month:"short", day:"numeric" });
+  const ago = s => { const m = Math.round((Date.now() - Date.parse(s)) / 6e4); return m < 2 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " days ago"; };
+  const api = async (a, body) => { const r = await fetch("/api/portal?a=" + a, body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), credentials:"same-origin" } : { credentials:"same-origin" }); const d = await r.json().catch(() => ({})); if(r.status === 401){ location.replace("/portal"); throw new Error("signed out"); } if(!r.ok) throw new Error(d.error || "Request failed"); return d; };
+  const toast = t => { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 2600); };
+  const MODN = { maps:"Google Maps", site:"Website", reviews:"Reviews", ai:"AI search", social:"Social posts", ads:"Ads" };
+  const PAGES = [["overview", "Overview"], ["maps", "Maps and reviews"], ["site", "Website"], ["work", "Work plan"], ["todo", "Your to-do"], ["reports", "Reports"]];
+  let ME = null, V = null, cur = { id:"", page:"overview" };
+
+  /* Small line for a KPI card. lowerBetter flips the picture so "up" always means better. */
+  function spark(vals, lowerBetter){
+    const v = vals.filter(x => x != null); if(v.length < 2) return "";
+    const W = 110, H = 32, mn = Math.min(...v), mx = Math.max(...v), rg = mx - mn || 1;
+    const pts = v.map((x, i) => [i * (W - 6) / (v.length - 1) + 3, lowerBetter ? 4 + (x - mn) / rg * (H - 8) : H - 4 - (x - mn) / rg * (H - 8)]);
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline fill="none" stroke="#FDB913" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts.map(p => p.map(n => n.toFixed(1)).join(",")).join(" ")}"/><circle cx="${pts[pts.length - 1][0].toFixed(1)}" cy="${pts[pts.length - 1][1].toFixed(1)}" r="3" fill="#FDB913"/></svg>`;
+  }
+  /* Larger trend chart with dates. */
+  function chart(series, key, opt){
+    const pts = series.map(s => [s.at, s[key]]).filter(p => p[1] != null);
+    if(pts.length < 2) return `<div class="empty">The trend line appears after the second weekly check${pts.length ? `. Starting point: <b style="color:var(--ink)">${esc(opt.fmt(pts[0][1]))}</b> on ${esc(short(pts[0][0]))}` : ""}.</div>`;
+    const sm = window.innerWidth < 620, W = sm ? 340 : 640, H = sm ? 170 : 190, L = 44, R = 14, T = 14, B = 30, v = pts.map(p => p[1]);
+    let mn = Math.min(...v), mx = Math.max(...v); if(mn === mx){ mn -= 1; mx += 1; } if(opt.min != null) mn = Math.min(mn, opt.min);
+    const X = i => L + i * (W - L - R) / (pts.length - 1), Y = x => opt.lowerBetter ? T + (x - mn) / (mx - mn) * (H - T - B) : H - B - (x - mn) / (mx - mn) * (H - T - B);
+    const line = pts.map((p, i) => X(i).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ");
+    const ticks = [mn, (mn + mx) / 2, mx];
+    const lab = [0, pts.length - 1].concat(pts.length > 4 ? [Math.floor((pts.length - 1) / 2)] : []);
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label)} over time">
+      ${ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="#20242f"/><text x="${L - 8}" y="${(Y(t) + 4).toFixed(1)}" fill="#a0a8b8" font-size="12" text-anchor="end">${esc(opt.fmt(Math.round(t * 10) / 10))}</text>`).join("")}
+      <polyline fill="none" stroke="#FDB913" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" points="${line}"/>
+      ${pts.map((p, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="3.5" fill="#0b0d14" stroke="#FDB913" stroke-width="2"><title>${esc(short(p[0]))}: ${esc(opt.fmt(p[1]))}</title></circle>`).join("")}
+      ${lab.map(i => `<text x="${X(i).toFixed(1)}" y="${H - 8}" fill="#a0a8b8" font-size="12" text-anchor="${i === 0 ? "start" : i === pts.length - 1 ? "end" : "middle"}">${esc(short(pts[i][0]))}</text>`).join("")}
+    </svg>`;
+  }
+  function delta(a, b, lowerBetter, unit){
+    if(a == null || b == null || a === b) return a != null && b != null ? `<span class="chip n">no change</span>` : "";
+    const up = b > a, good = lowerBetter ? !up : up, d = Math.abs(Math.round((b - a) * 10) / 10);
+    return `<span class="chip ${good ? "ok" : "bad"}">${up ? "+" : "-"}${num(d)}${unit || ""} since start</span>`;
+  }
+
+  async function boot(){
+    try{ ME = await api("me"); }catch(e){ return; }
+    $("av").textContent = (ME.user.name || "?").split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase(); $("av").title = ME.user.name;
+    if(ME.role === "admin") $("adminbar").classList.remove("hide");
+    $("out").onclick = async () => { try{ await api("logout", {}); }catch(e){} location.replace("/portal?s=out"); };
+    if(!ME.brands.length){
+      $("loading").innerHTML = ME.role === "admin" ? `<div class="card" style="max-width:520px;text-align:center"><h2>No businesses yet</h2><p class="sub">Add the first one in the admin console, or save a live preview as a client.</p><a class="btn pri" href="/portal/admin">Open the admin console</a></div>` : `<div class="card" style="max-width:520px;text-align:center"><h2>Your business is being set up</h2><p class="sub">Business Santa is preparing your portal. It shows here as soon as the first check is done.</p><a href="mailto:seo@businesssanta.com">seo@businesssanta.com</a></div>`;
+      return;
+    }
+    window.addEventListener("hashchange", route); route();
+  }
+  async function route(){
+    const [id, page] = location.hash.replace(/^#\/?/, "").split("/");
+    let saved = ""; try{ saved = localStorage.getItem("bsp.brand") || ""; }catch(e){}
+    const pick = ME.brands.find(b => b.id === id) || ME.brands.find(b => b.id === saved) || ME.brands[0];
+    const pg = PAGES.some(p => p[0] === page) ? page : "overview";
+    if(pick.id !== id || pg !== page){ history.replaceState(null, "", "#/" + pick.id + "/" + pg); }
+    try{ localStorage.setItem("bsp.brand", pick.id); }catch(e){}
+    if(!V || cur.id !== pick.id){ $("main").innerHTML = `<div id="loading" style="min-height:40vh"><span class="spin"></span></div>`; V = await api("brand&id=" + encodeURIComponent(pick.id)); }
+    cur = { id:pick.id, page:pg };
+    drawChrome(); draw(); window.scrollTo(0, 0);
+    $("loading").classList.add("hide"); $("shell").classList.remove("hide");
+  }
+  function drawChrome(){
+    const b = V.brand, open = V.todo.filter(t => t.who === "you" && !t.done).length;
+    $("swWrap").innerHTML = ME.brands.length > 1 ? `<label class="hide" for="sw">Business</label><select id="sw" class="sw" aria-label="Choose a business">${ME.brands.map(x => `<option value="${esc(x.id)}"${x.id === b.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : `<span class="bname" style="font-weight:600;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;display:inline-block">${esc(b.name)}</span>`;
+    if($("sw")) $("sw").onchange = e => { location.hash = "#/" + e.target.value + "/" + cur.page; };
+    const links = PAGES.map(([k, t]) => `<a href="#/${esc(b.id)}/${k}" class="${k === cur.page ? "on" : ""}"${k === cur.page ? ' aria-current="page"' : ""}><span>${t}</span>${k === "todo" && open ? `<span class="badge">${open}</span>` : ""}</a>`).join("");
+    $("side").innerHTML = links + `<div class="sep"></div><a href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}"><span>Talk to your strategist</span></a>`;
+    $("tabs").innerHTML = links; const ta = $("tabs").querySelector("a.on"); if(ta) $("tabs").scrollLeft = ta.offsetLeft - 14;
+    if(b.lastScanAt){ $("live").textContent = "Checked " + ago(b.lastScanAt); $("live").classList.remove("hide"); } else $("live").classList.add("hide");
+    $("editLink").href = "/portal/admin#" + b.id;
+    document.title = b.name + " · Business Santa client portal";
+  }
+
+  /* What the numbers say, worked out from the stored checks only. */
+  function facts(){
+    const S = V.series, last = S[S.length - 1] || null, first = S[0] || null, L = V.latest, F0 = V.first;
+    const lastG = [...S].reverse().find(s => s.google) || null, firstG = S.find(s => s.google) || null;
+    const gaps = L ? L.findings.filter(f => f.level === "gap") : [], good = L ? L.findings.filter(f => f.level === "good") : [];
+    const lastGaps = new Set(last ? last.gaps : []);
+    const fixed = F0 && S.length > 1 ? F0.findings.filter(f => f.level === "gap" && !lastGaps.has(f.code)) : [];
+    const next = V.brand.lastScanAt ? new Date(Date.parse(V.brand.lastScanAt) + 7 * DAY).toISOString() : "";
+    return { S, last, first, lastG, firstG, L, F0, gaps, good, fixed, next };
+  }
+  const proofA = (u, t) => u ? `<a href="${esc(u)}" target="_blank" rel="noopener">${t || "See the proof"}</a>` : "";
+  const fItem = (f, fixed) => `<li><span class="d ${fixed ? "ok" : f.level === "gap" ? "bad" : f.level === "good" ? "ok" : ""}"></span><span class="tx">${fixed ? `<span class="chip ok" style="margin-right:6px">Fixed</span>` : ""}${esc(f.text)}</span>${f.proof && !fixed ? `<a class="pf" href="${esc(f.proof)}" target="_blank" rel="noopener">Proof</a>` : ""}</li>`;
+  const mapsUrl = q => "https://www.google.com/maps/search/" + encodeURIComponent(q);
+
+  function kpis(x){
+    const { S, lastG, firstG, last, first, L } = x, out = [];
+    if(lastG && lastG.query){
+      out.push({ l:"Google Maps position", v:lastG.rank ? "#" + lastG.rank : `<small>Not in top ${lastG.rankOf || 20}</small>`, s:`for "${esc(lastG.query)}"`, d:delta(firstG.rank, lastG.rank, true), sp:spark(S.filter(s => s.google).map(s => s.rank), true), p:mapsUrl(lastG.query) });
+      out.push({ l:"Google reviews", v:num(lastG.reviews), s:lastG.rating ? `rated ${lastG.rating} ★ on Google` : "no rating yet", d:delta(firstG.reviews, lastG.reviews), sp:spark(S.filter(s => s.google).map(s => s.reviews)), p:L && L.google && L.google.place ? L.google.place.proof : "" });
+    } else out.push({ l:"Google Maps", v:"<small>First check soon</small>", s:"Your Maps position and reviews show after the first full check.", d:"", sp:"", p:"" });
+    out.push({ l:"Speed on phones", v:last && last.speed != null ? last.speed + "<small>/100</small>" : "<small>Not measured</small>", s:last && last.lcp ? "main content shows in " + esc(last.lcp) : "Google's own test", d:delta(first && first.speed, last && last.speed), sp:spark(S.map(s => s.speed)), p:L && L.speed && L.speed.proof });
+    const tot = last ? last.gaps.length + last.good.length : 0;
+    out.push({ l:"Checks passing", v:last ? last.good.length + "<small>/" + tot + "</small>" : "-", s:x.fixed.length ? `${x.fixed.length} fixed since you started` : "public checks on your website and Google", d:delta(first && first.good.length, last && last.good.length), sp:spark(S.map(s => s.good.length)), p:"" });
+    return out.slice(0, 4);
+  }
+  const kpiCard = k => `<article class="card kpi"><div class="lbl">${esc(k.l)}</div><div class="v">${k.v}</div><div class="s">${k.s}</div><div class="ft"><span>${k.d}${k.p ? proofA(k.p) : ""}</span>${k.sp}</div></article>`;
+
+  function draw(){
+    const x = facts(), b = V.brand, m = $("main");
+    const P = { overview, maps, site, work, todo, reports }[cur.page];
+    m.innerHTML = P(x, b);
+    m.querySelectorAll("[data-print]").forEach(e => e.onclick = () => window.print());
+    m.querySelectorAll("input[data-todo]").forEach(e => e.onchange = async () => {
+      e.disabled = true;
+      try{ const d = await api("todo-done", { brand:b.id, id:e.dataset.todo, done:e.checked }); V.todo = d.todo; drawChrome(); draw(); toast(e.checked ? "Marked as done. Thank you." : "Marked as not done."); }
+      catch(err){ e.checked = !e.checked; e.disabled = false; toast(err.message); }
+    });
+  }
+  function head(x, b, title, line){
+    const mods = Object.keys(b.modules || {}).filter(k => b.modules[k]);
+    return `<section class="hero"><div><div class="lbl">${esc(title)}${b.city ? " · " + esc(b.city) : ""}</div><h1>${esc(b.name)}</h1><p class="lead">${line}</p>
+      ${mods.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px"><span class="mut" style="font-size:13px">Your plan:</span>${mods.map(k => `<span class="chip y">${esc(MODN[k])}</span>`).join("")}</div>` : ""}</div>
+      <div class="acts noprint"><button class="btn" type="button" data-print>Save as PDF</button><a class="btn pri" href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}">Talk to your strategist</a></div></section>`;
+  }
+  function overview(x, b){
+    const { S, last } = x;
+    const tot = last ? last.gaps.length + last.good.length : 0;
+    let line = !last ? "Your first check is being prepared. Numbers appear here as soon as it is done." :
+      `<b>${last.good.length} of ${tot}</b> public checks pass today.` + (x.fixed.length ? ` <b>${x.fixed.length}</b> problem${x.fixed.length === 1 ? "" : "s"} fixed since you started on ${esc(fmt(S[0].at))}.` : "") +
+      (S.length === 1 ? ` This first check is your starting point.` : "") + (x.next ? ` Next check: ${esc(short(x.next))}.` : "");
+    const you = V.todo.filter(t => t.who === "you" && !t.done).sort((a, c) => (a.due || "9").localeCompare(c.due || "9"));
+    const done = V.work.filter(w => w.status === "done").sort((a, c) => (c.date || c.at).localeCompare(a.date || a.at)).slice(0, 5);
+    const next = V.work.filter(w => w.status !== "done").sort((a, c) => (a.status === "doing" ? -1 : 1) - (c.status === "doing" ? -1 : 1) || (a.date || "9").localeCompare(c.date || "9")).slice(0, 5);
+    const comp = x.L && x.L.google && x.L.google.rank ? x.L.google.rank : null;
+    return head(x, b, "Overview", line) + `
+      <section class="grid g4">${kpis(x).map(kpiCard).join("")}</section>
+      ${last ? `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Health of your public presence</h2><span class="mut" style="font-size:13.5px">${last.good.length} of ${tot} checks pass</span></div><div class="meter" style="margin-top:12px"><i style="width:${tot ? Math.round(100 * last.good.length / tot) : 0}%"></i></div></section>` : ""}
+      <section class="grid g2">
+        <article class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Waiting for you</h2>${you.length ? `<span class="badge">${you.length}</span>` : ""}</div>
+          ${you.length ? `<ul class="list" style="margin-top:6px">${you.slice(0, 4).map(t => `<li><span class="d y"></span><span class="tx"><b>${esc(t.text)}</b>${t.due ? `<div class="meta">${dueTxt(t.due)}</div>` : ""}</span></li>`).join("")}</ul><a class="btn sm" style="margin-top:10px" href="#/${esc(b.id)}/todo">Open your to-do</a>` : `<p class="sub" style="margin:10px 0 0">Nothing is waiting for you. We tell you here when we need something.</p>`}</article>
+        <article class="card"><h2>Done recently</h2>${done.length ? `<ul class="list">${done.map(w => `<li><span class="d ok"></span><span class="tx"><b>${esc(w.title)}</b>${w.detail ? `<div class="meta">${esc(w.detail.split("\n")[0])}</div>` : ""}</span><span class="meta" style="white-space:nowrap">${esc(short(w.date || w.at))}</span></li>`).join("")}</ul>` : `<p class="sub" style="margin:0">The first fixes show here with their date${x.fixed.length ? "" : " as soon as they are live"}.</p>`}
+          ${x.fixed.length ? `<ul class="list" style="margin-top:8px">${x.fixed.slice(0, 3).map(f => fItem(f, true)).join("")}</ul>` : ""}</article>
+      </section>
+      <section class="grid g2">
+        <article class="card"><h2>What still holds you back</h2>${x.gaps.length ? `<ul class="list">${x.gaps.slice(0, 6).map(f => fItem(f)).join("")}</ul>${x.gaps.length > 6 ? `<p class="mut" style="margin:8px 0 0;font-size:13.5px">And ${x.gaps.length - 6} more on the Maps and Website pages.</p>` : ""}` : `<p class="sub" style="margin:0">Nothing broken in public right now. The work now is growth: more searches, more reviews, more calls.</p>`}</article>
+        <article class="card"><h2>Coming up</h2>${next.length ? `<ul class="list">${next.map(w => `<li><span class="d ${w.status === "doing" ? "y" : ""}"></span><span class="tx"><b>${esc(w.title)}</b><div class="meta">${w.status === "doing" ? "In progress" : "Up next"}${w.date ? " · " + esc(short(w.date)) : ""}</div></span></li>`).join("")}</ul>` : `<p class="sub" style="margin:0">Your strategist adds the next steps here.</p>`}
+          ${x.next ? `<div class="note" style="margin-top:12px">Next weekly check: <b>${esc(fmt(x.next, { weekday:"long", month:"short", day:"numeric" }))}</b>. Every number on this page updates then.</div>` : ""}</article>
+      </section>
+      ${comp && comp.competitors.length ? `<section class="card"><h2>You and the businesses next to you on Google Maps</h2><p class="sub">For "${esc(comp.query)}", read ${esc(fmt(x.L.at))}.</p>${vsBars(x)}<a class="btn sm" style="margin-top:14px" href="#/${esc(b.id)}/maps">See Maps and reviews</a></section>` : ""}
+      ${connect()}`;
+  }
+  function vsBars(x){
+    const g = x.L.google, me = g.place, rows = (me ? [{ name:me.name, reviews:me.reviews || 0, rating:me.rating, me:true }] : []).concat(g.rank.competitors.map(c => ({ name:c.name, reviews:c.reviews || 0, rating:c.rating })));
+    const mx = Math.max(1, ...rows.map(r => r.reviews));
+    return `<div class="vs">${rows.map(r => `<div class="r${r.me ? " me" : ""}"><span title="${esc(r.name)}">${esc(r.name)}</span><span class="b"><i style="width:${Math.max(2, Math.round(100 * r.reviews / mx))}%"></i></span><span>${num(r.reviews)} reviews${r.rating ? " · " + r.rating + " ★" : ""}</span></div>`).join("")}</div>`;
+  }
+  function connect(){
+    return `<section class="card"><h2>See even more when you connect your accounts</h2>
+      <div class="grid g3" style="margin-top:4px">
+        <div class="note"><b>Google Business Profile</b><br>Calls, direction requests and website clicks from Maps, every week.</div>
+        <div class="note"><b>Google Search Console</b><br>The searches that show your site, and how many people click.</div>
+        <div class="note"><b>Google Analytics</b><br>Visits, where they come from and which pages bring enquiries.</div>
+      </div>
+      <p class="sub" style="margin:12px 0 0">You give read-only access from your own Google account. It takes about 2 minutes, and we walk you through it. <a href="mailto:seo@businesssanta.com?subject=Connect%20my%20accounts">Ask us to set it up</a>.</p></section>`;
+  }
+  function dueTxt(d){ const days = Math.round((Date.parse(d + "T23:59:59") - Date.now()) / DAY); return days < 0 ? `<span class="bad-t">Was due ${esc(short(d))}</span>` : days === 0 ? `<span style="color:var(--y)">Due today</span>` : `Due ${esc(fmt(d, { weekday:"short", month:"short", day:"numeric" }))}`; }
+
+  function maps(x, b){
+    const g = x.L && x.L.google, ok = g && g.status === "ok";
+    const fs = x.L ? x.L.findings.filter(f => f.module === "maps" || f.module === "reviews") : [];
+    const lastG = x.lastG;
+    return head(x, b, "Maps and reviews", lastG ? `Where you show when people near you search on Google Maps, and how your reviews compare. Read ${esc(fmt(lastG.at))}.` : "Your Google Maps position and reviews show here after the first full check.") + `
+      <section class="grid g3">
+        <article class="card kpi"><div class="lbl">Maps position</div><div class="v">${lastG ? (lastG.rank ? "#" + lastG.rank : `<small>Not in top ${lastG.rankOf || 20}</small>`) : "<small>-</small>"}</div><div class="s">${lastG && lastG.query ? `for "${esc(lastG.query)}"` : ""}</div><div class="ft">${lastG && lastG.query ? proofA(mapsUrl(lastG.query), "Search it yourself") : ""}${delta(x.firstG && x.firstG.rank, lastG && lastG.rank, true)}</div></article>
+        <article class="card kpi"><div class="lbl">Google rating</div><div class="v">${lastG && lastG.rating ? lastG.rating + " ★" : "<small>No rating yet</small>"}</div><div class="s">${lastG ? num(lastG.reviews) + " reviews" : ""}</div><div class="ft">${ok && g.place ? proofA(g.place.proof) : ""}${delta(x.firstG && x.firstG.rating, lastG && lastG.rating)}</div></article>
+        <article class="card kpi"><div class="lbl">Reviews gap to the leader</div>${(() => { const c = ok && g.rank ? g.rank.competitors : [], top = c.length ? c.reduce((a, d) => (d.reviews || 0) > (a.reviews || 0) ? d : a) : null, mine = ok && g.place ? g.place.reviews || 0 : null;
+          return top && mine != null ? `<div class="v">${top.reviews > mine ? num(top.reviews - mine) : "0"}</div><div class="s">${top.reviews > mine ? `reviews behind ${esc(top.name)}` : "you lead the businesses next to you"}</div>` : `<div class="v"><small>-</small></div><div class="s">Shown after the first full check.</div>`; })()}</article>
+      </section>
+      ${ok && g.rank && g.rank.competitors.length ? `<section class="card"><h2>Reviews next to your competitors</h2>${vsBars(x)}</section>` : ""}
+      <section class="grid g2">
+        <article class="card"><h2>Maps position over time</h2><p class="sub" style="font-size:13.5px">Higher on the chart is better: number 1 is the top.</p>${chart(x.S.filter(s => s.google), "rank", { label:"Maps position", lowerBetter:true, fmt:v => "#" + v })}</article>
+        <article class="card"><h2>Google reviews over time</h2><p class="sub" style="font-size:13.5px">Total reviews on your Google profile.</p>${chart(x.S.filter(s => s.google), "reviews", { label:"Google reviews", fmt:v => num(v) })}</article>
+      </section>
+      <section class="card"><h2>What we found</h2>${fs.length ? `<ul class="list">${fs.map(f => fItem(f)).join("")}</ul>` : `<p class="sub" style="margin:0">${g && g.status === "locked" ? "The Google Maps part of the check runs with your next weekly check." : "Nothing found yet."}</p>`}</section>`;
+  }
+  function site(x, b){
+    const L = x.L, s = L && L.site, sp = L && L.speed && L.speed.status === "ok" ? L.speed : null;
+    const fs = L ? L.findings.filter(f => f.module === "site" || f.module === "social") : [], soc = s ? Object.entries(s.socials || {}) : [];
+    const NAMES = { facebook:"Facebook", instagram:"Instagram", youtube:"YouTube", linkedin:"LinkedIn", tiktok:"TikTok", x:"X", yelp:"Yelp", pinterest:"Pinterest" };
+    return head(x, b, "Website", L ? `How your website looks to Google and to people on phones. Read ${esc(fmt(L.at))}${b.website ? ` from <a href="${esc(b.website)}" target="_blank" rel="noopener">${esc(b.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}.` : "Your website check shows here after the first check.") + `
+      <section class="grid g4">
+        <article class="card kpi"><div class="lbl">Speed on phones</div><div class="v">${sp ? sp.score + "<small>/100</small>" : "<small>-</small>"}</div><div class="s">Google's own test</div><div class="ft">${sp ? proofA(sp.proof) : ""}</div></article>
+        <article class="card kpi"><div class="lbl">Main content shows in</div><div class="v">${sp && sp.lcp ? esc(sp.lcp) : "<small>-</small>"}</div><div class="s">Google wants 2.5 s or less</div></article>
+        <article class="card kpi"><div class="lbl">Pages Google can find</div><div class="v">${L && L.sitemap ? (L.sitemap.count ? num(L.sitemap.count) : "<small>No sitemap</small>") : "<small>-</small>"}</div><div class="s">from your sitemap</div><div class="ft">${L && L.sitemap && L.sitemap.source ? proofA(L.sitemap.source) : ""}</div></article>
+        <article class="card kpi"><div class="lbl">Social profiles linked</div><div class="v">${s ? soc.length : "<small>-</small>"}</div><div class="s">${soc.length ? soc.map(([k, u]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${esc(NAMES[k] || k)}</a>`).join(", ") : "none linked from your website"}</div></article>
+      </section>
+      <section class="card"><h2>Speed on phones over time</h2>${chart(x.S, "speed", { label:"Speed on phones", fmt:v => v + "/100", min:0 })}</section>
+      <section class="card"><h2>Every website check</h2>${fs.length ? `<ul class="list">${fs.map(f => fItem(f)).join("")}</ul>` : `<p class="sub" style="margin:0">Nothing found yet.</p>`}
+        ${s && s.title ? `<div class="note" style="margin-top:12px"><b>Title Google shows:</b> ${esc(s.title)}${s.desc ? `<br><b>Description:</b> ${esc(s.desc)}` : ""}</div>` : ""}</section>`;
+  }
+  function work(x, b){
+    const col = (st, t, empty) => { const W = V.work.filter(w => w.status === st).sort((a, c) => (st === "done" ? -1 : 1) * (a.date || a.at).localeCompare(c.date || c.at));
+      return `<article class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">${t}</h2><span class="chip ${st === "done" ? "ok" : st === "doing" ? "y" : "n"}">${W.length}</span></div><div style="margin-top:12px">${W.length ? W.map(w => `<div class="wk"><b>${esc(w.title)}</b>${w.detail ? `<p>${esc(w.detail)}</p>` : ""}<div class="meta">${w.module ? `<span class="chip n">${esc(MODN[w.module] || w.module)}</span>` : ""}${w.date ? `<span>${esc(fmt(w.date))}</span>` : ""}${w.proof ? proofA(w.proof) : ""}</div></div>`).join("") : `<div class="empty">${empty}</div>`}</div></article>`; };
+    return head(x, b, "Work plan", "Everything we do for you, with dates and proof. Finished work moves to Done.") + `<section class="cols">${col("doing", "In progress", "Nothing in progress right now.")}${col("next", "Up next", "Next steps show here.")}${col("done", "Done", "Finished work shows here.")}</section>`;
+  }
+  function todo(x, b){
+    const you = V.todo.filter(t => t.who === "you").sort((a, c) => (a.done - c.done) || (a.due || "9").localeCompare(c.due || "9")), us = V.todo.filter(t => t.who === "us" && !t.done);
+    const item = t => `<div class="td${t.done ? " done" : ""}">${t.who === "you" ? `<input type="checkbox" data-todo="${esc(t.id)}" ${t.done ? "checked" : ""} aria-label="Done: ${esc(t.text)}">` : `<span class="d y" style="width:9px;height:9px;border-radius:50%;background:var(--y);margin-top:7px;flex:none"></span>`}
+      <div class="tx"><b>${esc(t.text)}</b><div class="meta" style="font-size:13px;color:var(--mut);margin-top:2px">${t.done ? `Done ${esc(short(t.doneAt))}` : t.due ? dueTxt(t.due) : ""}</div>
+      ${t.steps ? `<details${!t.done && you.indexOf(t) === 0 ? " open" : ""}><summary>How to do it</summary><pre>${esc(t.steps)}</pre></details>` : ""}
+      ${t.link && !t.done ? `<a class="btn sm" style="margin-top:8px" href="${esc(t.link)}" target="_blank" rel="noopener">Open the page</a>` : ""}</div></div>`;
+    return head(x, b, "Your to-do", "Only the few things that need you. Every step is written out. Tick each one when it is done and we see it straight away.") + `
+      <section class="grid g2">
+        <article class="card"><h2>For you</h2>${you.length ? you.map(item).join("") : `<div class="empty">Nothing needs you right now.</div>`}</article>
+        <article class="card"><h2>Business Santa is doing</h2>${us.length ? us.map(item).join("") : `<div class="empty">Our current work is on the Work plan page.</div>`}</article>
+      </section>`;
+  }
+  function reports(x, b){
+    const rows = [...x.S].reverse();
+    return head(x, b, "Reports", "Every weekly check, newest first. Save this page as a PDF to share it.") + `
+      <section class="card"><div class="tw"><table class="t"><thead><tr><th>Checked</th><th class="n">Maps position</th><th class="n">Reviews</th><th class="n">Rating</th><th class="n">Phone speed</th><th class="n">Pages</th><th class="n">Checks passing</th></tr></thead><tbody>
+        ${rows.map(r => `<tr><td>${esc(fmt(r.at))}</td><td class="n">${r.google ? (r.rank ? "#" + r.rank : "not in top " + (r.rankOf || 20)) : "-"}</td><td class="n">${r.reviews != null ? num(r.reviews) : "-"}</td><td class="n">${r.rating || "-"}</td><td class="n">${r.speed != null ? r.speed + "/100" : "-"}</td><td class="n">${r.pages != null ? num(r.pages) : "-"}</td><td class="n">${r.good.length}/${r.good.length + r.gaps.length}</td></tr>`).join("") || `<tr><td colspan="7">No checks yet.</td></tr>`}
+      </tbody></table></div></section>
+      ${x.fixed.length ? `<section class="card"><h2>Fixed since you started</h2><ul class="list">${x.fixed.map(f => fItem(f, true)).join("")}</ul></section>` : ""}`;
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

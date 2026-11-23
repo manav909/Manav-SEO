@@ -177,7 +177,7 @@ details.sales{margin-top:14px;font-size:13.5px;color:var(--mut)}details.sales su
 
   let state = { on:{}, showPrice:false, d:null, t:null };
   function render(d, t){
-    state.d = d; state.t = t;
+    state.d = d; state.t = t; state.code = $("code").value.trim();
     const gaps = d.findings.filter(f => f.level === "gap"), byMod = m => gaps.filter(f => f.module === m.id);
     state.on = {}; MODS.forEach(m => { if(byMod(m).length) state.on[m.id] = true; }); if(!Object.keys(state.on).length) state.on.maps = true;
     $("loading").classList.add("hide"); const R = $("result"); R.classList.remove("hide");
@@ -198,7 +198,7 @@ details.sales{margin-top:14px;font-size:13.5px;color:var(--mut)}details.sales su
       <section style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap">
         <div><div class="lbl">Your live preview · read ${esc(when)}</div><h1>${esc(nm)}${d.input.city ? " · " + esc(d.input.city) : ""}</h1>
         <p style="margin:0;color:var(--sub);max-width:72ch">This is how your business looks in public today. Switch on what you want fixed below, and see what your portal will track for you every week.</p></div>
-        <div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="again" type="button">Check another business</button><button class="btn" id="print" type="button">Save as PDF</button></div>
+        <div class="noprint" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn" id="again" type="button">Check another business</button><button class="btn" id="print" type="button">Save as PDF</button>${state.code ? `<button class="btn pri" id="saveC" type="button">Save as a client</button>` : ""}</div>
       </section>
       <section class="grid kpis">${kp.map(([l, v, sub, p]) => `<article class="card kpi"><div class="lbl">${esc(l)}</div><b>${esc(v)}</b><div class="s">${sub}</div>${p ? `<a class="p" href="${esc(p)}" target="_blank" rel="noopener">See the proof</a>` : ""}</article>`).join("")}</section>
       ${lockNote}
@@ -211,6 +211,13 @@ details.sales{margin-top:14px;font-size:13.5px;color:var(--mut)}details.sales su
       <section class="lay"><div class="mods" id="mods"></div><aside class="card plan" id="plan"></aside></section>`;
     $("again").onclick = () => { R.classList.add("hide"); $("start").classList.remove("hide"); window.scrollTo(0, 0); };
     $("print").onclick = () => window.print();
+    if($("saveC")) $("saveC").onclick = async () => { const b = $("saveC"); b.disabled = true; b.textContent = "Saving";
+      try{ const r = await fetch("/api/portal?a=demo-save", { method:"POST", headers:{ "content-type":"application/json" }, credentials:"same-origin", body:JSON.stringify({ code:state.code, scan:d, type:t[0], name:nm, modules:state.on }) });
+        const j = await r.json(); if(!r.ok) throw new Error(j.error || "Not saved");
+        if(j.admin){ location.href = "/portal/admin#" + j.id; return; }
+        b.textContent = "Saved as a client"; const n = document.createElement("div"); n.className = "note noprint"; n.innerHTML = "<b>Saved.</b> This business now has its own portal with this check as its starting point. Manav gives the owner a private sign-in link from the admin console.";
+        b.closest("section").after(n);
+      }catch(err){ b.disabled = false; b.textContent = "Not saved: " + err.message + ". Try again"; } };
     drawMods(); window.scrollTo(0, 0);
   }
   function drawMods(){
