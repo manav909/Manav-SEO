@@ -27,6 +27,8 @@ const remote = execFileSync("git", ["remote", "get-url", "origin"], { cwd:here, 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "portal-data-"));
 const branch = pagesMode ? "portal-pages" : "portal-data";
 fs.writeFileSync(path.join(dir, pagesMode ? "pages.enc.json" : "hq.enc.json"), JSON.stringify(box));
+/* Every Vercel project on this repo must skip data branches: the seoseason project reads the top folder, Business Santa reads sites/businesssanta. */
+fs.writeFileSync(path.join(dir, "vercel.json"), JSON.stringify({ git:{ deploymentEnabled:false } }, null, 2) + "\n");
 fs.mkdirSync(path.join(dir, "sites/businesssanta"), { recursive:true });
 fs.writeFileSync(path.join(dir, "sites/businesssanta/vercel.json"), JSON.stringify({ git:{ deploymentEnabled:false } }, null, 2) + "\n");
 fs.writeFileSync(path.join(dir, "README.md"), "Locked data for the Business Santa portal's advanced panel. Only the portal can open it. Replaced on every sync.\n");
