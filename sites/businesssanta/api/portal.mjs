@@ -89,7 +89,7 @@ async function handle(request){
   let q = {}; if(post){ try{ q = await request.json(); }catch(e){ q = {}; } }
   const P = k => q[k] != null ? q[k] : u.searchParams.get(k);
 
-  if(a === "health") return out({ ok:true, storage:!!store(), adminKey:!!process.env.PORTAL_ADMIN_KEY, google:!!process.env.SERPAPI_KEY, speedKey:!!process.env.PAGESPEED_API_KEY });
+  if(a === "health") return out({ ok:true, storage:!!store(), adminKey:!!process.env.PORTAL_ADMIN_KEY, google:!!process.env.SERPAPI_KEY, speedKey:!!process.env.PAGESPEED_API_KEY, taskKey:(process.env.PORTAL_TASK_KEY || "").length >= 16 });
   if(!store()) return bad("Portal storage is not connected yet", 503);
 
   const ip = (request.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "x";

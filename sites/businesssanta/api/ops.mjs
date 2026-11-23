@@ -7,8 +7,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, whoIs } from "./_lib/store.mjs";
 
-/* Only the fingerprint of the task key lives in code; the key itself sits in the Control Room's private storage. */
-const TASK_KEY_SHA = "8ffd01a52576bbe8357092f83f1f387568e6a4758f92c3ef308c11d8f3ae0d8e";
+/* The task key is chosen by Manav: PORTAL_TASK_KEY in Vercel, and the same value given to the tasks in the Control Room. */
 const J = { "content-type":"application/json", "cache-control":"private, no-store", "x-robots-tag":"noindex" };
 const out = (b, s) => new Response(JSON.stringify(b), { status:s || 200, headers:J });
 const SPACES = ["cr", "cc"], NAME = /^[A-Za-z0-9_-]{1,60}$/, ID = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -17,10 +16,10 @@ const H = (space, col) => "bsp:ops:" + space + ":" + col, IDX = space => "bsp:op
 const KEEP = { history:[600, "lastRunAt"], notes:[400, "createdAt"], handoffdone:[400, "at"], help:[200, "at"], usageday:[90, "date"], optlog:[300, "at"], insights:[120, "at"], wins:[300, "at"], stock:[120, "madeAt"], meetings:[200, "at"], reports:[300, "at"] };
 
 function taskOk(request){
-  const k = request.headers.get("x-task-key") || "";
-  if(!k) return false;
-  const a = crypto.createHash("sha256").update(k).digest(), b = Buffer.from(TASK_KEY_SHA, "hex");
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  const k = request.headers.get("x-task-key") || "", want = process.env.PORTAL_TASK_KEY || "";
+  if(!k || want.length < 16) return false;
+  const a = crypto.createHash("sha256").update(k).digest(), b = crypto.createHash("sha256").update(want).digest();
+  return crypto.timingSafeEqual(a, b);
 }
 const split = p => { const s = String(p || "").replace(/^\/+|\/+$/g, "").split("/"); return s.length === 2 && NAME.test(s[0]) && ID.test(s[1]) ? s : null; };
 async function trim(space, col){
