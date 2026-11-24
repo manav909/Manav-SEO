@@ -2,6 +2,7 @@
    One function, action chosen by ?a=. Clients only ever see the businesses assigned to them. */
 import { runScan, serpAccount, normUrl } from "./_lib/scan.mjs";
 import * as G from "./_lib/google.mjs";
+import { hqSnapshot } from "./_lib/hq.mjs";
 import { store, cmd, pipe, K, getJ, setJ, mgetJ, listJ, rid, slug, sameSecret, countSearches, ym,
   ADMIN_TTL, CLIENT_TTL, setCookie, clearCookie, newSession, whoIs, rateLimit } from "./_lib/store.mjs";
 
@@ -50,6 +51,23 @@ export async function googleSync(b){
   if(Object.keys(r.ok).length) await setJ(K.conn(b.id), c);
   return r;
 }
+/* Social posts for the client page: what the content team planned or scheduled, from the Control Room copy
+   (the locked snapshot plus the live store the tasks write to). Only public pictures are used. */
+const NETS = { instagram:"Instagram", facebook:"Facebook", youtube:"YouTube", pinterest:"Pinterest", linkedin:"LinkedIn", threads:"Threads" };
+async function socialFor(b){
+  const key = b.socialKey || (/business\s*santa/i.test(b.name || "") ? "BS" : ""); if(!key) return null;
+  const ck = "bsp:social:" + key, c = await getJ(ck).catch(() => null); if(c) return c;
+  const rows = new Map();
+  try{ const h = await hqSnapshot(); ((h && h.cr && h.cr.cols && h.cr.cols.stock) || []).forEach(r => rows.set(r.id, r.data)); }catch(e){}
+  try{ const all = await cmd("HGETALL", "bsp:ops:cr:stock"); for(let i = 0; i < all.length; i += 2){ try{ rows.set(all[i], JSON.parse(all[i + 1])); }catch(e){} } }catch(e){}
+  const today = new Date(Date.now() - 864e5).toISOString().slice(0, 10), until = new Date(Date.now() + 15 * 864e5).toISOString().slice(0, 10), list = [];
+  rows.forEach((x, id) => { if(!x || x.brand !== key || !x.plan) return; const pm = x.publicMedia || {};
+    const pic = pm.cover || (pm.images && pm.images[0]) || "";
+    const days = {}; Object.keys(x.plan).forEach(n => { const d = x.plan[n]; if(NETS[n] && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today && d <= until) (days[d] = days[d] || []).push(NETS[n]); });
+    Object.keys(days).forEach(d => list.push({ id:id + "-" + d, date:d, title:String(x.title || x.hook || "").replace(/\s*\((\d+-slide )?carousel\)\s*$/i, "").slice(0, 120), kind:x.kind === "reel" ? "Video" : (x.images || []).length > 1 ? "Photo post (swipe)" : "Photo post", where:days[d], pic:/^https:\/\//.test(pic) ? pic : "", link:x.tiedTo && /^https:\/\//.test(x.tiedTo) ? x.tiedTo : "" })); });
+  list.sort((a, c) => a.date.localeCompare(c.date));
+  const res = { at:new Date().toISOString(), posts:list.slice(0, 14) }; await setJ(ck, res, 600).catch(() => {}); return res;
+}
 async function brandView(id, role){
   const [b, work, todo, first, conn, gdata] = await mgetJ([K.brand(id), K.work(id), K.todo(id), K.first(id), K.conn(id), G.GK.data(id)]);
   if(!b) return null;
@@ -58,7 +76,8 @@ async function brandView(id, role){
   const brand = Object.assign({}, b); if(role !== "admin") delete brand.notes;
   const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(u => u && !u.revoked && (u.brands || []).includes(id));
   const people = users.map(u => ({ name:u.name, role:u.role || "owner", lastSeen:u.lastSeen || null }));
-  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [], conn:conn || { items:{}, team:[] }, people, gdata:gdata || null };
+  const social = await socialFor(b).catch(() => null);
+  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [], conn:conn || { items:{}, team:[] }, people, gdata:gdata || null, social };
 }
 async function allBrands(){ const ids = await cmd("SMEMBERS", K.brands); return (await mgetJ(ids.map(K.brand))).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name)); }
 async function summaries(brands){

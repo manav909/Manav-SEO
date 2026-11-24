@@ -15,7 +15,26 @@ function shim(page, info){
   /* Read-only stand-in for the Claude app data layer: the same page, fed from the latest portal snapshot. */
   const PAGE = ${JSON.stringify(page)}, INFO = ${JSON.stringify(info)};
   let SNAP = null; const waiting = [];
-  const ready = fetch("/api/ops?a=snapshot&space=" + PAGE, { credentials:"same-origin" }).then(r => r.json()).then(j => { SNAP = (j && j.snap) || { docs:{}, cols:{} }; bar({ ok:j.ok, error:j.error, snap:{ at:j.at } }); }).catch(e => { SNAP = { docs:{}, cols:{} }; bar({ ok:false, error:String(e) }); });
+  /* Two sources, merged: the locked snapshot (everything, as of its time) and the live store the tasks write to (newer records win). */
+  const J = u => fetch(u, { credentials:"same-origin" }).then(r => r.json()).catch(e => ({ ok:false, error:String(e) }));
+  const ready = Promise.all([J("/api/portal-hq?a=data"), J("/api/ops?a=snapshot&space=" + PAGE)]).then(([h, o]) => {
+    const base = (h && h.ok && h.snap && h.snap[PAGE]) || { docs:{}, cols:{} }, live = (o && o.snap) || { docs:{}, cols:{} };
+    const cols = {}; Object.keys(base.cols || {}).forEach(c => { cols[c] = (base.cols[c] || []).slice(); });
+    Object.keys(live.cols || {}).forEach(c => { const m = new Map((cols[c] || []).map(r => [r.id, r])); (live.cols[c] || []).forEach(r => m.set(r.id, r)); cols[c] = [...m.values()]; });
+    SNAP = { docs:Object.assign({}, base.docs || {}, live.docs || {}), cols };
+    const at = [h && h.snap && h.snap.at, o && o.at].filter(Boolean).sort().pop();
+    bar({ ok:!!((h && h.ok) || (o && o.ok)), error:(o && o.error) || (h && h.error), snap:{ at } });
+  });
+  /* Connector answers the tasks saved (mcp/<tool>--<brand>--<network>), so the calendar and stats show real Metricool data here too. */
+  const NETP = { IGEV:"instagram", FBEV:"facebook", YTEV:"youtube", THEV:"threads", PIEV:"pinterest", LIEV:"linkedin" };
+  const mcp = { callTool:(server, tool, input) => ready.then(() => {
+    input = input || {}; const net = Array.isArray(input.metrics) && input.metrics[0] ? (NETP[String(input.metrics[0]).slice(0, 4)] || "all") : "all";
+    const k = "mcp/" + tool + "--" + (input.brandId || "all") + "--" + net;
+    let d = (SNAP.docs || {})[k]; if(d === undefined){ const r = ((SNAP.cols || {}).mcp || []).find(x => x.id === k.slice(4)); d = r ? r.data : undefined; }
+    if(d === undefined) return Promise.reject(Object.assign(new Error("Saved by the tasks only: not in the latest update"), { code:"unavailable" }));
+    if(tool === "getAnalyticsDataByMetrics" && d && Array.isArray(d.ids) && Array.isArray(d.rows)){ const ids = input.metrics; d = { rows:d.rows.map(r => ids.map(id => { const i = d.ids.indexOf(id); return i >= 0 ? r[i] : null; }).concat([r[r.length - 1]])) }; }
+    return { payload:d };
+  }) };
   function bar(j){ const go = () => { const b = document.createElement("div"); b.setAttribute("style", "position:sticky;top:0;z-index:99999;background:#FDB913;color:#0b0d14;font:600 13px -apple-system,Segoe UI,Arial,sans-serif;padding:8px 14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between");
     const at = j && j.snap && j.snap.at ? new Date(j.snap.at).toLocaleString("en-IN", { timeZone:"Asia/Kolkata", day:"numeric", month:"short", hour:"numeric", minute:"2-digit" }) + " IST" : "not yet";
     b.innerHTML = "<span>" + INFO.name + ", read-only for now. Last update from the tasks " + at + (j && j.ok === false ? " (" + (j.error || "no data") + ")" : "") + ".</span><span style='display:flex;gap:10px'><a href='/portal/hq' style='color:#0b0d14'>Advanced panel</a>" + (INFO.url ? "<a href='" + INFO.url + "' target='_blank' rel='noopener' style='color:#0b0d14'>Open the live " + INFO.name + " to act</a>" : "") + "</span>";
@@ -49,7 +68,7 @@ function shim(page, info){
       get:() => ready.then(() => docSnap(id, find())), onSnapshot:(cb, err) => { ready.then(() => { try{ cb(docSnap(id, find())); }catch(e){ console.error(e); } }); return () => {}; } };
   }
   const db = { collection:n => query(n, []), doc:docRef };
-  window.claude = { use:n => Promise.resolve(n === "db" ? db : null) };
+  window.claude = { use:n => Promise.resolve(n === "db" ? db : n === "mcp" ? mcp : null) };
 })();
 </script>`;
 }

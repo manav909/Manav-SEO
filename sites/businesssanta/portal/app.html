@@ -31,6 +31,35 @@ nav.side .sep{height:1px;background:var(--line);margin:10px 4px}
 .hero .lead{font-size:16px;color:var(--sub);max-width:78ch;margin:0}
 .hero .lead b{color:var(--ink)}
 .acts{display:flex;gap:10px;flex-wrap:wrap}
+.navlbl{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut);margin:14px 12px 4px}
+.tabs .navlbl{display:none}
+.hm-hero{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.hm-hero h1{font-size:30px;margin:0 0 6px;line-height:1.2}
+.hm-h{font-size:18px;margin:22px 0 10px}
+.hm-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.hm-card .lbl{font-size:14px;font-weight:600;color:var(--sub)}
+.hm-card .v{font-size:40px;font-weight:800;line-height:1.1;margin:6px 0 4px;letter-spacing:-.01em}
+.hm-card p{margin:0;font-size:14.5px;color:var(--mut);line-height:1.45}
+.hm-two{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+.hm-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:10px}
+.hm-list li{display:flex;gap:10px;align-items:flex-start}
+.hm-list li>span:nth-child(2){flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:15px}
+.hm-list small{color:var(--mut);font-size:13px}
+.hm-list .ck{flex:none;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:13px;font-weight:800;background:color-mix(in srgb,var(--ok) 20%,transparent);color:var(--ok)}
+.hm-list .ck.now{background:color-mix(in srgb,var(--y) 20%,transparent);color:var(--y)}
+.hm-list .ck.you{background:color-mix(in srgb,var(--y) 25%,transparent);color:var(--y)}
+.hm-more{display:inline-block;margin-top:12px;font-size:14px}
+.hm-posts{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(200px,230px);gap:12px;overflow-x:auto;padding-bottom:6px;scroll-snap-type:x mandatory}
+.hm-post{scroll-snap-align:start;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.hm-post img,.hm-post .ph{width:100%;aspect-ratio:4/5;object-fit:cover;display:block;background:var(--line)}
+.hm-post .ph{display:flex;align-items:flex-end;padding:12px;box-sizing:border-box;font-weight:700;font-size:14px;background:linear-gradient(160deg,color-mix(in srgb,var(--y) 30%,var(--card)),var(--card))}
+.hm-post .pd{padding:10px 12px 12px;display:flex;flex-direction:column;gap:3px}
+.hm-post .pd span{font-size:12.5px;color:var(--mut)}
+.hm-post .pd p{margin:4px 0 0;font-size:13.5px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.hm-foot{margin:22px 0 4px;font-size:14px;color:var(--mut)}
+.linkbtn{all:unset;cursor:pointer;color:var(--y);text-decoration:underline}
+@media(max-width:760px){.hm-two{grid-template-columns:1fr}.hm-hero h1{font-size:24px}.hm-card .v{font-size:34px}}
+@media print{.hm-posts{grid-auto-flow:row;grid-template-columns:repeat(3,1fr);overflow:visible}}
 .kpi{display:flex;flex-direction:column;gap:4px}
 .kpi .v{font-size:32px;line-height:1.1;font-weight:700;letter-spacing:-.01em;margin-top:4px}
 .kpi .v small{font-size:15px;color:var(--mut);font-weight:600}
@@ -115,7 +144,7 @@ details>summary::-webkit-details-marker{display:none}
   const api = async (a, body) => { const r = await fetch("/api/portal?a=" + a, body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body), credentials:"same-origin" } : { credentials:"same-origin" }); const d = await r.json().catch(() => ({})); if(r.status === 401){ location.replace("/portal"); throw new Error("signed out"); } if(!r.ok) throw new Error(d.error || "Request failed"); return d; };
   const toast = t => { const e = document.createElement("div"); e.className = "toast"; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 2600); };
   const MODN = { maps:"Google Maps", site:"Website", reviews:"Reviews", ai:"AI search", social:"Social posts", ads:"Ads" };
-  const PAGES = [["overview", "Overview"], ["maps", "Maps and reviews"], ["site", "Website"], ["work", "Work plan"], ["todo", "Your to-do"], ["access", "Access and connections"], ["reports", "Reports"]];
+  const PAGES = [["home", "Your dashboard"], ["overview", "Full report"], ["maps", "Maps and reviews"], ["site", "Website"], ["work", "Work plan"], ["todo", "Your to-do"], ["access", "Access and connections"], ["reports", "Reports"]];
   let ME = null, V = null, cur = { id:"", page:"overview" };
 
   /* Small line for a KPI card. lowerBetter flips the picture so "up" always means better. */
@@ -165,7 +194,7 @@ details>summary::-webkit-details-marker{display:none}
     const [id, page] = location.hash.replace(/^#\/?/, "").split("/");
     let saved = ""; try{ saved = localStorage.getItem("bsp.brand") || ""; }catch(e){}
     const pick = ME.brands.find(b => b.id === id) || ME.brands.find(b => b.id === saved) || ME.brands[0];
-    const pg = PAGES.some(p => p[0] === page) ? page : "overview";
+    const pg = PAGES.some(p => p[0] === page) ? page : "home";
     if(pick.id !== id || pg !== page){ history.replaceState(null, "", "#/" + pick.id + "/" + pg); }
     try{ localStorage.setItem("bsp.brand", pick.id); }catch(e){}
     if(!V || cur.id !== pick.id){ $("main").innerHTML = `<div id="loading" style="min-height:40vh"><span class="spin"></span></div>`; V = await api("brand&id=" + encodeURIComponent(pick.id)); }
@@ -177,7 +206,7 @@ details>summary::-webkit-details-marker{display:none}
     const b = V.brand, open = V.todo.filter(t => t.who === "you" && !t.done).length, accN = conns().filter(c => c.need && (c.st === "todo" || c.st === "issue")).length;
     $("swWrap").innerHTML = ME.brands.length > 1 ? `<label class="hide" for="sw">Business</label><select id="sw" class="sw" aria-label="Choose a business">${ME.brands.map(x => `<option value="${esc(x.id)}"${x.id === b.id ? " selected" : ""}>${esc(x.name)}</option>`).join("")}</select>` : `<span class="bname" style="font-weight:600;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;display:inline-block">${esc(b.name)}</span>`;
     if($("sw")) $("sw").onchange = e => { location.hash = "#/" + e.target.value + "/" + cur.page; };
-    const links = PAGES.map(([k, t]) => `<a href="#/${esc(b.id)}/${k}" class="${k === cur.page ? "on" : ""}"${k === cur.page ? ' aria-current="page"' : ""}><span>${t}</span>${k === "todo" && open ? `<span class="badge">${open}</span>` : ""}${k === "access" && accN ? `<span class="badge">${accN}</span>` : ""}</a>`).join("");
+    const links = PAGES.map(([k, t], i) => (i === 1 ? `<div class="navlbl">More details</div>` : "") + `<a href="#/${esc(b.id)}/${k}" class="${k === cur.page ? "on" : ""}"${k === cur.page ? ' aria-current="page"' : ""}><span>${t}</span>${k === "todo" && open ? `<span class="badge">${open}</span>` : ""}${k === "access" && accN ? `<span class="badge">${accN}</span>` : ""}</a>`).join("");
     $("side").innerHTML = links + `<div class="sep"></div><a href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}"><span>Talk to your strategist</span></a>`;
     $("tabs").innerHTML = links; const ta = $("tabs").querySelector("a.on"); if(ta) $("tabs").scrollLeft = ta.offsetLeft - 14;
     if(b.lastScanAt){ $("live").textContent = "Checked " + ago(b.lastScanAt); $("live").classList.remove("hide"); } else $("live").classList.add("hide");
@@ -215,7 +244,7 @@ details>summary::-webkit-details-marker{display:none}
 
   function draw(){
     const x = facts(), b = V.brand, m = $("main");
-    const P = { overview, maps, site, work, todo, access, reports }[cur.page];
+    const P = { home, overview, maps, site, work, todo, access, reports }[cur.page];
     m.innerHTML = P(x, b);
     m.querySelectorAll("[data-print]").forEach(e => e.onclick = () => window.print());
     if(cur.page === "access") wireAccess(b);
@@ -230,6 +259,44 @@ details>summary::-webkit-details-marker{display:none}
     return `<section class="hero"><div><div class="lbl">${esc(title)}${b.city ? " · " + esc(b.city) : ""}</div><h1>${esc(b.name)}</h1><p class="lead">${line}</p>
       ${mods.length ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:10px"><span class="mut" style="font-size:13px">Your plan:</span>${mods.map(k => `<span class="chip y">${esc(MODN[k])}</span>`).join("")}</div>` : ""}</div>
       <div class="acts noprint"><button class="btn" type="button" data-print>Save as PDF</button><a class="btn pri" href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}">Talk to your strategist</a></div></section>`;
+  }
+
+  /* YOUR DASHBOARD: one simple page a busy owner reads in 10 seconds. Plain words, no jargon; details live under "More details". */
+  function home(x, b){
+    const G = V.gdata || {}, s = G.gsc, a = G.ga, p = G.gbp, n = v => Math.round(v || 0).toLocaleString("en-US");
+    const first = (ME.user.name || "").split(" ")[0], hr = new Date().getHours();
+    const hi = ME.role === "admin" ? "Here is what " + esc(b.name) + " sees." : `${hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"}${first ? ", " + esc(first) : ""}.`;
+    const cards = [];
+    if(s && s.impressions) cards.push({ l:"Showed up on Google", v:n(s.impressions), m:"times people saw your business in Google search in the last 4 weeks" + (s.clicks ? `, and <b>${n(s.clicks)}</b> clicked through to you` : "") + "." });
+    if(a && a.users) cards.push({ l:"Visited your website", v:n(a.users), m:"people came to your website in the last 4 weeks" + (a.sessions ? ` (${n(a.sessions)} visits)` : "") + "." });
+    if(p && (p.calls || p.directions)) cards.push({ l:"Called you or asked for directions", v:n((p.calls || 0) + (p.directions || 0)), m:`from your Google Maps listing: ${n(p.calls)} calls and ${n(p.directions)} direction requests.` });
+    if(cards.length < 3 && x.lastG && x.lastG.reviews != null) cards.push({ l:"Your Google reviews", v:n(x.lastG.reviews), m:x.lastG.rating ? `reviews, rated ${x.lastG.rating} out of 5 on Google.` : "reviews on Google so far." });
+    if(cards.length < 3 && x.last && x.last.speed != null) cards.push({ l:"Website speed on phones", v:x.last.speed >= 90 ? "Fast" : x.last.speed >= 50 ? "OK" : "Slow", m:`Google scores it ${x.last.speed} out of 100. ${x.last.speed >= 90 ? "Visitors don't wait." : "We are working to make it faster."}` });
+    const done = V.work.filter(w => w.status === "done").sort((u, w) => String(w.date || w.at).localeCompare(String(u.date || u.at))).slice(0, 4);
+    const doing = V.work.filter(w => w.status === "doing").slice(0, 2);
+    const you = V.todo.filter(t => t.who === "you" && !t.done).sort((u, w) => (u.due || "9").localeCompare(w.due || "9"));
+    const acc = conns().filter(c => c.need && (c.st === "todo" || c.st === "issue"));
+    const asks = you.slice(0, 2).map(t => ({ t:t.text, d:t.due ? dueTxt(t.due) : "", href:`#/${esc(b.id)}/todo` })).concat(acc.slice(0, Math.max(0, 2 - you.length)).map(c => ({ t:"Give us access to " + c.name, d:"About " + c.mins + " minutes, simple steps included", href:`#/${esc(b.id)}/access` })));
+    const posts = (V.social && V.social.posts) || [];
+    const day = d => fmt(d, { weekday:"short", month:"short", day:"numeric" });
+    return `<section class="hm-hero"><div><h1>${hi}</h1><p class="lead">Here is how <b>${esc(b.name)}</b> is doing online, in plain numbers.</p></div>
+        <div class="acts noprint"><a class="btn pri" href="mailto:seo@businesssanta.com?subject=${encodeURIComponent(b.name + ": question")}">Ask us anything</a></div></section>
+      <h2 class="hm-h">How you're doing</h2>
+      ${cards.length ? `<section class="hm-cards">${cards.slice(0, 3).map(c => `<article class="card hm-card"><div class="lbl">${c.l}</div><div class="v">${c.v}</div><p>${c.m}</p></article>`).join("")}</section>`
+        : `<section class="card"><p class="sub" style="margin:0">Your numbers appear here within a day of connecting your Google accounts.${acc.length ? ` <a href="#/${esc(b.id)}/access">See the simple steps</a>.` : ""}</p></section>`}
+      <section class="hm-two">
+        <article class="card"><h2>What we did for you</h2>
+          ${done.length || doing.length ? `<ul class="hm-list">${done.map(w => `<li><span class="ck">✓</span><span><b>${esc(w.title)}</b><small>${esc(short(w.date || w.at))}</small></span></li>`).join("")}${doing.map(w => `<li><span class="ck now">●</span><span><b>${esc(w.title)}</b><small>Working on it now</small></span></li>`).join("")}</ul>`
+            : `<p class="sub" style="margin:0">Your first improvements show up here as soon as they are done.</p>`}
+          <a class="hm-more" href="#/${esc(b.id)}/work">See all our work</a></article>
+        <article class="card"><h2>What we need from you</h2>
+          ${asks.length ? `<ul class="hm-list">${asks.map(q => `<li><span class="ck you">!</span><span><b>${esc(q.t)}</b>${q.d ? `<small>${q.d}</small>` : ""}</span><a class="btn sm pri" href="${q.href}">Do it</a></li>`).join("")}</ul>`
+            : `<p class="sub" style="margin:0"><b>Nothing right now.</b> We'll let you know here and by email when we need something.</p>`}</article>
+      </section>
+      ${posts.length ? `<h2 class="hm-h">Coming up on your social media</h2>
+        <section class="hm-posts">${posts.map(q => `<article class="hm-post">${q.pic ? `<img src="${esc(q.pic)}" alt="" loading="lazy" decoding="async">` : `<div class="ph">${esc(q.title)}</div>`}
+          <div class="pd"><b>${esc(day(q.date))}</b><span>${esc(q.kind)} on ${esc(q.where.join(", "))}</span><p>${esc(q.title)}</p></div></article>`).join("")}</section>` : ""}
+      <p class="hm-foot">Want the full details? See the <a href="#/${esc(b.id)}/overview">full report</a>, or reply to any email from us. You can also save this page as a PDF: <button class="linkbtn" type="button" data-print>Save as PDF</button></p>`;
   }
   function overview(x, b){
     const { S, last } = x;

@@ -33,7 +33,11 @@ fs.mkdirSync(path.join(dir, "sites/businesssanta"), { recursive:true });
 fs.writeFileSync(path.join(dir, "sites/businesssanta/vercel.json"), JSON.stringify({ git:{ deploymentEnabled:false } }, null, 2) + "\n");
 fs.writeFileSync(path.join(dir, "README.md"), "Locked data for the Business Santa portal's advanced panel. Only the portal can open it. Replaced on every sync.\n");
 const g = (...a) => execFileSync("git", a, { cwd:dir, stdio:"pipe", encoding:"utf8" });
-g("init", "-q", "-b", branch); g("add", "-A");
-g("-c", "user.name=Portal mirror", "-c", "user.email=seo@businesssanta.com", "commit", "-q", "-m", "Portal snapshot " + snap.at);
-g("push", "-q", "--force", remote, branch + ":" + branch);
+/* Add a new commit on top of the branch (no history rewrite). */
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "portal-branch-"));
+execFileSync("git", ["clone", "-q", "--depth", "1", "-b", branch, remote, work], { stdio:"pipe" });
+for(const f of fs.readdirSync(dir)) fs.cpSync(path.join(dir, f), path.join(work, f), { recursive:true });
+const w = (...a) => execFileSync("git", a, { cwd:work, stdio:"pipe", encoding:"utf8" });
+w("add", "-A"); w("-c", "user.name=Portal mirror", "-c", "user.email=seo@businesssanta.com", "commit", "-q", "-m", "Portal snapshot " + snap.at);
+w("push", "-q", "origin", branch);
 console.log("Pushed to " + branch);
