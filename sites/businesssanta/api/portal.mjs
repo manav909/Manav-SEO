@@ -44,7 +44,7 @@ export async function scanBrand(b, why){
 export async function googleSync(b){
   const r = await G.syncBrand(b), c = (await getJ(K.conn(b.id))) || { items:{}, team:[] }, now = new Date().toISOString();
   Object.entries(r.ok).forEach(([k, good]) => { const it = c.items[k] || {};
-    if(good){ it.status = "connected"; it.auto = now; it.adminNote = "Connected. We read it automatically, last on " + now.slice(0, 10) + "."; }
+    if(good){ it.status = "connected"; it.auto = now; it.adminNote = "Connected. We read it automatically, last on " + new Date(now).toLocaleDateString("en-US", { month:"short", day:"numeric", year:"numeric", timeZone:"America/New_York" }) + "."; }
     else if(it.auto || !it.status){ it.status = "issue"; it.auto = now; it.adminNote = r.data.errors[k] + ". If you added " + "seo@businesssanta.com" + " already, it can take a few minutes to show."; }
     c.items[k] = it; });
   if(Object.keys(r.ok).length) await setJ(K.conn(b.id), c);
