@@ -327,7 +327,7 @@ def build_industry(p):
     fixes = "".join(f'<div class="card"><h3>{E(t)}</h3><p>{E(d)}</p></div>' for t, d in p["fixes"])
     body = f"""{h1(p['h1'], p['h1ac'])}
 <p class="ans">{E(p['answer'])}</p>
-<p class="lead">{E(p['intro'])}</p>
+<p class="lead">{E(p['intro'])}</p>{p.get('top', '')}
 <h2>What your customers <span class="ac">type into Google</span></h2>
 <p>These are the searches that bring {E(p['noun'])} new customers. Each one needs your business to look relevant, close and trusted.</p>
 <ul class="qs">{''.join(f'<li>{E(q)}</li>' for q in p['searches'])}</ul>
@@ -431,7 +431,7 @@ def build_guide(g):
     groups = f'<h2>The keywords, <span class="ac">by job</span></h2><div class="kw">{groups}</div><h2>How to <span class="ac">use them</span></h2>' if groups else ""
     sec = lambda k: "".join(f"<h2>{h}</h2>{b}" for h, b in g.get(k, ()))  # optional raw-HTML sections ("pre" after the answer, "post" after the list)
     body = f"""{h1(g['h1'], g['h1ac'])}
-<p class="ans">{E(g['answer'])}</p>
+<p class="ans">{E(g['answer'])}</p>{g.get('top', '')}
 {sec("pre")}
 {groups}
 {"" if groups else '<h2>' + g.get("list_h", 'The <span class="ac">list</span>') + '</h2>'}
@@ -537,6 +537,9 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
 <div class="row"><a class="btn" href="#nominate">Nominate a business</a></div></section>
 <h2>How it <span class="ac">works</span></h2>
 <div class="grid">{hc}</div>
+<h2>The <span class="ac">12 days</span></h2>
+<p>One small business a day, December 1 to 12. Each winner appears here on their day.</p>
+<ol class="days" aria-label="The 12 days of Business Santa"><li data-day="1"><b>1</b><span>Dec 1</span><em>Gift waiting</em></li><li data-day="2"><b>2</b><span>Dec 2</span><em>Gift waiting</em></li><li data-day="3"><b>3</b><span>Dec 3</span><em>Gift waiting</em></li><li data-day="4"><b>4</b><span>Dec 4</span><em>Gift waiting</em></li><li data-day="5"><b>5</b><span>Dec 5</span><em>Gift waiting</em></li><li data-day="6"><b>6</b><span>Dec 6</span><em>Gift waiting</em></li><li data-day="7"><b>7</b><span>Dec 7</span><em>Gift waiting</em></li><li data-day="8"><b>8</b><span>Dec 8</span><em>Gift waiting</em></li><li data-day="9"><b>9</b><span>Dec 9</span><em>Gift waiting</em></li><li data-day="10"><b>10</b><span>Dec 10</span><em>Gift waiting</em></li><li data-day="11"><b>11</b><span>Dec 11</span><em>Gift waiting</em></li><li data-day="12"><b>12</b><span>Dec 12</span><em>Gift waiting</em></li></ol>
 {form}
 <div class="mid"><p>Own a small business? Write to Santa yourself and get a free check.</p><a class="btn" href="/dear-business-santa">Send my wish</a></div>
 <div class="mid"><p>Looking for ideas? See the businesses already on Business Santa's Nice List.</p><a class="btn" href="/nice-list">See the Nice List</a></div>
@@ -547,7 +550,12 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
     ev = {"@type": "Event", "@id": url + "#event", "name": "12 Days of Business Santa", "description": p["desc"], "startDate": "2026-12-01", "endDate": "2026-12-12",
           "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode", "eventStatus": "https://schema.org/EventScheduled",
           "location": {"@type": "VirtualLocation", "url": url}, "organizer": ORG, "isAccessibleForFree": True}
-    return shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa", og_img="/assets/img/og-12-days.jpg")
+    # 12-day reveal calendar (first added to the built page on 23 Nov 2026, ported to the source on 24 Nov 2026 so builds keep it)
+    _out = shell(p["slug"], p["title"], p["desc"], body, [ev, faq_ld(url, p["faq"])], "12 Days of Business Santa", og_img="/assets/img/og-12-days.jpg")
+    _t = "@media(max-width:600px){.tbl td:first-child{white-space:normal}}</style>"
+    return _out.replace(_t, _t[:-len("</style>")] + DAYS_CSS + "\n</style>", 1)
+
+DAYS_CSS = '.days{list-style:none;margin:18px 0 0;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}@media(min-width:760px){.days{grid-template-columns:repeat(6,minmax(0,1fr))}}.days li{padding:14px 10px;border-radius:16px;background:#fff;box-shadow:0 0 0 1px var(--line);text-align:center;min-height:96px;display:flex;flex-direction:column;justify-content:center;gap:2px}.days li b{font:800 1.6rem/1.1 var(--fh);color:var(--ink)}.days li span{font-size:.8rem;color:var(--mut)}.days li em{font-style:normal;font-size:.78rem;color:var(--yd);font-weight:700;margin-top:4px}.days li.won{background:var(--navy);box-shadow:none}.days li.won b{color:#fff}.days li.won span{color:#cbd5e1}.days li.won em{color:var(--y)}'
 
 WISH = {"slug": "dear-business-santa",
   "title": "Dear Business Santa: Send Your Small Business Wish | Business Santa",

@@ -1794,3 +1794,62 @@ for _s, _d in (
 ):
     _g23(_s)["desc"] = _d
 AI_PAGE["desc"] = "AI search optimization (GEO) for US small businesses: get named in ChatGPT, Google AI Overviews, Gemini and Perplexity answers. Free check from a real team."
+
+# 24 Nov 2026 (Business Santa daily, cloud): insights BS-E1 (roofing: one page per search intent), BS-E2 (hair salon keywords, position 14.6),
+# a Maps pin anchor, and Small Business Saturday 2026 with the Amex Shop Small Impact Study figure.
+# "top" is optional raw HTML shown right under the answer (guides) or the intro (industry pages).
+_rf = next(_i for _i in INDUSTRIES if _i["slug"] == "seo-for-roofers")
+_rf["title"] = "Roofing SEO Services for Roofing Companies | Business Santa"
+_rf["desc"] = "Roofing SEO services for US roofing companies: Google Maps, storm season pages, reviews and ChatGPT. Free check, fixes from $120, $299 a month."
+_rf["h1"], _rf["h1ac"] = "Roofing SEO services", "for roofing companies"
+_rf["answer"] = ("Roofing SEO is the work that gets a roofing company found when homeowners look for a roofer on Google, Google Maps and AI answers like ChatGPT. "
+                 "For a roofer, we fix your Google Business Profile, build a page for each service and town you really serve, grow reviews that name the job and the town, and make your website turn a visit into an inspection request. "
+                 "Business Santa does this remotely for roofing companies across the US: a free check first, one-time fixes from $120, and monthly local SEO at $299 a month for one location with no contract.")
+_rf["top"] = '<p>Want the words homeowners type first? See our <a href="/guides/roofing-seo-keywords">roofing SEO keywords list</a>, grouped by job.</p>'
+
+_rk = _g23("guides/roofing-seo-keywords")
+_rk["title"] = "Roofing SEO Keywords: 56 Keywords for Roofers (2026) | Business Santa"
+_rk["desc"] = "Roofing SEO keywords for 2026: 56 searches homeowners type, grouped by job, which to target first, and how to see your own roofing keyword data free."
+_rk["h1ac"] = "56 keywords for roofers in 2026"
+_rk["top"] = '<p>This page is the keyword list. If you would rather have a team do the work, see our <a href="/seo-for-roofers">roofing SEO services</a>.</p>'
+for _s in ("guides/google-business-profile-for-roofers", "guides/roofing-seo-cost", "guides/roofing-leads-after-a-storm", "guides/winter-roofing-leads"):
+    _g = _g23(_s)
+    _rest = tuple(tuple(x) for x in _g.get("also", ()) if x[0] != "/seo-for-roofers")
+    _g["also"] = (("/seo-for-roofers", "SEO for roofers"),) + _rest
+
+_sk = _g23("guides/salon-seo-keywords")
+_sk["title"] = "Hair Salon Keywords: 48 Salon SEO Keywords for 2026 | Business Santa"
+_sk["desc"] = "Hair salon keywords for 2026: 48 searches clients type, grouped for hair salons, nail salons, barbers and spas, and which page should use each one."
+_sk["h1ac"] = "48 searches salon clients type in 2026"
+_sk["top"] = ('<div class="tbl"><table><thead><tr><th>Hair salon keyword</th><th>What the searcher wants</th><th>Which page of a salon site should use it</th></tr></thead><tbody>'
+  '<tr><td><b>hair salon near me</b></td><td>A good salon close by, often today</td><td>Home page and Google Business Profile</td></tr>'
+  '<tr><td><b>hair salon in [town]</b></td><td>A salon in a named town, comparing options</td><td>Home page title and first heading</td></tr>'
+  '<tr><td><b>walk in hair salon</b></td><td>A cut without booking ahead</td><td>Home page and hours on Google</td></tr>'
+  '<tr><td><b>balayage near me</b></td><td>A colorist for one style, judged by photos</td><td>Color services page with real work</td></tr>'
+  '<tr><td><b>hair extensions near me</b></td><td>A specialist, price and a consultation</td><td>Extensions page with prices or a range</td></tr>'
+  '<tr><td><b>haircut prices near me</b></td><td>What a visit will cost before booking</td><td>Prices page and services on Google</td></tr>'
+  '</tbody></table></div>')
+_sk["faq"] = [
+ ("What keywords should a hair salon use?", "The ones clients type when they want to book: \"hair salon near me\", \"hair salon in [town]\", \"walk in hair salon\" and service searches such as \"balayage near me\" or \"hair extensions near me\". Put your main service and town in your home page title and first heading, and give each service group its own page."),
+ ("Should a salon target its city name?", "Yes, for the town where clients really come from. Use it in your home page title, your first heading and your Google Business Profile description. Nearby towns only get their own pages when you can show real clients and work from there."),
+] + list(_sk["faq"])
+_also23("guides/google-business-profile-for-salons", ("/guides/salon-seo-keywords", "Hair salon keywords: 48 searches salon clients type"))
+_sl = next(_i for _i in INDUSTRIES if _i["slug"] == "seo-for-salons-and-spas")
+_sl["top"] = '<p>Need the exact words? Here are the <a href="/guides/salon-seo-keywords">hair salon keywords</a> clients type, with the page each one belongs on.</p>'
+
+_wm = _g23("guides/why-my-business-is-not-on-google-maps")
+_wm["also"] = tuple(((u, "Address right but the map pin wrong? Fix your Google Maps pin") if u == "/guides/wrong-location-on-google-maps" else (u, t)) for u, t in _wm["also"])
+
+AMEX_2026 = ("https://www.americanexpress.com/en-us/newsroom/amex-for-business/2026-shop-small-impact-study-results/", "American Express: 2026 Shop Small Impact Study results (November 12, 2026)")
+_sb = _g23("guides/small-business-saturday-checklist")
+_sb["date"] = "2026-11-24"
+_sb["answer"] = ("Small Business Saturday 2026 is Saturday, November 28, the day after Black Friday. "
+                 "American Express says 88% of US consumers plan to shop at small businesses this holiday season, the highest level since 2012, so the shoppers are out that weekend: confirm your holiday hours on Google, post your offer on your Google Business Profile with clear dates, add fresh photos of the shop, make online orders and pickup easy to find, and reply to reviews quickly.")
+_sb["top"] = ('<p>The figure comes from the American Express 2026 Shop Small Impact Study, released November 12, 2026. '
+              'Short on time this week? Our one-time <a href="/christmas-marketing-for-small-business#offer">$149 Holiday Google tune-up</a>, available until December 10, 2026, sets your holiday hours, offer posts and photos for you.</p>')
+_sb["src"] = tuple(_sb.get("src", ())) + (AMEX_2026,)
+_sb["faq"] = list(_sb["faq"]) + [
+ ("How many people shop small on Small Business Saturday?", "American Express's 2026 Shop Small Impact Study found 88% of US consumers plan to shop at small businesses this holiday season, the highest level since 2012. Being easy to find on Google that weekend is how a local shop gets its share."),
+]
+_g23("guides/roofing-leads-after-a-storm")["desc"] = "A storm-season SEO playbook for roofing companies: what to prepare before hail and wind season, what to do the week of a storm, and how to win reviews."
+_g23("guides/roofing-seo-cost")["desc"] = "What roofing SEO costs, what drives the price, what a fair package includes and the red flags. Business Santa's own prices: free check, fixes from $120."
