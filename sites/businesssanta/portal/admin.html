@@ -51,16 +51,32 @@
   const MODS = [["maps", "Google Maps"], ["site", "Website"], ["reviews", "Reviews"], ["ai", "AI search"], ["social", "Social posts"], ["ads", "Ads"]];
   const TYPES = [["Plumber", "plumber"], ["HVAC", "HVAC company"], ["Electrician", "electrician"], ["Roofer", "roofer"], ["Dentist", "dentist"], ["Law firm", "lawyer"], ["Restaurant", "restaurant"], ["Salon or spa", "hair salon"], ["Auto repair", "auto repair shop"], ["Other", ""]];
   const ST = { done:"Done", doing:"In progress", next:"Up next" };
-  let ME, USERS = [], USAGE = null, EDIT = null;
+  let ME, USERS = [], USAGE = null, EDIT = null, GS = null, GL = null;
   $("out").onclick = async () => { try{ await api("logout", {}); }catch(e){} location.replace("/portal?s=out"); };
   const busy = async (btn, label, fn) => { const t = btn.textContent; btn.disabled = true; btn.textContent = label; try{ await fn(); }catch(e){ toast(e.message); } finally{ btn.disabled = false; btn.textContent = t; } };
 
   async function load(){
     ME = await api("me"); if(ME.role !== "admin"){ location.replace("/portal/app"); return; }
-    const [u, g] = await Promise.all([api("users"), api("usage").catch(() => null)]); USERS = u.users; USAGE = g;
+    const [u, g, gs] = await Promise.all([api("users"), api("usage").catch(() => null), api("g-status").catch(() => null)]); USERS = u.users; USAGE = g; GS = gs;
+    if(GS && GS.connected) GL = await api("g-lists").catch(e => ({ sites:[], ga:[], gbp:[], errors:{ all:e.message } }));
+    const h = location.hash; if(/google-(connected|failed|cancelled)/.test(h)){ setTimeout(() => toast(h.includes("connected") ? "Google connected. Pick each business's accounts under Manage." : h.includes("cancelled") ? "Google sign-in was cancelled." : "Google sign-in did not finish. Try again."), 400); history.replaceState(null, "", location.pathname); }
     draw();
     const id = location.hash.slice(1); if(id && ME.brands.some(b => b.id === id)) openEdit(id);
     window.addEventListener("hashchange", () => { const h = location.hash.slice(1); if(h && h !== EDIT && ME.brands.some(b => b.id === h)) openEdit(h); });
+  }
+  function googleCard(){
+    const g = GS || {};
+    const body = !g.configured ? `<p class="sub" style="margin:0">Google sign-in is not set up yet. Two values are missing in Vercel: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.</p>`
+      : g.connected ? `<p class="sub" style="margin:0">Connected as <b>${esc(g.email || "your Google account")}</b> since ${esc(fmt(g.since))}. Every business with a Search Console site, Analytics property or Business Profile picked under Manage is read every day, and its Access page turns green by itself.</p>
+          ${GL && GL.errors && Object.keys(GL.errors).length ? `<p class="err" style="margin:8px 0 0">${Object.entries(GL.errors).map(([k, v]) => esc(({ gsc:"Search Console", ga:"Analytics", gbp:"Business Profile", all:"Google" })[k] + ": " + v)).join("<br>")}</p>` : ""}
+          <div class="row" style="margin-top:10px;flex-wrap:wrap"><span class="chip ok">${GL ? GL.sites.length : 0} Search Console sites</span><span class="chip ok">${GL ? GL.ga.length : 0} Analytics properties</span><span class="chip ${GL && GL.gbp.length ? "ok" : "n"}">${GL ? GL.gbp.length : 0} Business Profiles</span><a class="btn sm" href="/api/portal?a=g-start">Reconnect</a></div>`
+      : `<p class="sub" style="margin:0">Sign in once with the Google account your clients add as a user (seo@businesssanta.com). The portal then reads Search Console, Analytics and Business Profile for every business by itself.</p><a class="btn pri" style="margin-top:10px" href="/api/portal?a=g-start">Connect Google</a>`;
+    return `<section class="card" id="google"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Google accounts</h2>${g.connected ? `<span class="chip ok">Connected</span>` : `<span class="chip n">Not connected</span>`}</div><div style="margin-top:10px">${body}</div></section>`;
+  }
+  function gPick(name, label, list, cur, hint){
+    const opts = (list || []).map(x => typeof x === "string" ? { id:x, name:x } : x);
+    if(cur && !opts.some(o => o.id === cur)) opts.unshift({ id:cur, name:cur + " (saved)" });
+    return `<label class="f w2">${label}<select name="${name}"><option value="">${opts.length ? "Not set" : hint}</option>${opts.map(o => `<option value="${esc(o.id)}"${o.id === cur ? " selected" : ""}>${esc(o.name)}</option>`).join("")}</select></label>`;
   }
   function usage(){
     if(!USAGE) return "";
@@ -85,16 +101,18 @@
       <label class="f">Started on<input name="startedAt" type="date" value="${esc(b.startedAt || new Date().toISOString().slice(0, 10))}"></label>
       <label class="f w2">Owner or contact<input name="contact" value="${esc(b.contact)}"></label>
       <div class="f w2"><span style="font-size:13.5px;font-weight:600;color:var(--sub)">Plan</span><div class="mods">${MODS.map(([k, t]) => `<label><input type="checkbox" name="m-${k}"${b.modules && b.modules[k] ? " checked" : ""}>${t}</label>`).join("")}</div></div>
+      ${GS && GS.connected ? gPick("gscSite", "Search Console site", GL && GL.sites, b.gscSite, "Connect Google first") + gPick("ga4Property", "Analytics 4 property", GL && GL.ga, b.ga4Property, "No properties found") + gPick("gbpLocation", "Business Profile", GL && GL.gbp, b.gbpLocation, "None found (or Google has not approved the API yet)") : ""}
       <label class="f w4">Private notes (clients never see these)<textarea name="notes">${esc(b.notes)}</textarea></label>
     </div>`;
   }
   const readBrand = f => { const o = { name:f.name.value, website:f.website.value, city:f.city.value, service:f.service.value, contact:f.contact.value, notes:f.notes.value, startedAt:f.startedAt.value, modules:{} };
-    const opt = f.typeSel.selectedOptions[0]; o.type = opt ? opt.dataset.t : ""; MODS.forEach(([k]) => { if(f["m-" + k].checked) o.modules[k] = true; }); return o; };
+    const opt = f.typeSel.selectedOptions[0]; o.type = opt ? opt.dataset.t : ""; MODS.forEach(([k]) => { if(f["m-" + k].checked) o.modules[k] = true; }); ["gscSite", "ga4Property", "gbpLocation"].forEach(k => { if(f[k]) o[k] = f[k].value; }); return o; };
   function draw(){
     const B = ME.brands;
     $("main").innerHTML = `
       <section><div class="lbl">Super admin</div><h1>Client portal admin</h1><p class="sub" style="margin:0">Add businesses, check them, log the work and to-dos, and give each client a private sign-in link to their own businesses.</p></section>
       ${B.some(b => b.pending) ? `<section class="card" style="border-color:var(--y)"><h2>Waiting for your reply</h2><ul class="list">${B.filter(b => b.pending).map(b => `<li><span class="d y"></span><span class="tx"><b>${esc(b.name)}</b><div class="meta">${b.pending} new from the client: access answers, teammate or call requests</div></span><button class="btn sm pri" type="button" data-edit="${esc(b.id)}">Open</button></li>`).join("")}</ul></section>` : ""}
+      ${googleCard()}
       ${usage()}
       <section class="card sec" id="biz"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Businesses (${B.length})</h2><button class="btn sm pri" id="addB" type="button">Add a business</button></div>
         <form id="newB" class="hide" style="margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:12px" novalidate>${brandForm()}<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" type="submit">Save and run the first check</button><button class="btn ghost" type="button" id="cancelB">Cancel</button><span class="mut" style="font-size:13.5px">The first check takes about 40 seconds.</span></div></form>
@@ -151,7 +169,7 @@
     E.classList.remove("hide");
     const work = v.work, todo = v.todo;
     E.innerHTML = `<div class="row" style="justify-content:space-between;flex-wrap:wrap"><div><div class="lbl">Manage</div><h2 style="margin:2px 0 0">${esc(b.name)}</h2></div><div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn sm" href="/portal/app#/${esc(b.id)}/overview">See the client dashboard</a><button class="btn sm ghost" type="button" id="closeE">Close</button></div></div>
-      <form id="fb" style="margin-top:14px" novalidate>${brandForm(b)}<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" type="submit">Save details</button><button class="btn danger ghost" type="button" id="delB">Delete this business</button><span class="mut" style="font-size:13px">${v.series.length} check${v.series.length === 1 ? "" : "s"} saved${b.lastScanAt ? ", last " + esc(fmt(b.lastScanAt)) : ""}${b.source === "preview" ? " · saved from a live preview" : ""}</span></div></form>
+      <form id="fb" style="margin-top:14px" novalidate>${brandForm(b)}<div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn pri" type="submit">Save details</button>${GS && GS.connected && (b.gscSite || b.ga4Property || b.gbpLocation) ? `<button class="btn" type="button" id="gSync">Read Google now</button>` : ""}<button class="btn danger ghost" type="button" id="delB">Delete this business</button><span class="mut" style="font-size:13px">${v.series.length} check${v.series.length === 1 ? "" : "s"} saved${b.lastScanAt ? ", last " + esc(fmt(b.lastScanAt)) : ""}${b.source === "preview" ? " · saved from a live preview" : ""}</span></div></form>
       <div class="grid g2" style="margin-top:18px">
         <div><h3>Work log (the client sees this)</h3>
           <form id="fw" style="display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--line);border-radius:12px" novalidate>
@@ -188,6 +206,7 @@
     if(!quiet) E.scrollIntoView({ behavior:"smooth", block:"start" });
     $("closeE").onclick = () => { EDIT = null; E.classList.add("hide"); history.replaceState(null, "", location.pathname); };
     const fb = $("fb"); fb.onsubmit = e => { e.preventDefault(); busy(fb.querySelector("[type=submit]"), "Saving", async () => { await api("brand-save", Object.assign({ id:b.id }, readBrand(fb))); toast("Saved."); await reload(); }); };
+    const gs = $("gSync"); if(gs) gs.onclick = () => busy(gs, "Reading Google", async () => { const d = await api("g-sync", { id:b.id }); const bad = Object.entries(d.errors || {}); toast(bad.length ? "Read with problems: " + bad.map(([k, v]) => k + ": " + v).join("; ") : "Google numbers updated."); await reload(); });
     $("delB").onclick = e => { const btn = e.target; if(btn.dataset.sure){ busy(btn, "Deleting", async () => { await api("brand-delete", { id:b.id }); EDIT = null; history.replaceState(null, "", location.pathname); await reload(); toast("Deleted."); }); } else { btn.dataset.sure = "1"; btn.textContent = "Tap again: deletes every check, log and to-do"; } };
     const fw = $("fw"); fw.onsubmit = e => { e.preventDefault(); if(!fw.title.value.trim()) return toast("Write what was done."); busy(fw.querySelector("[type=submit]"), "Adding", async () => { await api("work-save", { brand:b.id, item:{ title:fw.title.value, detail:fw.detail.value, status:fw.status.value, date:fw.date.value, module:fw.module.value, proof:fw.proof.value } }); toast("Added to the work log."); openEdit(b.id); }); };
     const ft = $("ft"); ft.onsubmit = e => { e.preventDefault(); if(!ft.text.value.trim()) return toast("Write the to-do."); busy(ft.querySelector("[type=submit]"), "Adding", async () => { await api("todo-save", { brand:b.id, item:{ text:ft.text.value, steps:ft.steps.value, who:ft.who.value, due:ft.due.value, link:ft.link.value } }); toast("To-do added."); openEdit(b.id); }); };

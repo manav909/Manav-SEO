@@ -1,7 +1,8 @@
 /* Daily at 10:17 UTC (vercel.json crons): re-checks every client business whose last check is 7 or more days old.
    At most 6 businesses a run, 3 at a time, so SerpAPI and Google's speed test are never rushed. */
 import { store, cmd, K, mgetJ, pipe } from "./_lib/store.mjs";
-import { scanBrand } from "./portal.mjs";
+import { scanBrand, googleSync } from "./portal.mjs";
+import { status as gStatus } from "./_lib/google.mjs";
 
 const DAY = 864e5;
 export async function GET(request){
@@ -20,6 +21,12 @@ export async function GET(request){
     const r = await Promise.allSettled(due.slice(i, i + 3).map(b => scanBrand(b, "weekly")));
     r.forEach((x, j) => done.push({ id:due[i + j].id, ok:x.status === "fulfilled", searches:x.value ? x.value.searchesUsed : 0, error:x.reason ? String(x.reason.message || x.reason) : "" }));
   }
-  await pipe([["LPUSH", K.log, JSON.stringify({ at:new Date().toISOString(), job:"weekly-check", done })], ["LTRIM", K.log, 0, 199], ["DEL", K.cronLock]]);
-  return new Response(JSON.stringify({ ok:true, checked:done }), { headers:hdr });
+  // Google accounts: read every business that has one set, daily (cheap: a few Google API calls each, no SerpAPI)
+  const gdone = [];
+  if((await gStatus()).connected){
+    const all = (await mgetJ(ids.map(K.brand))).filter(b => b && (b.gscSite || b.ga4Property || b.gbpLocation));
+    for(const b of all){ try{ const r = await googleSync(b); gdone.push({ id:b.id, ok:r.ok }); }catch(e){ gdone.push({ id:b.id, error:String(e.message || e).slice(0, 160) }); } }
+  }
+  await pipe([["LPUSH", K.log, JSON.stringify({ at:new Date().toISOString(), job:"weekly-check", done, google:gdone })], ["LTRIM", K.log, 0, 199], ["DEL", K.cronLock]]);
+  return new Response(JSON.stringify({ ok:true, checked:done, google:gdone }), { headers:hdr });
 }

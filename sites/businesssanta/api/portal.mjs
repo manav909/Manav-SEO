@@ -1,6 +1,7 @@
 /* Business Santa client portal API: sign-in, client dashboards and the admin console.
    One function, action chosen by ?a=. Clients only ever see the businesses assigned to them. */
 import { runScan, serpAccount, normUrl } from "./_lib/scan.mjs";
+import * as G from "./_lib/google.mjs";
 import { store, cmd, pipe, K, getJ, setJ, mgetJ, listJ, rid, slug, sameSecret, countSearches, ym,
   ADMIN_TTL, CLIENT_TTL, setCookie, clearCookie, newSession, whoIs, rateLimit } from "./_lib/store.mjs";
 
@@ -39,15 +40,25 @@ export async function scanBrand(b, why){
   return d;
 }
 
+/* Reads a business's Google accounts and marks each one connected (or shows Google's own reason) on its Access page. */
+export async function googleSync(b){
+  const r = await G.syncBrand(b), c = (await getJ(K.conn(b.id))) || { items:{}, team:[] }, now = new Date().toISOString();
+  Object.entries(r.ok).forEach(([k, good]) => { const it = c.items[k] || {};
+    if(good){ it.status = "connected"; it.auto = now; it.adminNote = "Connected. We read it automatically, last on " + now.slice(0, 10) + "."; }
+    else if(it.auto || !it.status){ it.status = "issue"; it.auto = now; it.adminNote = r.data.errors[k] + ". If you added " + "seo@businesssanta.com" + " already, it can take a few minutes to show."; }
+    c.items[k] = it; });
+  if(Object.keys(r.ok).length) await setJ(K.conn(b.id), c);
+  return r;
+}
 async function brandView(id, role){
-  const [b, work, todo, first, conn] = await mgetJ([K.brand(id), K.work(id), K.todo(id), K.first(id), K.conn(id)]);
+  const [b, work, todo, first, conn, gdata] = await mgetJ([K.brand(id), K.work(id), K.todo(id), K.first(id), K.conn(id), G.GK.data(id)]);
   if(!b) return null;
   const [latest] = await listJ(K.scans(id), 1);
   const series = (await listJ(K.scans(id) + ":c", 200)).reverse();
   const brand = Object.assign({}, b); if(role !== "admin") delete brand.notes;
   const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(u => u && !u.revoked && (u.brands || []).includes(id));
   const people = users.map(u => ({ name:u.name, role:u.role || "owner", lastSeen:u.lastSeen || null }));
-  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [], conn:conn || { items:{}, team:[] }, people };
+  return { brand, latest:latest || null, first:first || null, series, work:work || [], todo:todo || [], conn:conn || { items:{}, team:[] }, people, gdata:gdata || null };
 }
 async function allBrands(){ const ids = await cmd("SMEMBERS", K.brands); return (await mgetJ(ids.map(K.brand))).filter(Boolean).sort((a, b) => a.name.localeCompare(b.name)); }
 async function summaries(brands){
@@ -65,6 +76,8 @@ function cleanBrand(x, old){
   const url = normUrl(x.website);
   const b = Object.assign({}, old || {}, { name:str(x.name, 120), website:url ? url.toString() : "", city:str(x.city, 80), service:str(x.service, 60), type:str(x.type, 60), contact:str(x.contact, 120), notes:str(x.notes, 2000), startedAt:str(x.startedAt, 10) || (old && old.startedAt) || new Date().toISOString().slice(0, 10) });
   b.modules = {}; MODS.forEach(m => { if(x.modules && x.modules[m]) b.modules[m] = true; });
+  if("gscSite" in x) b.gscSite = str(x.gscSite, 200); if("ga4Property" in x) b.ga4Property = /^properties\/\d+$/.test(x.ga4Property) ? x.ga4Property : "";
+  if("gbpLocation" in x) b.gbpLocation = /^locations\/\d+$/.test(x.gbpLocation) ? x.gbpLocation : "";
   return b;
 }
 function cleanItem(x, kind){
@@ -111,6 +124,12 @@ async function handle(request){
     return go("/portal/app", setCookie(s, CLIENT_TTL));
   }
   const who = await whoIs(request);
+  if(a === "g-callback"){   // Google sends the admin back here after sign-in
+    const st = str(P("state"), 80), ok = st && await cmd("GETDEL", G.GK.state(st));
+    if(!ok || !who || who.role !== "admin") return go("/portal/admin#google-failed");
+    if(P("error")) return go("/portal/admin#google-cancelled");
+    try{ await G.exchange(str(P("code"), 600)); return go("/portal/admin#google-connected"); }catch(e){ return go("/portal/admin#google-failed"); }
+  }
   if(a === "logout"){ if(who) await cmd("DEL", K.sess(who.tok)); return out({ ok:true }, 200, { "set-cookie":clearCookie() }); }
 
   /* The sales team can save a live preview as a new client with the sales code. */
@@ -209,6 +228,18 @@ async function handle(request){
       it.adminNote = str(q.adminNote, 800); it.adminAt = new Date().toISOString(); c.items[key] = it; }
     await setJ(K.conn(id), c); return out({ ok:true, conn:c });
   }
+  if(a === "g-status") return out(Object.assign({ ok:true }, await G.status()));
+  if(a === "g-start"){
+    if(!G.configured()) return bad("Google sign-in is not set up yet: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are missing in Vercel", 503);
+    const st = rid(18); await cmd("SET", G.GK.state(st), "1", "EX", 600); return go(G.authUrl(st));
+  }
+  if(a === "g-lists"){ try{ return out(Object.assign({ ok:true }, await G.lists())); }catch(e){ return bad(e.message, 502); } }
+  if(a === "g-sync" && post){
+    const b = await getJ(K.brand(str(q.id, 60))); if(!b) return bad("Not found", 404);
+    if(!b.gscSite && !b.ga4Property && !b.gbpLocation) return bad("Pick this business's Search Console site, Analytics property or Business Profile first");
+    try{ const r = await googleSync(b); return out({ ok:true, ok2:r.ok, errors:r.data.errors, at:r.data.at }); }catch(e){ return bad(e.message, 502); }
+  }
+  if(a === "g-disconnect" && post){ await cmd("DEL", G.GK.tok, G.GK.at); return out({ ok:true }); }
   if(a === "users"){
     const users = (await mgetJ((await cmd("SMEMBERS", K.users)).map(K.user))).filter(Boolean).map(publicUser);
     users.forEach(x => { if(x.link) x.url = linkUrl(request, x.link); });

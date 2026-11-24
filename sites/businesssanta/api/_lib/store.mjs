@@ -29,7 +29,7 @@ export async function pipe(list){ if(!list.length) return []; const c = PEND + l
   const j = await call("/pipeline", list.map(a => a.map(String)).concat(meterOps(c)));
   return j.slice(0, list.length).map(x => { if(x.error) throw new Error(x.error); return x.result; }); }
 
-const P = "bsp:";
+export const P = "bsp:";
 export const K = {
   brand:id => P + "brand:" + id, brands:P + "brands",
   scans:id => P + "scans:" + id, first:id => P + "first:" + id,

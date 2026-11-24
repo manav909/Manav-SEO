@@ -243,6 +243,7 @@ details>summary::-webkit-details-marker{display:none}
     const comp = x.L && x.L.google && x.L.google.rank ? x.L.google.rank : null;
     return head(x, b, "Overview", line) + `
       ${(() => { const K = kpis(x); return `<section class="grid kg k${K.length}">${K.map(kpiCard).join("")}</section>`; })()}
+      ${googleBlock(b)}
       ${last ? `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">Health of your public presence</h2><span class="mut" style="font-size:13.5px">${last.good.length} of ${tot} checks pass</span></div><div class="meter" style="margin-top:12px"><i style="width:${tot ? Math.round(100 * last.good.length / tot) : 0}%"></i></div></section>` : ""}
       <section class="grid g2 top">
         <article class="card"><div class="row" style="justify-content:space-between"><h2 style="margin:0">Waiting for you</h2>${you.length ? `<span class="badge">${you.length}</span>` : ""}</div>
@@ -257,6 +258,24 @@ details>summary::-webkit-details-marker{display:none}
       </section>
       ${comp && comp.competitors.length ? `<section class="card"><h2>You and the businesses next to you on Google Maps</h2><p class="sub">For "${esc(comp.query)}", read ${esc(fmt(x.L.at))}.</p>${vsBars(x)}<a class="btn sm" style="margin-top:14px" href="#/${esc(b.id)}/maps">See Maps and reviews</a></section>` : ""}
       ${connectSummary(b)}`;
+  }
+  /* Numbers read straight from the business's own Google accounts (Search Console, Analytics, Business Profile). */
+  function googleBlock(b){
+    const G = V.gdata; if(!G || !(G.gsc || G.ga || G.gbp)) return "";
+    const n = v => v == null ? "-" : Math.round(v).toLocaleString("en-US"), s = G.gsc, a = G.ga, p = G.gbp;
+    const cards = [];
+    if(s) cards.push(["People who clicked to you from Google", n(s.clicks), "last 28 days" + (s.stale ? " (last good read)" : ""), spark(s.days.map(d => d.c))],
+                     ["Times you showed in Google search", n(s.impressions), s.position ? "average spot " + s.position : "", spark(s.days.map(d => d.i))]);
+    if(a) cards.push(["Visitors to your website", n(a.users), n(a.sessions) + " visits" + (a.keyEvents ? ", " + n(a.keyEvents) + " key actions" : ""), spark(a.days.map(d => d.u))]);
+    if(p) cards.push(["Calls and directions from Google Maps", n((p.calls || 0) + (p.directions || 0)), n(p.calls) + " calls, " + n(p.directions) + " direction requests, " + n(p.site) + " website taps", ""]);
+    const sources = [s ? "Search Console" : "", a ? "Google Analytics" : "", p ? "Business Profile" : ""].filter(Boolean).join(", ");
+    return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">From your Google accounts</h2><span class="mut" style="font-size:13.5px">Read ${esc(fmt(G.at))} from ${esc(sources)}</span></div>
+      <div class="grid kg k${cards.length}" style="margin-top:12px">${cards.map(c => `<div class="note"><div class="mut" style="font-size:13px">${esc(c[0])}</div><b style="font-size:26px;display:block;margin:4px 0">${c[1]}</b><div class="mut" style="font-size:12.5px">${esc(c[2])}</div>${c[3]}</div>`).join("")}</div>
+      ${s && s.days.length > 1 ? `<h3 style="margin:18px 0 6px;font-size:15px">Clicks from Google, day by day</h3>${chart(s.days.map(d => ({ at:d.d, c:d.c })), "c", { fmt:v => n(v) + " clicks", min:0 })}` : ""}
+      ${s && s.queries.length ? `<h3 style="margin:18px 0 6px;font-size:15px">What people searched before finding you</h3><div class="tw"><table class="t"><thead><tr><th>Search</th><th>Clicks</th><th>Showed</th><th>Spot</th></tr></thead><tbody>${s.queries.slice(0, 8).map(q => `<tr><td>${esc(q.q)}</td><td>${n(q.c)}</td><td>${n(q.i)}</td><td>${q.p}</td></tr>`).join("")}</tbody></table></div>` : ""}
+      ${a && a.channels.length ? `<h3 style="margin:18px 0 6px;font-size:15px">Where your website visits came from</h3><div class="row" style="flex-wrap:wrap;gap:8px">${a.channels.map(c => `<span class="chip n">${esc(c.n)}: ${n(c.s)}</span>`).join("")}</div>` : ""}
+      ${Object.keys(G.errors || {}).length ? `<p class="mut" style="margin:12px 0 0;font-size:13px">Not read this time: ${Object.keys(G.errors).map(k => esc(({ gsc:"Search Console", ga:"Analytics", gbp:"Business Profile" })[k])).join(", ")}. We are on it; see Access and connections.</p>` : ""}
+    </section>`;
   }
   function vsBars(x){
     const g = x.L.google, me = g.place, rows = (me ? [{ name:me.name, reviews:me.reviews || 0, rating:me.rating, me:true }] : []).concat(g.rank.competitors.map(c => ({ name:c.name, reviews:c.reviews || 0, rating:c.rating })));
