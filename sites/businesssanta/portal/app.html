@@ -129,11 +129,12 @@ details>summary::-webkit-details-marker{display:none}
   function chart(series, key, opt){
     const pts = series.map(s => [s.at, s[key]]).filter(p => p[1] != null);
     if(pts.length < 2) return `<div class="empty">The trend line appears after the second weekly check${pts.length ? `. Starting point: <b style="color:var(--ink)">${esc(opt.fmt(pts[0][1]))}</b> on ${esc(short(pts[0][0]))}` : ""}.</div>`;
-    const sm = window.innerWidth < 620, W = sm ? 340 : 640, H = sm ? 170 : 190, L = 44, R = 14, T = 14, B = 30, v = pts.map(p => p[1]);
-    let mn = Math.min(...v), mx = Math.max(...v); if(mn === mx){ mn -= 1; mx += 1; } if(opt.min != null) mn = Math.min(mn, opt.min);
+    const sm = window.innerWidth < 620, W = sm ? 340 : 640, H = sm ? 170 : 190, R = 14, T = 14, B = 30, v = pts.map(p => p[1]);
+    let mn = Math.min(...v), mx = Math.max(...v); if(mn === mx){ mx += 1; if(opt.min == null || mn > opt.min) mn -= 1; } if(opt.min != null) mn = Math.max(opt.min, Math.min(mn, mx - 1));
+    const L = Math.max(44, 14 + 7 * Math.max(...[mn, mx].map(t => String(opt.fmt(Math.round(t * 10) / 10)).length)));
     const X = i => L + i * (W - L - R) / (pts.length - 1), Y = x => opt.lowerBetter ? T + (x - mn) / (mx - mn) * (H - T - B) : H - B - (x - mn) / (mx - mn) * (H - T - B);
     const line = pts.map((p, i) => X(i).toFixed(1) + "," + Y(p[1]).toFixed(1)).join(" ");
-    const ticks = [mn, (mn + mx) / 2, mx];
+    const ticks = mx - mn < 2 ? [mn, mx] : [mn, (mn + mx) / 2, mx];
     const lab = [0, pts.length - 1].concat(pts.length > 4 ? [Math.floor((pts.length - 1) / 2)] : []);
     return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opt.label)} over time">
       ${ticks.map(t => `<line x1="${L}" x2="${W - R}" y1="${Y(t).toFixed(1)}" y2="${Y(t).toFixed(1)}" stroke="#20242f"/><text x="${L - 8}" y="${(Y(t) + 4).toFixed(1)}" fill="#a0a8b8" font-size="12" text-anchor="end">${esc(opt.fmt(Math.round(t * 10) / 10))}</text>`).join("")}
@@ -271,7 +272,7 @@ details>summary::-webkit-details-marker{display:none}
     const sources = [s ? "Search Console" : "", a ? "Google Analytics" : "", p ? "Business Profile" : ""].filter(Boolean).join(", ");
     return `<section class="card"><div class="row" style="justify-content:space-between;flex-wrap:wrap"><h2 style="margin:0">From your Google accounts</h2><span class="mut" style="font-size:13.5px">Read ${esc(fmt(G.at))} from ${esc(sources)}</span></div>
       <div class="grid kg k${cards.length}" style="margin-top:12px">${cards.map(c => `<div class="note"><div class="mut" style="font-size:13px">${esc(c[0])}</div><b style="font-size:26px;display:block;margin:4px 0">${c[1]}</b><div class="mut" style="font-size:12.5px">${esc(c[2])}</div>${c[3]}</div>`).join("")}</div>
-      ${s && s.days.length > 1 ? `<h3 style="margin:18px 0 6px;font-size:15px">Clicks from Google, day by day</h3>${chart(s.days.map(d => ({ at:d.d, c:d.c })), "c", { fmt:v => n(v) + " clicks", min:0 })}` : ""}
+      ${s && s.days.length > 1 ? (s.clicks > 0 ? `<h3 style="margin:18px 0 6px;font-size:15px">Clicks from Google, day by day</h3>${chart(s.days.map(d => ({ at:d.d, c:d.c })), "c", { label:"Clicks from Google", fmt:v => n(v) + " clicks", min:0 })}` : `<h3 style="margin:18px 0 6px;font-size:15px">Times you showed in Google, day by day</h3>${chart(s.days.map(d => ({ at:d.d, i:d.i })), "i", { label:"Times shown in Google", fmt:v => n(v), min:0 })}`) : ""}
       ${s && s.queries.length ? `<h3 style="margin:18px 0 6px;font-size:15px">What people searched before finding you</h3><div class="tw"><table class="t"><thead><tr><th>Search</th><th>Clicks</th><th>Showed</th><th>Spot</th></tr></thead><tbody>${s.queries.slice(0, 8).map(q => `<tr><td>${esc(q.q)}</td><td>${n(q.c)}</td><td>${n(q.i)}</td><td>${q.p}</td></tr>`).join("")}</tbody></table></div>` : ""}
       ${a && a.channels.length ? `<h3 style="margin:18px 0 6px;font-size:15px">Where your website visits came from</h3><div class="row" style="flex-wrap:wrap;gap:8px">${a.channels.map(c => `<span class="chip n">${esc(c.n)}: ${n(c.s)}</span>`).join("")}</div>` : ""}
       ${Object.keys(G.errors || {}).length ? `<p class="mut" style="margin:12px 0 0;font-size:13px">Not read this time: ${Object.keys(G.errors).map(k => esc(({ gsc:"Search Console", ga:"Analytics", gbp:"Business Profile" })[k])).join(", ")}. We are on it; see Access and connections.</p>` : ""}
