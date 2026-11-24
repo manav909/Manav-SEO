@@ -2,7 +2,7 @@
    Shared by the client page (Access and connections) and the admin console. Edit ACCESS_EMAIL here if access should go to another address.
    Google only lets you add a person who has a Google Account, so ACCESS_EMAIL must be one. */
 window.BSP = {
-  ACCESS_EMAIL: "seo@businesssanta.com",
+  ACCESS_EMAIL: "manavs909@gmail.com",
   ITEMS: [
     { key:"gbp", name:"Google Business Profile", short:"Your listing on Google Maps", for:["maps", "reviews"],
       unlocks:["Calls and direction requests from Google Maps", "Searches that show your listing", "Replying to your reviews", "Holiday hours, posts and photos"],
