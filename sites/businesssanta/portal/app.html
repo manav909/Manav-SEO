@@ -270,7 +270,7 @@ details>summary::-webkit-details-marker{display:none}
     if(s && s.impressions) cards.push({ l:"Showed up on Google", v:n(s.impressions), m:"times people saw your business in Google search in the last 4 weeks" + (s.clicks ? `, and <b>${n(s.clicks)}</b> clicked through to you` : "") + "." });
     if(a && a.users) cards.push({ l:"Visited your website", v:n(a.users), m:"people came to your website in the last 4 weeks" + (a.sessions ? ` (${n(a.sessions)} visits)` : "") + "." });
     if(p && (p.calls || p.directions)) cards.push({ l:"Called you or asked for directions", v:n((p.calls || 0) + (p.directions || 0)), m:`from your Google Maps listing: ${n(p.calls)} calls and ${n(p.directions)} direction requests.` });
-    if(cards.length < 3 && x.lastG && x.lastG.reviews != null) cards.push({ l:"Your Google reviews", v:n(x.lastG.reviews), m:x.lastG.rating ? `reviews, rated ${x.lastG.rating} out of 5 on Google.` : "reviews on Google so far." });
+    if(cards.length < 3 && x.lastG && x.lastG.reviews > 0) cards.push({ l:"Your Google reviews", v:n(x.lastG.reviews), m:x.lastG.rating ? `reviews, rated ${x.lastG.rating} out of 5 on Google.` : "reviews on Google so far." });
     if(cards.length < 3 && x.last && x.last.speed != null) cards.push({ l:"Website speed on phones", v:x.last.speed >= 90 ? "Fast" : x.last.speed >= 50 ? "OK" : "Slow", m:`Google scores it ${x.last.speed} out of 100. ${x.last.speed >= 90 ? "Visitors don't wait." : "We are working to make it faster."}` });
     const done = V.work.filter(w => w.status === "done").sort((u, w) => String(w.date || w.at).localeCompare(String(u.date || u.at))).slice(0, 4);
     const doing = V.work.filter(w => w.status === "doing").slice(0, 2);

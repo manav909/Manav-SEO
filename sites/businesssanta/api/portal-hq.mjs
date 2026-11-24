@@ -68,7 +68,8 @@ function shim(page, info){
       get:() => ready.then(() => docSnap(id, find())), onSnapshot:(cb, err) => { ready.then(() => { try{ cb(docSnap(id, find())); }catch(e){ console.error(e); } }); return () => {}; } };
   }
   const db = { collection:n => query(n, []), doc:docRef };
-  window.claude = { use:n => Promise.resolve(n === "db" ? db : n === "mcp" ? mcp : null) };
+  const hasMcp = () => Object.keys(SNAP.docs || {}).some(k => k.startsWith("mcp/")) || ((SNAP.cols || {}).mcp || []).length > 0;
+  window.claude = { use:n => n === "db" ? Promise.resolve(db) : n === "mcp" ? ready.then(() => hasMcp() ? mcp : null) : Promise.resolve(null) };
 })();
 </script>`;
 }
