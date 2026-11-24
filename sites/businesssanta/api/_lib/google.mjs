@@ -77,7 +77,7 @@ async function gsc(site){
   const sum = k => days.reduce((a, x) => a + x[k], 0), imp = sum("i");
   return { range:rng, days, clicks:sum("c"), impressions:imp, ctr:imp ? +(100 * sum("c") / imp).toFixed(2) : 0,
     position:imp ? +(days.reduce((a, x) => a + x.p * x.i, 0) / imp).toFixed(1) : null,
-    queries:(q.rows || []).map(r => ({ q:r.keys[0], c:r.clicks, i:r.impressions, p:+r.position.toFixed(1) })),
+    queries:(q.rows || []).map(r => ({ q:r.keys[0], c:r.clicks, i:r.impressions, p:+r.position.toFixed(1) })).sort((x, y) => (y.c - x.c) || (y.i - x.i) || (x.p - y.p)),
     pages:(p.rows || []).map(r => ({ u:r.keys[0], c:r.clicks, i:r.impressions })) };
 }
 /* Analytics 4: visitors, visits and key events per day for 28 days, and where visits came from. */
