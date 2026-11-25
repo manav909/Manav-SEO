@@ -9,11 +9,13 @@ export const GK = { tok:P + "google", at:P + "google:at", state:s => P + "google
 export const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/webmasters.readonly",
   "https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/business.manage",
   "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.activity.readonly"];   // Drive: read-only, for order proof (team order desk)
+// Team access accounts (e.g. seo@indiit.com) also read the project's Gmail and Google Chat, read-only, to follow the team's work
+export const TEAM_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/chat.spaces.readonly", "https://www.googleapis.com/auth/chat.messages.readonly"];
 export const REDIRECT = "https://www.businesssanta.com/api/portal?a=g-callback";
 export const configured = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
 export function authUrl(state, team){
-  const q = new URLSearchParams({ client_id:process.env.GOOGLE_CLIENT_ID, redirect_uri:REDIRECT, response_type:"code", scope:SCOPES.join(" "),
+  const q = new URLSearchParams({ client_id:process.env.GOOGLE_CLIENT_ID, redirect_uri:REDIRECT, response_type:"code", scope:(team ? SCOPES.concat(TEAM_SCOPES) : SCOPES).join(" "),
     access_type:"offline", prompt:team ? "select_account consent" : "consent", include_granted_scopes:"true", state });
   return "https://accounts.google.com/o/oauth2/v2/auth?" + q;
 }
@@ -132,8 +134,9 @@ export async function syncBrand(b){
 /* Every connected Google account: the portal's main one plus the team's other access accounts */
 export async function accounts(){
   const p = await getJ(GK.tok), h = await cmd("HGETALL", GK.accs), out = [];
-  if(p && p.refresh) out.push({ email:p.email, primary:true, since:p.at, drive:/drive\.readonly/.test(p.scope || "") });
-  for(let i = 0; i < h.length; i += 2){ const r = JSON.parse(h[i + 1]); if(r.refresh) out.push({ email:r.email, primary:false, since:r.at, drive:/drive\.readonly/.test(r.scope || "") }); }
+  const fl = sc => ({ drive:/drive\.readonly/.test(sc || ""), gmail:/gmail\.readonly/.test(sc || ""), chat:/chat\.messages/.test(sc || "") });
+  if(p && p.refresh) out.push(Object.assign({ email:p.email, primary:true, since:p.at }, fl(p.scope)));
+  for(let i = 0; i < h.length; i += 2){ const r = JSON.parse(h[i + 1]); if(r.refresh) out.push(Object.assign({ email:r.email, primary:false, since:r.at }, fl(r.scope))); }
   return out;
 }
 async function accessAs(email){

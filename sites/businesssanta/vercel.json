@@ -172,12 +172,19 @@
     },
     "api/team.mjs": {
       "maxDuration": 300
+    },
+    "api/team-sync.mjs": {
+      "maxDuration": 300
     }
   },
   "crons": [
     {
       "path": "/api/portal-cron",
       "schedule": "17 10 * * *"
+    },
+    {
+      "path": "/api/team-sync",
+      "schedule": "23 * * * *"
     }
   ],
   "git": {

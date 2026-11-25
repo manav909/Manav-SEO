@@ -10,6 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
+import { syncOrder } from "./_lib/teamsync.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -293,6 +294,7 @@ function projView(o){
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
+    folder:o.folder, folderFiles:o.folderFiles, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -357,6 +359,29 @@ export async function dailyIntel(){
       if(before || stale) await saveO(o); done.push(o.id);
     }catch(e){ done.push(o.id + ": " + e.message); }
   }
+  return done;
+}
+
+/* Team sources: project Drive folder, emails and Google Chat the team account is in. New items re-check the order. */
+async function syncTeam(o){
+  const r = await syncOrder(o), fresh = [];
+  if(r.folder && (!o.folder || o.folder.id !== r.folder.id)){ o.folder = r.folder; fresh.push("PROJECT FOLDER linked: " + r.folder.name); }
+  const old = new Map((o.folderFiles || []).map(f => [f.id, f.modified]));
+  for(const f of r.files){ const was = old.get(f.id); if(!was) fresh.push("NEW FILE in the project folder: " + f.name + " (by " + f.by + ")"); else if(was !== f.modified) fresh.push("FILE CHANGED: " + f.name + " (by " + f.by + ")"); }
+  if(r.files.length) o.folderFiles = r.files;
+  const passAt = ((o.qaRounds || []).filter(q => q.result === "pass").pop() || {}).at;
+  const changedAfterQA = passAt && ["ready", "delivered"].includes(o.stage) ? r.files.filter(f => f.modified > passAt) : [];
+  if(changedAfterQA.length) o.alert = "Changed after QA passed: " + changedAfterQA.map(f => f.name).join(", ").slice(0, 140);
+  if(r.mails.length){ o.mails = (o.mails || []).concat(r.mails).sort((a, b) => a.date.localeCompare(b.date)).slice(-80); r.mails.forEach(m => fresh.push("TEAM EMAIL " + m.date + " from " + m.from + ", subject \"" + m.subject + "\":\n" + m.text.slice(0, 2500) + (m.files.length ? "\nAttachments: " + m.files.join(", ") : ""))); }
+  if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).slice(-300); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 8000)); }
+  o.syncAt = r.at; o.syncErrors = r.errors;
+  if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
+  return { new:fresh.length, errors:r.errors };
+}
+export async function hourlySync(){
+  const done = [];
+  for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40)){
+    try{ const r = await syncTeam(o); await saveO(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
   return done;
 }
 
@@ -644,6 +669,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       x.active = !x.active; x.offAt = now(); await setJ(RK(d), list); log(o, w, "Access " + x.system + " via " + x.account + (x.active ? " active again" : " marked removed")); }
     else if(op === "useProp"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); o.google = o.google || {}; o.google[q.kind === "ga" ? "ga" : "gsc"] = { id:str(q.pid, 200), email:str(q.email, 120) };
       log(o, w, "Uses " + (q.kind === "ga" ? "Analytics " : "Search Console ") + str(q.pid, 200) + " through " + str(q.email, 120)); }
+    else if(op === "sync"){ const r = await syncTeam(o); log(o, w, "Checked the team's folder, email and chat: " + r.new + " new" + (Object.keys(r.errors || {}).length ? " (some sources could not be read)" : "")); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
