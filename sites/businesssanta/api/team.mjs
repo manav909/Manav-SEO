@@ -821,7 +821,7 @@ function stepsText(o){
   const path = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || ""));
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || ""));
   if(!path.length && !open.length) return "";
-  const line = (who, what, where) => { const w = String(what || "").trim().replace(/\.$/, ""); return `${who ? who + ": " : ""}${w.charAt(0).toLowerCase() + w.slice(1)}${where && !w.toLowerCase().includes(String(where).toLowerCase().slice(0, 18)) ? " (" + String(where).replace(/\.$/, "") + ")" : ""}.`; };
+  const line = (who, what, where) => { const w = String(what || "").trim().replace(/\.$/, ""); return `${who ? who + ": " : ""}${w.charAt(0).toLowerCase() + w.slice(1)}${where && !w.toLowerCase().includes(String(where).toLowerCase().slice(0, 18)) ? " (" + (x => x.charAt(0).toLowerCase() + x.slice(1))(String(where).replace(/\.$/, "")).replace(/^(the|in|on) /i, m2 => m2.toLowerCase()) + ")" : ""}.`; };
   const lines = (path.length ? path.map(p => line(p.who, p.do, p.where)) : open.map(r => line(r.who, r.toPass, r.where))).map((t, i) => `${i + 1}. ${t}`);
   const pm = (o.pmName || "").split(" ")[0];
   return `Hi team, for ${domOf(o.client.website)} we still need:\n${lines.join("\n")}\n${pm ? pm + ", does this plan work for you? " : ""}Write "done" here when a step is finished.`;
