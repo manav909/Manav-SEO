@@ -27,7 +27,8 @@ export async function verifyOrder(website, pick){
   out.live.push({ check:"Home page opens", ok:home.status === 200, detail:home.error || ("Status " + home.status + (home.final ? " at " + home.final : "")) });
   if(home.text) out.live.push({ check:"Home page can be indexed", ok:!/<meta[^>]+robots[^>]+noindex/i.test(home.text), detail:/<meta[^>]+robots[^>]+noindex/i.test(home.text) ? "noindex found" : "No noindex tag" });
   const rb = await get(root + "/robots.txt"); const smLines = (rb.text || "").split("\n").filter(l => /^sitemap:/i.test(l.trim())).map(l => l.split(/:(.+)/)[1].trim());
-  out.live.push({ check:"robots.txt points to a sitemap", ok:smLines.length > 0, detail:rb.error || (smLines.length ? smLines.join(", ") : "No Sitemap line (status " + rb.status + ")") });
+  const bare = (rb.text || "").split("\n").map(l => l.trim()).filter(l => /^https?:\/\/\S+sitemap\S*$/i.test(l));
+  out.live.push({ check:"robots.txt points to a sitemap", ok:smLines.length > 0, detail:rb.error || (smLines.length ? smLines.join(", ") : bare.length ? "Has the line \"" + bare[0] + "\" without the \"Sitemap:\" label, so search engines ignore it. It should read: Sitemap: " + bare[0] : "No Sitemap line (status " + rb.status + ")") });
   if(/Disallow:\s*\/\s*$/im.test(rb.text || "")) out.live.push({ check:"robots.txt does not block the whole site", ok:false, detail:"Disallow: / found" });
   const smUrl = smLines[0] || root + "/sitemap_index.xml"; const sm = await get(smUrl);
   let urls = []; if(sm.text){ urls = [...sm.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map(m => m[1]); }
