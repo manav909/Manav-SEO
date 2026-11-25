@@ -1411,6 +1411,7 @@ async function handle(request){
       delete o.discarded[q.r]; const rq = ((o.check || {}).requirements || []).find(x => x.id === q.r) || {};
       if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
       log(o, w, "Restored the task \"" + str(rq.text, 120) + "\" (discarded earlier by " + dd.by + ")"); o.checkAt = ""; }
+    else if(op === "redoMsg"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }
     else if(op === "postSteps"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); try{ await postSteps(o, cfg, w); }catch(e){ return bad(e.message); } }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
