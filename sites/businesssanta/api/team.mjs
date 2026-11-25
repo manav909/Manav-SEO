@@ -892,8 +892,9 @@ async function writeGroupMsg(o){
   const rm = ck.reqMail || null, fmtD = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toISOString().slice(0, 10); };
   const src = [];
   if(rm) src.push({ key:"requirement email", date:fmtD(rm.date), text:rm.text || "" });
-  (o.mails || []).filter(m => !rm || m.id !== rm.id).forEach(m => src.push({ key:/\bKT\b|knowledge transfer/i.test(m.subject + " " + m.text.slice(0, 300)) ? "KT note" : "follow up email", date:fmtD(m.date), text:"Subject: " + (m.subject || "") + "\n" + (m.text || "") }));
-  (o.teamChat || []).forEach(m => src.push({ key:"project group", date:fmtD(m.at), text:m.by + ": " + (m.text || "") }));
+  const nm = f => String(f || "").replace(/<.*>/, "").replace(/"/g, "").trim().split(/[ @]/)[0];
+  (o.mails || []).filter(m => !rm || m.id !== rm.id).forEach(m => src.push({ key:/\bKT\b|knowledge transfer/i.test(m.subject + " " + m.text.slice(0, 300)) ? "KT note" : "follow up email", date:fmtD(m.date), by:nm(m.from), text:"Subject: " + (m.subject || "") + "\n" + (m.text || "") }));
+  (o.teamChat || []).filter(m => !/order desk|seo desk/i.test(m.by || "")).forEach(m => src.push({ key:"project group", date:fmtD(m.at), by:String(m.by || "").split(" ")[0], text:m.by + ": " + (m.text || "") }));
   const cc = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${m.text}`).join("\n") : (o.chat || "");
   if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
@@ -915,7 +916,7 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const prove = p2 => { const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
     const order = ["requirement email", "follow up email", "KT note", "project group", "client chat"], want = String(p2.source || "").toLowerCase();
     const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => (x.key.toLowerCase() === want ? -1 : 0) - (y.key.toLowerCase() === want ? -1 : 0) || order.indexOf(x.key) - order.indexOf(y.key))[0];
-    return hit ? { key:hit.key, date:hit.date, quote:clean(p2.quote) } : null; };
+    return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
   const seen = new Set(), pts = [], left = [];
   for(const p2 of d.points || []){ const it = open.find(x => x.id === p2.id); if(!it) continue;
     const title = clean(p2.title), text = [clean(p2.now), clean(p2.expected)].filter(Boolean).join(" "), k = norm(title);
@@ -925,14 +926,15 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   o.groupMsgLeftOut = left;
   if(!pts.length) return "";
   const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
+  // Each item says where and by whom it was asked; nothing that was already asked is called extra
+  const WHERE = { "requirement email":"Requirement email", "follow up email":"Follow up email", "KT note":"KT note", "project group":"Asked in the group", "client chat":"Asked by the client, shared by sales" };
   const ref = pr => pr.key === "client chat" ? "_(Asked by the client, shared by sales)_"
-    : `_(${pr.key.charAt(0).toUpperCase() + pr.key.slice(1)}${pr.date ? ", " + fmtW(pr.date) : ""}: "${pr.quote.replace(/"/g, "'")}")_`;
+    : `_(${WHERE[pr.key] || pr.key}${pr.by && pr.key !== "requirement email" ? " by " + pr.by : ""}${pr.date ? ", " + fmtW(pr.date) : ""}: "${pr.quote.replace(/"/g, "'")}")_`;
   const line = p2 => `*${p2.title || "Item"}:* ${p2.text} ${ref(p2.pr)}`;
-  const reqPts = pts.filter(p2 => p2.pr.key === "requirement email"), addPts = pts.filter(p2 => p2.pr.key !== "requirement email");
+  const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "client chat":"Still open, asked by the client" };
   let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
-  if(reqPts.length) msg += `\n\n*Still open from the requirement email${rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""}*\n` + reqPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
-  if(addPts.length) msg += `\n\n*Also needed (asked outside the requirement email)*\n` + addPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
+  for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k); if(g.length) msg += `\n\n*${HEAD[k]}*\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
   return msg + `\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
@@ -1178,7 +1180,7 @@ async function handle(request){
     try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   const isA = w.role === "admin";
-  const strip = o => { if(isA) return o; if(isProj(w)) return projView(o); const c = Object.assign({}, o); delete c.pay; return c; };
+  const strip = o => { if(isA) return o; const c = Object.assign({}, isProj(w) ? projView(o) : o); delete c.pay; c.timeline = []; return c; };
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
