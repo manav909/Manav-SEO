@@ -384,6 +384,8 @@ async function syncTeam(o){
       const d = x.data || {}, ch = [];
       for(const u of d.updates || []){ const a = o.access.find(y => y.id === u.id); if(!a || !["received", "wrong", "asked"].includes(u.status) || a.status === u.status || (a.status === "skip")) continue;
         if(u.status === "asked" && ["received", "wrong"].includes(a.status)) continue;
+        { const set = a.receivedAt || a.atS || "", msgAt = String(u.at || ""), newest = r.access.reduce((m2, z) => z.at > m2 ? z.at : m2, "");
+          if(set && ((msgAt && msgAt < set) || (!msgAt && newest < set))) continue; }   // older news never undoes a newer status
         a.status = u.status; a.note = "From the access group: " + str(u.note, 200); if(u.status === "received"){ a.receivedAt = now(); a.atS = now(); } ch.push(a.item + ": " + u.status); }
       for(const n2 of (d.newItems || []).slice(0, 3)){ if(o.access.some(y => y.item.toLowerCase() === String(n2.item || "").toLowerCase())) continue;
         o.access.push({ id:nid("a"), item:str(n2.item, 120), level:"", why:"Seen in the access group", status:n2.status === "received" ? "received" : "asked", note:"From the access group: " + str(n2.note, 200) }); ch.push(n2.item + ": added"); }
