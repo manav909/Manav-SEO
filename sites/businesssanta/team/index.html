@@ -461,17 +461,20 @@ function drawOrder(){
     <div class="msg">${E(m.reply || m.text)}</div>
     ${m.digest ? `<div class="digest"><b>What it means:</b> ${E(m.digest.summary)}${m.digest.scopeChange ? `<br><b style="color:var(--bad)">New request:</b> ${E(m.digest.scopeChange)}` : ""}${(m.digest.actions || []).length ? "<br><b>Do now:</b> " + m.digest.actions.map(E).join("; ") : ""}</div>` : ""}
     <div class="row" style="gap:6px;margin-top:10px">${!m.sent && can("comms") ? `<button class="btn sm" data-copy="${m.id}">Copy</button><button class="btn sm pri" data-sent="${m.id}">Mark sent</button>` : ""}${!m.sent && can("pm") ? `<button class="btn sm ghost" data-drop="${m.id}">Not needed</button>` : ""}${m.kind === "reply" && !m.seen ? `<button class="btn sm" data-seen="${m.id}">Got it</button>` : ""}</div></div>`);
+  const newN = ((o.convo || {}).messages || []).filter(m => m.added && Date.now() - Date.parse(m.added) < 864e5).length;
   const client = `<div class="og"><div>
+    ${(can("comms") || can("pm")) && openO ? sec("Add the latest from the client", "Paste the whole marketplace chat again, or only the new messages. Only messages we do not have yet are added, in the right order, and the order is re-checked.",
+      `<textarea id="updT2" placeholder="Paste the full chat again or just the new messages (call notes and team replies also work)"></textarea><div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB2">Add new messages</button><span class="sub" style="margin:0">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago</span></div>`) : ""}
     ${sec("Client conversation", o.convo ? `${o.convo.messages.length} messages. <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.` : "The original paste is below.",
       (o.convo ? `<div class="cv" id="cv">${L(o.convo.messages, (m, i) => { const prev = o.convo.messages[i - 1], day = (m.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, ""), pday = prev ? (prev.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, "") : "";
         return (day && day !== pday ? `<div class="dsep"><span>${E(day)}</span></div>` : "") + `<div class="bu ${m.who === "us" ? "u" : "c"}">${m.added ? `<span class="newb">Added ${ago(m.added)}</span>` : ""}<span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E((m.time.match(/\d{1,2}:\d{2}\s*[AP]M/i) || [m.time])[0]) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`; })}</div>` : "")
       + `<div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>`,
-      `<div class="row" style="gap:6px">${o.convo ? `<button class="btn sm" id="rawT">Original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out"}</button>` : ""}</div>`)}
+      `<div class="row" style="gap:6px">${newN ? `<span class="chip y">${newN} new today</span>` : ""}${o.convo ? `<button class="btn sm" id="rawT">Original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out"}</button>` : ""}</div>`)}
     ${o.calls ? sec("Call notes from the order", "", `<div class="kt">${E(o.calls)}</div>`) : ""}
     ${(o.notes || []).length ? sec("Calls, team updates and files", "Everything pasted after the order was created, newest first.", (o.notes || []).slice().reverse().map(n => `<div class="mcard"><div class="mh"><b>${E(n.title)}</b><span class="chip ${n.kind === "call" ? "y" : n.kind === "team" ? "ok" : "n"}">${E({ call:"Call", team:"Team", media:"Files", note:"Note" }[n.kind] || n.kind)}</span><span class="sub">${n.from ? E(n.from) + " · " : ""}${ago(n.at)} · added by ${E(n.by)}</span></div><div class="kt">${E(n.text)}</div>${(n.files || []).length ? `<div class="sub" style="margin-top:6px">Files: ${n.files.map(E).join(", ")}</div>` : ""}</div>`).join("")) : ""}
    </div><div>
     ${sec("Messages to and from the client", "Only the client messages person sends these on the marketplace. Paste every client reply here so the team sees it at once.",
-      (msgs || `<p class="note">No messages yet.</p>`) + (can("comms") ? `<label class="f" style="margin-top:14px">Client's new message<textarea id="rep" placeholder="Paste the client's reply here"></textarea></label><button class="btn sm pri" id="repb" style="margin-top:8px">Add the reply</button>` : ""))}
+      (msgs || `<p class="note">No messages yet.</p>`) + "")}
     ${pf.goal ? sec("Client profile", "How to work with this client.", `<dl class="dl"><dt>Who</dt><dd>${E(pf.type)}</dd><dt>Really wants</dt><dd>${E(pf.goal)}</dd><dt>How they talk</dt><dd>${E(pf.style)}</dd><dt>Watch out</dt><dd>${E(pf.watch)}</dd><dt>Budget</dt><dd>${E(pf.budget)}</dd></dl>`) : ""}
    </div></div>`;
 
@@ -501,9 +504,11 @@ function wireOrder(o){
   on("#adddel", () => { const t = prompt("Deliverable (concrete and checkable)"); if(t) doOp("addDeliv", { text:t }); });
   on("#hrs", () => { const h = prompt("Hours worked today on this order"); if(!h) return; doOp("hours", { h, note:prompt("What you did (short)") || "" }); });
   on("#ask", () => { const t = prompt("What should we ask the client? Write it as the message to send."); if(t) doOp("ask", { text:t, kind:"question" }, "Sending to the client messages person…"); });
-  on("#repb", () => doOp("reply", { text:$("#rep").value }, "Reading the reply…"));
   on("#toqa", () => doOp("toQA"));
   on("#pyB", () => { const ex = num2($("#pyEa").value); doOp("pay", { status:$("#pyS").value, clearsOn:$("#pyC").value, tip:$("#pyT").value, refund:$("#pyR").value, extra:ex > 0 ? { what:$("#pyEw").value, amount:ex } : null }); });
+  const runUpd = id => { const t = $(id).value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }, "Finding the new messages and re-checking the order (about 20 to 40 seconds)…"); };
+  on("#updB2", () => runUpd("#updT2"));
+  { const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }
   on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order (about 20 to 40 seconds)…"); });
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => toast("Copied")); });
