@@ -3,20 +3,20 @@
    sitemaps (submitted, read by Google, errors, URLs) and URL Inspection on sample pages (indexed or not, last crawl,
    canonical, robots). The live site (no login needed): HTTP to HTTPS redirect, robots.txt, sitemap, sample pages.
    It separates "done by us" from "reflected by Google", because Google can take days or weeks to show the change. */
-import { api } from "./google.mjs";
+import { apiAs, props, refreshProps } from "./google.mjs";
 
 const host = u => { try{ return new URL(/^https?:/i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, ""); }catch(e){ return ""; } };
 async function get(u, ms){ try{ const r = await fetch(u, { redirect:"follow", signal:AbortSignal.timeout(ms || 12000), headers:{ "user-agent":"Mozilla/5.0 (compatible; BusinessSantaVerify/1.0)" } });
   return { status:r.status, final:r.url, text:(await r.text()).slice(0, 500000) }; }catch(e){ return { error:String(e.message || e).slice(0, 100) }; } }
 
-export async function findProperty(website){
+export async function findProperty(website, pick){
   const h = host(website); if(!h) return null;
-  const j = await api("https://www.googleapis.com/webmasters/v3/sites");
-  const all = (j.siteEntry || []).filter(s => s.permissionLevel !== "siteUnverifiedUser").map(s => s.siteUrl);
-  return all.find(s => s === "sc-domain:" + h) || all.find(s => host(s) === h && /^https:/.test(s)) || all.find(s => host(s) === h) || null;
+  let idx = await props(); if(!idx.items.some(x => x.kind === "gsc" && host(x.id.replace(/^sc-domain:/, "https://")) === h)) idx = await refreshProps();
+  const all = idx.items.filter(x => x.kind === "gsc" && host(x.id.replace(/^sc-domain:/, "https://")) === h);
+  if(pick){ const p = all.find(x => x.id === pick.id && x.email === pick.email); if(p) return p; }
+  return all.find(x => x.id === "sc-domain:" + h) || all.find(x => /^https:/.test(x.id)) || all[0] || null;
 }
-
-export async function verifyOrder(website){
+export async function verifyOrder(website, pick){
   const out = { at:new Date().toISOString(), site:website, gsc:null, live:[], pages:[], notes:[] };
   const h = host(website); if(!h){ out.notes.push("No client website on this order"); return out; }
   const base = "https://www." + h, base2 = "https://" + h;
@@ -37,15 +37,15 @@ export async function verifyOrder(website){
   if(!pageUrls.length && urls.length){ const child = await get(urls.find(u => /post|page/i.test(u)) || urls[0]); pageUrls = [...(child.text || "").matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map(m => m[1]).filter(u => !/\.xml/i.test(u)); }
   const sample = [home.final || root + "/"].concat(pageUrls.slice(0, 4));
   // Search Console, only if our Google account can see the property
-  let prop = null; try{ prop = await findProperty(website); }catch(e){ out.notes.push("Search Console not readable: " + e.message); }
-  if(!prop){ out.gsc = { ok:false, detail:"The client's Search Console is not shared with our access email, so Google's side cannot be checked. Ask the client to add it as Full user." }; }
+  let prop = null; try{ prop = await findProperty(website, pick); }catch(e){ out.notes.push("Search Console not readable: " + e.message); }
+  if(!prop){ out.gsc = { ok:false, detail:"None of our connected Google accounts can see this site's Search Console, so Google's side cannot be checked. Connect the account the client shared it with (Team and settings), or ask the client to add one of our access emails as Full user." }; }
   else{
-    out.gsc = { ok:true, property:prop, sitemaps:[] };
-    try{ const s = await api("https://www.googleapis.com/webmasters/v3/sites/" + encodeURIComponent(prop) + "/sitemaps");
+    out.gsc = { ok:true, property:prop.id, via:prop.email, sitemaps:[] };
+    try{ const s = await apiAs(prop.email, "https://www.googleapis.com/webmasters/v3/sites/" + encodeURIComponent(prop.id) + "/sitemaps");
       out.gsc.sitemaps = (s.sitemap || []).map(x => ({ path:x.path, submitted:x.lastSubmitted, read:x.lastDownloaded, pending:!!x.isPending, errors:Number(x.errors || 0), warnings:Number(x.warnings || 0),
         urls:(x.contents || []).reduce((a, c) => a + Number(c.submitted || 0), 0) })); }catch(e){ out.gsc.sitemapError = e.message; }
     for(const u of sample){
-      try{ const r = await api("https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", { inspectionUrl:u, siteUrl:prop, languageCode:"en-US" });
+      try{ const r = await apiAs(prop.email, "https://searchconsole.googleapis.com/v1/urlInspection/index:inspect", { inspectionUrl:u, siteUrl:prop.id, languageCode:"en-US" });
         const i = (r.inspectionResult || {}).indexStatusResult || {};
         out.pages.push({ url:u, verdict:i.verdict, state:i.coverageState, crawled:i.lastCrawlTime, robots:i.robotsTxtState, fetch:i.pageFetchState, canonical:i.googleCanonical, userCanonical:i.userCanonical, indexing:i.indexingState });
       }catch(e){ out.pages.push({ url:u, error:e.message }); }
@@ -58,7 +58,7 @@ export async function verifyOrder(website){
 export function verifyText(v){
   if(!v) return "";
   const l = v.live.map(x => (x.ok ? "OK " : "PROBLEM ") + x.check + ": " + x.detail);
-  const g = !v.gsc ? [] : !v.gsc.ok ? [v.gsc.detail] : ["Search Console property " + v.gsc.property].concat((v.gsc.sitemaps || []).map(s => `Sitemap ${s.path}: submitted ${s.submitted || "never"}, read by Google ${s.read || "not yet"}${s.pending ? " (pending)" : ""}, ${s.errors} errors, ${s.warnings} warnings, ${s.urls} URLs`))
+  const g = !v.gsc ? [] : !v.gsc.ok ? [v.gsc.detail] : ["Search Console property " + v.gsc.property + " (read with " + v.gsc.via + ")"].concat((v.gsc.sitemaps || []).map(s => `Sitemap ${s.path}: submitted ${s.submitted || "never"}, read by Google ${s.read || "not yet"}${s.pending ? " (pending)" : ""}, ${s.errors} errors, ${s.warnings} warnings, ${s.urls} URLs`))
     .concat(v.pages.map(p => p.error ? `Inspect ${p.url}: ${p.error}` : `Inspect ${p.url}: ${p.state || p.verdict}, last crawl ${p.crawled || "never"}, robots ${p.robots || "?"}, Google canonical ${p.canonical || "none"}`));
   return `Live verification at ${v.at}:\n` + l.concat(g).join("\n");
 }

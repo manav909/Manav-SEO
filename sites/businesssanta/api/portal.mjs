@@ -147,7 +147,8 @@ async function handle(request){
     const st = str(P("state"), 80), ok = st && await cmd("GETDEL", G.GK.state(st));
     if(!ok || !who || who.role !== "admin") return go("/portal/admin#google-failed");
     if(P("error")) return go("/portal/admin#google-cancelled");
-    try{ await G.exchange(str(P("code"), 600)); return go("/portal/admin#google-connected"); }catch(e){ return go("/portal/admin#google-failed"); }
+    const team = ok === "team";
+    try{ await G.exchange(str(P("code"), 600), team); if(team){ G.refreshProps().catch(() => {}); return go("/team#people"); } return go("/portal/admin#google-connected"); }catch(e){ return go(team ? "/team#people" : "/portal/admin#google-failed"); }
   }
   if(a === "logout"){ if(who) await cmd("DEL", K.sess(who.tok)); return out({ ok:true }, 200, { "set-cookie":clearCookie() }); }
 
@@ -250,7 +251,7 @@ async function handle(request){
   if(a === "g-status") return out(Object.assign({ ok:true }, await G.status()));
   if(a === "g-start"){
     if(!G.configured()) return bad("Google sign-in is not set up yet: GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are missing in Vercel", 503);
-    const st = rid(18); await cmd("SET", G.GK.state(st), "1", "EX", 600); return go(G.authUrl(st));
+    const st = rid(18), team = P("team") === "1"; await cmd("SET", G.GK.state(st), team ? "team" : "1", "EX", 600); return go(G.authUrl(st, team));
   }
   if(a === "g-lists"){ try{ return out(Object.assign({ ok:true }, await G.lists())); }catch(e){ return bad(e.message, 502); } }
   if(a === "g-sync" && post){

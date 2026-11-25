@@ -424,7 +424,7 @@ function drawOrder(){
        <div class="dvs"><span class="chip ${d.done ? "ok" : "n"}">${d.done ? "Done" : "Not done"}</span>${d.qa ? `<span class="chip ${d.qa === "pass" ? "ok" : "bad"}">QA ${d.qa === "pass" ? "passed" : "failed"}${d.qaBy ? " · " + E(d.qaBy) : ""}</span>` : ""}<span class="sub" style="margin:0">${ps.length} proof${ps.length === 1 ? "" : "s"}</span></div></div></div>
       ${d.qa === "fail" && d.qaNote ? `<div class="qan"><b>QA says:</b> ${E(d.qaNote)}</div>` : ""}
       ${ps.length ? `<div class="pfs">${ps.map(p => proofChip(d, p)).join("")}</div>` : ""}
-      ${canEdit ? `<div class="padd"><input placeholder="Paste a Google Drive link (file or folder) or a live page link" data-purl="${d.id}"><button class="btn sm" data-padd="${d.id}">Add proof</button>${ps.length && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}${ps.length && d.done ? `<button class="btn sm" data-pchk="${d.id}">Check again</button>` : ""}</div>` : ""}
+      ${canEdit ? `<div class="padd"><input placeholder="Paste a Google Drive link (file or folder), a public link, or a live page" data-purl="${d.id}"><button class="btn sm" data-padd="${d.id}">Add proof</button>${ps.length && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}${ps.length && d.done ? `<button class="btn sm" data-pchk="${d.id}">Check again</button>` : ""}</div>` : ""}
       ${chk(d.check)}
       ${qaNow ? `<div class="qab"><input placeholder="QA note (needed for Fail)" data-qn="${d.id}" value="${E(d.qaNote || "")}"><button class="btn sm ${d.qa === "pass" ? "pri" : ""}" data-qok="${d.id}">Pass</button><button class="btn sm danger" data-qno="${d.id}">Fail</button></div>` : ""}
     </div>`; }).join("")
@@ -438,7 +438,8 @@ function drawOrder(){
      <p class="note" style="margin:12px 0 0"><b>Done by us</b> is proven by the live site and the sitemap submission. <b>Shown by Google</b> can take days or weeks; after delivery the order desk rechecks on ${(o.rechecks || ["3, 7 and 14 days after delivery"]).map(E).join(", ")} and drafts an update for the client.</p>`;
   const work = `<div class="og"><div>
     ${sec("Step 1 · Access", "Work starts only when every item is in at the right level. Wrong level is the most common reason for lost days.", acc, `<span class="chip ${accOk === o.access.length ? "ok" : "warn"}">${accOk} of ${o.access.length}</span>`)}
-    ${sec("Step 2 · Deliverables and proof", "Keep proof in Google Drive (a file or a folder shared with " + E(ME.accessEmail || "the access email") + " as Viewer) or give a live page link. The order desk reads every file and its full history, then checks it against the deliverable before QA.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
+    ${sec("Accounts and access on file", "Which Google account, login and level we use for this client's site, kept for every order on the same site. Never type passwords here.", `<div id="accfile"><p class="note">Loading…</p></div>`)}
+    ${sec("Step 2 · Deliverables and proof", "Keep proof in Google Drive: share the file or folder as Viewer with any of our connected Google accounts (Team and settings), or set it to Anyone with the link. A live page link works too. The order desk reads every file, and its full history when an account can see it, then checks it against the deliverable before QA.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
     ${(ai.qa || []).length ? sec("Step 3 · What QA will check", "Know the test before you start the work.", `<ol class="clean num">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ol>`) : ""}
    </div><div>
     ${sec("Live check at the source", "Proof that the work is really live, checked by the order desk itself" + (V ? ", last on " + ago(V.at) : "") + ".", vbody, (can("pm") || can("qa")) ? `<button class="btn sm" id="verify">${V ? "Check again" : "Check now"}</button>` : "")}
@@ -472,6 +473,7 @@ function drawOrder(){
 
   app.innerHTML = tabs("board") + header + ({ overview, work, client, history }[OTAB] || overview);
   wireOrder(o);
+  if(OTAB === "work") accFile(o);
 }
 function wireOrder(o){
   const on = (s, f) => { const el = $(s); if(el) el.onclick = f; };
@@ -511,6 +513,26 @@ function wireOrder(o){
   on("#cnl", () => { const w = prompt("Why cancel?"); if(w) doOp("cancel", { why:w }); });
   on("#clr", () => doOp("seen", { clearAlert:true }));
   const pmS = $("#pmS"), qaS = $("#qaS"); if(pmS) pmS.onchange = () => doOp("assign", { pm:pmS.value }); if(qaS) qaS.onchange = () => doOp("assign", { qa:qaS.value });
+}
+
+const SYSL = ["Google Search Console","Google Analytics 4","Google Tag Manager","Google Ads","Google Business Profile","WordPress","Shopify","Wix","Squarespace","Webflow","Hosting or DNS","Figma","Other"];
+async function accFile(o){
+  const el = $("#accfile"); if(!el) return;
+  let j; try{ j = await api("access", null, "&site=" + encodeURIComponent(o.client.website || "")); }catch(e){ el.innerHTML = `<p class="note">${E(e.message)}</p>`; return; }
+  const cur = (o.google || {}).gsc, gs = j.google.filter(x => x.kind === "gsc"), gaa = j.google.filter(x => x.kind === "ga");
+  const lvl = { siteOwner:"Owner", siteFullUser:"Full user", siteRestrictedUser:"Restricted" };
+  el.innerHTML = `<div class="lbl" style="margin-bottom:6px">Google accounts that can see ${E(j.domain || "this site")}</div>
+   ${gs.length || gaa.length ? `<table class="t2"><tbody>${gs.concat(gaa).map(x => { const on = cur && cur.id === x.id && cur.email === x.email || (!cur && x === gs[0]);
+     return `<tr><td><b>${x.kind === "gsc" ? "Search Console" : "Analytics"}</b><div class="sub">${E(x.name)}</div></td><td>${E(x.email)}${x.level ? `<div class="sub">${E(lvl[x.level] || x.level)}</div>` : ""}</td><td class="acts">${x.kind === "gsc" ? (on ? `<span class="chip ok">Used for this order</span>` : `<button class="btn sm" data-use="${E(x.kind)}|${E(x.id)}|${E(x.email)}">Use this</button>`) : ""}</td></tr>`; }).join("")}</tbody></table>`
+     : `<p class="note">None of our connected Google accounts can see this site yet. Connect the account the client shared it with in <a href="#people">Team and settings</a>, then refresh there.</p>`}
+   <div class="lbl" style="margin:16px 0 6px">Other access on file (CMS, hosting, tools)</div>
+   ${j.register.length ? `<table class="t2"><tbody>${j.register.map(r => `<tr class="${r.active === false ? "dn" : ""}"><td><b>${E(r.system)}</b><div class="sub">${E(r.account)}${r.level ? " · " + E(r.level) : ""}</div>${r.holder ? `<div class="sub ev">Login kept in: ${E(r.holder)}</div>` : ""}${r.note ? `<div class="sub">${E(r.note)}</div>` : ""}</td><td><div class="sub">Orders: ${r.orders.map(E).join(", ")}<br>Added ${ago(r.at)} by ${E(r.by)}</div></td><td class="acts">${r.active === false ? `<span class="chip n">Removed</span>` : `<span class="chip ok">Active</span>`}${can("pm") ? `<button class="btn sm ghost" data-roff="${r.id}">${r.active === false ? "Active again" : "Removed"}</button>` : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="note">Nothing on file for this site yet.</p>`}
+   ${can("pm") || can("comms") ? `<div class="fg" style="margin-top:12px"><label class="f">System<select id="rgS">${SYSL.map(x => `<option>${x}</option>`).join("")}</select></label><label class="f">Account or user we use<input id="rgA" placeholder="e.g. seo@ourteam.com or user name"></label>
+     <label class="f">Level<input id="rgL" placeholder="e.g. Administrator, Full user"></label><label class="f">Where the login is kept<input id="rgH" placeholder="e.g. team password manager, client invite"></label>
+     <label class="f w4">Note<input id="rgN" placeholder="Anything the next order should know (never a password)"></label></div><button class="btn sm" id="rgB" style="margin-top:10px">Save to the access register</button>` : ""}`;
+  el.querySelectorAll("[data-use]").forEach(b => b.onclick = () => { const [kind, pid, email] = b.dataset.use.split("|"); doOp("useProp", { kind, pid, email }); });
+  el.querySelectorAll("[data-roff]").forEach(b => b.onclick = () => doOp("regOff", { rid:b.dataset.roff }));
+  const rb = $("#rgB"); if(rb) rb.onclick = () => doOp("regAdd", { system:$("#rgS").value, account:$("#rgA").value, level:$("#rgL").value, holder:$("#rgH").value, note:$("#rgN").value });
 }
 
 /* Client messages queue */
@@ -561,6 +583,8 @@ async function peoplePage(){
   app.innerHTML = tabs("people") + `<div class="og"><div class="card"><h2>Team</h2><p class="note">Each person signs in with their own code. You see the code once, right after you create it. If a code is lost or someone leaves, make a new code or switch them off.</p>
    ${j.people.map(p => `<div class="ln"><div class="tx"><b>${E(p.name)}</b> <span class="chip n">${E(RNAME[p.role])}</span>${p.off ? ` <span class="chip bad">Off</span>` : ""}</div><div class="ac"><button class="btn sm" data-nc="${p.id}">New code</button><button class="btn sm ${p.off ? "" : "danger"}" data-off="${p.id}">${p.off ? "Switch on" : "Switch off"}</button></div></div>`).join("") || `<p class="note">No one yet.</p>`}
    <form id="pf" class="fg" style="margin-top:14px"><label class="f w2">Name<input id="pn" placeholder="e.g. Divyanshi"></label><label class="f">Role<select id="pr">${ME.roles.map(r => `<option value="${r}">${RNAME[r]}</option>`).join("")}</select></label><button class="btn pri" style="align-self:end">Add person</button></form><div id="pc"></div></div>
+   <div class="card"><h2>Google accounts</h2><p class="note">Every Google account the team uses for client access. The order desk reads Search Console, Analytics and Drive proof with whichever account can see it. Connecting asks you to sign in to that account; it is read-only.</p><div id="gacc"><p class="note">Loading…</p></div>
+    <div class="row" style="gap:8px;margin-top:12px"><a class="btn sm pri" href="/api/portal?a=g-start&team=1">Connect another Google account</a><button class="btn sm" id="gref" type="button">Refresh what each account can see</button></div></div>
    <form class="card" id="cf"><h2>Money settings</h2><p class="note">Used for the money view of every order and the price check.</p>
    <div class="grid" style="gap:10px"><label class="f">Marketplace fee (%)<input id="cfee" type="number" min="0" max="50" value="${ME.cfg.fee}"></label><label class="f">Team cost per hour (USD)<input id="chr" type="number" min="0" step="0.5" value="${ME.cfg.hourly}"></label></div>
    <button class="btn pri" style="margin-top:12px">Save</button></form></div>`;
@@ -568,6 +592,8 @@ async function peoplePage(){
   $("#pf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("person", { name:$("#pn").value, role:$("#pr").value }); const n = $("#pn").value; await peoplePage(); showCode(n, r.code); const me = await api("me"); ME.people = me.people; }); };
   document.querySelectorAll("[data-nc]").forEach(b => b.onclick = () => act(async () => { const r = await api("newCode", { uid:b.dataset.nc }); const p = j.people.find(x => x.id === b.dataset.nc); showCode(p.name, r.code); }));
   document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
+  const gl = async ref => { try{ const g = await api("gaccs", null, ref ? "&refresh=1" : ""); $("#gacc").innerHTML = g.accounts.length ? `<table class="t2"><tbody>${g.accounts.map(a => `<tr><td><b>${E(a.email)}</b>${a.primary ? ` <span class="chip y">Main portal account</span>` : ""}</td><td>${a.gsc} Search Console · ${a.ga} Analytics</td><td>${a.drive ? `<span class="chip ok">Drive on</span>` : `<span class="chip warn">Reconnect for Drive</span>`}</td></tr>`).join("")}</tbody></table><p class="sub">Checked ${ago(g.at)}</p>` : `<p class="note">No Google account connected yet.</p>`; }catch(e){ $("#gacc").innerHTML = `<p class="note">${E(e.message)}</p>`; } };
+  gl(false); $("#gref").onclick = () => act(() => gl(true), "Asking Google what each account can see…");
   $("#cf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("cfg", { fee:$("#cfee").value, hourly:$("#chr").value }); ME.cfg = r.cfg; toast("Saved"); }); };
 }
 boot();

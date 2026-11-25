@@ -4,16 +4,17 @@
    business's own property on a schedule. Needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel (typed by Manav). */
 import { cmd, getJ, setJ, P } from "./store.mjs";
 
-export const GK = { tok:P + "google", at:P + "google:at", state:s => P + "google:state:" + s, data:id => P + "gdata:" + id };
+export const GK = { tok:P + "google", at:P + "google:at", state:s => P + "google:state:" + s, data:id => P + "gdata:" + id,
+  accs:P + "gaccs", accAt:e => P + "google:at:" + e, props:P + "gprops" };
 export const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/webmasters.readonly",
   "https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/business.manage",
   "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.activity.readonly"];   // Drive: read-only, for order proof (team order desk)
 export const REDIRECT = "https://www.businesssanta.com/api/portal?a=g-callback";
 export const configured = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
-export function authUrl(state){
+export function authUrl(state, team){
   const q = new URLSearchParams({ client_id:process.env.GOOGLE_CLIENT_ID, redirect_uri:REDIRECT, response_type:"code", scope:SCOPES.join(" "),
-    access_type:"offline", prompt:"consent", include_granted_scopes:"true", state });
+    access_type:"offline", prompt:team ? "select_account consent" : "consent", include_granted_scopes:"true", state });
   return "https://accounts.google.com/o/oauth2/v2/auth?" + q;
 }
 async function tokenCall(params){
@@ -23,12 +24,20 @@ async function tokenCall(params){
   if(!r.ok) throw new Error(j.error_description || j.error || "Google sign-in failed (" + r.status + ")");
   return j;
 }
-export async function exchange(code){
+export async function exchange(code, team){
   const j = await tokenCall({ code, grant_type:"authorization_code", redirect_uri:REDIRECT });
   let email = "";
   try{ email = JSON.parse(Buffer.from(String(j.id_token || "").split(".")[1] || "", "base64url").toString()).email || ""; }catch(e){}
-  const old = (await getJ(GK.tok)) || {};
-  const rec = { refresh:j.refresh_token || old.refresh, email:email || old.email || "", scope:j.scope || "", at:new Date().toISOString() };
+  const primary = (await getJ(GK.tok)) || {};
+  if(team && email && email !== primary.email){
+    // Another Google account the team uses for client access (Search Console, Analytics, Drive). The portal's main account is untouched.
+    const prevRaw = await cmd("HGET", GK.accs, email), prev = prevRaw ? JSON.parse(prevRaw) : {};
+    const rec = { refresh:j.refresh_token || prev.refresh, email, scope:j.scope || "", at:new Date().toISOString() };
+    if(!rec.refresh) throw new Error("Google did not send a lasting key. Remove the portal from that Google account's third-party access and connect again.");
+    await cmd("HSET", GK.accs, email, JSON.stringify(rec)); await cmd("SET", GK.accAt(email), j.access_token, "EX", Math.max(60, (j.expires_in || 3600) - 300));
+    return rec;
+  }
+  const rec = { refresh:j.refresh_token || primary.refresh, email:email || primary.email || "", scope:j.scope || "", at:new Date().toISOString() };
   if(!rec.refresh) throw new Error("Google did not send a lasting key. Remove the portal from your Google account's third-party access and connect again.");
   await setJ(GK.tok, rec); await cmd("SET", GK.at, j.access_token, "EX", Math.max(60, (j.expires_in || 3600) - 300));
   return rec;
@@ -119,3 +128,39 @@ export async function syncBrand(b){
   await setJ(GK.data(b.id), d);
   return { data:d, ok };
 }
+
+/* Every connected Google account: the portal's main one plus the team's other access accounts */
+export async function accounts(){
+  const p = await getJ(GK.tok), h = await cmd("HGETALL", GK.accs), out = [];
+  if(p && p.refresh) out.push({ email:p.email, primary:true, since:p.at, drive:/drive\.readonly/.test(p.scope || "") });
+  for(let i = 0; i < h.length; i += 2){ const r = JSON.parse(h[i + 1]); if(r.refresh) out.push({ email:r.email, primary:false, since:r.at, drive:/drive\.readonly/.test(r.scope || "") }); }
+  return out;
+}
+async function accessAs(email){
+  const p = await getJ(GK.tok); if(!email || (p && p.email === email)) return access();
+  const c = await cmd("GET", GK.accAt(email)); if(c) return c;
+  const raw = await cmd("HGET", GK.accs, email); const t = raw ? JSON.parse(raw) : null; if(!t || !t.refresh) throw new Error(email + " is not connected");
+  const j = await tokenCall({ refresh_token:t.refresh, grant_type:"refresh_token" });
+  await cmd("SET", GK.accAt(email), j.access_token, "EX", Math.max(60, (j.expires_in || 3600) - 300));
+  return j.access_token;
+}
+export const accessTokenAs = email => accessAs(email);
+export async function apiAs(email, url, body){
+  const tok = await accessAs(email);
+  const r = await fetch(url, body ? { method:"POST", headers:{ authorization:"Bearer " + tok, "content-type":"application/json" }, body:JSON.stringify(body) } : { headers:{ authorization:"Bearer " + tok } });
+  const j = await r.json().catch(() => ({}));
+  if(!r.ok){ const e = new Error((j.error && (j.error.message || j.error.status)) || ("Google answered " + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+/* Which Search Console properties and Analytics properties each account can see; kept so orders can reuse them */
+export async function refreshProps(){
+  const items = [], errors = {};
+  for(const a of await accounts()){
+    await apiAs(a.email, "https://www.googleapis.com/webmasters/v3/sites").then(j => (j.siteEntry || []).filter(x => x.permissionLevel !== "siteUnverifiedUser")
+      .forEach(x => items.push({ email:a.email, kind:"gsc", id:x.siteUrl, name:x.siteUrl, level:x.permissionLevel }))).catch(e => { errors[a.email + " gsc"] = e.message; });
+    await apiAs(a.email, "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200").then(j => (j.accountSummaries || []).forEach(ac => (ac.propertySummaries || [])
+      .forEach(x => items.push({ email:a.email, kind:"ga", id:x.property, name:x.displayName + " (" + ac.displayName + ")" })))).catch(e => { errors[a.email + " ga"] = e.message; });
+  }
+  const rec = { at:new Date().toISOString(), items, errors }; await setJ(GK.props, rec); return rec;
+}
+export async function props(){ return (await getJ(GK.props)) || refreshProps(); }

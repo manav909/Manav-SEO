@@ -8,6 +8,7 @@ import { GIGS } from "./_lib/gigs.mjs";
 import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt } from "./_lib/orderai.mjs";
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
+import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -88,6 +89,7 @@ async function analyse(o, cfg){
   }
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
     o.deliverables = d.deliverables.slice(0, 25).map(t => ({ id:nid("d"), text:str(t, 300), done:false, proof:"", qa:"" }));
+  applyRegister(o, await regOf(o.client.website));
   if(Array.isArray(d.actions)) mergeActions(o, d.actions, true);
   if(d.msgs && !(o.queue || []).some(q => q.auto)){
     o.queue = o.queue || [];
@@ -182,6 +184,21 @@ async function rethink(o, fresh){
   return d;
 }
 
+/* Access register: which account, login and level we hold for each client site, kept across orders. Never passwords. */
+const domOf = u => { try{ return new URL(/^https?:/i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); }catch(e){ return ""; } };
+const RK = d => P + "areg:" + d;
+const SYS = { "Google Search Console":/search console|gsc/i, "Google Analytics 4":/analytics|ga4/i, "Google Tag Manager":/tag manager|gtm/i, "Google Ads":/google ads|adwords/i,
+  "Google Business Profile":/business profile|gbp|maps listing/i, "WordPress":/wordpress|wp admin|cms/i, "Shopify":/shopify|store staff/i, "Wix":/wix/i, "Squarespace":/squarespace/i, "Webflow":/webflow/i,
+  "Hosting or DNS":/hosting|dns|domain|cpanel/i, "Figma":/figma/i, "Other":/^$/ };
+async function regOf(site){ const d = domOf(site); if(!d) return []; return (await getJ(RK(d))) || []; }
+function sysOfItem(item){ for(const [k, re] of Object.entries(SYS)) if(k !== "Other" && re.test(item)) return k; return ""; }
+function applyRegister(o, reg){
+  for(const a of o.access || []){ if(a.status === "received" || a.status === "skip") continue;
+    const sy = sysOfItem(a.item), hit = reg.find(r => r.active !== false && r.system === sy);
+    if(hit){ a.status = "received"; a.by = "Order desk"; a.note = "On file: " + hit.account + (hit.level ? " (" + hit.level + ")" : "") + (hit.holder ? ", login kept in " + hit.holder : "") + ". Confirm it still works before starting."; }
+  }
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -226,6 +243,11 @@ async function handle(request){
   if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, uid:w.uid }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
     people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:p.role })), access:ACCESS });
 
+  if(a === "gaccs"){ const ac = await gAccounts(); let pr = { items:[], at:"" }; try{ pr = url.searchParams.get("refresh") && w.role === "admin" ? await refreshProps() : await gProps(); }catch(e){ pr.error = e.message; }
+    return out({ ok:true, accounts:ac.map(x => Object.assign(x, { gsc:pr.items.filter(i => i.email === x.email && i.kind === "gsc").length, ga:pr.items.filter(i => i.email === x.email && i.kind === "ga").length })), at:pr.at, errors:pr.errors || {} }); }
+  if(a === "access"){ const site = str(url.searchParams.get("site"), 200), d = domOf(site); let gp = [];
+    try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
+    return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => summary(o, cfg)) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o) }); }
 
@@ -261,6 +283,7 @@ async function handle(request){
       access:(ACCESS[gig.cat] || []).map(x => Object.assign({ id:nid("a"), status:"needed" }, x)),
       deliverables:[{ id:nid("d"), text:(gig.packages[pkg] || {}).what || gig.name, done:false, proof:"", qa:"" }], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
     log(o, w, "Order created: " + gig.name + " (" + pkg + ") for $" + price);
+    const reg0 = await regOf(o.client.website); if(reg0.length){ applyRegister(o, reg0); log(o, { name:"Order desk" }, "Access already on file for " + domOf(o.client.website) + " was linked to this order"); }
     let ai = null;
     const [an, fm] = await Promise.allSettled([analyse(o, cfg), formatConvo(o)]);
     if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
@@ -317,7 +340,17 @@ async function handle(request){
       await saveO(o); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
       x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
-    else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
+    else if(op === "regAdd"){ if(!can(w, "pm") && !can(w, "comms")) return bad("Your role cannot do this step"); const d = domOf(o.client.website); if(!d) return bad("This order has no client website");
+      const system = Object.keys(SYS).includes(q.system) ? q.system : "Other", account = redact(str(q.account, 120)); if(!account) return bad("Type which account or user we use (email or username), never the password");
+      if(/pass(word)?|pwd/i.test(String(q.account) + String(q.note) + String(q.holder))) return bad("Do not type passwords here. Write only which account we use and where the login is kept.");
+      const list = await regOf(o.client.website), e = { id:nid("r"), system, account, level:redact(str(q.level, 120)), holder:redact(str(q.holder, 120)), note:redact(str(q.note, 400)), at:now(), by:w.name, orders:[o.id], active:true };
+      const same = list.find(x => x.system === system && x.account.toLowerCase() === account.toLowerCase()); if(same){ Object.assign(same, { level:e.level || same.level, holder:e.holder || same.holder, note:e.note || same.note, active:true }); if(!same.orders.includes(o.id)) same.orders.push(o.id); } else list.push(e);
+      await setJ(RK(d), list); applyRegister(o, list); log(o, w, "Access on file for " + d + ": " + system + " via " + account); }
+    else if(op === "regOff"){ if(!can(w, "pm")) return bad("Your role cannot do this step"); const d = domOf(o.client.website), list = await regOf(o.client.website), x = list.find(r => r.id === q.rid); if(!x) return bad("Not found");
+      x.active = !x.active; x.offAt = now(); await setJ(RK(d), list); log(o, w, "Access " + x.system + " via " + x.account + (x.active ? " active again" : " marked removed")); }
+    else if(op === "useProp"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); o.google = o.google || {}; o.google[q.kind === "ga" ? "ga" : "gsc"] = { id:str(q.pid, 200), email:str(q.email, 120) };
+      log(o, w, "Uses " + (q.kind === "ga" ? "Analytics " : "Search Console ") + str(q.pid, 200) + " through " + str(q.email, 120)); }
+    else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
       log(o, w, "Live check: " + (v.live.length - bad1) + " of " + v.live.length + " site checks fine" + (v.gsc && v.gsc.ok ? ", " + idx + " of " + v.pages.length + " sample pages indexed by Google" : ", Search Console not shared with us")); }
     else if(op === "proofCheck"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); if(!proofsOf(x).length) return bad("No proof to check yet"); await runProofCheck(o, x); log(o, w, "Order desk checked the proof of \"" + x.text.slice(0, 60) + "\": " + (x.check.verdict || "done")); }
@@ -378,7 +411,7 @@ export async function recheckDue(){
   for(const o of await loadAll(300)){
     if(!o.rechecks || !o.rechecks.length || o.rechecks[0] > today || !o.client.website) continue;
     try{
-      const v = await verifyOrder(o.client.website); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12); o.rechecks.shift();
+      const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12); o.rechecks.shift();
       let text = "";
       if(aiOn()){ try{ const r = await askAI("recheck", "claude-haiku-5-5", `Write a short, warm progress update to a client in simple US English, no dashes, no promises of rankings, no contact details or outside links.
 Say what Google now shows compared with when we delivered, in plain words, and what we keep watching. Answer with one JSON object only: {"message":""}`, `Client: ${o.client.name}. Delivered: ${o.deliveredAt}.\n${verifyText(v)}`, 1200);
