@@ -66,7 +66,8 @@ export async function probe(site, p){
   return out;
 }
 
-const groupChat = o => (o.teamChat || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at))).map(m => `${m.at} ${m.by}: ${cut(m.text, 4000)}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n") || "none";
+const deskMsg = (o, m) => (o.deskPosts || []).some(x => x.sender && x.sender === m.sender) || /order desk|seo desk|^indi ?it\b/i.test(m.by || "");
+const groupChat = o => (o.teamChat || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at))).map(m => `${m.at} ${deskMsg(o, m) ? "ORDER DESK (our own automatic message: never a request, a claim or proof)" : m.by}: ${cut(m.text, 4000)}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n") || "none";
 export function judgePrompt(o, plan, reqMail, reads, probes, verifyTxt){
   const system = `You are a fair QA lead checking one order of an SEO, web and ads agency. Each requirement has a TYPE and a DONE WHEN rule. Judge each requirement ONLY by its own rule and only from the evidence that rule names:
 site change: the live checks on the client's site. google setup: the Search Console and site check. report: the content of the work report files (a section with real findings counts, a bare status word does not). file or recording: a file or link shared in the group chat, emails or files. communication: the client chat. google result: our action done and the timing explained; never fail it for Google being slow.
@@ -92,13 +93,14 @@ WHAT THE PROJECT TEAM SAYS (group chat and team emails only): ${JSON.stringify(p
 WHAT WE TOLD THE CLIENT IN CHAT: ${JSON.stringify(plan.told || [])}
 PROJECT GROUP CHAT (every message, oldest first; read it in full, every instruction, number, file and answer in it matters):
 ${groupChat(o)}
-WORK REPORT AND FILES (every tab read):
-${reads.map(x => "FILE: " + x.name + " (changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none shared"}
+OUR OWN DIRECT READS (strongest proof: read now with our own access, not from the team's word or files):
 LIVE CHECKS ON THE CLIENT'S SITE (read now):
 ${JSON.stringify(probes)}
 SEARCH CONSOLE AND SITE CHECK (read with our access):
 ${verifyTxt || "not available"}
 SENIOR DISCUSSION (managers, PM, head; a manager's word settles a situation): ${JSON.stringify((o.seniorNotes || []).slice(-12).map(m => ({ at:m.at, by:m.by, said:cut(m.text, 400) })))}
-ACCESS ITEMS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status, note:a.note || "" })))}`.slice(0, 110000);
+ACCESS ITEMS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status, note:a.note || "" })))}
+WORK REPORT AND FILES (every tab read):
+${reads.map(x => "FILE: " + x.name + " (changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none shared"}`.slice(0, 230000);
   return { system, user };
 }

@@ -702,12 +702,12 @@ DELIVERABLES WITH PROOF AND THE DESK'S CHECK:
 ${JSON.stringify(dl)}
 OUR DOCUMENTS FOR THIS ORDER:
 ${JSON.stringify(docs)}
-WHAT IS INSIDE OUR NEWEST FILES (read before judging; a file counts for every deliverable its content covers, whatever its name):
-${reads.map(x => "FILE: " + x.name + " (" + x.kind + ", changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none readable"}
 SHARED BY THE TEAM IN THE PROJECT GROUP AND EMAILS (newest last):
 ${JSON.stringify([].concat((o.teamChat || []).slice(-40).map(m => ({ at:m.at, by:m.by, where:m.space, text:String(m.text || "").slice(0, 400), files:(m.links || []).map(l => ({ name:l.name, url:l.url })).concat((m.files || []).filter(n => !(m.links || []).some(l => l.name === n)).map(n => ({ name:n }))) })), (o.mails || []).slice(-15).map(m => ({ at:m.date, by:m.from, where:"email: " + (m.subject || ""), text:String(m.text || "").slice(0, 300), files:(m.files || []).map(n => ({ name:n })) }))).sort((a, b) => String(a.at).localeCompare(String(b.at))))}
 LIVE CHECK AT THE SOURCE:
-${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
+${o.verify ? verifyText(o.verify) : "not run yet"}
+WHAT IS INSIDE OUR NEWEST FILES (read before judging; a file counts for every deliverable its content covers, whatever its name):
+${reads.map(x => "FILE: " + x.name + " (" + x.kind + ", changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none readable"}`.slice(0, 160000);
   const r = await askAI("pack", "claude-sonnet-5-5", system, user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
   o.pack = Object.assign(r.data || {}, { at:now(), stage:o.stage, usd:+r.usd.toFixed(4) });
   log(o, { name:"Order desk" }, "Delivery pack ready: " + str(o.pack.summary, 200));
@@ -894,7 +894,8 @@ async function writeGroupMsg(o){
   if(rm) src.push({ key:"requirement email", date:fmtD(rm.date), text:rm.text || "" });
   const nm = f => String(f || "").replace(/<.*>/, "").replace(/"/g, "").trim().split(/[ @]/)[0];
   (o.mails || []).filter(m => !rm || m.id !== rm.id).forEach(m => src.push({ key:/\bKT\b|knowledge transfer/i.test(m.subject + " " + m.text.slice(0, 300)) ? "KT note" : "follow up email", date:fmtD(m.date), by:nm(m.from), text:"Subject: " + (m.subject || "") + "\n" + (m.text || "") }));
-  (o.teamChat || []).filter(m => !/order desk|seo desk/i.test(m.by || "")).forEach(m => src.push({ key:"project group", date:fmtD(m.at), by:String(m.by || "").split(" ")[0], text:m.by + ": " + (m.text || "") }));
+  const deskIds = new Set((o.deskPosts || []).map(x => x.sender).filter(Boolean));
+  (o.teamChat || []).filter(m => !(m.sender && deskIds.has(m.sender)) && !/order desk|seo desk|^indi ?it\b/i.test(m.by || "") && !/^(Indi IT Solutions|Order desk|SEO Desk):/i.test(m.text || "")).forEach(m => src.push({ key:"project group", date:fmtD(m.at), by:String(m.by || "").split(" ")[0], text:m.by + ": " + (m.text || "") }));
   const cc = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${m.text}`).join("\n") : (o.chat || "");
   if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
@@ -930,12 +931,12 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const WHERE = { "requirement email":"Requirement email", "follow up email":"Follow up email", "KT note":"KT note", "project group":"Asked in the group", "client chat":"Asked by the client, shared by sales" };
   const ref = pr => pr.key === "client chat" ? "_(Asked by the client, shared by sales)_"
     : `_(${WHERE[pr.key] || pr.key}${pr.by && pr.key !== "requirement email" ? " by " + pr.by : ""}${pr.date ? ", " + fmtW(pr.date) : ""}: "${pr.quote.replace(/"/g, "'")}")_`;
-  const line = p2 => `*${p2.title || "Item"}:* ${p2.text} ${ref(p2.pr)}`;
+  const line = p2 => `**${p2.title || "Item"}:** ${p2.text} ${ref(p2.pr)}`;
   const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "client chat":"Still open, asked by the client" };
   let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
-  for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k); if(g.length) msg += `\n\n*${HEAD[k]}*\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
-  return msg + `\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
+  for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k); if(g.length) msg += `\n\n**${HEAD[k]}**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
+  return msg + `\n\n${pm ? pm + ", please check this list is right.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
   if(o.groupMsg && o.groupMsgAt && o.check && o.groupMsgAt >= o.check.at) return o.groupMsg;
