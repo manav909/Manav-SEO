@@ -1,6 +1,7 @@
 /* Order desk helpers: the access checklist for each kind of gig, a quick website check, and the AI calls
    (order analysis, lead help, client reply digest). Every AI call is metered: tokens and USD per month and per kind. */
 import { pipe } from "./store.mjs";
+import zlib from "node:zlib";
 
 /* What each kind of work needs from the client, and at what level. Used straight away, and refined by the AI. */
 const A = (item, level, why) => ({ item, level, why });
@@ -194,4 +195,67 @@ export function redact(t){
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email hidden]")
     .replace(/\b(pass(word)?|pwd|passcode|pin|otp|user ?name|username|login|user)\s*[:=-]\s*\S+/gi, "$1: [hidden]")
     .replace(/(^|\n)(\s*(password|pass|pwd)\s*:?\s*\n)([^\n]+)/gi, "$1$2[hidden]");
+}
+
+/* Proof of work: link checks, text from Office files, and the AI pre-check that QA reads before checking by hand. */
+export async function checkLink(url){
+  let u = String(url || "").trim(); if(!/^https?:\/\//i.test(u)) u = "https://" + u;
+  try{
+    const r = await fetch(u, { redirect:"follow", signal:AbortSignal.timeout(12000), headers:{ "user-agent":"Mozilla/5.0 (compatible; BusinessSantaQA/1.0)" } });
+    const html = (await r.text()).slice(0, 400000), fin = r.url || u;
+    const login = /accounts\.google\.com\/(v3\/)?signin|ServiceLogin|login\.microsoftonline|\/login\b|\/signin\b/i.test(fin) || r.status === 401 || r.status === 403;
+    const drivePrivate = /drive\.google|docs\.google/.test(u) && /You need access|Request access|Sign in/i.test(html.slice(0, 60000));
+    const title = (html.match(/<title[^>]*>([^<]*)/i) || [])[1] || "";
+    const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().slice(0, 3000);
+    return { url:u, final:fin, status:r.status, ok:r.ok && !login && !drivePrivate, private:login || drivePrivate, title:title.trim().slice(0, 160), text };
+  }catch(e){ return { url:u, ok:false, error:"Did not open (" + String(e.message || e).slice(0, 80) + ")" }; }
+}
+function unzip(buf, want){
+  const out = {}; let e = -1;
+  for(let i = buf.length - 22; i >= Math.max(0, buf.length - 70000); i--) if(buf.readUInt32LE(i) === 0x06054b50){ e = i; break; }
+  if(e < 0) return out;
+  let p = buf.readUInt32LE(e + 16); const n = buf.readUInt16LE(e + 10);
+  for(let k = 0; k < n && buf.readUInt32LE(p) === 0x02014b50; k++){
+    const m = buf.readUInt16LE(p + 10), cs = buf.readUInt32LE(p + 20), nl = buf.readUInt16LE(p + 28), xl = buf.readUInt16LE(p + 30), cl = buf.readUInt16LE(p + 32), lo = buf.readUInt32LE(p + 42);
+    const name = buf.toString("utf8", p + 46, p + 46 + nl); p += 46 + nl + xl + cl;
+    if(!want.test(name)) continue;
+    const s = lo + 30 + buf.readUInt16LE(lo + 26) + buf.readUInt16LE(lo + 28), raw = buf.subarray(s, s + cs);
+    try{ out[name] = (m === 8 ? zlib.inflateRawSync(raw) : raw).toString("utf8"); }catch(_){}
+  }
+  return out;
+}
+const ent = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+export function officeText(buf, name){
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  if(["txt", "csv", "md", "html", "htm", "json"].includes(ext)) return buf.toString("utf8").slice(0, 40000);
+  if(ext === "docx"){ const f = unzip(buf, /^word\/(document|header\d*|footer\d*)\.xml$/); return ent(Object.values(f).join("\n").replace(/<\/w:p>/g, "\n").replace(/<w:tab\/>/g, "\t").replace(/<[^>]+>/g, "")).replace(/\n{3,}/g, "\n\n").slice(0, 40000); }
+  if(ext === "pptx"){ const f = unzip(buf, /^ppt\/slides\/slide\d+\.xml$/); return Object.keys(f).sort((a, b) => parseInt(a.match(/\d+/)) - parseInt(b.match(/\d+/))).map((k, i) => "Slide " + (i + 1) + ": " + ent(f[k].replace(/<\/a:p>/g, "\n").replace(/<[^>]+>/g, ""))).join("\n").slice(0, 40000); }
+  if(ext === "xlsx"){
+    const f = unzip(buf, /^xl\/(sharedStrings\.xml|worksheets\/sheet\d+\.xml)$/), ss = [];
+    (f["xl/sharedStrings.xml"] || "").replace(/<si>([\s\S]*?)<\/si>/g, (_, x) => { ss.push(ent(x.replace(/<[^>]+>/g, ""))); return ""; });
+    return Object.keys(f).filter(k => /sheet\d+/.test(k)).sort().map(k => k.replace(/.*\//, "") + ":\n" + (f[k].match(/<row[\s\S]*?<\/row>/g) || []).slice(0, 400).map(r => (r.match(/<c [^>]*?(\/>|>[\s\S]*?<\/c>)/g) || []).map(c => {
+      const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [])[1] || (c.match(/<t[^>]*>([\s\S]*?)<\/t>/) || [])[1] || ""; return / t="s"/.test(c) ? (ss[+v] || "") : ent(v); }).join("\t")).join("\n")).join("\n\n").slice(0, 40000);
+  }
+  return "";
+}
+export async function proofCheck(o, d, items){
+  const content = [{ type:"text", text:`Order ${o.id} for client "${o.client.name}" (${o.client.website || "no site"}).
+What was sold: ${(o.ai && o.ai.summary) || ""}
+Deliverable to check: ${d.text}
+Proofs follow. Each starts with a label.` }];
+  for(const it of items){
+    if(it.kind === "link"){ content.push({ type:"text", text:`PROOF LINK ${it.url}\nResult of opening it: ${JSON.stringify({ status:it.check && it.check.status, opens:it.check && it.check.ok, private:it.check && it.check.private, title:it.check && it.check.title, error:it.check && it.check.error })}\nPage text start: ${(it.check && it.check.text) || ""}` }); continue; }
+    content.push({ type:"text", text:`PROOF FILE ${it.name} (${it.type || "unknown type"}, ${Math.round((it.size || 0) / 1024)} KB)` });
+    if(it.image) content.push({ type:"image", source:{ type:"base64", media_type:it.type, data:it.b64 } });
+    else if(it.pdf) content.push({ type:"document", source:{ type:"base64", media_type:"application/pdf", data:it.b64 } });
+    else if(it.text) content.push({ type:"text", text:"File text:\n" + it.text });
+    else content.push({ type:"text", text:it.note || "You cannot open this file. A human must check it." });
+  }
+  const system = `You are the QA assistant of an SEO, web and ads agency. You check the proof for ONE deliverable before a human QA does the final check.
+Judge only from the proof given. Be strict and specific: the goal is that no wrong work, false report or not-live work reaches the client.
+Check: does the proof really show this deliverable done (and live, where that matters)? Is it the right client and site? What is missing compared with the deliverable?
+Red flags: another client's name or data, numbers or claims the proof cannot back up, promised rankings or traffic, email, phone or outside links in client documents, placeholder text (lorem, TODO, [our access email]), clear spelling mistakes in client documents, links that do not open or need a login, screenshots that do not show the date or the site, wrong dates.
+Recordings and files you cannot open go into qaManual. Write in plain simple English, no dashes.
+Answer with one JSON object only: {"verdict":"complete | gaps | wrong","summary":"one line","shows":["what the proof does show"],"missing":["what is missing"],"redFlags":["problems found"],"qaManual":["what the human QA must still check by hand"]}`;
+  return askAI("proof", "claude-sonnet-5-5", system, content, 6000);
 }

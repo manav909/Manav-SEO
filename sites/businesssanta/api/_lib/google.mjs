@@ -6,7 +6,8 @@ import { cmd, getJ, setJ, P } from "./store.mjs";
 
 export const GK = { tok:P + "google", at:P + "google:at", state:s => P + "google:state:" + s, data:id => P + "gdata:" + id };
 export const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/webmasters.readonly",
-  "https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/business.manage"];
+  "https://www.googleapis.com/auth/analytics.readonly", "https://www.googleapis.com/auth/business.manage",
+  "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.activity.readonly"];   // Drive: read-only, for order proof (team order desk)
 export const REDIRECT = "https://www.businesssanta.com/api/portal?a=g-callback";
 export const configured = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
@@ -33,6 +34,7 @@ export async function exchange(code){
   return rec;
 }
 export async function status(){ const t = await getJ(GK.tok); return { configured:configured(), connected:!!(t && t.refresh), email:t ? t.email : "", since:t ? t.at : "", scope:t ? t.scope : "" }; }
+export const accessToken = () => access();
 async function access(){
   const c = await cmd("GET", GK.at); if(c) return c;
   const t = await getJ(GK.tok); if(!t || !t.refresh) throw new Error("Google is not connected yet");

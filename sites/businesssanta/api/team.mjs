@@ -5,7 +5,9 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck } from "./_lib/orderai.mjs";
+import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
+import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -103,6 +105,31 @@ async function formatConvo(o){
   return { ok:true };
 }
 
+/* Proof of work: Drive links (read with the portal's Google sign-in) and live links, checked by the order desk before QA */
+const proofsOf = d => d.proofs || (d.proof ? [{ id:"p0", kind:"link", url:d.proof }] : []);
+const trimMeta = m => Object.assign({}, m, { history:m.history ? { versions:(m.history.versions || []).slice(-60), activity:(m.history.activity || []).slice(0, 60), versionsError:m.history.versionsError, activityError:m.history.activityError } : null });
+function histText(m){
+  const h = m.history || {}, v = h.versions || [], a = h.activity || [];
+  return `Drive history of "${m.name}": created ${m.created || "?"} (owner ${m.owner || "?"}), last changed ${m.modified || "?"} by ${m.lastBy || "?"}, ${v.length} saved versions` +
+    (v.length ? ` from ${v[0].at} to ${v[v.length - 1].at}; editors: ${[...new Set(v.map(x => x.by).filter(Boolean))].join(", ")}` : "") +
+    (a.length ? `. Activity (newest first): ` + a.slice(0, 25).map(x => `${x.at} ${x.what}`).join("; ") : "");
+}
+async function runProofCheck(o, d){
+  if(!aiOn()) return;
+  const items = [];
+  for(const p of proofsOf(d)){
+    if(p.kind === "drive" && p.meta){ const fresh = await driveMeta(p.url); if(fresh.ok) p.meta = trimMeta(fresh);
+      (await driveRead(p.meta)).forEach(x => items.push(x)); items.push({ kind:"file", name:p.meta.name + " (history)", note:histText(p.meta) }); }
+    else items.push({ kind:"link", url:p.url, check:p.check || await checkLink(p.url) });
+  }
+  const timing = `Order created ${o.at}. Deadline ${o.deadline}. Today ${now()}.` + ((o.qaRounds || []).length ? " QA rounds: " + o.qaRounds.map(q => q.at + " " + q.result).join("; ") : "");
+  if(o.verify) items.unshift({ kind:"file", name:"Live verification at the source", note:verifyText(o.verify) + "\nUse this to judge claims in the proof. Work done by us but not yet shown by Google is fine if the proof says so honestly; claiming Google already shows it when it does not is a red flag." });
+  items.unshift({ kind:"file", name:"Order timing", note:timing + " Flag work that was made in a rush just before delivery, edited after QA passed, or made by someone outside the order." });
+  const r = await proofCheck(o, d, items);
+  d.check = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) });
+  o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -144,7 +171,7 @@ async function handle(request){
   if(!w) return out({ ok:false, signin:true }, 401);
   const cfg = await cfgOf();
 
-  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, uid:w.uid }, ai:aiOn(), cfg, gigs:GIGS, roles:ROLES,
+  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, uid:w.uid }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
     people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:p.role })), access:ACCESS });
 
   if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => summary(o, cfg)) }); }
@@ -218,9 +245,23 @@ async function handle(request){
     else if(op === "addAccess"){ need("pm"); o.access.push({ id:nid("a"), item:str(q.item, 120), level:str(q.level, 200), why:str(q.why, 200), status:"needed" }); log(o, w, "Added access item " + str(q.item, 120)); }
     else if(op === "startAnyway"){ need("assign"); const why = str(q.why, 300); if(!why) return bad("Write why work starts before all access is in"); o.stage = "work"; log(o, w, "Started before all access was in: " + why); }
     else if(op === "deliv"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found");
-      if(q.text != null) x.text = str(q.text, 300); if(q.proof != null) x.proof = str(q.proof, 500);
-      if(q.done != null){ if(q.done && !x.proof) return bad("Add the proof first: a live link, report link or screenshot link"); x.done = !!q.done; }
-      log(o, w, (x.done ? "Done: " : "Updated: ") + x.text); }
+      if(q.text != null) x.text = str(q.text, 300);
+      if(q.done != null){ if(q.done && !proofsOf(x).length) return bad("Add the proof first: a Google Drive link or a live link"); x.done = !!q.done;
+        if(x.done){ try{ await runProofCheck(o, x); }catch(e){ x.check = { verdict:"", summary:"The order desk could not check this proof: " + e.message, at:now() }; } } }
+      log(o, w, (x.done ? "Done: " : "Updated: ") + x.text + (x.check && x.check.verdict ? " (order desk check: " + x.check.verdict + ")" : "")); }
+    else if(op === "proofAdd"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); const url = str(q.url, 600); if(!/^https?:\/\/\S+$/i.test(url)) return bad("Paste the full link, starting with https://");
+      let p;
+      if(isDrive(url)){ const m = await driveMeta(url); if(!m.ok) return bad(m.error || "This Drive link cannot be opened"); p = { id:nid("p"), kind:"drive", url, name:m.name, meta:trimMeta(m), at:now(), by:w.name }; }
+      else { const c = await checkLink(url); if(!c.ok) return bad(c.private ? "This link needs a login, so QA and the client cannot open it. Share it publicly or put the file in Drive." : "This link does not open: " + (c.error || "status " + c.status)); p = { id:nid("p"), kind:"link", url, name:c.title || url, check:{ status:c.status, ok:c.ok, title:c.title, final:c.final }, at:now(), by:w.name }; }
+      x.proofs = proofsOf(x).concat(p); delete x.proof; if(x.done) x.check = null;
+      log(o, w, "Proof added to \"" + x.text.slice(0, 60) + "\": " + p.name); }
+    else if(op === "proofDel"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); x.proofs = proofsOf(x).filter(p => p.id !== q.pid); delete x.proof; x.done = x.done && x.proofs.length > 0; x.check = null; log(o, w, "Proof removed from \"" + x.text.slice(0, 60) + "\""); }
+    else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
+      const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
+      log(o, w, "Live check: " + (v.live.length - bad1) + " of " + v.live.length + " site checks fine" + (v.gsc && v.gsc.ok ? ", " + idx + " of " + v.pages.length + " sample pages indexed by Google" : ", Search Console not shared with us")); }
+    else if(op === "proofCheck"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); if(!proofsOf(x).length) return bad("No proof to check yet"); await runProofCheck(o, x); log(o, w, "Order desk checked the proof of \"" + x.text.slice(0, 60) + "\": " + (x.check.verdict || "done")); }
+    else if(op === "qaMark"){ need("qa"); if(o.stage !== "qa") return bad("This order is not waiting for QA"); const x = find("deliverables", q.did); if(!x) return bad("Not found");
+      if(!q.ok && !str(q.note, 10)) return bad("Write what is wrong so the team can fix it"); x.qa = q.ok ? "pass" : "fail"; x.qaNote = str(q.note, 500); x.qaBy = w.name; x.qaAt = now(); }
     else if(op === "addDeliv"){ need("pm"); o.deliverables.push({ id:nid("d"), text:str(q.text, 300), done:false, proof:"", qa:"" }); log(o, w, "Added deliverable " + str(q.text, 300)); }
     else if(op === "hours"){ need("pm"); const h = num(q.h, 0); if(h <= 0 || h > 24) return bad("Hours between 0 and 24"); o.hours.push({ who:w.name, h, note:str(q.note, 200), at:now() }); log(o, w, "Logged " + h + " h " + str(q.note, 200)); }
     else if(op === "ask"){ need("pm"); const t = str(q.text, 4000); if(!t) return bad("Write the message"); o.queue.push({ id:nid("q"), kind:str(q.kind, 20) || "question", text:t, at:now(), by:w.name, sent:false }); log(o, w, "Asked comms to send a message to the client"); }
@@ -233,16 +274,21 @@ async function handle(request){
       o.queue.push(x); log(o, w, "Client replied" + (x.digest ? ": " + str(x.digest.summary, 200) : "")); }
     else if(op === "drop"){ need("pm"); const x = find("queue", q.qid); if(!x || x.sent) return bad("Only unsent messages can be dropped"); o.queue = o.queue.filter(y => y !== x); log(o, w, "Dropped a message that is not needed: " + x.kind); }
     else if(op === "seen"){ const x = find("queue", q.qid); if(x){ x.seen = true; x.seenBy = w.name; } if(q.clearAlert) o.alert = ""; }
-    else if(op === "toQA"){ need("pm"); const left = o.deliverables.filter(d => !d.done || !d.proof); if(left.length) return bad("Every deliverable needs done plus proof first (" + left.length + " left)");
+    else if(op === "toQA"){ need("pm"); const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
+      o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
       o.stage = "qa"; log(o, w, "Sent to QA"); }
     else if(op === "qa"){ need("qa"); if(o.stage !== "qa") return bad("This order is not waiting for QA");
-      const res = q.result === "pass" ? "pass" : "fail", note = str(q.note, 2000); if(res === "fail" && !note) return bad("Write what is wrong so the team can fix it");
-      (q.checks || []).forEach(c => { const d = find("deliverables", c.did); if(d){ d.qa = c.ok ? "pass" : "fail"; d.qaNote = str(c.note, 300); } });
+      const unmarked = o.deliverables.filter(d => !d.qa); if(unmarked.length) return bad("Mark every deliverable Pass or Fail first (" + unmarked.length + " left)");
+      const fails = o.deliverables.filter(d => d.qa === "fail"), res = fails.length ? "fail" : "pass", note = fails.map(d => d.text.slice(0, 60) + ": " + d.qaNote).join(" | ");
       o.qaRounds.push({ at:now(), by:w.name, result:res, note }); o.stage = res === "pass" ? "ready" : "work";
-      if(res === "fail") o.deliverables.forEach(d => { if(d.qa === "fail") d.done = false; });
-      log(o, w, res === "pass" ? "QA passed. Ready to deliver." : "QA sent back: " + note); }
+      fails.forEach(d => { d.done = false; d.check = null; });
+      log(o, w, res === "pass" ? "QA passed every deliverable. Ready to deliver." : "QA sent back " + fails.length + ": " + note); }
     else if(op === "deliver"){ need("comms"); if(o.stage !== "ready") return bad("Deliver only after QA passes");
-      o.stage = "delivered"; o.deliveredAt = now(); log(o, w, "Delivered to the client"); }
+      const passAt = ((o.qaRounds || []).filter(r => r.result === "pass").pop() || {}).at || "", changed = [];
+      for(const d of o.deliverables) for(const p of proofsOf(d)) if(p.kind === "drive"){ const m = await driveMeta(p.url); if(m.ok && passAt && m.modified > passAt) changed.push(m.name); }
+      if(changed.length){ o.stage = "qa"; o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "Changed after QA passed: " + changed.join(", ") + ". Sent back to QA."); await saveO(o); return bad("These were changed after QA passed: " + changed.join(", ") + ". The order went back to QA."); }
+      o.stage = "delivered"; o.deliveredAt = now(); o.rechecks = [3, 7, 14].map(n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10));
+      log(o, w, "Delivered to the client. The order desk will recheck Google on " + o.rechecks.join(", ") + " and draft an update for the client."); }
     else if(op === "revision"){ need("comms"); const reason = str(q.reason, 40), ours = !/client changed/i.test(reason);
       o.revisions.push({ at:now(), by:w.name, reason, note:str(q.note, 2000), ours }); o.stage = "work"; o.deliverables.forEach(d => { d.qa = ""; });
       log(o, w, "Revision: " + reason + (q.note ? ". " + str(q.note, 300) : "")); }
@@ -264,3 +310,22 @@ async function handle(request){
 }
 const run = async request => { try{ return await handle(request); }catch(e){ return bad(String(e.message || e).slice(0, 300), /role/.test(e.message) ? 403 : 500); } };
 export const GET = run, POST = run;
+
+/* Daily (from the portal cron): delivered orders get rechecked on their dates; the result and a ready client update land on the order. */
+export async function recheckDue(){
+  const today = now().slice(0, 10), done = [];
+  for(const o of await loadAll(300)){
+    if(!o.rechecks || !o.rechecks.length || o.rechecks[0] > today || !o.client.website) continue;
+    try{
+      const v = await verifyOrder(o.client.website); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12); o.rechecks.shift();
+      let text = "";
+      if(aiOn()){ try{ const r = await askAI("recheck", "claude-haiku-5-5", `Write a short, warm progress update to a client in simple US English, no dashes, no promises of rankings, no contact details or outside links.
+Say what Google now shows compared with when we delivered, in plain words, and what we keep watching. Answer with one JSON object only: {"message":""}`, `Client: ${o.client.name}. Delivered: ${o.deliveredAt}.\n${verifyText(v)}`, 1200);
+        text = r.data.message || ""; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4); }catch(e){} }
+      if(text) o.queue.push({ id:nid("q"), kind:"update", text, at:now(), by:"Order desk", sent:false });
+      log(o, { name:"Order desk" }, "Rechecked Google after delivery" + (text ? " and drafted a client update" : ""));
+      await saveO(o); done.push(o.id);
+    }catch(e){ done.push(o.id + ": " + e.message); }
+  }
+  return done;
+}

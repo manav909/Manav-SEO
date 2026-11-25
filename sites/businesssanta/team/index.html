@@ -143,6 +143,24 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .dsep{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:12px;font-weight:700;margin:6px 0}.dsep:before,.dsep:after{content:"";flex:1;height:1px;background:var(--line)}
 .tl div{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--soft);font-size:14px;color:var(--sub)}.tl div .sub{flex:none;width:120px;margin:0}.tl b{color:var(--ink);margin-right:4px}
 .tl{max-height:none}
+.dv{border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;background:var(--panel)}
+.dv.dn{border-color:rgba(52,211,153,.35)}.dv.qf{border-color:rgba(248,113,113,.55)}
+.dvh{display:flex;gap:12px;align-items:flex-start}.dvn{flex:none;width:26px;height:26px;border-radius:50%;background:var(--raise);display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:800;color:var(--sub)}
+.dv.dn .dvn{background:rgba(52,211,153,.18);color:var(--ok)}
+.dvt{flex:1;min-width:0}.dvt b{color:var(--ink);font-size:14.5px;line-height:1.45}.dvs{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.qan{margin:10px 0 0 38px;font-size:13.5px;color:var(--bad)}
+.pfs{display:flex;flex-direction:column;gap:6px;margin:12px 0 0 38px}
+.pf{display:flex;gap:10px;align-items:flex-start;background:var(--raise);border-radius:10px;padding:9px 12px}
+.pfi{font-size:18px;line-height:1.2}.pft{flex:1;min-width:0;font-size:13px;color:var(--mut)}.pft a{color:var(--ink);text-decoration:none}.pft a:hover{color:var(--y)}.pft span{display:block;margin-top:2px}
+.pft details{margin-top:4px}.pft summary{cursor:pointer;color:var(--sub);font-weight:600}.hist{margin:6px 0 0;padding-left:16px}
+.padd{display:flex;gap:8px;margin:12px 0 0 38px;flex-wrap:wrap}.padd input{flex:1;min-width:220px;min-height:36px;font-size:13.5px}
+.ck{margin:12px 0 0 38px;border-radius:10px;padding:12px 14px;background:var(--raise);font-size:13.5px;color:var(--sub);border-left:3px solid var(--line)}
+.ck.ok{border-left-color:var(--ok)}.ck.warn{border-left-color:var(--warn)}.ck.bad{border-left-color:var(--bad)}
+.ckh{display:flex;justify-content:space-between;gap:8px;margin-bottom:4px}.ckh b{color:var(--ink)}.ckh span{color:var(--mut);font-size:12px}.ck p{margin:0 0 6px}
+.ckl{margin-top:8px}.ckl span{font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut)}.ckl.bad span{color:var(--bad)}.ckl.warn span{color:var(--warn)}.ckl.ok span{color:var(--ok)}
+.ckl ul{margin:4px 0 0;padding-left:18px}.ckl li{margin:2px 0}
+.qab{display:flex;gap:8px;margin:12px 0 0 38px;flex-wrap:wrap}.qab input{flex:1;min-width:200px;min-height:36px;font-size:13.5px}
+@media(max-width:620px){.pfs,.padd,.ck,.qab,.qan{margin-left:0}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -181,7 +199,7 @@ function signin(){
   $("#sf").onsubmit = e => { e.preventDefault(); act(async () => { await api("login", { code:$("#code").value }); boot(); }, "Signing in…"); };
 }
 async function boot(){
-  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access }); }catch(e){ return; }
+  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail }); }catch(e){ return; }
   $("#who").textContent = ME.name + " · " + (RNAME[ME.role] || ME.role); $("#out").classList.remove("hide");
   route();
 }
@@ -300,8 +318,8 @@ function drawOrder(){
   const pmOpt = r => `<option value="">Not set</option>` + ME.people.filter(p => p.role === r || p.role === "manager").map(p => `<option value="${p.id}" ${o[r] === p.id ? "selected" : ""}>${E(p.name)}</option>`).join("");
   const nextBtn = {
     access: can("assign") ? `<button class="btn" id="anyway">Start before all access is in</button>` : "",
-    work: can("pm") ? (o.deliverables.every(d => d.done && d.proof) ? `<button class="btn pri" id="toqa">Send to QA</button>` : `<button class="btn" disabled title="Every deliverable needs proof and Done first">Send to QA · ${o.deliverables.filter(d => d.done).length} of ${o.deliverables.length} done</button>`) : "",
-    qa: can("qa") ? `<button class="btn pri" id="qapass">QA pass</button><button class="btn danger" id="qafail">Send back with notes</button>` : "",
+    work: can("pm") ? (o.deliverables.every(d => d.done && (d.proofs || []).length + (d.proof ? 1 : 0)) ? `<button class="btn pri" id="toqa">Send to QA</button>` : `<button class="btn" disabled title="Every deliverable needs proof and Mark done first">Send to QA · ${o.deliverables.filter(d => d.done).length} of ${o.deliverables.length} done</button>`) : "",
+    qa: can("qa") ? `<button class="btn pri" id="qafin">Finish QA · ${o.deliverables.filter(d => d.qa).length} of ${o.deliverables.length} marked</button>` : "",
     ready: can("comms") ? `<button class="btn pri" id="deliver">Delivered to the client</button>` : "",
     delivered: can("comms") ? `<button class="btn danger" id="rev">Client asked for a revision</button><button class="btn pri" id="close">Client accepted: close</button>` : ""
   }[o.stage] || "";
@@ -359,22 +377,48 @@ function drawOrder(){
     <td><span class="chip ${["received","skip"].includes(a.status) ? "ok" : a.status === "wrong" ? "bad" : a.status === "asked" ? "warn" : "n"}">${{ needed:"Not asked", asked:"Asked", received:"Received", wrong:"Wrong level", skip:"Not needed" }[a.status]}</span></td>
     ${can("pm") ? `<td class="acts">${a.status !== "received" ? `<button class="btn sm" data-acc="${a.id}" data-s="received">Received</button>` : ""}${a.status !== "wrong" ? `<button class="btn sm danger" data-acc="${a.id}" data-s="wrong">Wrong level</button>` : ""}${a.status !== "skip" ? `<button class="btn sm ghost" data-acc="${a.id}" data-s="skip">Not needed</button>` : ""}</td>` : ""}</tr>`)}</tbody></table>
     ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:12px">Add an access item</button>` : ""}`;
-  const del = `<table class="t2"><thead><tr><th style="width:34px">#</th><th>Deliverable</th><th>Proof</th><th>QA</th>${can("pm") && o.stage === "work" ? "<th></th>" : ""}</tr></thead><tbody>${L(o.deliverables, (d, i) => `<tr class="${d.done ? "dn" : ""}"><td class="num">${d.done ? "✓" : i + 1}</td><td>${E(d.text)}${d.qaNote ? `<div class="sub" style="color:var(--bad)">QA: ${E(d.qaNote)}</div>` : ""}</td>
-    <td>${d.proof ? `<a href="${E(/^https?:/.test(d.proof) ? d.proof : "#")}" target="_blank" rel="noopener">Open proof</a>` : `<span class="sub">None yet</span>`}</td><td>${d.qa ? `<span class="chip ${d.qa === "pass" ? "ok" : "bad"}">${d.qa === "pass" ? "Passed" : "Failed"}</span>` : `<span class="sub">Not checked</span>`}</td>
-    ${can("pm") && o.stage === "work" ? `<td class="acts"><button class="btn sm" data-proof="${d.id}">${d.proof ? "Change proof" : "Add proof"}</button>${d.proof && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Done</button>` : ""}</td>` : ""}</tr>`)}</tbody></table>
-    ${can("pm") && o.stage === "work" ? `<div class="row" style="gap:8px;margin-top:12px"><button class="btn sm" id="adddel">Add a deliverable</button><button class="btn sm" id="hrs">Log hours</button><button class="btn sm" id="ask">Ask the client something</button></div>` : ""}`;
+  const pOf = d => d.proofs || (d.proof ? [{ id:"p0", kind:"link", url:d.proof, name:d.proof }] : []);
+  const ago = t => t ? new Date(t).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" }) : "";
+  const proofChip = (d, p) => { const m = p.meta || {}, h = m.history || {}, v = (h.versions || []).length;
+    return `<div class="pf"><div class="pfi">${p.kind === "drive" ? (m.kind === "Folder" ? "📁" : m.kind === "Recording" ? "🎬" : /Sheet|Excel/.test(m.kind) ? "📊" : /Image/.test(m.kind) ? "🖼" : "📄") : "🔗"}</div>
+      <div class="pft"><a href="${E(p.url)}" target="_blank" rel="noopener"><b>${E(p.name || p.url)}</b></a><span>${p.kind === "drive" ? `${E(m.kind || "Drive")}${m.kind === "Folder" ? " · " + (m.files || []).length + " files" : ""}${m.duration ? " · " + Math.round(m.duration / 60) + " min" : ""} · last change ${ago(m.modified)}${m.lastBy ? " by " + E(m.lastBy) : ""}${v ? " · " + v + " versions" : ""}` : `Live link · opens (${E(p.check && p.check.status)})`}</span>
+      ${p.kind === "drive" && (h.versions || []).length ? `<details><summary>History</summary><ul class="hist">${(h.versions || []).slice().reverse().slice(0, 15).map(x => `<li>${ago(x.at)} · saved by ${E(x.by || "someone")}</li>`).join("")}${(h.activity || []).slice(0, 15).map(x => `<li>${ago(x.at)} · ${E(x.what)}</li>`).join("")}</ul></details>` : ""}</div>
+      ${can("pm") && o.stage === "work" ? `<button class="btn sm ghost" data-pdel="${d.id}|${p.id}" title="Remove">×</button>` : ""}</div>`; };
+  const chk = c => !c || !c.verdict ? (c && c.summary ? `<div class="ck"><p>${E(c.summary)}</p></div>` : "") : `<div class="ck ${/complete/i.test(c.verdict) ? "ok" : /wrong/i.test(c.verdict) ? "bad" : "warn"}"><div class="ckh"><b>Order desk check: ${/complete/i.test(c.verdict) ? "Looks complete" : /wrong/i.test(c.verdict) ? "Looks wrong" : "Gaps found"}</b><span>${ago(c.at)}</span></div><p>${E(c.summary)}</p>
+      ${(c.redFlags || []).length ? `<div class="ckl bad"><span>Problems</span><ul>${c.redFlags.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+      ${(c.missing || []).length ? `<div class="ckl warn"><span>Missing</span><ul>${c.missing.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+      ${(c.shows || []).length ? `<div class="ckl ok"><span>The proof shows</span><ul>${c.shows.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+      ${(c.qaManual || []).length ? `<div class="ckl"><span>QA must still check by hand</span><ul>${c.qaManual.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}</div>`;
+  const del = o.deliverables.map((d, i) => { const ps = pOf(d), canEdit = can("pm") && o.stage === "work", qaNow = can("qa") && o.stage === "qa";
+    return `<div class="dv ${d.done ? "dn" : ""} ${d.qa === "fail" ? "qf" : ""}"><div class="dvh"><span class="dvn">${d.done ? "✓" : i + 1}</span><div class="dvt"><b>${E(d.text)}</b>
+       <div class="dvs"><span class="chip ${d.done ? "ok" : "n"}">${d.done ? "Done" : "Not done"}</span>${d.qa ? `<span class="chip ${d.qa === "pass" ? "ok" : "bad"}">QA ${d.qa === "pass" ? "passed" : "failed"}${d.qaBy ? " · " + E(d.qaBy) : ""}</span>` : ""}<span class="sub" style="margin:0">${ps.length} proof${ps.length === 1 ? "" : "s"}</span></div></div></div>
+      ${d.qa === "fail" && d.qaNote ? `<div class="qan"><b>QA says:</b> ${E(d.qaNote)}</div>` : ""}
+      ${ps.length ? `<div class="pfs">${ps.map(p => proofChip(d, p)).join("")}</div>` : ""}
+      ${canEdit ? `<div class="padd"><input placeholder="Paste a Google Drive link (file or folder) or a live page link" data-purl="${d.id}"><button class="btn sm" data-padd="${d.id}">Add proof</button>${ps.length && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}${ps.length && d.done ? `<button class="btn sm" data-pchk="${d.id}">Check again</button>` : ""}</div>` : ""}
+      ${chk(d.check)}
+      ${qaNow ? `<div class="qab"><input placeholder="QA note (needed for Fail)" data-qn="${d.id}" value="${E(d.qaNote || "")}"><button class="btn sm ${d.qa === "pass" ? "pri" : ""}" data-qok="${d.id}">Pass</button><button class="btn sm danger" data-qno="${d.id}">Fail</button></div>` : ""}
+    </div>`; }).join("")
+    + (can("pm") && o.stage === "work" ? `<div class="row" style="gap:8px;margin-top:12px"><button class="btn sm" id="adddel">Add a deliverable</button><button class="btn sm" id="hrs">Log hours</button><button class="btn sm" id="ask">Ask the client something</button></div>` : "");
+  const V = o.verify, okc = b => `<span class="chip ${b ? "ok" : "bad"}">${b ? "OK" : "Problem"}</span>`;
+  const vbody = !V ? `<p class="note">Not checked yet. Press Check now: it reads the live site and, when the client shared Search Console with ${E(ME.accessEmail || "our access email")}, what Google itself shows.</p>` :
+    `<div class="lbl" style="margin:0 0 6px">The live site</div><table class="t2"><tbody>${V.live.map(x => `<tr><td><b>${E(x.check)}</b><div class="sub">${E(x.detail)}</div></td><td style="width:90px">${okc(x.ok)}</td></tr>`).join("")}</tbody></table>
+     <div class="lbl" style="margin:16px 0 6px">What Google shows (Search Console)</div>${!V.gsc || !V.gsc.ok ? `<p class="note">${E(V.gsc ? V.gsc.detail : "")}</p>` :
+       `<table class="t2"><thead><tr><th>Sitemap</th><th>Submitted</th><th>Read by Google</th><th>Errors</th><th>URLs</th></tr></thead><tbody>${(V.gsc.sitemaps || []).map(x => `<tr><td><b>${E(x.path.replace(/^https?:\/\/[^/]+/, ""))}</b></td><td>${ago(x.submitted) || "Never"}</td><td>${x.read ? ago(x.read) : `<span class="chip warn">Not yet</span>`}</td><td>${x.errors ? `<span class="chip bad">${x.errors}</span>` : "0"}</td><td>${x.urls}</td></tr>`).join("") || `<tr><td colspan="5">No sitemap submitted in this property</td></tr>`}</tbody></table>
+       <table class="t2" style="margin-top:10px"><thead><tr><th>Sample page</th><th>Google says</th><th>Last crawl</th></tr></thead><tbody>${V.pages.map(x => `<tr><td>${E(x.url.replace(/^https?:\/\/[^/]+/, "") || "/")}</td><td>${x.error ? E(x.error) : `<span class="chip ${/indexed/i.test(x.state || "") && !/not indexed/i.test(x.state || "") ? "ok" : "warn"}">${E(x.state || x.verdict || "?")}</span>`}</td><td>${ago(x.crawled) || "Never"}</td></tr>`).join("")}</tbody></table>`}
+     <p class="note" style="margin:12px 0 0"><b>Done by us</b> is proven by the live site and the sitemap submission. <b>Shown by Google</b> can take days or weeks; after delivery the order desk rechecks on ${(o.rechecks || ["3, 7 and 14 days after delivery"]).map(E).join(", ")} and drafts an update for the client.</p>`;
   const work = `<div class="og"><div>
     ${sec("Step 1 · Access", "Work starts only when every item is in at the right level. Wrong level is the most common reason for lost days.", acc, `<span class="chip ${accOk === o.access.length ? "ok" : "warn"}">${accOk} of ${o.access.length}</span>`)}
-    ${sec("Step 2 · Deliverables and proof", "Every deliverable needs proof: a live link, a report link or a screenshot link. QA only gets work with proof for everything.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
+    ${sec("Step 2 · Deliverables and proof", "Keep proof in Google Drive (a file or a folder shared with " + E(ME.accessEmail || "the access email") + " as Viewer) or give a live page link. The order desk reads every file and its full history, then checks it against the deliverable before QA.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
     ${(ai.qa || []).length ? sec("Step 3 · What QA will check", "Know the test before you start the work.", `<ol class="clean num">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ol>`) : ""}
    </div><div>
+    ${sec("Live check at the source", "Proof that the work is really live, checked by the order desk itself" + (V ? ", last on " + ago(V.at) : "") + ".", vbody, (can("pm") || can("qa")) ? `<button class="btn sm" id="verify">${V ? "Check again" : "Check now"}</button>` : "")}
     ${ai.kt ? sec("Handover note", "Everything the project team needs, without reading the chat.", `<div class="kt">${E(ai.kt)}</div>`) : ""}
     ${(ai.done || []).length ? sec("Already done", "From the chat, before this order reached the desk.", `<ul class="clean">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(ai.questions || []).length ? sec("Confirm with the client", "Real gaps only. Ask once, together, through the client messages person.", `<ul class="clean">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(o.hours || []).length ? sec("Hours logged", "", `<table class="money">${L(o.hours, t => `<tr><td>${E(t.who)} · ${fmtD(t.at)}${t.note ? `<div class="sub">${E(t.note)}</div>` : ""}</td><td>${t.h} h</td></tr>`)}</table>`) : ""}
    </div></div>`;
 
-  const msgs = L((o.queue || []).slice().reverse(), m => `<div class="mcard ${m.kind === "reply" ? "rep" : m.sent ? "" : "pend"}"><div class="mh"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions for the client", delivery:"Delivery" }[m.kind] || "Message"}</b>
+  const msgs = L((o.queue || []).slice().reverse(), m => `<div class="mcard ${m.kind === "reply" ? "rep" : m.sent ? "" : "pend"}"><div class="mh"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions for the client", delivery:"Delivery", update:"Progress update after delivery" }[m.kind] || "Message"}</b>
     <span class="chip ${m.kind === "reply" ? (m.seen ? "n" : "y") : m.sent ? "ok" : "warn"}">${m.kind === "reply" ? (m.seen ? "Read" : "New") : m.sent ? "Sent " + fmtD(m.sentAt) : "To send"}</span><span class="sub">${E(m.by)} · ${fmtD(m.at)}</span></div>
     <div class="msg">${E(m.reply || m.text)}</div>
     ${m.digest ? `<div class="digest"><b>What it means:</b> ${E(m.digest.summary)}${m.digest.scopeChange ? `<br><b style="color:var(--bad)">New request:</b> ${E(m.digest.scopeChange)}` : ""}${(m.digest.actions || []).length ? "<br><b>Do now:</b> " + m.digest.actions.map(E).join("; ") : ""}</div>` : ""}
@@ -403,8 +447,12 @@ function wireOrder(o){
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { OTAB = b.dataset.tab; const j = b.dataset.jump; drawOrder(); const t = (j && document.getElementById(j)) || document.querySelector(".otabs"); window.scrollTo({ top:t.getBoundingClientRect().top + window.scrollY - 70, behavior:"smooth" }); });
   document.querySelectorAll("[data-cp]").forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.cp).then(() => toast("Copied")));
   document.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { const note = b.dataset.s === "wrong" ? prompt("What is wrong with the level? (the client message will ask again)") : b.dataset.s === "skip" ? prompt("Why is it not needed for this order?") : ""; if(note === null) return; doOp("access", { aid:b.dataset.acc, status:b.dataset.s, note }); });
-  document.querySelectorAll("[data-proof]").forEach(b => b.onclick = () => { const p = prompt("Proof link: live page, report or screenshot link"); if(p) doOp("deliv", { did:b.dataset.proof, proof:p }); });
-  document.querySelectorAll("[data-done]").forEach(b => b.onclick = () => doOp("deliv", { did:b.dataset.done, done:true }));
+  document.querySelectorAll("[data-padd]").forEach(b => b.onclick = () => { const i = document.querySelector(`[data-purl="${b.dataset.padd}"]`), u = i.value.trim(); if(!u) return toast("Paste a link first", 1); doOp("proofAdd", { did:b.dataset.padd, url:u }, "Opening the link and reading its history…"); });
+  document.querySelectorAll("[data-pdel]").forEach(b => b.onclick = () => { const [did, pid] = b.dataset.pdel.split("|"); if(confirm("Remove this proof?")) doOp("proofDel", { did, pid }); });
+  document.querySelectorAll("[data-pchk]").forEach(b => b.onclick = () => doOp("proofCheck", { did:b.dataset.pchk }, "The order desk is reading the proof…"));
+  document.querySelectorAll("[data-qok]").forEach(b => b.onclick = () => doOp("qaMark", { did:b.dataset.qok, ok:true, note:document.querySelector(`[data-qn="${b.dataset.qok}"]`).value }));
+  document.querySelectorAll("[data-qno]").forEach(b => b.onclick = () => doOp("qaMark", { did:b.dataset.qno, ok:false, note:document.querySelector(`[data-qn="${b.dataset.qno}"]`).value }));
+  document.querySelectorAll("[data-done]").forEach(b => b.onclick = () => doOp("deliv", { did:b.dataset.done, done:true }, "Marking done. The order desk is reading the proof…"));
   document.querySelectorAll("[data-sent]").forEach(b => b.onclick = () => doOp("sent", { qid:b.dataset.sent }));
   document.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => { if(confirm("Drop this message? It will not be sent.")) doOp("drop", { qid:b.dataset.drop }); });
   document.querySelectorAll("[data-seen]").forEach(b => b.onclick = () => doOp("seen", { qid:b.dataset.seen }));
@@ -415,8 +463,8 @@ function wireOrder(o){
   on("#ask", () => { const t = prompt("What should we ask the client? Write it as the message to send."); if(t) doOp("ask", { text:t, kind:"question" }, "Sending to the client messages person…"); });
   on("#repb", () => doOp("reply", { text:$("#rep").value }, "Reading the reply…"));
   on("#toqa", () => doOp("toQA"));
-  on("#qapass", () => { if(confirm("Every deliverable checked live and the proof matches?")) doOp("qa", { result:"pass", checks:o.deliverables.map(d => ({ did:d.id, ok:true })) }); });
-  on("#qafail", () => { const fails = o.deliverables.filter(d => confirm("Is this one wrong or not live?\n\n" + d.text)); const n = prompt("What exactly is wrong? (the project team will see this)"); if(n) doOp("qa", { result:"fail", note:n, checks:o.deliverables.map(d => ({ did:d.id, ok:!fails.includes(d) })) }); });
+  on("#verify", () => doOp("verify", {}, "Checking the live site and Search Console…"));
+  on("#qafin", () => doOp("qa", {}, "Finishing QA…"));
   on("#deliver", () => doOp("deliver"));
   on("#rev", () => { const r = prompt("Why? Type 1, 2, 3, 4 or 5\n1 Wrong work\n2 Missed something we promised\n3 Not live or not showing\n4 Report wrong\n5 Client changed what they want"); const map = { 1:"Wrong work", 2:"Missed requirement", 3:"Not live", 4:"Report wrong", 5:"Client changed scope" }; if(!map[r]) return; doOp("revision", { reason:map[r], note:prompt("What exactly did the client say?") || "" }); });
   on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
