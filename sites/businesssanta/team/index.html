@@ -176,6 +176,9 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .rbox{display:flex;flex-direction:column;gap:8px;margin:12px 0 0 22px}.rbox textarea{min-height:80px;font-size:14px}.rbox .btn{align-self:flex-start}
 @media(max-width:620px){.qlist,.mx,.rbox{margin-left:0}}
 .rk{padding:12px 0;border-bottom:1px solid var(--soft);font-size:14px}.rk:last-child{border-bottom:0}.rk b{color:var(--ink);line-height:1.45}
+.astat{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 0 22px;padding-top:10px;border-top:1px solid var(--soft);font-size:13px;color:var(--mut)}.astat span{margin-right:auto}
+.lnk{background:none;border:0;padding:4px 0;color:var(--sub);font:600 13px var(--f);cursor:pointer;text-decoration:underline;text-underline-offset:3px}.lnk:hover{color:var(--ink)}.lnk.bad{color:var(--bad)}
+@media(max-width:620px){.astat{margin-left:0}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -376,9 +379,9 @@ function drawOrder(){
       ${isI && qs.length ? `<ol class="qlist">${qs.map(q => `<li><span>${E(q.q)}</span>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${q.status === "answered" ? "Answered" : q.status === "partial" ? "Partly" : "No answer"}</span>` : ""}${q.answer ? `<div class="qa2">${E(q.answer)}</div>` : ""}</li>`).join("")}</ol>` : ""}
       ${a.status !== "done" && a.message ? (isI ? `<div class="row" style="gap:8px;margin:10px 0 0 22px"><button class="btn sm pri" data-acopy="${a.id}">Copy ${ans ? "follow-up" : "message"} for the team</button><details class="mx" style="margin:0"><summary>Preview</summary><div class="msg">${E(a.message)}</div></details></div>`
         : `<div class="msg" style="margin:10px 0 0 22px">${E(a.message)}</div><button class="btn sm" data-acopy="${a.id}" style="margin:8px 0 0 22px">Copy message for the client</button>`) : ""}
-      ${isI && a.status !== "done" && (can("comms") || can("pm")) ? `<div class="rbox"><textarea data-rtxt="${a.id}" placeholder="Paste the team's reply here (from Google Chat or email). The order desk matches it to the questions."></textarea><button class="btn sm pri" data-rsend="${a.id}">Add their reply</button></div>` : ""}
+      ${isI && a.status !== "done" && (can("comms") || can("pm")) ? `<div class="rbox"><textarea data-rtxt="${a.id}" placeholder="Paste the team's reply here (from Google Chat or email). The order desk matches it to the questions."></textarea><button class="btn sm ${a.status === "sent" || a.status === "waiting" ? "pri" : ""}" data-rsend="${a.id}">Add their reply</button></div>` : ""}
       ${(a.replies || []).length ? `<details class="mx"><summary>${a.replies.length} repl${a.replies.length > 1 ? "ies" : "y"} from the team</summary>${a.replies.map(r => `<div class="sub" style="margin-top:6px">${ago(r.at)} · added by ${E(r.by)}${r.summary ? ": " + E(r.summary) : ""}</div><div class="msg" style="margin-top:4px">${E(r.text)}</div>`).join("")}</details>` : ""}
-      <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">${a.status !== "done" ? (a.type !== "task" ? `<button class="btn sm ${a.status === "open" ? "pri" : ""}" data-ast="${a.id}|sent">Sent</button>` : "") + `<button class="btn sm" data-ast="${a.id}|done">Done</button><button class="btn sm danger" data-ast="${a.id}|blocked">Blocked</button>` : `<button class="btn sm ghost" data-ast="${a.id}|open">Reopen</button>`}</div></div>`; };
+      <div class="astat"><span>${a.status === "done" ? "Closed" : a.status === "sent" || a.status === "waiting" ? "Sent " + ago(a.at) + (a.by ? " by " + E(a.by) : "") : "Not sent yet"}</span>${a.status !== "done" ? `<button class="lnk" data-ast="${a.id}|done" title="Close this step when no reply needs pasting">Mark done</button><button class="lnk bad" data-ast="${a.id}|blocked" title="Something stops this step; it shows red on the order">Report a blocker</button>` : `<button class="lnk" data-ast="${a.id}|open">Reopen</button>`}</div></div>`; };
   const AF = window.AFILT || "open", afl = acts.filter(x => AF === "all" ? true : AF === "done" ? x.status === "done" : AF === "open" ? x.status !== "done" : x.type === AF && x.status !== "done");
   const topActs = acts.filter(x => x.status !== "done").slice(0, 3);
   const header = `<section class="card ohero"><div class="oh1"><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)} package</div>
@@ -528,7 +531,7 @@ function wireOrder(o){
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
   document.querySelectorAll("[data-af]").forEach(b => b.onclick = () => { window.AFILT = b.dataset.af; drawOrder(); });
   document.querySelectorAll("[data-rsend]").forEach(b => b.onclick = () => { const t = document.querySelector(`[data-rtxt="${b.dataset.rsend}"]`).value.trim(); if(!t) return toast("Paste their reply first", 1); doOp("actReply", { aid:b.dataset.rsend, text:t }, "Matching the reply to the questions and updating the order (about 30 seconds)…"); });
-  document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => toast("Copied")); });
+  document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => { if(a.status === "open"){ doOp("action", { aid:a.id, status:"sent", note:"" }, "Copied. Marking it as sent…"); } else toast("Copied"); }); });
   on("#verify", () => doOp("verify", {}, "Checking the live site and Search Console…"));
   on("#qafin", () => doOp("qa", {}, "Finishing QA…"));
   on("#deliver", () => doOp("deliver"));
