@@ -844,10 +844,20 @@ async function writeGroupMsg(o){
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || "")).map(r => ({ who:r.who, do:r.toPass, where:r.where }));
   if(!steps.length && !open.length) return "";
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You write one short message for a project team's group chat, like a friendly senior colleague. Very simple English a 4th grade child can follow. Start with "Hi team, for <site> we still need:" then a numbered list: one line per job, starting with the person's first name and a colon, then the job with exact values, then where to do it only if it helps (in a few words, with exact names like WordPress, Rank Math, Search Console, written with their normal capitals). Split jobs that are different. End with ${pm ? `"${pm}, does this plan work for you?" and ` : ""}"Write done here when a step is finished." No reasons, no explanations of checks, no dashes, no emojis. Answer with one JSON object only: {"message":""}`;
-  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `Site: ${domOf(o.client.website)}\nSTEPS: ${JSON.stringify(steps.length ? steps : open)}`, 1200);
+  const system = `You turn work steps into a list of very short tasks for a team chat. A 4th grade child must understand each task at first reading.
+Rules for every task:
+1. One action only. If a step has several actions, split it into several tasks.
+2. Start with the person's first name and a colon, then a simple verb (add, fix, change, check, send, update).
+3. At most two short sentences, each at most 12 words.
+4. If the place matters, say it first and naturally, for example: "In Rank Math, open Edit robots.txt." Never write "Where:".
+5. Give exact values when needed (the exact line to add, the exact tab name in quotes).
+6. No reasons, no explanations, no dashes, no emojis, plain words.
+Answer with one JSON object only: {"tasks":["Amit: add a tab named \\"GSC review\\" to the Onpage Report sheet."]}`;
+  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `STEPS: ${JSON.stringify(steps.length ? steps : open)}`, 1500);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  return str((r.data || {}).message, 3000);
+  const tasks = ((r.data || {}).tasks || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/\s+([.,])/g, "$1").trim()).filter(Boolean).slice(0, 12);
+  if(!tasks.length) return "";
+  return `Hi team. For ${domOf(o.client.website)}, please do these:\n\n${tasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", is this plan okay?\n" : ""}Reply "done" when you finish a task.`;
 }
 function stepsText(o){
   if(o.groupMsg && o.groupMsgAt && o.check && o.groupMsgAt >= o.check.at) return o.groupMsg;
