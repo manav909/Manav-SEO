@@ -55,3 +55,41 @@ export async function syncOrder(o){
   }
   return out;
 }
+
+/* Our documents, found by what is in them, not by how they are named: recent files the team accounts own or that are
+   shared with them, files that mention the client's site, and Drive links in team emails and chats. */
+export async function docCandidates(orders){
+  const accs = (await accounts()).filter(a => a.drive), out = new Map(), oldest = orders.reduce((m, o) => o.at < m ? o.at : m, new Date().toISOString());
+  const since = new Date(Date.parse(oldest) - 7 * 864e5).toISOString();
+  const F = "files(id,name,mimeType,modifiedTime,createdTime,webViewLink,owners(displayName,emailAddress),lastModifyingUser(displayName))";
+  const add = (f, via, why) => { if(!f || !f.id || /folder$/.test(f.mimeType || "")) return; const c = out.get(f.id) || { id:f.id, name:f.name, mime:f.mimeType, modified:f.modifiedTime, created:f.createdTime, link:f.webViewLink, by:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", owner:(f.owners || [])[0] ? f.owners[0].displayName || f.owners[0].emailAddress : "", via, why:[] }; c.why.push(why); out.set(f.id, c); };
+  for(const a of accs){
+    const list = q => apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=" + encodeURIComponent(F) + "&q=" + encodeURIComponent(q)).then(r => r.files || []).catch(() => []);
+    (await list("trashed=false and modifiedTime > '" + since + "' and (sharedWithMe or 'me' in owners)")).forEach(f => add(f, a.email, "recent"));
+    for(const o of orders){ const k = keysOf(o); const terms = [k.h, k.root, o.id].filter(Boolean);
+      (await list("trashed=false and (" + terms.map(t => "fullText contains '" + t.replace(/'/g, "") + "'").join(" or ") + ")")).forEach(f => add(f, a.email, "mentions " + o.id)); }
+  }
+  // Drive links the team wrote in emails and chats
+  for(const o of orders) for(const t of [].concat((o.mails || []).map(m => m.text), (o.teamChat || []).map(m => m.text))){
+    for(const m of String(t || "").matchAll(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s)>"]+/g)){ const id = (m[0].match(/\/d\/([\w-]{15,})|[?&]id=([\w-]{15,})/) || []).slice(1).find(Boolean); if(id && !out.has(id)) out.set(id, { id, name:"(linked in a team message)", link:m[0], via:"", why:["linked in " + o.id] }); } }
+  return [...out.values()];
+}
+export async function docPeek(c){
+  // First words of the file, so the AI can tell which order it belongs to
+  if(!c.via) return "";
+  const D = "https://www.googleapis.com/drive/v3/files/" + c.id;
+  try{
+    const tok = await (await import("./google.mjs")).accessTokenAs(c.via);
+    const url = /document$|presentation$/.test(c.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(c.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(c.mime || "") ? D + "?alt=media" : "";
+    if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) return "";
+    return (await r.text()).replace(/\s+/g, " ").slice(0, 1500);
+  }catch(e){ return ""; }
+}
+export function docPrompt(orders, cands){
+  const system = `You sort documents from an SEO, web and ads agency's Google Drive into the client orders they belong to. File names are often wrong or vague, so judge mainly by the content and the client's site, brand and the work described.
+For each file, pick the order it belongs to or none (internal, personal or unrelated files get none). confidence is 0 to 1: 0.85 or more only when the content clearly names the client's site, brand or exact work. kind is what the file is for the order.
+Answer with one JSON object only: {"files":[{"id":"","order":"order id or empty","confidence":0,"kind":"report | audit | proof | requirements | content | data | recording | other","why":"short reason"}]}`;
+  const user = `ORDERS:\n${orders.map(o => `${o.id}: client ${o.client.name}, site ${o.client.website}, work: ${((o.ai && o.ai.summary) || "").slice(0, 200)} Deliverables: ${(o.deliverables || []).map(d => d.text).join("; ").slice(0, 300)}`).join("\n")}
+\nFILES:\n${cands.map(c => `${c.id} | name: ${c.name} | type: ${c.mime || ""} | owner: ${c.owner || ""} | changed ${c.modified || ""} by ${c.by || ""} | found: ${c.why.join(", ")} | starts: ${c.peek || "(no text)"}`).join("\n")}`;
+  return { system, user };
+}

@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt } from "./_lib/teamsync.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -294,7 +294,7 @@ function projView(o){
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -380,9 +380,31 @@ async function syncTeam(o){
 }
 export async function hourlySync(){
   const done = [];
-  for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40)){
-    try{ const r = await syncTeam(o); await saveO(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
+  const open = (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
+  for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
+  try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
+  for(const o of open) await saveO(o);
   return done;
+}
+
+/* Our documents, matched to orders by content. Each file is judged once (remembered); sure matches link, unsure ones wait for a yes or no. */
+const DK = id => P + "doc:" + id;
+async function matchDocs(orders){
+  const cands = await docCandidates(orders), fresh = [];
+  for(const c of cands){ if(await cmd("GET", DK(c.id))) continue; c.peek = await docPeek(c); fresh.push(c); if(fresh.length >= 40) break; }
+  if(!fresh.length || !aiOn()) return 0;
+  const p = docPrompt(orders, fresh), r = await askAI("docs", "claude-haiku-5-5", p.system, p.user, 6000), byId = new Map(orders.map(o => [o.id, o]));
+  let n = 0; const ops = [];
+  for(const d of (r.data && r.data.files) || []){
+    const c = fresh.find(x => x.id === d.id); if(!c) continue; ops.push(["SET", DK(c.id), JSON.stringify({ order:d.order || "", confidence:d.confidence || 0, at:now() }), "EX", 60 * 60 * 24 * 120]);
+    const o = byId.get(d.order); if(!o || (d.confidence || 0) < 0.5) continue;
+    o.docs = o.docs || []; if(o.docs.some(x => x.id === c.id)) continue;
+    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:str(d.why, 200), confidence:+(d.confidence || 0).toFixed(2), status:d.confidence >= 0.85 ? "linked" : "suggested", at:now() });
+    o._docsNew = (o._docsNew || 0) + 1; n++;
+  }
+  if(ops.length) await pipe(ops);
+  for(const o of orders) if(o._docsNew){ log(o, { name:"Order desk" }, o._docsNew + " document(s) recognised as ours for this order"); delete o._docsNew; }
+  return n;
 }
 
 function score(orders, cfg, month){
@@ -669,7 +691,11 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       x.active = !x.active; x.offAt = now(); await setJ(RK(d), list); log(o, w, "Access " + x.system + " via " + x.account + (x.active ? " active again" : " marked removed")); }
     else if(op === "useProp"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); o.google = o.google || {}; o.google[q.kind === "ga" ? "ga" : "gsc"] = { id:str(q.pid, 200), email:str(q.email, 120) };
       log(o, w, "Uses " + (q.kind === "ga" ? "Analytics " : "Search Console ") + str(q.pid, 200) + " through " + str(q.email, 120)); }
-    else if(op === "sync"){ const r = await syncTeam(o); log(o, w, "Checked the team's folder, email and chat: " + r.new + " new" + (Object.keys(r.errors || {}).length ? " (some sources could not be read)" : "")); }
+    else if(op === "sync"){ const r = await syncTeam(o); try{ r.new += await matchDocs([o]); }catch(e){} log(o, w, "Checked the team's folder, email and chat: " + r.new + " new" + (Object.keys(r.errors || {}).length ? " (some sources could not be read)" : "")); }
+    else if(op === "doc"){ const x = find("docs", q.did); if(!x) return bad("Not found"); if(q.ours){ x.status = "linked"; x.by2 = w.name; } else { x.status = "rejected"; x.by2 = w.name; }
+      await cmd("SET", DK(x.id), JSON.stringify({ order:q.ours ? o.id : "", confidence:q.ours ? 1 : 0, at:now(), by:w.name }), "EX", 60 * 60 * 24 * 365);
+      if(q.ours && q.deliv){ const d = find("deliverables", q.deliv); if(d){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"drive", url:x.link, name:x.name, meta:{ ok:true, id:x.id, name:x.name, kind:x.kind, modified:x.modified, lastBy:x.by, via:x.via }, at:now(), by:w.name }); delete d.proof; } }
+      log(o, w, (q.ours ? "Confirmed our document: " : "Not this order: ") + x.name + (q.deliv ? " (used as proof)" : "")); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
