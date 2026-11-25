@@ -841,26 +841,29 @@ const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
 async function writeGroupMsg(o){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !/sales/i.test(r.who || "")).map(r => { const q = reqs.find(x => x.id === r.r) || {}, a2 = q.askedIn || {};
-    return { id:r.r, asked:q.text, from:a2.where || "requirement email", when:a2.when || "", status:r.status, found:r.found, missing:r.toPass, who:r.who }; });
+    return { id:r.r, asked:q.text, from:a2.where || "requirement email", when:a2.when || "", status:r.status, found:r.found, missing:r.toPass, live:r.live, report:r.report, who:r.who }; });
   if(!open.length) return "";
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You write short points for a team chat to professionals about work still open before QA. They already have the emails and the group chat, so do not teach them how to work and give no click steps.
-For each item write one point: the item's short name as asked (two to five words), a colon, then what is missing, in one or two short sentences of at most 14 words each. Name at most two examples. Very simple, respectful English. No dashes, no emojis. Do not add where it was asked; that is added later.
-Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":[{"id":"item id","text":""}]}`;
-  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `ITEMS: ${JSON.stringify(open)}`, 1500);
+  const system = `You write short points for a team chat to professionals about work still open before QA. They already have the emails and the group chat: never teach them how to work, no click steps.
+For each item return: "title" (the item's short name, two to five words) and "text": one or two short sentences, at most 16 words each, that say clearly WHAT IS THERE NOW and WHAT IS EXPECTED, with exact values when you have them (for example: "robots.txt lists the sitemap address without the Sitemap: label, so Google ignores it. It should read: Sitemap: https://site/sitemap_index.xml"). Never write vague phrases like "must be exact", "still open", "needs work". If it is a mistake (the work says done but is not), say what is wrong in plain words. Very simple, respectful English. No dashes, no emojis, no asterisks or underscores.
+Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":[{"id":"item id","title":"","text":""}]}`;
+  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `ITEMS: ${JSON.stringify(open)}`, 1800);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const d = r.data || {}, clean = t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
-  const pts = (d.points || []).map(p2 => ({ it:open.find(x => x.id === p2.id), text:clean(p2.text) })).filter(p2 => p2.it && p2.text);
+  const d = r.data || {}, clean = t => String(t || "").replace(/[*_]/g, "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
+  const pts = (d.points || []).map(p2 => ({ it:open.find(x => x.id === p2.id), title:clean(p2.title), text:clean(p2.text) })).filter(p2 => p2.it && p2.text);
   if(!pts.length) return "";
   const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? String(w || "") : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
   const isReq = it => /^requirement email$/i.test(it.from);
-  const srcName = it => /client chat|call/i.test(it.from) ? "asked by the client, shared by sales" : "asked in the " + it.from.replace(/^the /i, "");
+  const ref = it => { const q = ((reqs.find(x => x.id === it.id) || {}).askedIn || {}).quote || "", client = /client chat|call/i.test(it.from);
+    const label = client ? "Asked by the client, shared by sales" : it.from.charAt(0).toUpperCase() + it.from.slice(1) + (it.when ? ", " + fmtW(it.when) : "");
+    return `_(${label}${q && !client ? ': "' + clean(q).replace(/"/g, "'") + '"' : ""})_`; };
+  const line = p2 => `${p2.title ? "*" + p2.title + ":* " : ""}${p2.text} ${ref(p2.it)}`;
   const reqPts = pts.filter(p2 => isReq(p2.it)), addPts = pts.filter(p2 => !isReq(p2.it));
-  const reqWhen = (reqPts[0] && reqPts[0].it.when) ? " (" + fmtW(reqPts[0].it.when) + ")" : "";
-  let n = 0; const who = str(d.person, 30);
+  const reqWhen = reqPts[0] && reqPts[0].it.when ? " (" + fmtW(reqPts[0].it.when) + ")" : "";
+  let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
-  if(reqPts.length) msg += `\n\nStill open from the requirement email${reqWhen}:\n` + reqPts.map(p2 => `${++n}. ${p2.text}`).join("\n");
-  if(addPts.length) msg += `\n\nAlso needed (not in the requirement email):\n` + addPts.map(p2 => `${++n}. ${p2.text} (${srcName(p2.it)}${p2.it.when ? ", " + fmtW(p2.it.when) : ""})`).join("\n");
+  if(reqPts.length) msg += `\n\n*Still open from the requirement email${reqWhen}*\n` + reqPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
+  if(addPts.length) msg += `\n\n*Also needed (not in the requirement email)*\n` + addPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
   return msg + `\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
@@ -884,7 +887,9 @@ async function postSteps(o, cfg, by){
   const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
   // One living message per order: edit the desk's last steps message instead of posting a repeat
   const last = (o.deskPosts || []).filter(p => p.kind === "steps" && p.name && p.name.startsWith(g.id + "/")).slice(-1)[0];
-  if(last){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
+  let quiet = false;
+  if(last){ try{ const after = await chatSince(as, g.id, last.at); quiet = !after.some(m2 => m2.id !== last.name && m2.sender !== last.sender); }catch(e){ quiet = false; } }
+  if(last && quiet){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
     try{ await editChat(as, last.name, deskSay(cfg, t)); }catch(e){ if(/insufficient authentication scopes|403/.test(e.message)) throw new Error("To edit its own message, " + as + " needs one more permission. Reconnect it in Team and settings (Connect a Google account), then try again. Nothing was sent."); throw e; }
     last.hash = sha(t).slice(0, 12); last.editedAt = now();
     log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
