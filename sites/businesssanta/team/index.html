@@ -296,7 +296,7 @@ async function lead(){
      <p style="margin-top:10px"><b>Follow up:</b> ${E(r.followup)}</p>${(r.redFlags || []).length ? `<p style="color:var(--bad)"><b>Watch:</b> ${r.redFlags.map(E).join("; ")}</p>` : ""}</div>`;
     $("#cp").onclick = () => navigator.clipboard.writeText(r.reply || "").then(() => toast("Copied")); };
   document.querySelectorAll("[data-l]").forEach(b => b.onclick = () => show(l.leads.find(x => x.id === b.dataset.l)));
-  $("#lf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("lead", { title:$("#lt").value, chat:$("#lc").value, note:$("#ln").value }); show(r.lead); }, "Reading the chat…"); };
+  $("#lf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("lead", { title:$("#lt").value, chat:$("#lc").value, note:$("#ln").value }); await lead(); show(r.lead); }, "Reading the chat…"); };
 }
 
 /* Scorecard */
