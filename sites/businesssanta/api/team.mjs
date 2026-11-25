@@ -736,7 +736,7 @@ async function buildCheck(o, fresh){
   const d2 = walk(r2.data || {}); d2.verdict = noId(d2.verdict); d2.verdictTeam = noId(d2.verdictTeam); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); x.where = noId(x.where); x.check = noId(x.check); });
   d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
   d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
-  o.check = Object.assign(d2, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
+  o.check = Object.assign(d2, { claims:(plan.claims || []).slice(0, 40).map(c => ({ r:str(c.r, 12), by:role(str(c.by, 60)), at:str(c.at, 40), what:str(c.what, 240) })), at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
     probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
   // Scope follows the requirement email: when nothing has been ticked yet, the deliverables become its requirements
@@ -829,8 +829,13 @@ const PF = P + "perf";
 async function perfEv(e){ if(!e.who) return; await cmd("LPUSH", PF, JSON.stringify(Object.assign({ at:now() }, e))); await cmd("LTRIM", PF, 0, 4999); }
 function perfFromCheck(o){
   const ck = o.check || {}, reqs = ck.requirements || [], evs = []; o.perfSeen = o.perfSeen || {}; o.tasks = o.tasks || {};
+  const sellers = /^(sales|manav)/i;
+  for(const c of ck.claims || []){ const r = (ck.rows || []).find(x => x.r === c.r), q = reqs.find(x => x.id === c.r) || {}, who = String(c.by || "").trim();
+    if(!r || !who || sellers.test(who) || (q.phase || "project") !== "project") continue;
+    const cr = String(r.claimResult || ""), res = /^contradicted/.test(cr) ? "contradicted" : /^confirmed/.test(cr) || r.status === "done" ? "confirmed" : "unproven", k = c.r + ":" + who + ":" + res;
+    if(!o.perfSeen[k]){ o.perfSeen[k] = 1; evs.push({ type:"claim", who, order:o.id, task:str(q.text, 160), said:str(c.what, 160), result:res }); } }
   for(const r of ck.rows || []){ const q = reqs.find(x => x.id === r.r) || {}; if((q.phase || "project") !== "project") continue;
-    const who = String(r.claimBy || "").trim();
+    const who = "";
     if(who){ const cr = String(r.claimResult || ""), res = /^contradicted/.test(cr) ? "contradicted" : /^confirmed/.test(cr) || r.status === "done" ? "confirmed" : "unproven", k = r.r + ":" + who + ":" + res;
       if(!o.perfSeen[k]){ o.perfSeen[k] = 1; evs.push({ type:"claim", who, order:o.id, task:str(q.text, 160), result:res }); } }
     const owner = String(r.who || "").trim();
@@ -1014,7 +1019,7 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
-  if(a === "perfReset"){ if(!isA) return bad("For Manav only", 403); await cmd("DEL", PF); return out({ ok:true }); }
+  if(a === "perfReset"){ if(!isA) return bad("For Manav only", 403); await cmd("DEL", PF); for(const o2 of await loadAll(1000, true)) if(o2.perfSeen || o2.tasks){ delete o2.perfSeen; delete o2.tasks; delete o2.replied; await saveO(o2); } return out({ ok:true }); }
   if(a === "perf"){ if(!isA) return bad("For Manav only", 403); return out({ ok:true, people:await perfData(num(url.searchParams.get("days"), 30)) }); }
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
     for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
