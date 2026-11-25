@@ -92,7 +92,8 @@ export async function askAI(kind, model, system, user, maxTokens){
   const k = "bsp:ai:" + new Date().toISOString().slice(0, 7);
   await pipe([["HINCRBY", k, "calls", 1], ["HINCRBY", k, "in", inT], ["HINCRBY", k, "out", outT], ["HINCRBY", k, "micro", Math.round(usd * 1e6)],
     ["HINCRBY", k, "micro:" + kind, Math.round(usd * 1e6)], ["HINCRBY", k, "calls:" + kind, 1], ["EXPIRE", k, 60 * 60 * 24 * 400]]).catch(() => {});
-  const text = (j.content || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+  if(j.stop_reason === "max_tokens") throw new Error("The AI answer was cut off before the end. Press Run the order desk again.");
+  const text = (j.content || []).filter(c => c.type === "text").map(c => c.text).join("\n").replace(/```(json)?/gi, "");
   const a = text.indexOf("{"), b = text.lastIndexOf("}");
   let data = null; try{ data = JSON.parse(text.slice(a, b + 1)); }catch(e){ throw new Error("The AI answer could not be read, please try again"); }
   return { data, usd, inT, outT, model };
@@ -108,10 +109,15 @@ export function orderPrompt(o, gig, site, cfg){
 Your job is to stop mistakes before work starts: wrong scope, missing or wrong-level access, promises the team does not know about, reports that cannot be proven, work that never goes live.
 ${SAFE}
 ${RAW}
+Only ask for access this exact scope needs; drop standard items the work does not use. Never repeat passwords or email addresses from the chat.
+Today is ${new Date().toISOString().slice(0, 10)}. Convert relative dates in the chat ("tomorrow", "Monday") to real dates from the message dates.
 Answer with one JSON object only, no other text, in this shape:
 {"summary":"2 to 3 plain lines: what was sold and what the client will judge us on",
 "deliverables":["each thing we must deliver, concrete and checkable, include what sales promised in chat"],
-"access":[{"item":"","level":"exact role or permission","why":""}],
+"access":[{"item":"","level":"exact role or permission","why":"","status":"received if the chat shows the client already gave it at the right level, else needed","evidence":"where in the chat, or empty"}],
+"done":["work the chat shows is already done, with the date"],
+"promises":[{"what":"every promise our side made: dates, reports, recordings, calls, extras, quick fixes","by":"YYYY-MM-DD or empty","status":"open | kept"}],
+"next":"the very next thing the team must do, and by when, in one line",
 "questions":["things to confirm with the client before starting, only real gaps"],
 "remarks":["special remarks: promises, sensitivities, deadlines inside the deadline, tone the client likes"],
 "risks":[{"risk":"","prevent":""}],
@@ -173,4 +179,13 @@ Rules: copy every message's text exactly as written, word for word, with its lin
 Drop only screen noise (button labels, "Seen", file sizes). Join lines that belong to one message. Put messages oldest first.
 Answer with one JSON object only: {"client":"client's username or name","us":"our username or name","messages":[{"who":"client | us","name":"","time":"date and time as written, or empty","text":"","files":["file names mentioned as attachments"]}]}`;
   return { system, user:cleanChat(raw).slice(0, 90000) };
+}
+
+/* Clients sometimes paste logins into the chat. Before an order is stored, email addresses and anything that looks like a
+   password or login is masked, so no secret ever sits in our storage. */
+export function redact(t){
+  return String(t || "")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email hidden]")
+    .replace(/\b(pass(word)?|pwd|passcode|pin|otp|user ?name|username|login|user)\s*[:=-]\s*\S+/gi, "$1: [hidden]")
+    .replace(/(^|\n)(\s*(password|pass|pwd)\s*:?\s*\n)([^\n]+)/gi, "$1$2[hidden]");
 }

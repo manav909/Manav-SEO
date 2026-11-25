@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact } from "./_lib/orderai.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -52,6 +52,9 @@ function flags(o){
   const q = (o.queue || []).filter(x => !x.sent).length; if(q) f.push({ k:"y", t:q + " message" + (q > 1 ? "s" : "") + " to send" });
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
   if(o.alert) f.push({ k:"bad", t:o.alert });
+  const today = new Date().toISOString().slice(0, 10);
+  if(open && o.ai && Array.isArray(o.ai.promises)) o.ai.promises.filter(p => p.by && !/kept/i.test(p.status || "") && p.by <= today).slice(0, 2)
+    .forEach(p => f.push({ k:"bad", t:(p.by < today ? "Promise overdue: " : "Promised for today: ") + String(p.what).slice(0, 70) }));
   return f;
 }
 const summary = (o, cfg) => ({ id:o.id, at:o.at, client:o.client, gig:o.gig, gigName:(gigOf(o.gig) || {}).name || "", pkg:o.pkg, price:o.price, deadline:o.deadline, stage:o.stage,
@@ -66,7 +69,7 @@ async function analyse(o, cfg){
   if(!o.site || !o.site.at){ o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); }
   if(!aiOn()) return { ok:false, why:"AI helpers are off until the API key is added in Vercel" };
   const p = orderPrompt(o, gig, o.site, cfg);
-  const r = await askAI("order", "claude-sonnet-5-5", p.system, p.user, 9000);
+  const r = await askAI("order", "claude-sonnet-5-5", p.system, p.user, 32000);
   const d = r.data || {};
   o.ai = Object.assign(d, { at:now(), model:r.model, usd:+r.usd.toFixed(4) });
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
@@ -75,6 +78,7 @@ async function analyse(o, cfg){
     const have = new Map((o.access || []).map(a => [a.item.toLowerCase(), a]));
     o.access = d.access.slice(0, 15).map(a => { const old = have.get(String(a.item).toLowerCase()); return old ? Object.assign(old, { level:str(a.level, 200) || old.level, why:str(a.why, 200) || old.why })
       : { id:nid("a"), item:str(a.item, 120), level:str(a.level, 200), why:str(a.why, 200), status:"needed" }; });
+    d.access.forEach((a, i) => { const x = o.access[i]; if(x && /received/i.test(a.status || "") && x.status !== "wrong"){ x.status = "received"; x.note = x.note || ("From the chat: " + str(a.evidence, 200)); x.by = x.by || "Order desk"; } });
     for(const a of have.values()) if(a.status === "received" && !o.access.includes(a)) o.access.push(a);
   }
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
@@ -84,6 +88,7 @@ async function analyse(o, cfg){
     if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
     if(d.msgs.questions) o.queue.push({ id:nid("q"), auto:true, kind:"question", text:str(d.msgs.questions, 4000), at:now(), by:"Order desk", sent:false });
   }
+  if(o.stage === "access" && o.access.length && o.access.every(y => y.status === "received")){ o.stage = "work"; log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
   return { ok:true, usd:r.usd };
 }
 
@@ -159,7 +164,7 @@ async function handle(request){
   if(a === "lead"){ if(!can(w, "lead")) return bad("Lead help is for sales", 403);
     if(!aiOn()) return bad("AI helpers are off until the API key is added in Vercel", 503);
     if(await rateLimit("tmlead:" + w.uid, 40, 3600)) return bad("Too many lead checks this hour", 429);
-    const chat = str(q.chat, 50000); if(chat.length < 40) return bad("Paste the whole chat first");
+    const chat = redact(str(q.chat, 50000)); if(chat.length < 40) return bad("Paste the whole chat first");
     const p = leadPrompt(chat, GIGS, str(q.note, 1000)); const r = await askAI("lead", "claude-sonnet-5-5", p.system, p.user, 4000);
     const item = { id:nid("L"), at:now(), by:w.uid, byName:w.name, title:str(q.title, 80) || "Lead", note:str(q.note, 1000), chat:chat.slice(0, 8000), result:r.data, usd:+r.usd.toFixed(4) };
     await pipe([["LPUSH", T.leads, JSON.stringify(item)], ["LTRIM", T.leads, 0, 299]]);
@@ -170,9 +175,9 @@ async function handle(request){
     const pkg = ["basic", "standard", "premium", "custom"].includes(q.pkg) ? q.pkg : "standard";
     const price = num(q.price, 0); if(price <= 0) return bad("Type the price the client paid");
     const deadline = str(q.deadline, 10); if(!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return bad("Pick the deadline");
-    const chat = str(q.chat, 80000); if(chat.length < 40) return bad("Paste the whole client chat. The order desk works from it.");
+    const chat = redact(str(q.chat, 80000)); if(chat.length < 40) return bad("Paste the whole client chat. The order desk works from it.");
     const n = await cmd("INCR", T.seq), id = "O-" + (1000 + Number(n));
-    const o = { id, at:now(), by:w.uid, byName:w.name, gig:gig.id, pkg, price, extras:str(q.extras, 500), deadline, chat, calls:str(q.calls, 20000), remarks:str(q.remarks, 4000),
+    const o = { id, at:now(), by:w.uid, byName:w.name, gig:gig.id, pkg, price, extras:str(q.extras, 500), deadline, chat, calls:redact(str(q.calls, 20000)), remarks:redact(str(q.remarks, 4000)),
       client:{ name:str(q.client, 80), country:str(q.country, 40), website:str(q.website, 200) }, stage:"access", fee:cfg.fee,
       access:(ACCESS[gig.cat] || []).map(x => Object.assign({ id:nid("a"), status:"needed" }, x)),
       deliverables:[{ id:nid("d"), text:(gig.packages[pkg] || {}).what || gig.name, done:false, proof:"", qa:"" }], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
@@ -180,6 +185,7 @@ async function handle(request){
     let ai = null;
     const [an, fm] = await Promise.allSettled([analyse(o, cfg), formatConvo(o)]);
     if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
+    if(!ai.ok && ai.why) log(o, { name:"Order desk" }, "Brief not made: " + ai.why);
     if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
     await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
     return out({ ok:true, id, ai }); }
@@ -202,7 +208,7 @@ async function handle(request){
     const o = await getJ(T.ord(str(q.id, 20))); if(!o) return bad("Order not found", 404);
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
-    if(op === "analyse"){ need("pm"); o.site = null; const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
+    if(op === "analyse"){ need("pm"); o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
       x.status = ["needed", "asked", "received", "wrong"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();

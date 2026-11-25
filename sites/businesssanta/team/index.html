@@ -228,6 +228,9 @@ function drawOrder(){
    <div class="steps" style="margin-top:14px">${STAGES.map((s, i) => `<span class="${i === si ? "on" : i < si ? "done" : ""}">${i < si ? "✓ " : ""}${s[1]}</span>`).join("")}${o.stage === "cancelled" ? `<span class="on">Cancelled</span>` : ""}</div></div>
   <div class="og"><div>
    <div class="card"><h2>What we sold, in plain words</h2>${ai.summary ? `<p>${E(ai.summary)}</p>` : `<p class="note">${ME.ai ? "Not ready yet." : "Turns on with the AI helpers."}</p>`}
+    ${ai.next ? `<div class="note" style="border-color:var(--y);margin:10px 0"><b>Next:</b> ${E(ai.next)}</div>` : ""}
+    ${(ai.promises || []).length ? `<div class="lbl" style="margin:12px 0 6px">What we promised the client</div><ul class="p">${L(ai.promises, p => `<li>${/kept/i.test(p.status || "") ? "✓ " : ""}${E(p.what)}${p.by ? ` <span class="chip ${/kept/i.test(p.status || "") ? "ok" : p.by <= new Date().toISOString().slice(0, 10) ? "bad" : "n"}">${E(p.by)}</span>` : ""}</li>`)}</ul>` : ""}
+    ${(ai.done || []).length ? `<div class="lbl" style="margin:12px 0 6px">Already done (from the chat)</div><ul class="p">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>` : ""}
     ${ai.kt ? `<div class="lbl" style="margin:10px 0 6px">Handover note for the project team</div><div class="msg">${E(ai.kt)}</div>` : ""}
     ${(ai.remarks || []).length || o.remarks ? `<div class="lbl" style="margin:12px 0 6px">Special remarks</div><ul class="p">${o.remarks ? `<li><b>From sales:</b> ${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>` : ""}
     ${(ai.risks || []).length ? `<div class="lbl" style="margin:12px 0 6px">Where this order could go wrong</div><ul class="p">${L(ai.risks, r => `<li><b>${E(r.risk)}</b>: ${E(r.prevent)}</li>`)}</ul>` : ""}
