@@ -770,7 +770,8 @@ async function buildCheck(o, fresh){
   // Pages the team's files say were changed are read live by the desk itself, so nobody is asked to "confirm" what the desk can see
   { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), urls = [];
     for(const x of reads.filter(x2 => x2.kind !== "data")) for(const ln of String(x.full || x.content).split("\n")) if(/updated|done|fixed|changed|new title|rewritten|duplicate/i.test(ln))
-      for(const m of ln.matchAll(/https?:\/\/[^\s"'<>|,\t]+/g)){ const u = m[0].replace(/[.)]+$/, ""); if(domOf(u) === h && !seen.has(u) && !/\.(xml|txt|jpg|png|pdf)$/i.test(u)){ seen.add(u); urls.push(u); } }
+      for(const m of ln.matchAll(/https?:\/\/[^\s"'<>|,\t]+|(?:^|\t)(\/[a-z0-9][\w\-\/]*)(?=\t|$)/gi)){ const raw = (m[1] || m[0]).trim().replace(/[.)]+$/, ""), u = /^\//.test(raw) ? (() => { try{ return new URL(/^https?:/i.test(o.client.website) ? o.client.website : "https://" + o.client.website).origin + raw; }catch(e){ return ""; } })() : raw;
+        if(domOf(u) === h && !seen.has(u) && !/\.(xml|txt|jpg|png|pdf)$/i.test(u)){ seen.add(u); urls.push(u); } }
     for(const u of urls.slice(0, 16)) try{ probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, await probe(o.client.website, { url:u, look:"title" }))); }catch(e){} }
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
   reads.forEach(x => delete x.full);
