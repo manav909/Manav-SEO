@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -817,10 +817,59 @@ async function postSteps(o, cfg, by){
   o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12) }).slice(-30);
   o.chatPollAt = o.chatPollAt || now();
   log(o, by || { name:"Order desk" }, "Steps to reach QA posted in the project group " + (g.name || ""));
+  await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:str(t, 800), usd:0 });
 }
+/* Usage of the desk in project groups: every reply and skip is logged with its cost, and daily limits hold (total, per group, per person) */
+const DL = P + "desklog";
+async function deskAllowed(cfg, space, by){
+  const d = now().slice(0, 10), [t, g, pp] = await Promise.all([cmd("GET", P + "desk:" + d), cmd("GET", P + "desk:" + d + ":" + space), cmd("GET", P + "desk:" + d + ":p:" + String(by).toLowerCase())]);
+  if(num(t, 0) >= num(cfg.deskDaily, 40)) return "daily limit for all groups reached";
+  if(num(g, 0) >= num(cfg.deskPerGroup, 15)) return "daily limit for this group reached";
+  if(num(pp, 0) >= num(cfg.deskPerPerson, 8)) return "daily limit for this person reached";
+  return "";
+}
+async function deskCount(space, by){ const d = now().slice(0, 10); await pipe([["INCR", P + "desk:" + d], ["EXPIRE", P + "desk:" + d, 3 * 864e2], ["INCR", P + "desk:" + d + ":" + space], ["EXPIRE", P + "desk:" + d + ":" + space, 3 * 864e2], ["INCR", P + "desk:" + d + ":p:" + String(by).toLowerCase()], ["EXPIRE", P + "desk:" + d + ":p:" + String(by).toLowerCase(), 3 * 864e2]]); }
+async function deskLog(e){ await cmd("LPUSH", DL, JSON.stringify(Object.assign({ at:now() }, e))); await cmd("LTRIM", DL, 0, 999); }
+
+/* @Manav in any project group: the desk replies in the thread at once (checked every 2 minutes) and, when Manav must decide,
+   says so in the thread and puts the mention on his Orders page */
+const MK = P + "mentions", MP = P + "mentions:at";
+async function mentionsRun(cfg, as){
+  const since = (await cmd("GET", MP)) || new Date(Date.now() - 10 * 6e4).toISOString(), started = now(), out = [];
+  const spaces = (await mySpaces(as)).filter(x => !/^DIRECT_MESSAGE$/i.test(x.type)).slice(0, 40);
+  const orders = (await loadAll(300)).filter(o => !["done", "cancelled"].includes(o.stage)), bySpace = {};
+  orders.forEach(o => { const g = groupOf(o); if(g) bySpace[g.id] = o; (o.accessChat || []).forEach(m => m.spaceId && !bySpace[m.spaceId] && (bySpace[m.spaceId] = null)); });
+  for(const sp of spaces){
+    let msgs = []; try{ msgs = await chatSince(as, sp.id, since); }catch(e){ continue; }
+    for(const m of msgs.filter(x => /@manav\\b/i.test(x.text) && !/^Order desk:/.test(x.text))){
+      const o = bySpace[sp.id] || null, ck = (o && o.check) || {};
+      const system = `Someone in an agency's team chat group mentioned @Manav, the head of the department. You answer for him as his order desk, in the same thread, so work does not wait. Read what they need. If you can answer from the order facts (what to do, where, how it is checked, access status, files, live checks), answer in two to five short lines. If it is a technical question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names, as short as possible. If it needs Manav himself (an approval, money, prices, scope change, anything about or with the client, hiring, people problems), say kindly that Manav will reply soon, and set needsManav. Never share passwords, logins, prices or the client's own messages. Use VERY SIMPLE English a 4th grade child can follow. No dashes.
+First decide if it is GENUINE: a real question or request about project work, a client order, access, or a technical task. Greetings, thanks, jokes, chit chat and topics outside work are not genuine: then leave answer empty.
+Answer with one JSON object only: {"genuine":true,"answer":"","needsManav":false,"summary":"one line for Manav: who needs what"}`;
+      const user = `GROUP: ${sp.name}\nMESSAGE from ${m.by}: ${m.text}\n` + (o ? `ORDER for this group: site ${o.client.website}, stage ${o.stage}.\nREQUIREMENTS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, status:r.status, toPass:r.toPass, where:r.where, check:r.check })))}\nACCESS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status })))}\nFILES: ${JSON.stringify(ck.files || [])}` : "No order is linked to this group.");
+      const lim = await deskAllowed(cfg, sp.id, m.by);
+      if(lim){ await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:"", usd:0, skipped:lim });
+        await cmd("LPUSH", MK, JSON.stringify({ id:nid("m"), at:m.at, by:m.by, group:sp.name, space:sp.id, order:o ? o.id : "", text:str(m.text, 600), answer:"", needsManav:true, summary:"Not answered: " + lim, handled:false })); continue; }
+      try{ const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1500), d = r.data || {};
+        if(d.genuine === false){ await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:"", usd:+r.usd.toFixed(4), skipped:"not a work question" }); continue; }
+        if(d.answer){ await postChat(as, sp.id, deskSay(cfg, d.answer), m.thread); await deskCount(sp.id, m.by); }
+        await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:str(d.answer, 800), usd:+r.usd.toFixed(4), needsManav:!!d.needsManav });
+        const rec = { id:nid("m"), at:m.at, by:m.by, group:sp.name, space:sp.id, order:o ? o.id : "", text:str(m.text, 600), answer:str(d.answer, 600), needsManav:!!d.needsManav, summary:str(d.summary, 200), handled:!d.needsManav };
+        await cmd("LPUSH", MK, JSON.stringify(rec)); await cmd("LTRIM", MK, 0, 199);
+        if(o){ log(o, { name:"Order desk" }, "@Manav from " + m.by + " in the project group: " + (d.needsManav ? "waiting for Manav. " : "answered. ") + str(d.summary || m.text, 140)); await saveO(o); }
+        out.push((o ? o.id : sp.name) + (d.needsManav ? " needs Manav" : " answered")); }catch(e){ out.push(sp.name + ": " + e.message); }
+    }
+  }
+  await cmd("SET", MP, started);
+  return out;
+}
+
 /* Every 10 minutes: questions to the desk in project groups get an answer in their thread */
 export async function chatAnswers(){
   const cfg = await cfgOf(), as = await poster(cfg); if(!as || !aiOn()) return "off";
+  let men = []; try{ men = await mentionsRun(cfg, as); }catch(e){ men = ["mentions: " + e.message]; }
+  // questions in the desk's own threads: every 10 minutes is enough
+  if(new Date().getUTCMinutes() % 10 > 1) return men.join(", ") || "no mentions";
   const open = (await loadAll(300)).filter(o => ["access", "work", "qa"].includes(o.stage) && (o.deskPosts || []).length), done = [];
   for(const o of open.slice(0, 25)){
     const g = groupOf(o); if(!g) continue; let msgs = [];
@@ -834,8 +883,9 @@ export async function chatAnswers(){
       if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
       if(!asked || mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
-      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
-Answer with one JSON object only: {"answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
+      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
+First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
+Answer with one JSON object only: {"genuine":true,"answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
       const user = `QUESTION from ${m.by}: ${m.text}
 ORDER FACTS: site ${o.client.website}, stage ${o.stage}.
 REQUIREMENTS AND STATUS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, phase:((ck.requirements || []).find(q => q.id === r.r) || {}).phase, doneWhen:((ck.requirements || []).find(q => q.id === r.r) || {}).doneWhen, status:r.status, found:r.found, toPass:r.toPass, where:r.where, check:r.check })))}
@@ -843,8 +893,11 @@ ACCESS: ${JSON.stringify((pv.access || []).map(a => ({ item:a.item, level:a.leve
 FILES READ: ${JSON.stringify(ck.files || [])}
 LIVE CHECKS: ${JSON.stringify(ck.probes || []).slice(0, 6000)}
 SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
-      try{ const r = await askAI("deskanswer", "claude-haiku-5-5", system, user, 1200), d = r.data || {}; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-        if(!d.answer) continue;
+      const lim = await deskAllowed(cfg, g.id, m.by);
+      if(lim){ await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:"", usd:0, skipped:lim }); continue; }
+      try{ const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1500), d = r.data || {}; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+        if(d.genuine === false || !d.answer){ await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:"", usd:+r.usd.toFixed(4), skipped:"not a work question" }); continue; }
+        await deskCount(g.id, m.by); await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(d.answer, 800), usd:+r.usd.toFixed(4), needsHuman:!!d.needsHuman });
         await postChat(as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), m.thread);
         log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
         if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
@@ -852,7 +905,7 @@ SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
     }
     await saveO(o);
   }
-  return done.join(", ") || "nothing new";
+  return men.concat(done).join(", ") || "nothing new";
 }
 
 function score(orders, cfg, month){
@@ -920,6 +973,12 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
+  if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
+    for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
+    return out({ ok:true, groups:Object.values(by).map(b => Object.assign(b, { usdToday:+b.usdToday.toFixed(3), usdMonth:+b.usdMonth.toFixed(3) })), log:l.slice(0, 60), limits:{ daily:num(cfg.deskDaily, 40), group:num(cfg.deskPerGroup, 15), person:num(cfg.deskPerPerson, 8) } }); }
+  if(a === "mentions"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", MK, 0, 49)) || []).map(x => JSON.parse(x)); return out({ ok:true, mentions:l }); }
+  if(a === "mentionDone"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", MK, 0, 199)) || []).map(x => JSON.parse(x)); const i = l.findIndex(x => x.id === q.id); if(i < 0) return bad("Not found");
+    l[i].handled = true; await cmd("LSET", MK, i, JSON.stringify(l[i])); return out({ ok:true }); }
   if(a === "reports"){ if(!isA) return bad("Reports are for Manav only", 403); return out({ ok:true, reports:await reportsState() }); }
   if(a === "reportsRun"){ if(!isA) return bad("Reports are for Manav only", 403); try{ const r = await driveReports(true); return out({ ok:true, info:r, reports:await reportsState() }); }catch(e){ return bad(e.message, 503); } }
   if(a === "inbox"){ const all = (await loadAll(400)).filter(o => !["done", "cancelled"].includes(o.stage)), items = [], mine = [];
@@ -1001,7 +1060,8 @@ async function handle(request){
   if(a === "person" || a === "personOff" || a === "newCode" || a === "cfg" || a === "personRoles"){
     if(w.role !== "admin") return bad("Only Manav can change people and settings", 403);
     if(a === "cfg"){ const c = Object.assign({}, cfg, { fee:Math.min(50, Math.max(0, num(q.fee, cfg.fee))), hourly:Math.min(200, Math.max(0, num(q.hourly, cfg.hourly))) },
-        q.chatAs !== undefined ? { chatAs:str(q.chatAs, 120) } : {}, q.autoPost !== undefined ? { autoPost:!!q.autoPost } : {}, q.deskTag !== undefined ? { deskTag:!!q.deskTag } : {}); await setJ(T.cfg, c); return out({ ok:true, cfg:c }); }
+        q.chatAs !== undefined ? { chatAs:str(q.chatAs, 120) } : {}, q.autoPost !== undefined ? { autoPost:!!q.autoPost } : {}, q.deskTag !== undefined ? { deskTag:!!q.deskTag } : {},
+        q.deskDaily !== undefined ? { deskDaily:Math.min(500, Math.max(0, num(q.deskDaily, 40))), deskPerGroup:Math.min(200, Math.max(0, num(q.deskPerGroup, 15))), deskPerPerson:Math.min(100, Math.max(0, num(q.deskPerPerson, 8))) } : {}); await setJ(T.cfg, c); return out({ ok:true, cfg:c }); }
     let p;
     if(a === "person"){ const rs = (Array.isArray(q.roles) ? q.roles : [q.role]).filter(r => ROLES.includes(r)); const name = str(q.name, 60); if(!name || !rs.length) return bad("Type the name and pick at least one role"); p = { id:nid("u"), name, role:rs[0], roles:[...new Set(rs)], rev:1, at:now() }; }
     else { const raw = await cmd("HGET", T.people, str(q.uid, 20)); p = raw ? JSON.parse(raw) : null; if(!p) return bad("Person not found", 404); }

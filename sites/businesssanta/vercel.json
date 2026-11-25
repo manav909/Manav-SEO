@@ -191,7 +191,7 @@
     },
     {
       "path": "/api/team-chat",
-      "schedule": "*/10 * * * *"
+      "schedule": "*/2 * * * *"
     }
   ],
   "git": {

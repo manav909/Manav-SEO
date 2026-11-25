@@ -245,3 +245,6 @@ export async function chatSince(email, space, since){
   const r = await apiAs(email, "https://chat.googleapis.com/v1/" + space + "/messages?pageSize=50&orderBy=createTime%20asc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
   return (r.messages || []).map(m => ({ id:m.name, at:m.createTime, by:(m.sender && m.sender.displayName) || "", sender:m.sender ? m.sender.name : "", thread:m.thread ? m.thread.name : "", text:maskCreds(String(m.text || "")).slice(0, 2000) }));
 }
+
+/* Spaces the posting account is in, and messages since a time in each (for @mentions) */
+export async function mySpaces(email){ const r = await apiAs(email, "https://chat.googleapis.com/v1/spaces?pageSize=100"); return (r.spaces || []).map(x => ({ id:x.name, name:x.displayName || "Direct chat", type:x.spaceType || x.type || "" })); }
