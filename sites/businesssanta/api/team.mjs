@@ -718,7 +718,7 @@ async function buildCheck(o, fresh){
   const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
   const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
-  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:r.askedIn && r.askedIn.where ? r.askedIn : nw.askedIn, why:r.why || nw.why }); });
+  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
   const reads = [];
   for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
     try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
