@@ -401,7 +401,7 @@ async function syncTeam(o){
     }catch(e){} }
   o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
-  if(fresh.length && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 2 * 36e5)) try{ await buildCheck(o); }catch(e){}
+  if(fresh.length && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 30 * 6e4)) try{ await buildCheck(o); }catch(e){}
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
 }
@@ -411,6 +411,8 @@ export async function hourlySync(){
   const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
   for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
   try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
+  // Changes on the client's site or in Search Console leave no message: recheck work orders every 3 hours (two a run)
+  { let n2 = 0; for(const o of open){ if(n2 >= 2) break; if(["work", "qa"].includes(o.stage) && o.check && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 3 * 36e5)) try{ await buildCheck(o); n2++; done.push(o.id + " rechecked"); }catch(e){ done.push(o.id + " recheck: " + e.message); } } }
   for(const o of open) if(o.stage === "work") try{ const n = await autoProof(o); if(n) done.push(o.id + " proofs:" + n); }catch(e){ done.push(o.id + " proofs: " + e.message); }
   for(const o of open) await saveO(o);
   // Work history for every client site that has none yet (or older than 30 days), two a run
@@ -723,8 +725,12 @@ async function buildCheck(o, fresh){
   const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
   const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
-  const d2 = r2.data || {}; d2.verdict = noId(d2.verdict); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); });
-  d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), closes:num(p.closes, 0) }));
+  // Roles, not personal names, for our sales side
+  const seller = new Set(["Manav", "Manav Sharma"].concat((await people()).filter(p => rolesOf(p).some(r => ["sales", "comms", "admin"].includes(r))).map(p => p.name).filter(Boolean)));
+  const role = t => { let x = String(t || ""); for(const n of seller) x = x.replace(new RegExp("\\b" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), "Sales"); return x.replace(/\bSales Sharma\b/g, "Sales"); };
+  const walk = v => typeof v === "string" ? role(v) : Array.isArray(v) ? v.map(walk) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k2, v2]) => [k2, walk(v2)])) : v;
+  const d2 = walk(r2.data || {}); d2.verdict = noId(d2.verdict); d2.verdictTeam = noId(d2.verdictTeam); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); x.where = noId(x.where); x.check = noId(x.check); });
+  d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
   d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
   o.check = Object.assign(d2, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
