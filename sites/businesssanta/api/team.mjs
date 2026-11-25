@@ -847,7 +847,7 @@ async function writeGroupMsg(o){
   const system = `You write a short team chat message to professionals about what is still open before QA. They already have the requirement email and the group chat, so do not teach them how to do the work and give no click steps.
 For each open item write one point:
 1. Start with the item's short name as it was asked (two to five words, for example "Search Console review"), then a colon.
-2. Then say plainly what is missing compared to what was asked, in one or two short sentences of at most 14 words each. Mention a key fact when it helps (for example "the sheet still says Not Updated").
+2. Then say plainly what is missing compared to what was asked, in one or two short sentences of at most 14 words each (count them; split longer ones). Name at most two examples. Mention a key fact when it helps (for example "the sheet still says Not Updated").
 3. Very simple, respectful English. No reasons for the client, no dashes, no emojis.
 At most 6 points; join items that are really the same gap. If every item belongs to one person, name that person once at the start instead of in each point.
 Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":["Search Console review: the report has no review of the current setup yet."]}`;
@@ -855,7 +855,7 @@ Answer with one JSON object only: {"person":"first name if every item is for one
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
   const d = r.data || {}, pts = (d.points || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim()).filter(Boolean).slice(0, 6);
   if(!pts.length) return "";
-  const who = str(d.person, 30), src = [...new Set(open.map(x => x.askedIn).filter(Boolean))].join(" and ") || "the requirement email";
+  const who = str(d.person, 30), src = [...new Set(open.map(x => x.askedIn).filter(Boolean).map(x => /^(the|our) /i.test(x) ? x : "the " + x))].join(" and ") || "the requirement email";
   return `Hi ${who || "team"}, for ${domOf(o.client.website)} these items from ${src} are still open before QA:\n\n${pts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
