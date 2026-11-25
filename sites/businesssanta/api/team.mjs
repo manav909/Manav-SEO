@@ -298,7 +298,7 @@ function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     check:o.check ? Object.assign({}, o.check, { chatNotInMail:undefined }) : null,
-    draftReport:o.draftReport, deskPosts:o.deskPosts, stepLog:o.stepLog, overrides:o.overrides,
+    draftReport:o.draftReport, deskPosts:o.deskPosts, stepLog:o.stepLog, overrides:o.overrides, discarded:o.discarded,
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
@@ -717,7 +717,7 @@ async function buildCheck(o, fresh){
   const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
   const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
-  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => Object.assign({}, r, { phase:r.phase || ((plan.requirements || []).find(x => x.id === r.id) || {}).phase }));
+  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:r.askedIn && r.askedIn.where ? r.askedIn : nw.askedIn, why:r.why || nw.why }); });
   const reads = [];
   for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
     try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
@@ -727,7 +727,8 @@ async function buildCheck(o, fresh){
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
   const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
-  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
+  const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
+  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
   const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
   // Roles, not personal names, for our sales side
   const seller = new Set(["Manav", "Manav Sharma"].concat((await people()).filter(p => rolesOf(p).some(r => ["sales", "comms", "admin"].includes(r))).map(p => p.name).filter(Boolean)));
@@ -748,11 +749,15 @@ async function buildCheck(o, fresh){
   // Only project work goes through QA: delivery and client items leave the deliverables (kept with their proof if any)
   if((o.deliverables || []).every(d => d.req)){ const proj = new Set(reqs.filter(r => r.phase === "project").map(r => r.id)), out = o.deliverables.filter(d => !proj.has(d.req));
     if(out.length){ o.deliverables = o.deliverables.filter(d => proj.has(d.req)); log(o, { name:"Order desk" }, "Moved out of the QA gate (delivery or client items): " + out.map(d => str(d.text, 60)).join("; ")); } }
+  // Tasks discarded by the team (with a recorded reason) leave the checks and the QA gate
+  const dis = o.discarded || {};
+  o.check.rows = (o.check.rows || []).filter(r => !dis[r.r]);
+  if((o.deliverables || []).some(d => d.req && dis[d.req])) o.deliverables = o.deliverables.filter(d => !(d.req && dis[d.req]));
   // A manager's word in the project group settles a requirement either way
   for(const row of o.check.rows || []){ const ov = (o.overrides || {})[row.r]; if(!ov) continue;
     if(ov.decision === "accepted" && row.status !== "done"){ row.status = "done"; row.found = "Accepted by " + ov.by + " (manager) in the project group" + (ov.note ? ": " + ov.note : ""); row.toPass = ""; row.where = ""; row.check = ""; row.proofUrl = ""; }
     if(ov.decision === "reopened" && row.status === "done"){ row.status = "partly"; row.toPass = "Reopened by " + ov.by + " (manager): " + (ov.note || "see the project group"); } }
-  if((o.check.rows || []).every(r => r.status === "done" || ((o.check.requirements || []).find(q => q.id === r.r) || {}).phase !== "project")) o.check.readyForQA = true;
+  if((o.check.rows || []).length && (o.check.rows || []).every(r => r.status === "done" || ((o.check.requirements || []).find(q => q.id === r.r) || {}).phase !== "project")) o.check.readyForQA = true;
   // A requirement the check finds done is ticked, with what proved it; when every one is done the order moves to QA
   let ticked = 0;
   for(const row of o.check.rows || []){ const d = (o.deliverables || []).find(x => x.req === row.r); if(!d) continue; row.d = d.id; d.status = row.status;
@@ -1338,6 +1343,16 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "discardReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const ck = o.check || {}, rq = (ck.requirements || []).find(x => x.id === q.r);
+      if(!rq) return bad("Task not found"); const why = str(q.reason, 400).trim(); if(why.length < 10) return bad("Write the reason for discarding this task (at least a short sentence)");
+      (o.discarded = o.discarded || {})[rq.id] = { by:w.name, role:(w.roles || [w.role]).join("+"), at:now(), reason:why };
+      o.check.rows = (ck.rows || []).filter(r => r.r !== rq.id); o.deliverables = (o.deliverables || []).filter(d => d.req !== rq.id);
+      log(o, w, "Discarded the task \"" + str(rq.text, 120) + "\". Reason: " + why);
+      if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && (o.check.rows || []).filter(r => ((ck.requirements || []).find(x => x.id === r.r) || {}).phase === "project").every(r => r.status === "done")){ o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every remaining requirement is done. Sent to QA."); } }
+    else if(op === "restoreReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const dd = (o.discarded || {})[q.r]; if(!dd) return bad("Not discarded");
+      delete o.discarded[q.r]; const rq = ((o.check || {}).requirements || []).find(x => x.id === q.r) || {};
+      if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
+      log(o, w, "Restored the task \"" + str(rq.text, 120) + "\" (discarded earlier by " + dd.by + ")"); o.checkAt = ""; }
     else if(op === "postSteps"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); try{ await postSteps(o, cfg, w); }catch(e){ return bad(e.message); } }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
