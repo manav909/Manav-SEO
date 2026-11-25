@@ -141,9 +141,9 @@ async function runProofCheck(o, d){
 const ASTAT = ["open", "sent", "waiting", "done", "blocked"];
 const dshort = d => { try{ return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short" }); }catch(e){ return d; } };
 function internalText(o, a){
-  const qs = (a.questions || []).filter(q => (q.status || "") !== "answered");
-  return `${o.id} · ${o.client.name}${o.client.website ? " · " + domOf(o.client.website) : ""} · due ${dshort(o.deadline)}\n${a.title}\nReply by: ${a.needBy || "today"}\n\n` +
-    qs.map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n") + `\n\nPlease reply with the numbers, for example: 1. Done on 25 Nov.`;
+  // Short and plain: the team works in a chat group per project, so only the site, the reply time and the numbered questions
+  const qs = (a.questions || []).filter(q => (q.status || "") !== "answered"), site = domOf(o.client.website);
+  return `${site ? site + ": " : ""}please reply by ${a.needBy || "today"}\n\n` + qs.map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n");
 }
 const toQs = l => (Array.isArray(l) ? l : []).filter(Boolean).slice(0, 10).map(q => typeof q === "string" ? { q:str(q, 300), status:"" } : { q:str(q.q, 300), answer:str(q.answer, 400), status:q.status || "" });
 function mergeActions(o, list, fresh){
@@ -290,6 +290,7 @@ async function handle(request){
   const strip = o => { if(isA) return o; const c = Object.assign({}, o); delete c.pay; return c; };
   if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; return x; }) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
+    (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
     return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), client:c ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
   if(a === "clients"){ const all = await loadAll(1000);
