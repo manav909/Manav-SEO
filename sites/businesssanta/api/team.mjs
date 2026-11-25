@@ -56,6 +56,7 @@ function flags(o){
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
   if(o.alert) f.push({ k:"bad", t:o.alert });
   if(open){ const last = Date.parse(o.lastUpdateAt || o.at), hrs = (Date.now() - last) / 36e5; if(hrs > 24) f.push({ k:"bad", t:"No update for " + Math.round(hrs) + " h: paste the latest messages" }); else if(hrs > 8) f.push({ k:"warn", t:"Last update " + Math.round(hrs) + " h ago" }); }
+  const dc = (o.actions || []).filter(a => a.status === "decide").length; if(dc) f.push({ k:"bad", t:dc + " step" + (dc > 1 ? "s need" : " needs") + " a decision" });
   const bl = (o.actions || []).filter(a => a.status === "blocked").length; if(bl) f.push({ k:"bad", t:bl + " action" + (bl > 1 ? "s" : "") + " blocked" });
   const hr = ((o.ai || {}).risks || []).filter(r => r.level === "high" && /open|happened/.test(r.status || "open")).length; if(open && hr) f.push({ k:"warn", t:hr + " high risk" + (hr > 1 ? "s" : "") + " open" });
   const today = new Date().toISOString().slice(0, 10);
@@ -138,7 +139,7 @@ async function runProofCheck(o, d){
 }
 
 /* Actions: every risk, remark and open promise turned into a step with an owner, a status and a ready message */
-const ASTAT = ["open", "sent", "waiting", "done", "blocked"];
+const ASTAT = ["open", "sent", "waiting", "done", "blocked", "decide", "skipped"];
 const dshort = d => { try{ return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short" }); }catch(e){ return d; } };
 function internalText(o, a){
   // Short and plain: the team works in a chat group per project, so only the site, the reply time and the numbered questions
@@ -156,9 +157,10 @@ function mergeActions(o, list, fresh){
       if(cur.type === "internal"){ if(Array.isArray(x.questions) && x.questions.length && !(cur.questions || []).some(q => q.answer)) cur.questions = toQs(x.questions); if(x.needBy) cur.needBy = str(x.needBy, 60); cur.message = internalText(o, cur); }
       else if(x.message != null) cur.message = String(x.message).slice(0, 4000);
       const st = ASTAT.includes(x.status) ? x.status : cur.status;
-      if(cur.status !== "done" && st !== cur.status && (cur.by === "Order desk" || st === "done" || !cur.by)){ cur.status = st; cur.statusWhy = str(x.statusWhy, 300); cur.at = now(); cur.by = "Order desk"; }
+      if(!["done", "skipped", "decide"].includes(cur.status) && st !== cur.status && (cur.by === "Order desk" || st === "done" || !cur.by)){ cur.status = st; cur.statusWhy = str(x.statusWhy, 300); cur.at = now(); cur.by = "Order desk"; }
     } else if(fresh || !x.id){
       if(o.actions.some(a => a.title.toLowerCase() === String(x.title || "").toLowerCase())) continue;
+      if(x.type === "internal" && Array.isArray(x.questions)){ const gone = (o.dropped || []).map(norm); x.questions = x.questions.filter(q => !gone.includes(norm(typeof q === "string" ? q : q.q))); if(!x.questions.length) continue; }
       o.actions.push({ id:nid("x"), title:str(x.title, 200), why:str(x.why, 300), owner:["comms", "pm", "qa", "manager"].includes(x.owner) ? x.owner : "comms", type:["client", "internal", "task"].includes(x.type) ? x.type : "task",
         to:str(x.to, 60), severity:["high", "medium", "low"].includes(x.severity) ? x.severity : "medium", message:String(x.message || "").slice(0, 4000), questions:toQs(x.questions), needBy:str(x.needBy, 60),
         status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), by:"Order desk" });
@@ -441,15 +443,35 @@ async function handle(request){
       if(!(x.questions || []).length) x.questions = [{ q:x.title, status:"" }];
       const files = await saveFiles(q.files), p = teamReplyPrompt(o, x, text || "(see the attached screenshots)"), extra = await fileBlocks(files, text);
       const r = await askAI("teamreply", "claude-sonnet-5-5", p.system, extra.length ? [{ type:"text", text:p.user }].concat(extra) : p.user, 5000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-      const d = r.data || {}; (d.answers || []).forEach(an => { const qq = x.questions[(an.n || 0) - 1]; if(qq){ qq.answer = str(an.answer, 400) || qq.answer; qq.status = an.status || qq.status; } });
+      const d = r.data || {}; (d.answers || []).forEach(an => { const qq = x.questions[(an.n || 0) - 1]; if(qq){ qq.answer = str(an.answer, 400) || qq.answer; qq.status = an.status || qq.status; if(an.status === "disagree") qq.reason = str(an.reason, 400) || qq.answer; } });
       (x.replies = x.replies || []).push({ text, files, evidence:(d.evidence || []).slice(0, 6).map(e => ({ file:str(e.file, 120), shows:str(e.shows, 400) })), at:now(), by:w.name, summary:str(d.summary, 300) });
-      const left = x.questions.filter(qq => qq.status !== "answered");
-      x.status = left.length ? "waiting" : "done"; x.statusWhy = left.length ? left.length + " of " + x.questions.length + " still open: follow-up ready" : "All answered"; x.at = now(); x.by = w.name;
+      const left = x.questions.filter(qq => qq.status !== "answered" && qq.status !== "disagree"), dis = x.questions.filter(qq => qq.status === "disagree");
+      x.status = dis.length ? "decide" : left.length ? "waiting" : "done";
+      x.statusWhy = dis.length ? "The team disagrees on " + dis.length + ": " + dis.map(qq => qq.reason).join("; ").slice(0, 300) : left.length ? left.length + " of " + x.questions.length + " still open: follow-up ready" : "All answered"; x.at = now(); x.by = w.name;
       if(left.length){ (d.followUp || []).forEach((f, i) => { if(left[i]) left[i].q = str(f, 300) || left[i].q; }); x.message = internalText(o, x); }
       (o.notes = o.notes || []).push({ id:nid("n"), kind:"team", title:"Team reply: " + x.title.slice(0, 80), text, files, from:x.to || "Project team", at:now(), by:w.name });
       log(o, w, "Team replied to \"" + x.title.slice(0, 60) + "\": " + (d.summary || "") + (left.length ? " (" + left.length + " still open)" : " (all answered)"));
       try{ await rethink(o, "TEAM REPLY to \"" + x.title + "\": " + text + "\nFacts: " + (d.facts || []).join("; ") + ((d.evidence || []).length ? "\nScreenshots show: " + d.evidence.map(e => e.file + ": " + e.shows).join("; ") : "")); }catch(e){}
       o.lastUpdateAt = now(); o.lastUpdateBy = w.name; }
+    else if(op === "actEdit"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
+      if(x.type === "internal"){ if(Array.isArray(q.questions)){ const before = (x.questions || []).map(qq => qq.q), keep = q.questions.map(t => str(t, 300)).filter(Boolean).slice(0, 5);
+          before.filter(b => !keep.includes(b)).forEach(b => (o.dropped = o.dropped || []).push(b));
+          x.questions = keep.map(t => (x.questions || []).find(qq => qq.q === t) || { q:t, status:"" }); }
+        if(q.needBy != null) x.needBy = str(q.needBy, 60); if(!x.questions.length) return bad("Keep at least one question, or skip the step"); x.message = internalText(o, x); }
+      else if(q.message != null){ x.message = String(q.message).slice(0, 4000); }
+      x.edited = now(); x.editedBy = w.name; log(o, w, "Edited \"" + x.title.slice(0, 70) + "\" before sending"); }
+    else if(op === "actSkip"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); const why = str(q.why, 300); if(!why) return bad("Say why this step is not needed");
+      x.status = "skipped"; x.note = why; x.at = now(); x.by = w.name; log(o, w, "Skipped \"" + x.title.slice(0, 70) + "\": " + why); }
+    else if(op === "actObject"){ need("pm"); const x = find("actions", q.aid); if(!x) return bad("Not found"); const qq = (x.questions || [])[num(q.qn, 0)]; if(!qq) return bad("Not found");
+      const why = str(q.why, 400); if(!why) return bad("Say why you do not agree"); qq.status = "disagree"; qq.reason = why; qq.by = w.name;
+      x.status = "decide"; x.statusWhy = w.name + " disagrees: " + why; x.at = now(); x.by = w.name; log(o, w, "Disagrees with \"" + qq.q.slice(0, 80) + "\": " + why); }
+    else if(op === "decide"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); const note = str(q.note, 400);
+      if(q.choice === "accept"){ (x.questions || []).filter(qq => qq.status === "disagree").forEach(qq => { qq.status = "answered"; qq.answer = "Agreed with the team: " + (qq.reason || ""); (o.dropped = o.dropped || []).push(qq.q); });
+        x.decision = "Agreed with the team" + (note ? ": " + note : ""); const left = (x.questions || []).filter(qq => qq.status !== "answered"); x.status = left.length ? "waiting" : "done"; x.statusWhy = x.decision; }
+      else { if(!can(w, "assign") && !note) return bad("Write why we still need it, for the manager");
+        (x.questions || []).filter(qq => qq.status === "disagree").forEach(qq => { qq.status = ""; qq.q = qq.q + (note ? " (needed because: " + note + ")" : ""); });
+        x.decision = "Kept" + (note ? ": " + note : ""); x.owner = can(w, "assign") ? x.owner : "manager"; x.status = "open"; x.statusWhy = can(w, "assign") ? "Decided to keep it" : "Passed to the manager to decide"; x.message = internalText(o, x); }
+      x.at = now(); x.by = w.name; log(o, w, "Decision on \"" + x.title.slice(0, 70) + "\": " + x.decision); }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
       x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
     else if(op === "pay"){ if(w.role !== "admin") return bad("Payments are for Manav only", 403); const p = payOf(o);

@@ -282,6 +282,7 @@ export function rethinkPrompt(o, fresh){
   const system = `You keep an order of an SEO, web and ads agency up to date. New information just arrived. Re-think the order like a sharp delivery manager: what changed, which promises are now kept or broken, which risks got better or worse, which actions are done, what must happen next.
 ${SAFE}
 Questions for the project team: they only receive the work requirements by email. They do not know the marketplace, the gig, the package, the price or the client chat, so never mention any of these. Ask at most 3 questions, only what we truly need to keep a promise to the client or decide the next step, each short and about the work itself (what is done, what is live, when it will be ready). If the answer can be checked by us (live site, Search Console, Drive proof), do not ask it.
+Never suggest again any action listed under "Skipped or declined", unless the new information clearly makes it necessary, and then say why in statusWhy.
 Rules: keep the ids of existing actions. Never mark an action done unless the new information shows it. You may add new actions (no id) with ready copy and paste messages: client type for the marketplace, internal type for the project team or executive over Google Chat, asking exactly what we need with the order id and a by-when.
 Today is ${new Date().toISOString().slice(0, 10)}. Use real dates.
 Answer with one JSON object only:
@@ -297,7 +298,8 @@ Deliverables: ${JSON.stringify((o.deliverables || []).map(d => ({ text:d.text, d
 Access: ${JSON.stringify((o.access || []).map(a => a.item + ": " + a.status))}
 Current promises: ${JSON.stringify(ai.promises || [])}
 Current risks: ${JSON.stringify(ai.risks || [])}
-Current actions: ${JSON.stringify((o.actions || []).map(a => ({ id:a.id, title:a.title, owner:a.owner, type:a.type, status:a.status, note:a.note || "" })))}
+Current actions: ${JSON.stringify((o.actions || []).filter(a => a.status !== "skipped").map(a => ({ id:a.id, title:a.title, owner:a.owner, type:a.type, status:a.status, note:a.note || "" })))}
+Skipped or declined (with the reason): ${JSON.stringify((o.actions || []).filter(a => a.status === "skipped" || a.decision).map(a => ({ title:a.title, reason:a.note || a.decision || "" })))}
 Team notes so far: ${JSON.stringify((o.notes || []).slice(-10).map(n => ({ kind:n.kind, title:n.title, text:String(n.text).slice(0, 1500), at:n.at })))}
 Recent conversation:
 ${tail}
@@ -309,9 +311,9 @@ ${fresh}`;
 
 /* A reply from the project team to one internal ask: which questions are answered, what is still missing, what it changes. */
 export function teamReplyPrompt(o, a, reply){
-  const system = `You read a reply from our project team to questions from the client messages person, on one order. Judge each question: answered, partly answered or not answered.
+  const system = `You read a reply from our project team to questions from the client messages person, on one order. Judge each question: answered, partly answered, not answered, or disagree (the team pushes back: says it is not needed, the approach is wrong, or proposes something else).
 Write plainly, no dashes. Answer with one JSON object only:
-{"answers":[{"n":1,"answer":"the answer in one short line, or empty","status":"answered | partial | missing"}],"summary":"one line: what we now know","facts":["new facts the order should know, e.g. plugin removed on 25 Nov"],"evidence":[{"file":"file name","shows":"what this screenshot or file really shows, and whether it backs up the answer"}],"followUp":["only for questions still partial or missing: the short follow-up question"]}
+{"answers":[{"n":1,"answer":"the answer in one short line, or empty","status":"answered | partial | missing | disagree","reason":"only for disagree: why the team does not agree with the question or step"}],"summary":"one line: what we now know","facts":["new facts the order should know, e.g. plugin removed on 25 Nov"],"evidence":[{"file":"file name","shows":"what this screenshot or file really shows, and whether it backs up the answer"}],"followUp":["only for questions still partial or missing: the short follow-up question"]}
 Screenshots, files and Drive files attached are part of the reply: read them, use what they show to judge the answers, and say in evidence what each one proves. If a screenshot does not show what the text claims, mark that answer partial and say so.`;
   const user = `Order ${o.id} (${o.client.name}, ${o.client.website || ""}).
 Questions we asked:
