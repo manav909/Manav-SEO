@@ -1207,7 +1207,7 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
-  if(a === "docFind"){ if(!isA) return bad("For Manav only", 403); const o2 = await getO(str(url.searchParams.get("id"), 20)); if(!o2) return bad("Not found", 404);
+  if(a === "docFind"){ if(!isA) return bad("For Manav only", 403); const o2 = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o2) return bad("Not found", 404);
     const qx = str(url.searchParams.get("q"), 80).toLowerCase(), hits2 = [];
     for(const d of (o2.docs || []).filter(x => x.status === "linked" && x.current !== false)){ let t = ""; try{ t = await docText(d, 300000); }catch(e){}
       t.split("\n").forEach((ln, i) => { if(qx && ln.toLowerCase().includes(qx) && hits2.length < 60) hits2.push({ file:d.name, line:i + 1, text:str(ln, 400) }); }); }
