@@ -145,7 +145,7 @@ function internalText(o, a){
   const qs = (a.questions || []).filter(q => (q.status || "") !== "answered"), site = domOf(o.client.website);
   return `${site ? site + ": " : ""}please reply by ${a.needBy || "today"}\n\n` + qs.map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n");
 }
-const toQs = l => (Array.isArray(l) ? l : []).filter(Boolean).slice(0, 10).map(q => typeof q === "string" ? { q:str(q, 300), status:"" } : { q:str(q.q, 300), answer:str(q.answer, 400), status:q.status || "" });
+const toQs = l => (Array.isArray(l) ? l : []).filter(Boolean).filter(q => !/package|gig|fiverr|marketplace|offer|price/i.test(typeof q === "string" ? q : q.q || "")).slice(0, 3).map(q => typeof q === "string" ? { q:str(q, 300), status:"" } : { q:str(q.q, 300), answer:str(q.answer, 400), status:q.status || "" });
 function mergeActions(o, list, fresh){
   o.actions = o.actions || [];
   (list || []).forEach(x => { if(x && x.message) x.message = String(x.message).replace(/\[(order id|order number|order)\]/gi, o.id); });

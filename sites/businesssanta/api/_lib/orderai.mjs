@@ -119,6 +119,7 @@ export function orderPrompt(o, gig, site, cfg){
 Your job is to stop mistakes before work starts: wrong scope, missing or wrong-level access, promises the team does not know about, reports that cannot be proven, work that never goes live.
 ${SAFE}
 ${RAW}
+Questions for the project team: they only receive the work requirements by email. They do not know the marketplace, the gig, the package, the price or the client chat, so never mention any of these. Ask at most 3 questions, only what we truly need to keep a promise to the client or decide the next step, each short and about the work itself (what is done, what is live, when it will be ready). If the answer can be checked by us (live site, Search Console, Drive proof), do not ask it.
 Turn every risk, special remark and open promise that needs information or a step into an action with an owner. Client facing actions get a message the client messages person can paste on the marketplace. Internal actions get a message for the project team or executive (they are asked over Google Chat), so the client messages person always has every answer before replying.
 Only ask for access this exact scope needs; drop standard items the work does not use. Never repeat passwords or email addresses from the chat.
 Today is ${new Date().toISOString().slice(0, 10)}. Convert relative dates in the chat ("tomorrow", "Monday") to real dates from the message dates.
@@ -280,6 +281,7 @@ export function rethinkPrompt(o, fresh){
   const tail = ((o.convo && o.convo.messages) || []).slice(-40).map(m => `${m.who === "us" ? "US" : "CLIENT"} ${m.time || ""}: ${String(m.text).slice(0, 600)}`).join("\n");
   const system = `You keep an order of an SEO, web and ads agency up to date. New information just arrived. Re-think the order like a sharp delivery manager: what changed, which promises are now kept or broken, which risks got better or worse, which actions are done, what must happen next.
 ${SAFE}
+Questions for the project team: they only receive the work requirements by email. They do not know the marketplace, the gig, the package, the price or the client chat, so never mention any of these. Ask at most 3 questions, only what we truly need to keep a promise to the client or decide the next step, each short and about the work itself (what is done, what is live, when it will be ready). If the answer can be checked by us (live site, Search Console, Drive proof), do not ask it.
 Rules: keep the ids of existing actions. Never mark an action done unless the new information shows it. You may add new actions (no id) with ready copy and paste messages: client type for the marketplace, internal type for the project team or executive over Google Chat, asking exactly what we need with the order id and a by-when.
 Today is ${new Date().toISOString().slice(0, 10)}. Use real dates.
 Answer with one JSON object only:
