@@ -296,6 +296,7 @@ const isProj = w => (w.roles || [w.role]).every(r => r === "pm" || r === "qa");
 function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
+    pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
     folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
@@ -391,6 +392,7 @@ async function syncTeam(o){
         o.access.push({ id:nid("a"), item:str(n2.item, 120), level:"", why:"Seen in the access group", status:n2.status === "received" ? "received" : "asked", note:"From the access group: " + str(n2.note, 200) }); ch.push(n2.item + ": added"); }
       o.accessIssues = (d.issues || []).slice(0, 6).map(x2 => str(x2, 240));
       if(ch.length) log(o, { name:"Order desk" }, "Access group: " + ch.join("; "));
+      if(o.access.every(y => ["received", "skip"].includes(y.status))) o.accessIssues = [];
       if(o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))){ setStage(o, "work"); log(o, { name:"Order desk" }, "Every access item is in. Work can start."); }
       if((d.issues || []).length) fresh.push("ACCESS GROUP, open problems: " + d.issues.join("; "));
     }catch(e){} }
@@ -657,9 +659,33 @@ Answer with one JSON object only: {"matches":[{"d":"deliverable id","e":0,"confi
   }
   groupDocs(o);
   if(o.deliverables.every(d => d.done && proofsOf(d).length) && !staleProofs(o).length){
-    o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every deliverable is done with checked proof. Sent to QA.");
+    o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every deliverable is done with checked proof. Sent to QA."); try{ await buildPack(o); }catch(e){}
   }
   return n;
+}
+
+/* Delivery pack: from everything the desk knows, the one final file per deliverable, what not to send, what QA checks, and the client's delivery message */
+async function buildPack(o){
+  if(!aiOn()) return null; groupDocs(o);
+  const dl = o.deliverables.map(d => ({ id:d.id, text:d.text, done:d.done, qa:d.qa || "", qaNote:d.qaNote || "", proofs:proofsOf(d).map(p => ({ name:p.name, url:p.url, kind:p.kind, modified:(p.meta || {}).modified || "", newer:p.newer ? p.newer.name : "" })),
+    check:d.check ? { verdict:d.check.verdict, summary:d.check.summary, missing:d.check.missing, redFlags:d.check.redFlags } : null }));
+  const docs = (o.docs || []).filter(d => d.status === "linked").map(d => ({ name:d.name, url:d.link, kind:d.kind, modified:d.modified, by:d.by, current:d.current !== false, copies:d.versions || 1, otherReport:d.split ? d.splitWhy || "different report with the same name" : "", compared:((o.docGroups || {})[d.group] || {}).summary || "", flags:((o.docGroups || {})[d.group] || {}).flags || [] }));
+  const ai = o.ai || {};
+  const system = `You are the delivery lead of an SEO, web and ads agency. Decide, for one order, exactly what is delivered. For each deliverable pick the final file or link to use (the newest, checked copy that really shows the work), and say clearly what is ready, what needs a fix and what is missing. List files that must NOT be sent (old copies, raw exports, other reports with the same name, unchecked drafts) with the reason. Give QA short exact checks per deliverable. Then write the delivery message for the client on the marketplace: warm, plain, professional; what was done, which files are attached, results stated honestly (what we did is done now; what Google shows can take days or weeks, and we will check again); the next step. Never put an email address, phone number, or a link to anything other than the final files in the client message. Never mention tools that write for us. No dashes.
+Answer with one JSON object only: {"summary":"one line: is this order ready for QA or for delivery, and what blocks it","final":[{"d":"deliverable id","use":[{"name":"","url":"","why":"one line"}],"status":"ready | needs fix | missing","fix":"what to fix or add, empty if ready"}],"notUse":[{"name":"","why":""}],"qa":[{"d":"deliverable id","check":["exact check"]}],"client":{"message":"","attach":["file names to attach to the delivery"]}}`;
+  const user = `Order ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage: ${o.stage}. Deadline ${o.deadline}.
+WHAT WAS SOLD: ${ai.summary || ""}
+PROMISES: ${JSON.stringify((ai.promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
+DELIVERABLES WITH PROOF AND THE DESK'S CHECK:
+${JSON.stringify(dl)}
+OUR DOCUMENTS FOR THIS ORDER:
+${JSON.stringify(docs)}
+LIVE CHECK AT THE SOURCE:
+${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
+  const r = await askAI("pack", "claude-sonnet-5-5", system, user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  o.pack = Object.assign(r.data || {}, { at:now(), stage:o.stage, usd:+r.usd.toFixed(4) });
+  log(o, { name:"Order desk" }, "Delivery pack ready: " + str(o.pack.summary, 200));
+  return o.pack;
 }
 
 function score(orders, cfg, month){
@@ -1010,13 +1036,14 @@ async function handle(request){
       const cur = find("docs", p.newer.id); d.proofs = proofsOf(d); delete d.proof;
       Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
       log(o, w, "Proof switched to the newest copy: " + cur.name); }
+    else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
-      setStage(o, "qa"); log(o, w, "Sent to QA"); }
+      setStage(o, "qa"); log(o, w, "Sent to QA"); try{ await buildPack(o); }catch(e){} }
     else if(op === "qa"){ need("qa"); if(o.stage !== "qa") return bad("This order is not waiting for QA");
       const unmarked = o.deliverables.filter(d => !d.qa); if(unmarked.length) return bad("Mark every deliverable Pass or Fail first (" + unmarked.length + " left)");
       const fails = o.deliverables.filter(d => d.qa === "fail"), res = fails.length ? "fail" : "pass", note = fails.map(d => d.text.slice(0, 60) + ": " + d.qaNote).join(" | ");
-      o.qaRounds.push({ at:now(), by:w.name, result:res, note }); o.stage = res === "pass" ? "ready" : "work";
+      o.qaRounds.push({ at:now(), by:w.name, result:res, note }); o.stage = res === "pass" ? "ready" : "work"; if(res === "pass") try{ await buildPack(o); }catch(e){}
       fails.forEach(d => { d.done = false; d.check = null; });
       log(o, w, res === "pass" ? "QA passed every deliverable. Ready to deliver." : "QA sent back " + fails.length + ": " + note); }
     else if(op === "deliver"){ need("comms"); if(o.stage !== "ready") return bad("Deliver only after QA passes");
