@@ -850,9 +850,26 @@ async function sopPage(){
    <div class="og"><div>
     ${sec("Where every order is now", "Open orders by step, and who must act.", open.length ? `<table class="t2"><thead><tr><th>Order</th><th>Step</th><th>Who acts</th><th>Due</th></tr></thead><tbody>${open.map(o => `<tr><td><a href="#o=${E(o.id)}"><b>${E(o.id)}</b></a><div class="sub">${E(o.client.name || o.client.website || "")}</div></td><td>${E((SOP.find(x => x.k === SOP_STAGE[o.stage]) || {}).n || SN[o.stage])}</td><td>${E(SOP_WHO[o.stage] || "")}</td><td class="nw">${o.deadline ? fmtD(o.deadline) : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="note">No open orders.</p>`)}
     ${sec("Rules we never break", "", `<ol class="clean num">${RULES.map(r => `<li>${E(r)}</li>`).join("")}</ol>`)}
+    <div id="learnBox"></div>
    </div><div>
     ${ROUT.map(x => sec("Daily routine · " + x.r, "", `<ul class="clean">${x.d.map(t => `<li>${E(t)}</li>`).join("")}</ul>`)).join("")}
    </div></div>`;
+  drawLearn();
+}
+/* Learnings brain: lessons the desk follows on every order */
+async function drawLearn(){
+  const el = document.getElementById("learnBox"); if(!el) return;
+  let j = {}; try{ j = await api("learn"); }catch(e){ return; }
+  const l = j.lessons || [], adm = j.admin, on = l.filter(x => x.on !== false), sug = l.filter(x => x.on === false);
+  const row = x => `<li><div>${E(x.rule)}</div>${x.why ? `<div class="sub"><i>${E(x.why)}</i></div>` : ""}${adm ? `<div class="row" style="gap:6px;margin-top:4px"><button class="btn sm ghost" data-lt="${E(x.id)}">${x.on === false ? "Turn on" : "Turn off"}</button><button class="btn sm ghost" data-le="${E(x.id)}">Edit</button><button class="btn sm ghost" data-ld="${E(x.id)}">Remove</button></div>` : ""}</li>`;
+  el.innerHTML = sec("What the desk has learned", "Lessons from real reviews. The desk follows every lesson that is on, in each check, report, group message and answer, on every order.",
+    `<ol class="clean num">${on.map(row).join("")}</ol>${sug.length ? `<p class="lbl" style="margin-top:10px">Suggested from PM and manager decisions (off until you turn them on)</p><ol class="clean num">${sug.map(row).join("")}</ol>` : ""}
+     ${adm ? `<div class="row" style="gap:6px;margin-top:10px"><input id="lnew" placeholder="New lesson, as one clear rule" style="flex:1"><button class="btn sm" id="ladd">Add</button></div>` : ""}`);
+  const post = async b => { try{ await api("learn", b); }catch(e){ alert(e.message); } drawLearn(); };
+  el.querySelectorAll("[data-lt]").forEach(b => b.onclick = () => post({ op:"toggle", lid:b.dataset.lt }));
+  el.querySelectorAll("[data-ld]").forEach(b => b.onclick = () => { if(confirm("Remove this lesson?")) post({ op:"del", lid:b.dataset.ld }); });
+  el.querySelectorAll("[data-le]").forEach(b => b.onclick = () => { const x = l.find(y => y.id === b.dataset.le); const t = prompt("Edit the lesson", x.rule); if(t && t.trim() !== x.rule) post({ op:"edit", lid:x.id, rule:t.trim() }); });
+  const ad = el.querySelector("#ladd"); if(ad) ad.onclick = () => { const t = el.querySelector("#lnew").value.trim(); if(t) post({ op:"add", rule:t }); };
 }
 /* Team performance (owner only): scores and the detail behind them, per person */
 async function perfPage(open){

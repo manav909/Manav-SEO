@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt, teamReplyPrompt } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI as rawAsk, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt, teamReplyPrompt } from "./_lib/orderai.mjs";
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
@@ -714,6 +714,30 @@ ${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
   return o.pack;
 }
 
+/* Learnings brain: every lesson from the owner's reviews, kept as a rule and given to every judging and writing job of the desk,
+   so a mistake corrected once is not made again on any order. The owner adds, edits or retires lessons on the "How we work" page. */
+const LK = P + "learn";
+const LSEED = [
+  ["reading", "Read the project group from its very first message, not only from when the order reached the portal: work, files and instructions start there before the order is added. Read every file posted or uploaded in it (Google Docs, Sheets, Slides, Word, Excel, PDF).", "O-1001: only 3 of 26 group messages were read and the GSC report Doc was missed."],
+  ["reading", "Before saying a report or file lacks something, look through every file of the order (a Doc report and an Excel sheet can each hold part of the work). Name the file where you found it, or say you looked in all of them.", "O-1001: the GSC section was in the Doc report and the issues list in the Excel; the desk said both were missing."],
+  ["scope", "Respect the limits written in the requirement email. If it says quick or straightforward fixes, only quick fixes are expected; larger work (for example fixing every duplicate title) is a next step to recommend in the report, not missing work.", "O-1001: the desk asked for all duplicate titles to be fixed though only quick fixes were asked."],
+  ["proof", "A quote proves a point only when that line asks for that exact point. A line that describes the client's problem, or speaks of the work in general, is not proof. Copy it word for word.", "O-1001: a timing note was cited with the client's problem line as proof."],
+  ["message", "One point per problem. Never repeat an item in two points, and never ask for something already verified done.", "O-1001: the robots.txt line appeared twice; an already removed plugin was asked again."],
+  ["message", "Use exact values only, as one file states them. Never join numbers from different files into a range, never round or guess.", "O-1001: \"about 7,000 to 17,000 affected pages\" mixed two files."],
+  ["message", "When you call something a mistake, say exactly what says it is done and what shows it is not, in one clear sentence.", "O-1001: \"the sitemap line must be exact\" made no sense to the reader."],
+  ["message", "Items not in the requirement email are asked separately, with where they were asked (follow up email, KT note, earlier in the group, client chat). Anything nobody asked for is not demanded from the team.", ""],
+  ["message", "In group messages: bold for headings and item titles, italic for the reference with its proving line. Simple, human, task only, no meta.", ""],
+  ["message", "Edit our own group message only while nobody has written after it; otherwise post a new one.", ""],
+  ["people", "Instructions in a group are open to the PM's approval; weigh a PM's counter fairly, argue once politely, then accept. The manager's (Jyoti's) word settles a situation.", ""],
+  ["qa", "Client communication and the demo recording are delivery parts: they never stop an order from reaching QA.", ""]
+];
+async function learnList(){ let l = await getJ(LK); if(!Array.isArray(l)){ l = LSEED.map(([k, rule, why], i) => ({ id:"L" + (i + 1), kind:k, rule, why, by:"Manav (review of O-1001)", at:now(), on:true })); await setJ(LK, l); } return l; }
+let LEARN = { at:0, txt:"" };
+const LJOBS = new Set(["check1", "check2", "groupmsg", "deskanswer", "draftreport", "pack", "autoproof", "history"]);
+async function learnTxt(){ if(Date.now() - LEARN.at < 60000) return LEARN.txt; let l = []; try{ l = (await learnList()).filter(x => x.on !== false); }catch(e){}
+  LEARN = { at:Date.now(), txt:l.length ? "\n\nLESSONS FROM THE OWNER'S REVIEWS (always follow these; they come from real mistakes):\n" + l.map((x, i) => `${i + 1}. ${x.rule}`).join("\n") : "" }; return LEARN.txt; }
+async function askAI(job, model, system, user, max, ...rest){ return rawAsk(job, model, LJOBS.has(job) ? system + await learnTxt() : system, user, max, ...rest); }
+
 /* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data */
 async function buildCheck(o, fresh){
   if(!aiOn()) return null; groupDocs(o);
@@ -1072,6 +1096,10 @@ SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
         log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
         if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
         if(["approval", "counter", "manager decision"].includes(d.intent)) (o.stepLog = o.stepLog || []).push({ at:now(), by:m.by, role:isMgr ? "manager" : isPM ? "PM" : "team", intent:d.intent, said:str(m.text, 300), argued:!!d.argued, accepted:!!d.accepted, record:str(d.record, 240) });
+        // A PM counter the desk accepted, or a manager's decision, is a lesson candidate: kept switched off until the owner turns it on
+        if((d.intent === "manager decision" || (d.intent === "counter" && d.accepted)) && d.record) try{ const l = await learnList();
+          l.push({ id:"L" + (Math.max(0, ...l.map(x => parseInt(String(x.id).slice(1)) || 0)) + 1), kind:"from the team", rule:str(d.record, 400), why:str(o.id + ", " + m.by + " (" + (isMgr ? "manager" : "PM") + "): " + m.text, 300), by:"Order desk (suggested)", at:now(), on:false, suggested:true });
+          await setJ(LK, l); }catch(e){}
         if(isMgr) for(const st2 of (d.settled || []).slice(0, 10)){ if(!(ck.requirements || []).some(q => q.id === st2.r)) continue; (o.overrides = o.overrides || {})[st2.r] = { decision:st2.decision === "reopened" ? "reopened" : "accepted", by:m.by, at:now(), note:str(st2.note, 240) };
           log(o, { name:"Order desk" }, "Manager " + m.by + " " + (st2.decision === "reopened" ? "reopened" : "accepted") + ": " + str(((ck.requirements || []).find(q => q.id === st2.r) || {}).text, 100) + (st2.note ? " (" + str(st2.note, 120) + ")" : "")); }
         if(d.record) log(o, { name:"Order desk" }, m.by + ": " + str(d.record, 200));
@@ -1148,6 +1176,15 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
+  if(a === "learn"){ const l = await learnList();
+    if(request.method === "POST"){ if(!isA) return bad("For Manav only", 403);
+      if(q.op === "add"){ const rule = str(q.rule, 600).trim(); if(rule.length < 12) return bad("Write the lesson as one clear rule");
+        l.push({ id:"L" + (Math.max(0, ...l.map(x => parseInt(String(x.id).slice(1)) || 0)) + 1), kind:str(q.kind, 20) || "general", rule, why:str(q.why, 300), by:w.name, at:now(), on:true }); }
+      else { const x = l.find(y => y.id === q.lid); if(!x) return bad("Not found");
+        if(q.op === "edit"){ const rule = str(q.rule, 600).trim(); if(rule.length < 12) return bad("Write the lesson as one clear rule"); x.rule = rule; x.editedAt = now(); x.editedBy = w.name; }
+        else if(q.op === "toggle") x.on = x.on === false; else if(q.op === "del") l.splice(l.indexOf(x), 1); }
+      await setJ(LK, l); LEARN.at = 0; }
+    return out({ ok:true, lessons:l, admin:isA }); }
   if(a === "perfReset"){ if(!isA) return bad("For Manav only", 403); await cmd("DEL", PF); for(const o2 of await loadAll(1000, true)) if(o2.perfSeen || o2.tasks){ delete o2.perfSeen; delete o2.tasks; delete o2.replied; await saveO(o2); } return out({ ok:true }); }
   if(a === "perf"){ if(!isA) return bad("For Manav only", 403); return out({ ok:true, people:await perfData(num(url.searchParams.get("days"), 30)) }); }
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
