@@ -12,6 +12,7 @@ import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/goo
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
 import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
+import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -296,6 +297,7 @@ const isProj = w => (w.roles || [w.role]).every(r => r === "pm" || r === "qa");
 function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
+    check:o.check ? Object.assign({}, o.check, { chatNotInMail:undefined }) : null,
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
@@ -398,6 +400,7 @@ async function syncTeam(o){
     }catch(e){} }
   o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
+  if(fresh.length && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 2 * 36e5)) try{ await buildCheck(o); }catch(e){}
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
 }
@@ -697,6 +700,35 @@ ${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
   o.pack = Object.assign(r.data || {}, { at:now(), stage:o.stage, usd:+r.usd.toFixed(4) });
   log(o, { name:"Order desk" }, "Delivery pack ready: " + str(o.pack.summary, 200));
   return o.pack;
+}
+
+/* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data */
+async function buildCheck(o){
+  if(!aiOn()) return null; groupDocs(o);
+  const gig = gigOf(o.gig), convoText = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"} ${m.name || ""}: ${m.text}`).join("\n") : o.chat;
+  const p1 = planPrompt(o, gig, convoText), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
+  const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
+  const reads = [];
+  for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
+    try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
+  const probes = [];
+  for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
+  if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 6 * 36e5) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
+  const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
+  o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
+  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), note:str(r.note, 200) }));
+  o.check = Object.assign(r2.data || {}, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
+    reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
+    probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
+  // Scope follows the requirement email: when nothing has been ticked yet, the deliverables become its requirements
+  const untouched = !(o.deliverables || []).some(d => d.done || proofsOf(d).length || d.qa);
+  if(reqMail && reqs.length && untouched && !(o.deliverables || []).every(d => d.req)){
+    o.deliverables = reqs.map(r => ({ id:nid("d"), text:r.text, done:false, proof:"", qa:"", req:r.id }));
+    log(o, { name:"Order desk" }, "Deliverables set from the requirement email \"" + str(reqMail.subject, 80) + "\": " + reqs.length + " requirements");
+  }
+  (o.check.rows || []).forEach(row => { const d = (o.deliverables || []).find(x => x.req === row.r); if(d){ row.d = d.id; d.status = row.status; } });
+  o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
+  return o.check;
 }
 
 function score(orders, cfg, month){
@@ -1047,6 +1079,7 @@ async function handle(request){
       const cur = find("docs", p.newer.id); d.proofs = proofsOf(d); delete d.proof;
       Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
       log(o, w, "Proof switched to the newest copy: " + cur.name); }
+    else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildCheck(o); }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
