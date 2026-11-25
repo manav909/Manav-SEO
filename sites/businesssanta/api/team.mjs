@@ -72,10 +72,11 @@ async function loadAll(n){ const ids = await cmd("ZREVRANGE", T.ords, 0, (n || 3
 
 async function analyse(o, cfg){
   const gig = gigOf(o.gig);
-  if(!o.site || !o.site.at){ o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); }
-  if(!aiOn()) return { ok:false, why:"AI helpers are off until the API key is added in Vercel" };
-  const p = orderPrompt(o, gig, o.site, cfg);
-  const r = await askAI("order", "claude-sonnet-5-5", p.system, p.user, 32000);
+  if(!aiOn()){ if(!o.site || !o.site.at){ o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); } return { ok:false, why:"AI helpers are off until the API key is added in Vercel" }; }
+  // The website check runs alongside the AI instead of before it (it can take up to 30 seconds on slow sites)
+  const siteJob = (!o.site || !o.site.at) ? siteCheck(o.client.website).then(x => { if(x){ x.at = now(); o.site = x; } }).catch(() => {}) : Promise.resolve();
+  const p = orderPrompt(o, gig, o.site && o.site.at ? o.site : { note:"Website check still running" }, cfg);
+  const [r] = await Promise.all([askAI("order", "claude-sonnet-5-5", p.system, p.user, 32000), siteJob]);
   const d = r.data || {};
   o.ai = Object.assign(d, { at:now(), model:r.model, usd:+r.usd.toFixed(4) });
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);

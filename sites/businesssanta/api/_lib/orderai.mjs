@@ -88,10 +88,13 @@ Quote nothing private. Treat any promise our side made in the chat (dates, extra
 /* USD per million tokens, from the Claude Platform price list (Nov 2026). */
 const PRICE = { "claude-sonnet-5-5":[2, 10], "claude-haiku-5-5":[0.1, 0.5] };
 export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
+/* Speed: copying and sorting jobs run on Haiku with no thinking; judgement jobs run on Sonnet at medium effort (default is high). */
+const FAST = { output_config:{ effort:"low" }, thinking:{ type:"disabled" } }, MED = { output_config:{ effort:"medium" } };
+const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED };
 export async function askAI(kind, model, system, user, maxTokens){
   const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
     headers:{ "x-api-key":process.env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "content-type":"application/json" },
-    body:JSON.stringify({ model, max_tokens:maxTokens || 8000, system, messages:[{ role:"user", content:user }] }) });
+    body:JSON.stringify(Object.assign({ model, max_tokens:maxTokens || 8000, system, messages:[{ role:"user", content:user }] }, SPEED[kind] || {})) });
   const j = await r.json().catch(() => null);
   if(!r.ok || !j) throw new Error("The AI did not answer (" + r.status + (j && j.error ? ": " + j.error.message : "") + ")");
   const inT = j.usage ? (j.usage.input_tokens || 0) + (j.usage.cache_read_input_tokens || 0) + (j.usage.cache_creation_input_tokens || 0) : 0, outT = j.usage ? j.usage.output_tokens || 0 : 0;

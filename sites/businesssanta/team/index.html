@@ -504,7 +504,7 @@ function wireOrder(o){
   on("#repb", () => doOp("reply", { text:$("#rep").value }, "Reading the reply…"));
   on("#toqa", () => doOp("toQA"));
   on("#pyB", () => { const ex = num2($("#pyEa").value); doOp("pay", { status:$("#pyS").value, clearsOn:$("#pyC").value, tip:$("#pyT").value, refund:$("#pyR").value, extra:ex > 0 ? { what:$("#pyEw").value, amount:ex } : null }); });
-  on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order…"); });
+  on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order (about 20 to 40 seconds)…"); });
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => toast("Copied")); });
   on("#verify", () => doOp("verify", {}, "Checking the live site and Search Console…"));
@@ -513,7 +513,7 @@ function wireOrder(o){
   on("#rev", () => { const r = prompt("Why? Type 1, 2, 3, 4 or 5\n1 Wrong work\n2 Missed something we promised\n3 Not live or not showing\n4 Report wrong\n5 Client changed what they want"); const map = { 1:"Wrong work", 2:"Missed requirement", 3:"Not live", 4:"Report wrong", 5:"Client changed scope" }; if(!map[r]) return; doOp("revision", { reason:map[r], note:prompt("What exactly did the client say?") || "" }); });
   on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
   on("#anyway", () => { const w = prompt("Why should work start before all access is in?"); if(w) doOp("startAnyway", { why:w }); });
-  on("#rerun", () => doOp("analyse", {}, "The order desk is reading everything again…"));
+  on("#rerun", () => doOp("analyse", {}, "The order desk is reading the whole order again. Long chats take about a minute."));
   on("#site", () => doOp("site", {}, "Checking the website…"));
   on("#fmt", () => doOp("format", {}, "Laying out the conversation…"));
   on("#rawT", () => { const r = $("#raw"), hd = r.classList.toggle("hide"); $("#rawT").textContent = hd ? "Original paste" : "Hide original"; });
