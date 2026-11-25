@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt } from "./_lib/teamsync.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -294,7 +294,7 @@ function projView(o){
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -399,12 +399,22 @@ async function matchDocs(orders){
     const c = fresh.find(x => x.id === d.id); if(!c) continue; ops.push(["SET", DK(c.id), JSON.stringify({ order:d.order || "", confidence:d.confidence || 0, at:now() }), "EX", 60 * 60 * 24 * 120]);
     const o = byId.get(d.order); if(!o || (d.confidence || 0) < 0.5) continue;
     o.docs = o.docs || []; if(o.docs.some(x => x.id === c.id)) continue;
-    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:str(d.why, 200), confidence:+(d.confidence || 0).toFixed(2), status:d.confidence >= 0.85 ? "linked" : "suggested", at:now() });
+    const inTime = !c.modified || c.modified >= new Date(Date.parse(o.at) - 3 * 864e5).toISOString(), sure = (d.confidence || 0) >= 0.85 && inTime && /\S/.test(c.peek || "");
+    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:str(d.why, 200) + (inTime ? "" : " (older than the order)"), confidence:+(d.confidence || 0).toFixed(2), status:sure ? "linked" : "suggested", at:now() });
     o._docsNew = (o._docsNew || 0) + 1; n++;
   }
   if(ops.length) await pipe(ops);
+  for(const o of orders) groupDocs(o);
   for(const o of orders) if(o._docsNew){ log(o, { name:"Order desk" }, o._docsNew + " document(s) recognised as ours for this order"); delete o._docsNew; }
   return n;
+}
+
+/* Copies of the same document form one group; the newest is current (read for QA, proof and analysis), the rest are versions */
+function groupDocs(o){
+  const g = new Map();
+  for(const d of (o.docs || []).filter(x => x.status !== "rejected")){ const k = docGroup(d); d.group = k; (g.get(k) || g.set(k, []).get(k)).push(d); }
+  for(const l of g.values()){ l.sort((a, b) => String(b.modified || "").localeCompare(String(a.modified || ""))); l.forEach((d, i) => { d.current = i === 0; d.versions = l.length; }); }
+  o.docGroups = o.docGroups || {};
 }
 
 function score(orders, cfg, month){
@@ -487,6 +497,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     return out({ ok:true, items:items.sort((a, b) => rank[a.urgency] - rank[b.urgency] || a.deadline.localeCompare(b.deadline)), orders:mine.sort((a, b) => a.deadline.localeCompare(b.deadline)) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
+    if((o.docs || []).length) groupDocs(o);
     { const n0 = (o.access || []).length; dedupeAccess(o); const ch = !["done", "cancelled"].includes(o.stage) && autoAssign(o, await people()); if(o.access.length !== n0 || ch) await saveO(o); }
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
     return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
@@ -695,7 +706,17 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     else if(op === "doc"){ const x = find("docs", q.did); if(!x) return bad("Not found"); if(q.ours){ x.status = "linked"; x.by2 = w.name; } else { x.status = "rejected"; x.by2 = w.name; }
       await cmd("SET", DK(x.id), JSON.stringify({ order:q.ours ? o.id : "", confidence:q.ours ? 1 : 0, at:now(), by:w.name }), "EX", 60 * 60 * 24 * 365);
       if(q.ours && q.deliv){ const d = find("deliverables", q.deliv); if(d){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"drive", url:x.link, name:x.name, meta:{ ok:true, id:x.id, name:x.name, kind:x.kind, modified:x.modified, lastBy:x.by, via:x.via }, at:now(), by:w.name }); delete d.proof; } }
-      log(o, w, (q.ours ? "Confirmed our document: " : "Not this order: ") + x.name + (q.deliv ? " (used as proof)" : "")); }
+      groupDocs(o); log(o, w, (q.ours ? "Confirmed our document: " : "Not this order: ") + x.name + (q.deliv ? " (used as proof)" : "")); }
+    else if(op === "docDiff"){ const x = find("docs", q.did); if(!x) return bad("Not found"); if(!aiOn()) return bad("The AI helpers are off", 503); groupDocs(o);
+      const same = (o.docs || []).filter(d => d.group === x.group && d.status !== "rejected").sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+      let pair = null, how = "";
+      if(same.length >= 2){ pair = { after:{ at:same[0].modified, by:same[0].by, text:await docText(same[0]) }, before:{ at:same[1].modified, by:same[1].by, text:await docText(same[1]) } }; how = "newest copy against the one before"; }
+      if((!pair || (!pair.after.text && !pair.before.text)) && /document$/.test(x.mime || "")){ const rv = await revisionTexts(same[0] || x); if(rv){ pair = rv; how = "the last two saved versions of the document (" + rv.count + " in all)"; } }
+      if(!pair || (!pair.after.text && !pair.before.text)) return bad("There is only one version to read so far, or this file type cannot be compared as text");
+      if(pair.after.text === pair.before.text){ o.docGroups = o.docGroups || {}; o.docGroups[x.group] = { at:now(), how, summary:"No change in the text between the two versions.", changes:[], numbers:[], useNewer:true, flags:[] }; }
+      else { const p = diffPrompt(o, x.name, pair.before, pair.after), r = await askAI("diff", "claude-haiku-5-5", p.system, p.user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+        o.docGroups = o.docGroups || {}; o.docGroups[x.group] = Object.assign(r.data || {}, { at:now(), how }); }
+      log(o, w, "Compared versions of " + x.name + ": " + str(o.docGroups[x.group].summary, 200)); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;

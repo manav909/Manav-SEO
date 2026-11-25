@@ -93,3 +93,35 @@ Answer with one JSON object only: {"files":[{"id":"","order":"order id or empty"
 \nFILES:\n${cands.map(c => `${c.id} | name: ${c.name} | type: ${c.mime || ""} | owner: ${c.owner || ""} | changed ${c.modified || ""} by ${c.by || ""} | found: ${c.why.join(", ")} | starts: ${c.peek || "(no text)"}`).join("\n")}`;
   return { system, user };
 }
+
+/* Versions: copies of the same document are grouped (dates, "copy of", (1) and http/https ignored); the newest is the one we read. */
+export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").toLowerCase()
+  .replace(/^copy of\s+/, "").replace(/https?:\/\/(www\.)?/g, "").replace(/\(\d+\)/g, "").replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}|\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}/g, "")
+  .replace(/\b(v|ver|version|final|draft|new|latest|updated)\s*\d*\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+export async function docText(d, max){
+  if(!d.via) return "";
+  const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
+  const url = /document$|presentation$/.test(d.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(d.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(d.mime || "") ? D + "?alt=media" : "";
+  if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); return r.ok ? (await r.text()).slice(0, max || 20000) : "";
+}
+/* The two newest saved versions of one Google Doc, as text */
+export async function revisionTexts(d){
+  if(!d.via || !/document$/.test(d.mime || "")) return null;
+  const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
+  const l = await fetch(D + "/revisions?pageSize=200&fields=revisions(id,modifiedTime,lastModifyingUser(displayName),exportLinks)", { headers:{ authorization:"Bearer " + tok } }).then(r => r.json()).catch(() => ({}));
+  const rv = (l.revisions || []).filter(x => x.exportLinks && x.exportLinks["text/plain"]); if(rv.length < 2) return null;
+  const [a, b] = rv.slice(-2), get = u => fetch(u, { headers:{ authorization:"Bearer " + tok } }).then(r => r.ok ? r.text() : "");
+  return { before:{ at:a.modifiedTime, by:(a.lastModifyingUser || {}).displayName || "", text:(await get(a.exportLinks["text/plain"])).slice(0, 20000) },
+    after:{ at:b.modifiedTime, by:(b.lastModifyingUser || {}).displayName || "", text:(await get(b.exportLinks["text/plain"])).slice(0, 20000) }, count:(l.revisions || []).length };
+}
+export function diffPrompt(o, name, before, after){
+  const system = `You compare two versions of one document from an SEO, web and ads agency's work for a client. Say plainly what changed from the older to the newer version: sections added or removed, statements changed, and every number that changed (before and after). Then judge if the newer one is the one to use, and flag anything suspicious (numbers improved without a reason, client name or site changed, content copied from another client). No dashes.
+Answer with one JSON object only: {"summary":"one or two lines","changes":["each change"],"numbers":[{"what":"","before":"","after":""}],"useNewer":true,"flags":["anything suspicious, empty if none"]}`;
+  const user = `Order ${o.id}, client site ${o.client.website}. Document: ${name}
+OLDER VERSION (${before.at}${before.by ? ", " + before.by : ""}):
+${before.text}
+
+NEWER VERSION (${after.at}${after.by ? ", " + after.by : ""}):
+${after.text}`;
+  return { system, user };
+}
