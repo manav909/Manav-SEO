@@ -412,7 +412,7 @@ async function matchDocs(orders){
 /* Copies of the same document form one group; the newest is current (read for QA, proof and analysis), the rest are versions */
 function groupDocs(o){
   const g = new Map();
-  for(const d of (o.docs || []).filter(x => x.status !== "rejected")){ const k = docGroup(d); d.group = k; (g.get(k) || g.set(k, []).get(k)).push(d); }
+  for(const d of (o.docs || []).filter(x => x.status !== "rejected")){ const k = docGroup(d) + (d.split ? "#" + d.id : ""); d.group = k; (g.get(k) || g.set(k, []).get(k)).push(d); }
   for(const l of g.values()){ l.sort((a, b) => String(b.modified || "").localeCompare(String(a.modified || ""))); l.forEach((d, i) => { d.current = i === 0; d.versions = l.length; }); }
   o.docGroups = o.docGroups || {};
   /* A proof that points to an older copy is flagged with the newest one, so nobody sends QA or the client an outdated file */
@@ -728,7 +728,10 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
           pair.before = Object.assign({}, pair.before, { text:"First line: " + head + "\nLines only in this older version (" + gone.length + " of " + A.length + "):\n" + cut(gone, 120) });
           pair.after = Object.assign({}, pair.after, { text:"Lines only in this newer version (" + added.length + " of " + B.length + "):\n" + cut(added, 120) }); how += " (only the changed lines were read)"; }
         const p = diffPrompt(o, x.name, pair.before, pair.after), r = await askAI("diff", "claude-haiku-5-5", p.system, p.user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-        o.docGroups = o.docGroups || {}; o.docGroups[x.group] = Object.assign(r.data || {}, { at:now(), how }); }
+        o.docGroups = o.docGroups || {}; o.docGroups[x.group] = Object.assign(r.data || {}, { at:now(), how });
+        /* Same name, different report: split the newer one off so both are read */
+        if(r.data && r.data.sameDoc === false && same.length >= 2){ const g0 = x.group; same[0].split = true; same[0].splitWhy = str(r.data.whatEach || "Different report with the same name", 240); groupDocs(o);
+          o.docGroups[same[0].group] = Object.assign({}, o.docGroups[g0], { summary:"Kept as its own report: " + same[0].splitWhy }); } }
       log(o, w, "Compared versions of " + x.name + ": " + str(o.docGroups[x.group].summary, 200)); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
