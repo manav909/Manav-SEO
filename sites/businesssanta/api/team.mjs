@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -876,7 +876,14 @@ async function postSteps(o, cfg, by){
   if(!g){ const names = [...new Set((o.teamChat || []).map(m => m.space).filter(n2 => n2 && !/access/i.test(n2)))], sp = (await mySpaces(as)).find(x => names.includes(x.name));
     if(sp){ g = { id:sp.id, name:sp.name }; (o.teamChat || []).forEach(m => { if(m.space === sp.name && !m.spaceId) m.spaceId = sp.id; }); } }
   if(!g) throw new Error("No project group found for this order yet. Add seo@indiit.com to the project's Google Chat group");
+  if(!o.groupMsg || !o.groupMsgAt || (o.check && o.groupMsgAt < o.check.at)){ try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){} }
   const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
+  // One living message per order: edit the desk's last steps message instead of posting a repeat
+  const last = (o.deskPosts || []).filter(p => p.kind === "steps" && p.name && p.name.startsWith(g.id + "/")).slice(-1)[0];
+  if(last){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
+    await editChat(as, last.name, deskSay(cfg, t)); last.hash = sha(t).slice(0, 12); last.editedAt = now();
+    log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
+    await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:"(edited) " + str(t, 780), usd:0 }); return; }
   const m = await postChat(as, g.id, deskSay(cfg, t));
   o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12) }).slice(-30);
   o.chatPollAt = o.chatPollAt || now();

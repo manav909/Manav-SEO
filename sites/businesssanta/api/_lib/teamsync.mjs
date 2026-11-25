@@ -249,3 +249,10 @@ export async function chatSince(email, space, since){
 
 /* Spaces the posting account is in, and messages since a time in each (for @mentions) */
 export async function mySpaces(email){ const r = await apiAs(email, "https://chat.googleapis.com/v1/spaces?pageSize=100"); return (r.spaces || []).map(x => ({ id:x.name, name:x.displayName || "Direct chat", type:x.spaceType || x.type || "" })); }
+
+/* Edit a message the account posted earlier (keeps the group free of repeats) */
+export async function editChat(email, name, text){
+  const tok = await (await import("./google.mjs")).accessTokenAs(email);
+  const r = await fetch("https://chat.googleapis.com/v1/" + name + "?updateMask=text", { method:"PATCH", headers:{ authorization:"Bearer " + tok, "content-type":"application/json" }, body:JSON.stringify({ text:String(text).slice(0, 4000) }) });
+  const j = await r.json().catch(() => ({})); if(!r.ok) throw new Error("Google Chat " + r.status + ": " + ((j.error || {}).message || "").slice(0, 160)); return j;
+}
