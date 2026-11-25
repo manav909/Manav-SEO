@@ -3,7 +3,7 @@
 import { store, cmd, K, mgetJ, pipe } from "./_lib/store.mjs";
 import { scanBrand, googleSync } from "./portal.mjs";
 import { status as gStatus } from "./_lib/google.mjs";
-import { recheckDue } from "./team.mjs";
+import { recheckDue, dailyIntel } from "./team.mjs";
 
 const DAY = 864e5;
 export async function GET(request){
@@ -30,6 +30,7 @@ export async function GET(request){
   }
   // Order desk: recheck delivered orders on their dates (3, 7 and 14 days after delivery)
   let orders = []; try{ orders = await recheckDue(); }catch(e){ orders = ["error: " + String(e.message || e).slice(0, 160)]; }
-  await pipe([["LPUSH", K.log, JSON.stringify({ at:new Date().toISOString(), job:"weekly-check", done, google:gdone, orders })], ["LTRIM", K.log, 0, 199], ["DEL", K.cronLock]]);
+  let intel = []; try{ intel = await dailyIntel(); }catch(e){ intel = ["error: " + String(e.message || e).slice(0, 160)]; }
+  await pipe([["LPUSH", K.log, JSON.stringify({ at:new Date().toISOString(), job:"weekly-check", done, google:gdone, orders, intel })], ["LTRIM", K.log, 0, 199], ["DEL", K.cronLock]]);
   return new Response(JSON.stringify({ ok:true, checked:done, google:gdone, orders }), { headers:hdr });
 }

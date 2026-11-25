@@ -158,8 +158,12 @@ export async function refreshProps(){
   for(const a of await accounts()){
     await apiAs(a.email, "https://www.googleapis.com/webmasters/v3/sites").then(j => (j.siteEntry || []).filter(x => x.permissionLevel !== "siteUnverifiedUser")
       .forEach(x => items.push({ email:a.email, kind:"gsc", id:x.siteUrl, name:x.siteUrl, level:x.permissionLevel }))).catch(e => { errors[a.email + " gsc"] = e.message; });
+    const gas = [];
     await apiAs(a.email, "https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200").then(j => (j.accountSummaries || []).forEach(ac => (ac.propertySummaries || [])
-      .forEach(x => items.push({ email:a.email, kind:"ga", id:x.property, name:x.displayName + " (" + ac.displayName + ")" })))).catch(e => { errors[a.email + " ga"] = e.message; });
+      .forEach(x => gas.push({ email:a.email, kind:"ga", id:x.property, name:x.displayName + " (" + ac.displayName + ")" })))).catch(e => { errors[a.email + " ga"] = e.message; });
+    // Which website each Analytics property measures, so orders can find it by domain
+    for(const g of gas.slice(0, 80)){ try{ const st = await apiAs(a.email, "https://analyticsadmin.googleapis.com/v1beta/" + g.id + "/dataStreams?pageSize=20");
+      g.sites = (st.dataStreams || []).map(x => x.webStreamData && x.webStreamData.defaultUri).filter(Boolean).map(u => { try{ return new URL(u).hostname.replace(/^www\./, ""); }catch(e){ return ""; } }).filter(Boolean); }catch(e){} items.push(g); }
   }
   const rec = { at:new Date().toISOString(), items, errors }; await setJ(GK.props, rec); return rec;
 }

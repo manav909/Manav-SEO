@@ -9,6 +9,7 @@ import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, f
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
+import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -273,6 +274,7 @@ function projView(o){
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
+    intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
 }
@@ -304,6 +306,39 @@ function delays(o){
   const broken = ((o.ai || {}).promises || []).filter(p => /broken/i.test(p.status || "") || (p.by && p.by < nowI.slice(0, 10) && !/kept/i.test(p.status || ""))).map(p => p.what);
   return { id:o.id, site:domOf(o.client.website), client:o.client.name, stage:o.stage, deadline:o.deadline, pm:o.pmName || "", sales:o.byName, late, fails, revisions:revs, broken,
     hours:{ client:tot("client"), sales:tot("sales"), team:tot("team"), qa:tot("qa") }, items:d };
+}
+
+/* Google access found automatically: any connected account that can see the client's property marks the access received */
+function autoAccess(o, seen){
+  let n = 0;
+  for(const a of o.access || []){ if(["received", "skip"].includes(a.status)) continue;
+    const isG = /search console|gsc/i.test(a.item), isA = /analytics|ga4/i.test(a.item), hit = isG ? (seen.gsc || [])[0] : isA ? (seen.ga || [])[0] : null;
+    if(hit){ a.status = "received"; a.receivedAt = now(); a.by = "Order desk"; a.note = "Readable by " + hit.email + (hit.level ? " (" + ({ siteOwner:"Owner", siteFullUser:"Full user", siteRestrictedUser:"Restricted" }[hit.level] || hit.level) + ")" : "") + ", found automatically"; n++; }
+  }
+  if(n && o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))) setStage(o, "work");
+  return n;
+}
+async function buildIntel(o){
+  const data = await gather(o.client.website, o.google); const n = autoAccess(o, data.seen);
+  if(!data.gsc && !data.ga){ o.intel = Object.assign(o.intel || {}, { checked:now(), seen:data.seen }); return { found:false, access:n }; }
+  if(!aiOn()){ o.intel = { at:now(), data, seen:data.seen }; return { found:true, access:n }; }
+  const p = intelPrompt(o, data, domOf(o.client.website)), r = await askAI("intel", "claude-sonnet-5-5", p.system, p.user, 12000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  o.intel = { at:now(), checked:now(), data, seen:data.seen, ai:r.data || {}, usd:+r.usd.toFixed(4) };
+  try{ const c = await getJ(CK(o.cid || cidOf(o.client.name))); if(c){ c.intel = { at:now(), order:o.id, ai:r.data || {}, numbers:(r.data || {}).numbers || [] }; await setJ(CK(c.id), c); } }catch(e){}
+  return { found:true, access:n };
+}
+/* Daily: ask every connected account what it can see now, then read Google data for open orders that gained access or are a week old */
+export async function dailyIntel(){
+  const done = []; try{ await refreshProps(); }catch(e){ return ["props: " + e.message]; }
+  for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage) && x.client.website)){
+    try{ const ps = await propsFor(o.client.website), seen = { gsc:ps.gsc.map(x => ({ id:x.id, email:x.email, level:x.level })), ga:ps.ga.map(x => ({ id:x.id, email:x.email })) };
+      const before = autoAccess(o, seen), stale = !o.intel || !o.intel.at || Date.now() - Date.parse(o.intel.at) > 7 * 864e5;
+      if((seen.gsc.length || seen.ga.length) && (stale || before)){ const r = await buildIntel(o); log(o, { name:"Order desk" }, "Read Google data" + (r.access ? " and found access for " + r.access + " item(s)" : "") + ": business analysis updated"); }
+      else if(before) log(o, { name:"Order desk" }, "Access found automatically for " + before + " item(s)");
+      if(before || stale) await saveO(o); done.push(o.id);
+    }catch(e){ done.push(o.id + ": " + e.message); }
+  }
+  return done;
 }
 
 function score(orders, cfg, month){
@@ -566,6 +601,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       x.active = !x.active; x.offAt = now(); await setJ(RK(d), list); log(o, w, "Access " + x.system + " via " + x.account + (x.active ? " active again" : " marked removed")); }
     else if(op === "useProp"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); o.google = o.google || {}; o.google[q.kind === "ga" ? "ga" : "gsc"] = { id:str(q.pid, 200), email:str(q.email, 120) };
       log(o, w, "Uses " + (q.kind === "ga" ? "Analytics " : "Search Console ") + str(q.pid, 200) + " through " + str(q.email, 120)); }
+    else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
       log(o, w, "Live check: " + (v.live.length - bad1) + " of " + v.live.length + " site checks fine" + (v.gsc && v.gsc.ok ? ", " + idx + " of " + v.pages.length + " sample pages indexed by Google" : ", Search Console not shared with us")); }
