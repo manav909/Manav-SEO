@@ -559,7 +559,7 @@ DAYS_CSS = '.days{list-style:none;margin:18px 0 0;padding:0;display:grid;grid-te
 
 WISH = {"slug": "dear-business-santa",
   "title": "Dear Business Santa: Send Your Small Business Wish | Business Santa",
-  "desc": "US small business owners: tell Business Santa what you wish Google, Google Maps or ChatGPT did for your business this Christmas. A real person replies with a free check.",
+  "desc": "Tell Business Santa what you wish Google, Google Maps or ChatGPT did for your small business this Christmas. A real person replies with a free check.",
   "faq": [("What happens after I send my wish?", "A real person on our team looks at how your business shows up on Google, Google Maps and ChatGPT and replies by email with a short plain-English check and your top 3 fixes. It is free and there is nothing to buy."),
           ("What kind of wish can I send?", "Anything about being found online: more calls from Google Maps, showing up when people ask ChatGPT, getting holiday hours right, a profile marked closed, missing reviews or a wrong pin on the map."),
           ("Is this the same as the 12 Days of Business Santa?", "No, but it helps. Every wish from a US small business is also considered for the 12 Days of Business Santa, when we give one business a day a free Holiday Google tune-up from December 1 to 12."),
@@ -607,7 +607,7 @@ fetch('https://formsubmit.co/ajax/seo%40businesssanta.com',{method:'POST',header
 
 NICE = {"slug": "nice-list",
   "title": "Business Santa's Nice List 2026: US Small Businesses Doing Google Right | Business Santa",
-  "desc": "10 US small businesses whose Google profiles help customers find them, each checked on Google on November 19, 2026: strong ratings, real reviews, hours and a website on the profile.",
+  "desc": "10 US small businesses whose Google profiles help customers find them, checked on Google on Nov 19, 2026: strong ratings, real reviews, hours and a website.",
   "checked": "November 19, 2026",
   "list": [("Austin's Greatest Plumbing", "Plumber", "Austin, TX", "plumber", 5.0, 355, 4),
            ("BenjaminBL Plumbing", "Plumber", "Austin, TX", "plumber", 4.9, 287, 5),

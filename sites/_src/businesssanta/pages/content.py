@@ -137,11 +137,11 @@ INDUSTRIES = [
   ],
  },
  {
-  "slug": "seo-for-law-firms", "k": "law", "noun": "law firms", "one": "lawyer", "biz": "law firm",
-  "title": "Law Firm SEO Services for Lawyers and Attorneys | Business Santa",
-  "desc": "Law firm SEO services for US lawyers: Google Maps, practice area pages, reviews and AI answers, within bar rules. Free check, fixes from $120, $299 a month.",
-  "h1": "Law firm SEO", "h1ac": "for attorneys who want the call",
-  "answer": "Law firm SEO services (also called lawyer SEO or attorney SEO) are the work that gets your firm into the top results when people nearby search \"lawyer near me\" or a practice area like \"car accident lawyer\" or \"family lawyer near me\", and named when they ask ChatGPT who to call. For most firms that starts with a strong Google Business Profile, a clear page for each practice area, and reviews, all within your state bar's advertising rules. Business Santa does this remotely for US law firms: a free check first, one-time fixes from $120, and monthly local SEO at $299 a month for one office with no contract.",
+  "slug": "seo-for-law-firms", "k": "law", "noun": "law firms", "one": "lawyer", "biz": "law firm", "nav": "Law firm SEO services",
+  "title": "Law Firm SEO Services for Small US Firms | Business Santa",
+  "desc": "Law firm SEO services for small US firms and solo attorneys: Google Maps, practice area pages and reviews, within bar rules. Free check, $299 a month.",
+  "h1": "Law firm SEO services", "h1ac": "for small US firms",
+  "answer": "Our law firm SEO services get small US firms and solo attorneys into Google's top results and the Google Maps top 3 when people nearby search \"lawyer near me\" or a practice area like \"car accident lawyer\", through a strong Google Business Profile, a clear page for each practice area and steady reviews, all within your state bar's advertising rules. Profile and listing fixes can help within weeks, competitive practice areas in big cities can take six months or more, and the price is simple: a free check first, one-time fixes from $120, and monthly local SEO at $299 a month for one office with no contract. This work is also called lawyer SEO or attorney SEO, and it is what gets your firm named when people ask ChatGPT who to call. Business Santa does it remotely for law firms across the US.",
   "intro": "A new client usually needs a lawyer this week, and they pick from the few firms they see first. They look for the right practice area, good reviews and a free consultation. If your firm does not show up there, the call goes to someone else.",
   "searches": ["lawyer near me", "car accident lawyer", "free consultation attorney", "family lawyer near me", "DUI lawyer near me", "estate planning attorney"],
   "fixes": [
@@ -154,12 +154,13 @@ INDUSTRIES = [
   ],
   "ai": "People ask AI assistants \"what should I do after a car accident, and who can help near me\". Those answers lean on legal directories, reviews and firm websites that explain things clearly. We make sure your firm and your practice areas are described clearly in those places.",
   "faq": [
+   ("How much does lawyer SEO cost?", "It depends on your city, your practice areas and how much needs fixing. Our free check costs nothing, one-time fixes start at $120, and monthly local SEO for one office is $299 a month with no contract. Big city personal injury terms cost more to win than a small town estate planning practice."),
    ("How long does SEO take for a law firm?", "Profile and listing fixes can help within weeks. Competitive practice areas in big cities can take six months or more. Smaller towns and narrower practice areas often move faster."),
+   ("What do your law firm SEO services include each month?", "Keeping your Google Business Profile active with posts and photos, a steady way to ask clients for reviews, one new or better practice area page, fixes to website problems, matching listings on the legal directories, and a report of calls and rankings you can check in your own Google accounts."),
+   ("How do attorneys show up on Google Maps?", "Google ranks the map results on relevance, distance and prominence. For a law firm that means the right primary category for your main practice area, a verified office address, each practice area listed on your Business Profile, steady client reviews, and the same firm name, address and phone on Avvo, Justia, FindLaw and your website. Being close to the person searching matters, so a firm usually shows best in the area around its office."),
    ("Do you follow state bar advertising rules?", "Yes. We write plain, accurate content, avoid outcome promises and keep your disclaimers. Your firm approves everything before it goes live, and you remain responsible for final compliance."),
    ("Can solo attorneys benefit?", "Yes. Solo and small firms often win locally because they are close to the searcher and have personal reviews. A complete profile and clear practice pages go a long way."),
    ("Will you write our practice area pages?", "Yes. We write them in plain English so clients understand them, and you review them before anything is published."),
-   ("What do your law firm SEO services include each month?", "Keeping your Google Business Profile active with posts and photos, a steady way to ask clients for reviews, one new or better practice area page, fixes to website problems, matching listings on the legal directories, and a report of calls and rankings you can check in your own Google accounts."),
-   ("How much does lawyer SEO cost?", "It depends on your city, your practice areas and how much needs fixing. Our free check costs nothing, one-time fixes start at $120, and monthly local SEO for one office is $299 a month with no contract. Big city personal injury terms cost more to win than a small town estate planning practice."),
   ],
  },
  {
@@ -1495,7 +1496,7 @@ HOLIDAY_GUIDES.insert(1, {
  ],
  "post": [
   ("If you are a service business, <span class=\"ac\">not a shop</span>",
-   "<p>Plumbers, HVAC companies, salons, dentists and law firms can use Black Friday too: a dated gift card bonus, a winter tune-up price or a free consultation week, posted on your Google profile with clear terms. The same rules apply: correct hours, one simple offer with an end date, and quick replies.</p>"),
+   "<p>Plumbers, HVAC companies, salons, dentists and law firms can use Black Friday too: a dated gift card bonus, a winter tune-up price or a free consultation week, posted on your Google profile with clear terms. For a firm, see what our <a href=\"/seo-for-law-firms\">law firm SEO services</a> set up on Google. The same rules apply: correct hours, one simple offer with an end date, and quick replies.</p>"),
  ],
  "src": [
   ["https://support.google.com/business/answer/6303076", "Google Business Profile Help: How to set special hours"],
@@ -1530,11 +1531,13 @@ _CM = {
  "date": "2026-11-21",
  "nav": "Cyber Monday plan",
  "title": "Cyber Monday 2026 for Small Businesses: Get Found on Google | Business Santa",
- "desc": "Cyber Monday is November 30, 2026. How US small businesses and local shops get found on Google that day: one offer, product listings, pickup, gift cards and reviews.",
+ "desc": "Cyber Monday is November 30, 2026. How US small businesses get found on Google that day: one offer, product listings, pickup, gift cards and reviews.",
  "h1": "Cyber Monday 2026:",
  "h1ac": "how a small business gets found on Google",
  "answer": "Cyber Monday 2026 is Monday, November 30. A small business gets found that day by running one clear online offer with an end date, posting it on its Google Business Profile, putting it at the top of its website with a checkout that works on a phone, showing its products on Google (free local listings are free for stores with a physical location), and making gift cards, local pickup and delivery easy to find. You do not need a big online store: a local shop, salon or service business can sell gift cards, prepaid packages and pickup orders the same way.",
  "pre": [
+  ("Cyber Monday morning: <span class=\"ac\">3 things to check on Google before noon</span>",
+   "<p>Open Google Maps on your phone, search your business name and check three things before the lunch rush. <b>1. Hours:</b> it should say Open for Monday, November 30, with the right times (if your hours are different that day, set special hours). <b>2. Your offer:</b> the Offer post shows the right deal, the right end date and a button that works. <b>3. Call and website:</b> tap Call and Website yourself; the number rings and the page opens on your offer. If any of these is wrong, fix it in your Business Profile first; most edits show within minutes, though Google can review some changes before they appear.</p>"),
   ("Why Cyber Monday <span class=\"ac\">matters for local businesses</span>",
    "<p>The National Retail Federation expects 182.7 million US shoppers from Thanksgiving through Cyber Monday 2026 (NRF survey released November 19, 2026, reported by Chain Drug Review). Last year NRF named Cyber Monday the second most popular day of that weekend, with 73.9 million people planning to shop (NRF, November 20, 2025). Many of those shoppers search Google for a gift, a deal or a local option they can pick up, so a small business with a clear offer on Google competes on the same screen as the big brands.</p>"),
  ],
@@ -1559,7 +1562,7 @@ _CM = {
  ],
  "post": [
   ("If you are a service business, <span class=\"ac\">not a store</span>",
-   "<p>Plumbers, HVAC companies, roofers, dentists, salons and law firms can use Cyber Monday too: a dated gift card bonus, a winter maintenance plan at a holiday price, or a free consultation week booked online. Post it on your Google profile with clear terms, and make the booking or gift card link the first thing people see on your website.</p>"),
+   "<p>Plumbers, HVAC companies, roofers, dentists, salons and law firms can use Cyber Monday too: a dated gift card bonus, a winter maintenance plan at a holiday price, or a free consultation week booked online. For a firm, see what our <a href=\"/seo-for-law-firms\">law firm SEO services</a> set up on Google. Post it on your Google profile with clear terms, and make the booking or gift card link the first thing people see on your website.</p>"),
  ],
  "src": [
   ["https://support.google.com/business/answer/7342169?hl=en", "Google Business Profile Help: Create and manage posts"],
