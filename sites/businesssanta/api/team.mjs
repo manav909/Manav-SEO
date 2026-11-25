@@ -905,7 +905,7 @@ async function writeGroupMsg(o){
   const pm = (o.pmName || "").split(" ")[0];
   const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
 Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm".
-Each point: "title" (two to five words), "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be there). Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
+Each point: "title" (two to five words), "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
 Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
 Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
   const user = `SITE: ${o.client.website}
@@ -915,7 +915,12 @@ SOURCES:
 ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice(0, x.key === "requirement email" ? 8000 : 2500)}`).join("\n\n").slice(0, 70000)}`;
   const r = await askAI("groupmsg", "claude-sonnet-5-5", system, user, 3000);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const d = r.data || {}, clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
+  const d = r.data || {}; d.points = d.points || [];
+  // Every open item gets its point: anything the first answer skipped is asked for once more on its own
+  const miss = open.filter(x => !d.points.some(p2 => p2.id === x.id));
+  if(miss.length) try{ const r2 = await askAI("groupmsg", "claude-sonnet-5-5", system, user.replace(/^OPEN ITEMS[^\n]*$/m, "OPEN ITEMS (findings from the check): " + JSON.stringify(miss)), 2000);
+    o.aiUsd = +(num(o.aiUsd, 0) + r2.usd).toFixed(4); d.points = d.points.concat(((r2.data || {}).points || []).filter(p2 => miss.some(x => x.id === p2.id))); }catch(e){}
+  const clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
   // A quote counts only if it is really in the source it names (or another source, which then becomes the source)
   const norm = t => String(t || "").toLowerCase().replace(/[\u2018\u2019\u201c\u201d'"]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   const prove = p2 => { const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
@@ -924,7 +929,7 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
     return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
   const seen = new Set(), pts = [], left = [];
   for(const p2 of d.points || []){ const it = open.find(x => x.id === p2.id); if(!it) continue;
-    const title = clean(p2.title), text = [clean(p2.now), clean(p2.expected)].filter(Boolean).join(" "), k = norm(title);
+    const ex = clean(p2.expected).replace(/^(needed|expected|it should)\s*:?\s*/i, ""), title = clean(p2.title), text = [clean(p2.now), ex ? "Needed: " + ex.charAt(0).toLowerCase() + ex.slice(1) : ""].filter(Boolean).join(" "), k = norm(title);
     if(!text || seen.has(k)) continue; seen.add(k);
     const pr = prove(p2); if(!pr){ left.push({ id:it.id, title, text }); continue; }
     pts.push({ it, title, text, pr }); }
