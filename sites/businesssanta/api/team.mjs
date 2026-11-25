@@ -720,7 +720,14 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       if((!pair || (!pair.after.text && !pair.before.text)) && /document$/.test(x.mime || "")){ const rv = await revisionTexts(same[0] || x); if(rv){ pair = rv; how = "the last two saved versions of the document (" + rv.count + " in all)"; } }
       if(!pair || (!pair.after.text && !pair.before.text)) return bad("There is only one version to read so far, or this file type cannot be compared as text");
       if(pair.after.text === pair.before.text){ o.docGroups = o.docGroups || {}; o.docGroups[x.group] = { at:now(), how, summary:"No change in the text between the two versions.", changes:[], numbers:[], useNewer:true, flags:[] }; }
-      else { const p = diffPrompt(o, x.name, pair.before, pair.after), r = await askAI("diff", "claude-haiku-5-5", p.system, p.user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+      else { /* Long files: send only the lines that differ (plus the header), so the comparison is cheap, complete and exact */
+        const big = (pair.before.text.length + pair.after.text.length) > 9000;
+        if(big){ const A = pair.before.text.split(/\r?\n/), B = pair.after.text.split(/\r?\n/), sa = new Set(A), sb = new Set(B), head = B[0] || A[0] || "";
+          const gone = A.filter(l => l.trim() && !sb.has(l)), added = B.filter(l => l.trim() && !sa.has(l));
+          const cut = (l, n) => l.slice(0, n).join("\n") + (l.length > n ? "\n(+" + (l.length - n) + " more lines)" : "");
+          pair.before = Object.assign({}, pair.before, { text:"First line: " + head + "\nLines only in this older version (" + gone.length + " of " + A.length + "):\n" + cut(gone, 120) });
+          pair.after = Object.assign({}, pair.after, { text:"Lines only in this newer version (" + added.length + " of " + B.length + "):\n" + cut(added, 120) }); how += " (only the changed lines were read)"; }
+        const p = diffPrompt(o, x.name, pair.before, pair.after), r = await askAI("diff", "claude-haiku-5-5", p.system, p.user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
         o.docGroups = o.docGroups || {}; o.docGroups[x.group] = Object.assign(r.data || {}, { at:now(), how }); }
       log(o, w, "Compared versions of " + x.name + ": " + str(o.docGroups[x.group].summary, 200)); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
