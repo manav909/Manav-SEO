@@ -768,11 +768,18 @@ async function buildCheck(o, fresh){
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
   // Pages the team's files say were changed are read live by the desk itself, so nobody is asked to "confirm" what the desk can see
-  { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), urls = [];
-    for(const x of reads.filter(x2 => x2.kind !== "data")) for(const ln of String(x.full || x.content).split("\n")) if(/updated|done|fixed|changed|new title|rewritten|duplicate/i.test(ln))
-      for(const m of ln.matchAll(/https?:\/\/[^\s"'<>|,\t]+|(?:^|\t)(\/[a-z0-9][\w\-\/]*)(?=\t|$)/gi)){ const raw = (m[1] || m[0]).trim().replace(/[.)]+$/, ""), u = /^\//.test(raw) ? (() => { try{ return new URL(/^https?:/i.test(o.client.website) ? o.client.website : "https://" + o.client.website).origin + raw; }catch(e){ return ""; } })() : raw;
-        if(domOf(u) === h && !seen.has(u) && !/\.(xml|txt|jpg|png|pdf)$/i.test(u)){ seen.add(u); urls.push(u); } }
-    for(const u of urls.slice(0, 16)) try{ probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, await probe(o.client.website, { url:u, look:"title" }))); }catch(e){} }
+  { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), cands = [], tcount = {};
+    const abs = raw => /^\//.test(raw) ? (() => { try{ return new URL(/^https?:/i.test(o.client.website) ? o.client.website : "https://" + o.client.website).origin + raw; }catch(e){ return ""; } })() : raw;
+    for(const x of reads.filter(x2 => x2.kind !== "data")) for(const ln of String(x.full || x.content).split("\n")){ if(!/updated|done|fixed|changed|title|duplicate|rewritten/i.test(ln)) continue;
+      const cells = ln.split("\t");
+      cells.forEach((c, i) => { const raw = c.trim().replace(/[.)]+$/, ""); if(!/^(https?:\/\/\S+|\/[a-z0-9][\w\-\/]*)$/i.test(raw)) return; const u = abs(raw);
+        if(!u || domOf(u) !== h || seen.has(u) || /\.(xml|txt|jpg|png|pdf)$/i.test(u)) return; seen.add(u);
+        const title = String(cells[i + 1] || "").trim().toLowerCase(); if(title) tcount[title] = (tcount[title] || 0) + 1; cands.push({ u, title }); }); }
+    // Pages whose title repeats in the team's sheet (real duplicates) are read first
+    cands.sort((p, q) => ((tcount[q.title] || 0) > 1) - ((tcount[p.title] || 0) > 1));
+    const pick = cands.slice(0, 40);
+    for(let i = 0; i < pick.length; i += 8) (await Promise.all(pick.slice(i, i + 8).map(c => probe(o.client.website, { url:c.u, look:"title" }).catch(() => null))))
+      .forEach(r => { if(r) probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, r)); }); }
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
   reads.forEach(x => delete x.full);
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
