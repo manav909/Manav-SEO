@@ -183,7 +183,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 const $ = s => document.querySelector(s), app = $("#app");
 const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 const num2 = v => { const x = Number(v); return isFinite(x) ? x : 0; };
-const money = v => v == null ? "n/a" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits:2 });
+const money = v => v == null ? "n/a" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits:Number(v) % 1 ? 2 : 0, maximumFractionDigits:2 });
 const STAGES = [["access","Waiting for access"],["work","In work"],["qa","QA check"],["ready","Ready to deliver"],["delivered","Delivered"],["done","Closed"]];
 const SN = Object.fromEntries(STAGES.concat([["cancelled","Cancelled"]]));
 const RNAME = { admin:"Owner", sales:"Sales", comms:"Client messages", pm:"Project team", qa:"QA", manager:"Manager" };
