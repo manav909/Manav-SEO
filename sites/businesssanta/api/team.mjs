@@ -815,14 +815,16 @@ TEAM FILES READ: ${JSON.stringify(ck.files || [])}`.slice(0, 90000);
    It posts as the account chosen in Team and settings (Manav's), and starts each message with "Order desk:" unless that is turned off. */
 const groupOf = o => { const n = {}; (o.teamChat || []).filter(m => m.spaceId && !/access/i.test(m.space || "")).forEach(m => n[m.spaceId] = (n[m.spaceId] || 0) + 1); const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0]; return id ? { id, name:((o.teamChat || []).find(m => m.spaceId === id) || {}).space || "" } : null; };
 async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a = (await gAccounts()).find(x => x.email === as); return a && a.post ? a.email : null; }
-const deskSay = (cfg, t) => (cfg.deskTag === false ? "" : "Order desk: ") + t;
+const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
 function stepsText(o){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
   const path = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || ""));
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || ""));
   if(!path.length && !open.length) return "";
-  const lines = path.length ? path.map((p, i) => `${i + 1}. ${p.who}: ${p.do}${p.where ? "\n   Where: " + p.where : ""}${p.check ? "\n   Then: " + p.check : ""}`) : open.map((r, i) => `${i + 1}. ${r.who || "Team"}: ${r.toPass}${r.where ? "\n   Where: " + r.where : ""}${r.check ? "\n   Then: " + r.check : ""}`);
-  return `*${domOf(o.client.website)}: what to do next*\n\n${lines.join("\n\n")}\n\nPM, please approve these steps or suggest another way here.\nWhen you finish a step, write "done" here. Have a question? Reply in this thread.`;
+  const line = (who, what, where) => { const w = String(what || "").trim().replace(/\.$/, ""); return `${who ? who + ": " : ""}${w.charAt(0).toLowerCase() + w.slice(1)}${where && !w.toLowerCase().includes(String(where).toLowerCase().slice(0, 18)) ? " (" + String(where).replace(/\.$/, "") + ")" : ""}.`; };
+  const lines = (path.length ? path.map(p => line(p.who, p.do, p.where)) : open.map(r => line(r.who, r.toPass, r.where))).map((t, i) => `${i + 1}. ${t}`);
+  const pm = (o.pmName || "").split(" ")[0];
+  return `Hi team, for ${domOf(o.client.website)} we still need:\n${lines.join("\n")}\n${pm ? pm + ", does this plan work for you? " : ""}Write "done" here when a step is finished.`;
 }
 async function postSteps(o, cfg, by){
   const as = await poster(cfg); if(!as) throw new Error("Choose the account to post as in Team and settings, and connect it with Google Chat permission");
@@ -897,7 +899,7 @@ async function mentionsRun(cfg, as){
     const callRe = new RegExp("@(manav|order desk|desk|" + String(as).split("@")[0].replace(/[^a-z0-9]/gi, "") + ")(\\b|\\s|$)", "i");
     for(const m of msgs.filter(x => callRe.test(x.text) && !/^Order desk:/.test(x.text))){
       const o = bySpace[sp.id] || null, ck = (o && o.check) || {};
-      const system = `Someone in an agency's team chat group mentioned the order desk or @Manav, the head of the department. You answer as the order desk, in the same thread, so work does not wait. Read what they need. If you can answer from the order facts (what to do, where, how it is checked, access status, files, live checks), answer in two to five short lines. If it is a technical question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names, as short as possible. If it needs Manav himself (an approval, money, prices, scope change, anything about or with the client, hiring, people problems), say kindly that Manav will reply soon, and set needsManav. Never share passwords, logins, prices or the client's own messages. Use VERY SIMPLE English a 4th grade child can follow. No dashes.
+      const system = `Someone in an agency's team chat group mentioned the order desk or @Manav, the head of the department. You answer as the order desk, in the same thread, so work does not wait. Read what they need. If you can answer from the order facts (what to do, where, access status, files, live checks), answer like a friendly colleague in one to four short lines, only what they need to act. No meta talk (never explain why a task exists or how the desk checks things). If it is a technical question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names, as short as possible. If it needs Manav himself (an approval, money, prices, scope change, anything about or with the client, hiring, people problems), say kindly that Manav will reply soon, and set needsManav. Never share passwords, logins, prices or the client's own messages. Use VERY SIMPLE English a 4th grade child can follow. No dashes.
 First decide if it is GENUINE: a real question or request about project work, a client order, access, or a technical task. Greetings, thanks, jokes, chit chat and topics outside work are not genuine: then leave answer empty.
 Answer with one JSON object only: {"genuine":true,"topic":"two to four words, for example robots.txt or Search Console access","qtype":"work | technical | access | client | other","answer":"","needsManav":false,"summary":"one line for Manav: who needs what"}`;
       const user = `GROUP: ${sp.name}\nMESSAGE from ${m.by}: ${m.text}\n` + (o ? `ORDER for this group: site ${o.client.website}, stage ${o.stage}.\nREQUIREMENTS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, status:r.status, toPass:r.toPass, where:r.where, check:r.check })))}\nACCESS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status })))}\nFILES: ${JSON.stringify(ck.files || [])}` : "No order is linked to this group.");
@@ -933,7 +935,7 @@ export async function chatAnswers(){
     const mine = new Set((o.deskPosts || []).map(p => p.sender).filter(Boolean)), threads = new Set((o.deskPosts || []).map(p => p.thread).filter(Boolean));
     let changed = false;
     for(const m of msgs){
-      if(mine.has(m.sender) && /^Order desk:/.test(m.text)) continue;
+      if(mine.has(m.sender)) continue;
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
       if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
       if(!mine.has(m.sender) && (threads.has(m.thread) || /^\s*done\b/i.test(m.text))){ const lp = (o.deskPosts || []).filter(p => p.at <= m.at).slice(-1)[0]; if(lp && !(o.replied || {})[lp.name + m.by]){ (o.replied = o.replied || {})[lp.name + m.by] = 1; await perfEv({ type:"reply", who:m.by, order:o.id, minutes:Math.round((Date.parse(m.at) - Date.parse(lp.at)) / 6e4) }); } }
@@ -942,7 +944,7 @@ export async function chatAnswers(){
       if(!asked && !((isMgr || isPM) && threads.has(m.thread))) continue;
       if(mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
-      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
+      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
 Every step you give is a proposal open to the PM's approval. The SENDER ROLE tells you who wrote:
 If the PM approves, thank them in one line and record it. If the PM disagrees or suggests another way, judge it fairly against the requirement and what the client needs: if their way still gets the work done right, accept it warmly and say what changes; if not, politely give ONE clear reason and a helpful option. If you already argued this point before (see EARLIER), accept the PM's decision, say you have noted the risk, and do not argue again.
@@ -1071,7 +1073,7 @@ async function handle(request){
     if((o.docs || []).length) groupDocs(o);
     { const n0 = (o.access || []).length; dedupeAccess(o); const ch = !["done", "cancelled", "details"].includes(o.stage) && autoAssign(o, await people()); if(o.access.length !== n0 || ch) await saveO(o); }
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null, history:await getJ(HK(domOf(o.client.website))) }); }
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null, history:await getJ(HK(domOf(o.client.website))), stepsPreview:stepsText(o) }); }
   if(a === "clients"){ const all = await loadAll(1000);
     for(const o of all) if(!o.cid){ o.cid = cidOf(o.client.name); await touchClient(o); await saveO(o); }
     const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
@@ -1161,7 +1163,7 @@ async function handle(request){
     if(op === "complete"){ need("create"); if(o.stage !== "details") return bad("This order already has its details");
       const f = orderFields(Object.assign({ website:o.client.website, client:o.client.name, country:o.client.country }, q, { website:q.website || o.client.website })); if(f.error) return bad(f.error);
       Object.assign(o, f.fields, { by:w.uid, byName:w.name, completedAt:now() }); log(o, w, "Order details added");
-      const ai = await launch(o, w, cfg); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), ai, history:await getJ(HK(domOf(o.client.website))) }); }
+      const ai = await launch(o, w, cfg); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), ai, history:await getJ(HK(domOf(o.client.website))), stepsPreview:stepsText(o) }); }
     else if(op === "notOrder"){ need("create"); if(o.stage !== "details") return bad("Only a draft can be marked as not an order");
       setStage(o, "cancelled"); o.cancelWhy = "Not an order: " + str(q.why, 200); log(o, w, o.cancelWhy);
       if(q.ignoreSite){ await cmd("SADD", DIGN, domOf(o.client.website)); log(o, w, "The order desk will not open drafts for " + domOf(o.client.website) + " again"); } }
@@ -1387,7 +1389,7 @@ async function handle(request){
     else if(op === "cancel"){ need("assign"); setStage(o, "cancelled"); log(o, w, "Cancelled: " + str(q.why, 300)); }
     else return bad("Unknown step");
     await saveO(o); if(o.cid) touchClient(o).catch(() => {});
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), history:await getJ(HK(domOf(o.client.website))) });
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), history:await getJ(HK(domOf(o.client.website))), stepsPreview:stepsText(o) });
   }
   return bad("Unknown request", 404);
 }
