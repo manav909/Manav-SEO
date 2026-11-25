@@ -116,6 +116,7 @@ export function orderPrompt(o, gig, site, cfg){
 Your job is to stop mistakes before work starts: wrong scope, missing or wrong-level access, promises the team does not know about, reports that cannot be proven, work that never goes live.
 ${SAFE}
 ${RAW}
+Turn every risk, special remark and open promise that needs information or a step into an action with an owner. Client facing actions get a message the client messages person can paste on the marketplace. Internal actions get a message for the project team or executive (they are asked over Google Chat), so the client messages person always has every answer before replying.
 Only ask for access this exact scope needs; drop standard items the work does not use. Never repeat passwords or email addresses from the chat.
 Today is ${new Date().toISOString().slice(0, 10)}. Convert relative dates in the chat ("tomorrow", "Monday") to real dates from the message dates.
 Answer with one JSON object only, no other text, in this shape:
@@ -127,7 +128,8 @@ Answer with one JSON object only, no other text, in this shape:
 "next":"the very next thing the team must do, and by when, in one line",
 "questions":["things to confirm with the client before starting, only real gaps"],
 "remarks":["special remarks: promises, sensitivities, deadlines inside the deadline, tone the client likes"],
-"risks":[{"risk":"","prevent":""}],
+"risks":[{"risk":"","prevent":"","level":"high | medium | low","status":"open | watch | handled | happened"}],
+"actions":[{"title":"short action","why":"which risk, remark or promise it serves","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"client | project team | QA | manager","severity":"high | medium | low","message":"for client and internal types: the exact copy and paste message, ready to send. Internal messages are short chat messages to the project team or executive asking exactly what we need to know or what must be done, with the order id and a by-when. Empty for task type."}],
 "kt":"handover note for the project team in plain words, 6 to 10 lines, so nobody needs to read the chat",
 "qa":["checks QA must do before delivery, each tied to a deliverable, always including a live check and proof"],
 "profile":{"type":"what kind of client","goal":"what they really want","style":"how they like to talk","watch":"what could upset them","budget":"budget signal"},
@@ -258,4 +260,43 @@ Red flags: another client's name or data, numbers or claims the proof cannot bac
 Recordings and files you cannot open go into qaManual. Write in plain simple English, no dashes.
 Answer with one JSON object only: {"verdict":"complete | gaps | wrong","summary":"one line","shows":["what the proof does show"],"missing":["what is missing"],"redFlags":["problems found"],"qaManual":["what the human QA must still check by hand"]}`;
   return askAI("proof", "claude-sonnet-5-5", system, content, 6000);
+}
+
+/* Order updates: whatever the team pastes (the whole chat again, only new messages, call notes, a team reply, files shared) is sorted first, then the order is re-thought. */
+export function intakePrompt(raw){
+  const system = `You sort something the order team pasted into an order record. ${RAW}
+Decide what it is: "chat" (marketplace messages, the whole conversation again or only new ones), "call" (notes from a call), "team" (a reply or report from our project team, executive or QA), "media" (files, screenshots or recordings shared, described or linked), or "note" (anything else).
+For chat: copy every message exactly, word for word, oldest first, with who, name and time. Drop only screen noise. Do not summarise chat.
+For the other kinds: keep the full text in note.text, give it a short title, and say who it came from if known.
+Answer with one JSON object only: {"kind":"chat | call | team | media | note","messages":[{"who":"client | us","name":"","time":"","text":"","files":[]}],"note":{"title":"","text":"","from":""},"files":["file names or links mentioned"]}`;
+  return { system, user:cleanChat(raw).slice(0, 90000) };
+}
+export function rethinkPrompt(o, fresh){
+  const ai = o.ai || {};
+  const tail = ((o.convo && o.convo.messages) || []).slice(-40).map(m => `${m.who === "us" ? "US" : "CLIENT"} ${m.time || ""}: ${String(m.text).slice(0, 600)}`).join("\n");
+  const system = `You keep an order of an SEO, web and ads agency up to date. New information just arrived. Re-think the order like a sharp delivery manager: what changed, which promises are now kept or broken, which risks got better or worse, which actions are done, what must happen next.
+${SAFE}
+Rules: keep the ids of existing actions. Never mark an action done unless the new information shows it. You may add new actions (no id) with ready copy and paste messages: client type for the marketplace, internal type for the project team or executive over Google Chat, asking exactly what we need with the order id and a by-when.
+Today is ${new Date().toISOString().slice(0, 10)}. Use real dates.
+Answer with one JSON object only:
+{"changed":"one or two lines: what this update changed","health":"on track | watch | at risk | late","next":"the very next step and by when",
+"promises":[{"what":"","by":"YYYY-MM-DD or empty","status":"open | kept | broken"}],
+"risks":[{"risk":"","prevent":"","level":"high | medium | low","status":"open | watch | handled | happened"}],
+"actions":[{"id":"existing id or empty","title":"","why":"","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"","severity":"high | medium | low","message":"","status":"open | sent | waiting | done | blocked","statusWhy":"why this status"}],
+"done":["work now shown as done, with date"],"scopeChange":"empty, or what the client now wants that was not sold","mood":"happy | neutral | worried | upset",
+"askNext":["what the order team should paste or ask next to keep this order fully known"]}`;
+  const user = `ORDER ${o.id} for ${o.client.name} (${o.client.website || "no site"}), deadline ${o.deadline}, stage ${o.stage}.
+Sold: ${ai.summary || ""}
+Deliverables: ${JSON.stringify((o.deliverables || []).map(d => ({ text:d.text, done:!!d.done, qa:d.qa || "" })))}
+Access: ${JSON.stringify((o.access || []).map(a => a.item + ": " + a.status))}
+Current promises: ${JSON.stringify(ai.promises || [])}
+Current risks: ${JSON.stringify(ai.risks || [])}
+Current actions: ${JSON.stringify((o.actions || []).map(a => ({ id:a.id, title:a.title, owner:a.owner, type:a.type, status:a.status, note:a.note || "" })))}
+Team notes so far: ${JSON.stringify((o.notes || []).slice(-10).map(n => ({ kind:n.kind, title:n.title, text:String(n.text).slice(0, 1500), at:n.at })))}
+Recent conversation:
+${tail}
+
+NEW INFORMATION JUST ADDED:
+${fresh}`;
+  return { system, user };
 }

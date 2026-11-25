@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt } from "./_lib/orderai.mjs";
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 
@@ -54,6 +54,9 @@ function flags(o){
   const q = (o.queue || []).filter(x => !x.sent).length; if(q) f.push({ k:"y", t:q + " message" + (q > 1 ? "s" : "") + " to send" });
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
   if(o.alert) f.push({ k:"bad", t:o.alert });
+  if(open){ const last = Date.parse(o.lastUpdateAt || o.at), hrs = (Date.now() - last) / 36e5; if(hrs > 24) f.push({ k:"bad", t:"No update for " + Math.round(hrs) + " h: paste the latest messages" }); else if(hrs > 8) f.push({ k:"warn", t:"Last update " + Math.round(hrs) + " h ago" }); }
+  const bl = (o.actions || []).filter(a => a.status === "blocked").length; if(bl) f.push({ k:"bad", t:bl + " action" + (bl > 1 ? "s" : "") + " blocked" });
+  const hr = ((o.ai || {}).risks || []).filter(r => r.level === "high" && /open|happened/.test(r.status || "open")).length; if(open && hr) f.push({ k:"warn", t:hr + " high risk" + (hr > 1 ? "s" : "") + " open" });
   const today = new Date().toISOString().slice(0, 10);
   if(open && o.ai && Array.isArray(o.ai.promises)) o.ai.promises.filter(p => p.by && !/kept/i.test(p.status || "") && p.by <= today).slice(0, 2)
     .forEach(p => f.push({ k:"bad", t:(p.by < today ? "Promise overdue: " : "Promised for today: ") + String(p.what).slice(0, 70) }));
@@ -85,6 +88,7 @@ async function analyse(o, cfg){
   }
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
     o.deliverables = d.deliverables.slice(0, 25).map(t => ({ id:nid("d"), text:str(t, 300), done:false, proof:"", qa:"" }));
+  if(Array.isArray(d.actions)) mergeActions(o, d.actions, true);
   if(d.msgs && !(o.queue || []).some(q => q.auto)){
     o.queue = o.queue || [];
     if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
@@ -128,6 +132,54 @@ async function runProofCheck(o, d){
   const r = await proofCheck(o, d, items);
   d.check = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) });
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+}
+
+/* Actions: every risk, remark and open promise turned into a step with an owner, a status and a ready message */
+const ASTAT = ["open", "sent", "waiting", "done", "blocked"];
+function mergeActions(o, list, fresh){
+  o.actions = o.actions || [];
+  for(const x of (list || []).slice(0, 40)){
+    const cur = x.id && o.actions.find(a => a.id === x.id);
+    if(cur){
+      cur.title = str(x.title, 200) || cur.title; cur.message = x.message != null ? String(x.message).slice(0, 4000) : cur.message; cur.severity = x.severity || cur.severity;
+      const st = ASTAT.includes(x.status) ? x.status : cur.status;
+      if(cur.status !== "done" && st !== cur.status && (cur.by === "Order desk" || st === "done" || !cur.by)){ cur.status = st; cur.statusWhy = str(x.statusWhy, 300); cur.at = now(); cur.by = "Order desk"; }
+    } else if(fresh || !x.id){
+      if(o.actions.some(a => a.title.toLowerCase() === String(x.title || "").toLowerCase())) continue;
+      o.actions.push({ id:nid("x"), title:str(x.title, 200), why:str(x.why, 300), owner:["comms", "pm", "qa", "manager"].includes(x.owner) ? x.owner : "comms", type:["client", "internal", "task"].includes(x.type) ? x.type : "task",
+        to:str(x.to, 60), severity:["high", "medium", "low"].includes(x.severity) ? x.severity : "medium", message:String(x.message || "").slice(0, 4000), status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), by:"Order desk" });
+    }
+  }
+}
+const norm = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 400);
+async function intake(o, raw, w){
+  const p = intakePrompt(raw), r = await askAI("intake", "claude-haiku-5-5", p.system, p.user, 32000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  const d = r.data || {}, kind = ["chat", "call", "team", "media", "note"].includes(d.kind) ? d.kind : "note"; let fresh = "", added = 0;
+  if(kind === "chat"){
+    o.convo = o.convo || { at:now(), client:o.client.name, us:"", messages:[] };
+    const have = o.convo.messages.map(m => norm(m.text));
+    for(const m of (d.messages || [])){
+      const n = norm(m.text); if(!n) continue;
+      if(have.some(h => h === n || (n.length > 30 && (h.includes(n) || n.includes(h))))) continue;
+      const msg = { who:m.who === "us" ? "us" : "client", name:str(m.name, 80), time:str(m.time, 60), text:String(m.text || "").slice(0, 20000), files:(m.files || []).slice(0, 10).map(f => str(f, 160)), added:now(), addedBy:w.name };
+      o.convo.messages.push(msg); have.push(n); added++; fresh += `${msg.who === "us" ? "US" : "CLIENT"} ${msg.time}: ${msg.text}\n`;
+    }
+    o.chat = (o.chat || "") + "\n\n" + raw;
+  } else {
+    const n = d.note || {}; o.notes = o.notes || [];
+    o.notes.push({ id:nid("n"), kind, title:str(n.title, 120) || { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[kind], text:String(n.text || raw).slice(0, 20000), from:str(n.from, 80), files:(d.files || []).slice(0, 20).map(f => str(f, 300)), at:now(), by:w.name });
+    added = 1; fresh = `${kind.toUpperCase()} (${n.from || w.name}): ${n.title || ""}\n${n.text || raw}`;
+  }
+  return { kind, added, fresh };
+}
+async function rethink(o, fresh){
+  const p = rethinkPrompt(o, fresh), r = await askAI("rethink", "claude-sonnet-5-5", p.system, p.user, 16000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  const d = r.data || {}; o.ai = o.ai || {};
+  ["promises", "risks", "done", "askNext"].forEach(k => { if(Array.isArray(d[k])) o.ai[k] = d[k]; });
+  if(d.next) o.ai.next = d.next; if(d.health) o.ai.health = d.health; if(d.mood) o.ai.mood = d.mood; o.ai.changed = d.changed || ""; o.ai.rethinkAt = now();
+  if(d.scopeChange) o.alert = "Client asked for something new: " + str(d.scopeChange, 140);
+  if(Array.isArray(d.actions)) mergeActions(o, d.actions, false);
+  return d;
 }
 
 function score(orders, cfg, month){
@@ -256,6 +308,15 @@ async function handle(request){
       x.proofs = proofsOf(x).concat(p); delete x.proof; if(x.done) x.check = null;
       log(o, w, "Proof added to \"" + x.text.slice(0, 60) + "\": " + p.name); }
     else if(op === "proofDel"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); x.proofs = proofsOf(x).filter(p => p.id !== q.pid); delete x.proof; x.done = x.done && x.proofs.length > 0; x.check = null; log(o, w, "Proof removed from \"" + x.text.slice(0, 60) + "\""); }
+    else if(op === "update"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503);
+      const raw = redact(str(q.text, 90000)); if(raw.length < 3) return bad("Paste something first");
+      const k = await intake(o, raw, w); o.lastUpdateAt = now(); o.lastUpdateBy = w.name;
+      if(!k.added){ log(o, w, "Pasted the conversation again: nothing new found"); await saveO(o); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o), info:"Nothing new in that paste. The thread is already up to date." }); }
+      const d = await rethink(o, k.fresh);
+      log(o, w, (k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") + " added" : { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[k.kind] + " added") + (d.changed ? ". " + str(d.changed, 300) : ""));
+      await saveO(o); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
+    else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
+      x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;
       log(o, w, "Live check: " + (v.live.length - bad1) + " of " + v.live.length + " site checks fine" + (v.gsc && v.gsc.ok ? ", " + idx + " of " + v.pages.length + " sample pages indexed by Google" : ", Search Console not shared with us")); }
