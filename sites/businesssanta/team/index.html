@@ -238,6 +238,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .pw{font-size:13px;color:var(--sub);margin-top:4px;line-height:1.45}.pw span{display:inline-block;min-width:52px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
 .ck2{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:14px;line-height:1.45}.ck2 input{width:auto;min-height:0;margin-top:3px}
 .men{border-color:rgba(251,191,36,.55)}.mrow2{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--soft)}.mrow2>div:first-child{flex:1;min-width:260px}
+.perf b.g{color:var(--ok,#4ade80)}.perf b.w{color:var(--warn,#fbbf24)}.perf b.r{color:var(--bad)}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -328,7 +329,7 @@ function tabs(on){
   if(can("sales")) t.push(["new","New order"], ["lead","Lead help"]);
   if(!P_) t.push(["msgs","Client messages"]); else t.push(["access","Access"]);
   if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
-  if(ME.role === "admin") t.push(["hod","HoD report"], ["pay","Payments"], ["people","Team and settings"]);
+  if(ME.role === "admin") t.push(["hod","HoD report"], ["perf","Team performance"], ["pay","Payments"], ["people","Team and settings"]);
   t.push(["sop","How we work"]);
   const qn = QUEUE.length;
   return (ME.viewAs ? `<div class="vbar">Viewing as <b>${E(ME.name)}</b> (${E((ME.myRoles || [ME.role]).map(r => RNAME[r] || r).join(" + "))}). This is exactly what they see. Read only.<button class="btn sm" onclick="try{localStorage.removeItem('od-as')}catch(e){};location.hash='';boot()">Back to Owner view</button></div>` : "") + `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}<form class="srch" onsubmit="event.preventDefault();location.hash='#s='+encodeURIComponent(this.q.value.trim())"><input name="q" type="search" placeholder="${ME.role === "pm" || ME.role === "qa" ? "Search orders" : "Search clients, leads, orders"}" value="${on === "search" ? E(SQ) : ""}" aria-label="Search"></form></nav>
@@ -352,6 +353,7 @@ async function route(){
     if(h === "my") return await myWork();
     if(h === "hod") return await hodPage();
     if(h === "sop") return await sopPage();
+    if(h === "perf" || h.startsWith("perf=")) return await perfPage(h.startsWith("perf=") ? decodeURIComponent(h.slice(5)) : "");
     if(h === "access") return await myWork(true);
     return await board();
   }catch(e){ if(e.message !== "signin") app.innerHTML = tabs("") + `<div class="card err"><h2>Not available</h2><p>${E(e.message)}</p><a class="btn sm" href="#">Back to your work</a></div>`; }
@@ -845,6 +847,22 @@ async function sopPage(){
     ${ROUT.map(x => sec("Daily routine · " + x.r, "", `<ul class="clean">${x.d.map(t => `<li>${E(t)}</li>`).join("")}</ul>`)).join("")}
    </div></div>`;
 }
+/* Team performance (owner only): scores and the detail behind them, per person */
+async function perfPage(open){
+  const j = await api("perf"), P2 = j.people || [], sc = v => v == null ? `<span class="sub">–</span>` : `<b class="${v >= 75 ? "g" : v >= 50 ? "w" : "r"}">${v}</b>`;
+  app.innerHTML = tabs("perf") + `<section class="card"><h2>Team performance, last 30 days</h2><p class="note">From the project groups and the order checks: how fast people reply, whether their "done" holds up on the live site and in the report, how fast their tasks close, and what they ask. Scores are signals to coach on, not verdicts. The same table is in your Drive as "Team scores".</p>
+    ${P2.length ? `<table class="t2 perf"><thead><tr><th>Name</th><th>Overall</th><th>Response</th><th>Accuracy</th><th>Sincerity</th><th>Delivery</th><th>Questions</th><th>Desk cost</th></tr></thead><tbody>${P2.map(p => `<tr><td><a href="#perf=${encodeURIComponent(p.name)}"><b>${E(p.name)}</b></a><div class="sub">${p.orders.length} order${p.orders.length === 1 ? "" : "s"}</div></td><td>${sc(p.overall)}</td><td>${sc(p.scores.response)}${p.avgReplyMin != null ? `<div class="sub">${p.avgReplyMin} min avg</div>` : ""}</td><td>${sc(p.scores.accuracy)}</td><td>${sc(p.scores.sincerity)}</td><td>${sc(p.scores.delivery)}${p.avgTaskHours != null ? `<div class="sub">${p.avgTaskHours} h avg</div>` : ""}</td><td>${p.queries}</td><td>$${p.usd}</td></tr>`).join("")}</tbody></table>` : `<p class="note">Nothing yet. Scores start once the desk posts steps in project groups and the team replies, asks and finishes tasks.</p>`}</section>
+    ${(() => { const p = P2.find(x => x.name === open); if(!p) return ""; const c = p.claims;
+      return `<section class="card"><h2>${E(p.name)}</h2><div class="ohk" style="grid-template-columns:repeat(5,minmax(90px,1fr));margin:8px 0 14px">${[["Overall", p.overall], ["Response", p.scores.response], ["Accuracy", p.scores.accuracy], ["Sincerity", p.scores.sincerity], ["Delivery", p.scores.delivery]].map(([k, v]) => `<div><span>${k}</span>${v == null ? "<b>–</b>" : `<b class="${v >= 75 ? "g" : v >= 50 ? "w" : "r"}">${v}</b>`}</div>`).join("")}</div>
+        <div class="og"><div>
+          ${sec("Their done claims", "Checked against the work report and the live site.", `<p>Confirmed <b>${c.confirmed}</b> · not proven <b>${c.unproven}</b> · contradicted <b class="${c.contradicted ? "r" : ""}">${c.contradicted}</b></p><p class="sub">Tasks closed: ${p.tasksDone}${p.avgTaskHours != null ? ", in " + p.avgTaskHours + " hours on average" : ""}. Replies to the desk: ${p.avgReplyMin != null ? p.avgReplyMin + " minutes on average" : "none yet"}.</p>`)}
+          ${sec("What they are learning", "Topics they asked about. Repeats show what to teach.", p.learning.length ? `<ul class="clean">${p.learning.map(l => `<li>${E(l.topic)}${l.repeat ? ` <span class="chip warn">asked ${l.times} times</span>` : ""}</li>`).join("")}</ul>` : `<p class="note">No questions yet.</p>`)}
+        </div><div>
+          ${sec("Their questions to the desk", `${p.queries} questions, ${p.genuine} about real work · desk cost $${p.usd}`, (p.recent || []).map(e => `<div class="mrow2"><div><span class="sub">${ago(e.at)} · ${E(e.group || "")}${e.order ? ` · <a href="#o=${E(e.order)}">${E(e.order)}</a>` : ""} · ${E(e.qtype || "")}${e.topic ? " · " + E(e.topic) : ""}</span><div>${E(e.q || "")}</div></div></div>`).join("") || `<p class="note">None yet.</p>`)}
+          ${sec("Orders", "", p.orders.map(id => `<a class="chip n" href="#o=${E(id)}">${E(id)}</a>`).join(" ") || `<p class="note">None.</p>`)}
+        </div></div></section>`; })()}`;
+}
+
 /* Search */
 let SQ = "";
 async function searchPage(q){

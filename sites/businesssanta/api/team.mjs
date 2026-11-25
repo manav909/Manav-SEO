@@ -603,6 +603,10 @@ export async function driveReports(force){
       .concat(hd.team.map(r => [r.name, "Project team", r.orders, r.hours, r.open]), hd.sales.map(r => [r.name, "Sales", r.orders, r.hours, r.open]), (ins.people || []).map(p => [p.name, "Analyst note", "", "", p.note])))) ? 1 : 0;
     wrote += await gPut(email, st, "delays", "Delays and misses", st.folder.id, "sheet", csvOf([["Order", "Site", "Stage", "Deadline", "Late", "Sales", "PM", "Client hours", "Sales hours", "Team hours", "QA hours", "QA fails", "Revisions", "Broken or missed"]]
       .concat(hd.orders.map(x => [x.id, x.site, SNAME[x.stage] || x.stage, x.deadline, x.late ? "yes" : "", x.sales || "", x.pm || "", x.hours.client, x.hours.sales, x.hours.team, x.hours.qa, x.fails, x.revisions, (x.broken || []).join("; ")])))) ? 1 : 0;
+    { const pf = await perfData(30); wrote += await gPut(email, st, "scores", "Team scores (last 30 days)", st.folder.id, "sheet", csvOf([["Name", "Overall", "Response", "Accuracy", "Sincerity", "Delivery", "Avg reply minutes", "Claims confirmed", "Claims not proven", "Claims contradicted", "Tasks done", "Avg task hours", "Questions", "Genuine questions", "Learning topics", "Desk cost USD", "Orders"]]
+      .concat(pf.map(p => [p.name, p.overall ?? "", p.scores.response ?? "", p.scores.accuracy ?? "", p.scores.sincerity ?? "", p.scores.delivery ?? "", p.avgReplyMin ?? "", p.claims.confirmed, p.claims.unproven, p.claims.contradicted, p.tasksDone, p.avgTaskHours ?? "", p.queries, p.genuine, p.learning.map(l => l.topic + (l.repeat ? " (x" + l.times + ")" : "")).join("; "), p.usd, p.orders.join(" ")])))) ? 1 : 0;
+      const dl = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x));
+      wrote += await gPut(email, st, "deskchat", "Order desk in project groups (log)", st.folder.id, "sheet", csvOf([["When", "Group", "Order", "Kind", "Who", "Question", "Desk reply", "Skipped", "Cost USD"]].concat(dl.map(e => [String(e.at).slice(0, 16).replace("T", " "), e.group, e.order, e.kind, e.by, e.q, e.a, e.skipped || "", e.usd || 0])))) ? 1 : 0; }
     const drafts = all.filter(o => o.stage === "details");
     wrote += await gPut(email, st, "drafts", "Found by the team account (waiting for details)", st.folder.id, "sheet", csvOf([["Order", "Site", "Client", "Found", "What was found", "Past orders"]]
       .concat(drafts.map(o => [o.id, domOf(o.client.website), o.client.name, String(o.draft.found).slice(0, 10), ((o.draft.evidence || [])[0] || {}).what || "", (o.draft.past || []).join(" ")])))) ? 1 : 0;
@@ -755,6 +759,7 @@ async function buildCheck(o, fresh){
   if(ticked) log(o, { name:"Order desk" }, ticked + " requirement" + (ticked > 1 ? "s" : "") + " confirmed done by the order check");
   if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && !staleProofs(o).length){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
+  for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
   return o.check;
@@ -819,6 +824,39 @@ async function postSteps(o, cfg, by){
   log(o, by || { name:"Order desk" }, "Steps to reach QA posted in the project group " + (g.name || ""));
   await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:str(t, 800), usd:0 });
 }
+/* People performance: what each working professional asks, how fast they reply, whether their "done" holds up, how fast tasks close */
+const PF = P + "perf";
+async function perfEv(e){ if(!e.who) return; await cmd("LPUSH", PF, JSON.stringify(Object.assign({ at:now() }, e))); await cmd("LTRIM", PF, 0, 4999); }
+function perfFromCheck(o){
+  const ck = o.check || {}, reqs = ck.requirements || [], evs = []; o.perfSeen = o.perfSeen || {}; o.tasks = o.tasks || {};
+  for(const r of ck.rows || []){ const q = reqs.find(x => x.id === r.r) || {}; if((q.phase || "project") !== "project") continue;
+    const who = String(r.claimBy || "").trim();
+    if(who){ const res = r.status === "done" ? "confirmed" : r.status === "not done" ? "contradicted" : "unproven", k = r.r + ":" + who + ":" + res;
+      if(!o.perfSeen[k]){ o.perfSeen[k] = 1; evs.push({ type:"claim", who, order:o.id, task:str(q.text, 160), result:res }); } }
+    const owner = String(r.who || "").trim();
+    if(r.status !== "done" && owner && !/^(sales|pm|qa|team)$/i.test(owner) && !o.tasks[r.r]) o.tasks[r.r] = { who:owner, openAt:now(), task:str(q.text, 160) };
+    const t = o.tasks[r.r]; if(t && r.status === "done" && !t.doneAt){ t.doneAt = now(); evs.push({ type:"task", who:t.who, order:o.id, task:t.task, hours:+((Date.now() - Date.parse(t.openAt)) / 36e5).toFixed(1) }); } }
+  return evs;
+}
+async function perfData(days){
+  const since = new Date(Date.now() - (days || 30) * 864e5).toISOString(), ev = ((await cmd("LRANGE", PF, 0, 4999)) || []).map(x => JSON.parse(x)).filter(e => e.at >= since);
+  const P2 = {}, get = w => P2[w] = P2[w] || { name:w, queries:0, genuine:0, topics:{}, kinds:{}, replies:[], claims:{ confirmed:0, unproven:0, contradicted:0 }, tasks:[], usd:0, orders:new Set(), recent:[] };
+  for(const e of ev){ const p = get(e.who); if(e.order) p.orders.add(e.order);
+    if(e.type === "query"){ p.queries++; if(e.genuine !== false) p.genuine++; if(e.topic) p.topics[e.topic] = (p.topics[e.topic] || 0) + 1; if(e.qtype) p.kinds[e.qtype] = (p.kinds[e.qtype] || 0) + 1; p.usd += e.usd || 0; if(p.recent.length < 25) p.recent.push(e); }
+    else if(e.type === "reply") p.replies.push(e.minutes);
+    else if(e.type === "claim") p.claims[e.result] = (p.claims[e.result] || 0) + 1;
+    else if(e.type === "task") p.tasks.push(e.hours); }
+  const cl = (x, a, b) => Math.max(0, Math.min(100, Math.round(x)));
+  return Object.values(P2).map(p => {
+    const avgR = p.replies.length ? p.replies.reduce((a, b) => a + b, 0) / p.replies.length : null, c = p.claims, nC = c.confirmed + c.unproven + c.contradicted, avgT = p.tasks.length ? p.tasks.reduce((a, b) => a + b, 0) / p.tasks.length : null;
+    const sc = { response:avgR == null ? null : cl(avgR <= 15 ? 100 : 100 - (avgR - 15) / (225) * 100), accuracy:nC ? cl((c.confirmed + c.unproven * 0.5) / nC * 100) : null, sincerity:nC ? cl(100 - c.contradicted * 20 - c.unproven * 5) : null, delivery:avgT == null ? null : cl(avgT <= 24 ? 100 : 100 - (avgT - 24) / 96 * 100) };
+    const w = { response:0.25, accuracy:0.3, sincerity:0.25, delivery:0.2 }, have = Object.keys(w).filter(k => sc[k] != null), tot = have.reduce((a, k) => a + w[k], 0);
+    const learn = Object.entries(p.topics).sort((a, b) => b[1] - a[1]);
+    return { name:p.name, overall:have.length ? cl(have.reduce((a, k) => a + sc[k] * w[k], 0) / tot) : null, scores:sc, queries:p.queries, genuine:p.genuine, kinds:p.kinds, learning:learn.slice(0, 8).map(([t, n]) => ({ topic:t, times:n, repeat:n > 1 })),
+      avgReplyMin:avgR == null ? null : Math.round(avgR), claims:c, tasksDone:p.tasks.length, avgTaskHours:avgT == null ? null : +avgT.toFixed(1), usd:+p.usd.toFixed(3), orders:[...p.orders], recent:p.recent };
+  }).sort((a, b) => (b.overall ?? -1) - (a.overall ?? -1));
+}
+
 /* Usage of the desk in project groups: every reply and skip is logged with its cost, and daily limits hold (total, per group, per person) */
 const DL = P + "desklog";
 async function deskAllowed(cfg, space, by){
@@ -845,7 +883,7 @@ async function mentionsRun(cfg, as){
       const o = bySpace[sp.id] || null, ck = (o && o.check) || {};
       const system = `Someone in an agency's team chat group mentioned @Manav, the head of the department. You answer for him as his order desk, in the same thread, so work does not wait. Read what they need. If you can answer from the order facts (what to do, where, how it is checked, access status, files, live checks), answer in two to five short lines. If it is a technical question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names, as short as possible. If it needs Manav himself (an approval, money, prices, scope change, anything about or with the client, hiring, people problems), say kindly that Manav will reply soon, and set needsManav. Never share passwords, logins, prices or the client's own messages. Use VERY SIMPLE English a 4th grade child can follow. No dashes.
 First decide if it is GENUINE: a real question or request about project work, a client order, access, or a technical task. Greetings, thanks, jokes, chit chat and topics outside work are not genuine: then leave answer empty.
-Answer with one JSON object only: {"genuine":true,"answer":"","needsManav":false,"summary":"one line for Manav: who needs what"}`;
+Answer with one JSON object only: {"genuine":true,"topic":"two to four words, for example robots.txt or Search Console access","qtype":"work | technical | access | client | other","answer":"","needsManav":false,"summary":"one line for Manav: who needs what"}`;
       const user = `GROUP: ${sp.name}\nMESSAGE from ${m.by}: ${m.text}\n` + (o ? `ORDER for this group: site ${o.client.website}, stage ${o.stage}.\nREQUIREMENTS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, status:r.status, toPass:r.toPass, where:r.where, check:r.check })))}\nACCESS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status })))}\nFILES: ${JSON.stringify(ck.files || [])}` : "No order is linked to this group.");
       const lim = await deskAllowed(cfg, sp.id, m.by);
       if(lim){ await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:"", usd:0, skipped:lim });
@@ -854,6 +892,7 @@ Answer with one JSON object only: {"genuine":true,"answer":"","needsManav":false
         if(d.genuine === false){ await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:"", usd:+r.usd.toFixed(4), skipped:"not a work question" }); continue; }
         if(d.answer){ await postChat(as, sp.id, deskSay(cfg, d.answer), m.thread); await deskCount(sp.id, m.by); }
         await deskLog({ kind:"mention", group:sp.name, space:sp.id, order:o ? o.id : "", by:m.by, q:str(m.text, 500), a:str(d.answer, 800), usd:+r.usd.toFixed(4), needsManav:!!d.needsManav });
+        await perfEv({ type:"query", who:m.by, order:o ? o.id : "", group:sp.name, q:str(m.text, 300), topic:str(d.topic, 40), qtype:str(d.qtype, 12), genuine:d.genuine !== false, usd:+r.usd.toFixed(4) });
         const rec = { id:nid("m"), at:m.at, by:m.by, group:sp.name, space:sp.id, order:o ? o.id : "", text:str(m.text, 600), answer:str(d.answer, 600), needsManav:!!d.needsManav, summary:str(d.summary, 200), handled:!d.needsManav };
         await cmd("LPUSH", MK, JSON.stringify(rec)); await cmd("LTRIM", MK, 0, 199);
         if(o){ log(o, { name:"Order desk" }, "@Manav from " + m.by + " in the project group: " + (d.needsManav ? "waiting for Manav. " : "answered. ") + str(d.summary || m.text, 140)); await saveO(o); }
@@ -881,11 +920,12 @@ export async function chatAnswers(){
       if(mine.has(m.sender) && /^Order desk:/.test(m.text)) continue;
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
       if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
+      if(!mine.has(m.sender) && (threads.has(m.thread) || /^\s*done\b/i.test(m.text))){ const lp = (o.deskPosts || []).filter(p => p.at <= m.at).slice(-1)[0]; if(lp && !(o.replied || {})[lp.name + m.by]){ (o.replied = o.replied || {})[lp.name + m.by] = 1; await perfEv({ type:"reply", who:m.by, order:o.id, minutes:Math.round((Date.parse(m.at) - Date.parse(lp.at)) / 6e4) }); } }
       if(!asked || mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
       const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
-Answer with one JSON object only: {"genuine":true,"answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
+Answer with one JSON object only: {"genuine":true,"topic":"two to four words","qtype":"work | technical | access | client | other","answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
       const user = `QUESTION from ${m.by}: ${m.text}
 ORDER FACTS: site ${o.client.website}, stage ${o.stage}.
 REQUIREMENTS AND STATUS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, phase:((ck.requirements || []).find(q => q.id === r.r) || {}).phase, doneWhen:((ck.requirements || []).find(q => q.id === r.r) || {}).doneWhen, status:r.status, found:r.found, toPass:r.toPass, where:r.where, check:r.check })))}
@@ -898,6 +938,7 @@ SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
       try{ const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1500), d = r.data || {}; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
         if(d.genuine === false || !d.answer){ await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:"", usd:+r.usd.toFixed(4), skipped:"not a work question" }); continue; }
         await deskCount(g.id, m.by); await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(d.answer, 800), usd:+r.usd.toFixed(4), needsHuman:!!d.needsHuman });
+        await perfEv({ type:"query", who:m.by, order:o.id, group:g.name, q:str(m.text, 300), topic:str(d.topic, 40), qtype:str(d.qtype, 12), genuine:true, usd:+r.usd.toFixed(4) });
         await postChat(as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), m.thread);
         log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
         if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
@@ -973,6 +1014,7 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
+  if(a === "perf"){ if(!isA) return bad("For Manav only", 403); return out({ ok:true, people:await perfData(num(url.searchParams.get("days"), 30)) }); }
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
     for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
     return out({ ok:true, groups:Object.values(by).map(b => Object.assign(b, { usdToday:+b.usdToday.toFixed(3), usdMonth:+b.usdMonth.toFixed(3) })), log:l.slice(0, 60), limits:{ daily:num(cfg.deskDaily, 40), group:num(cfg.deskPerGroup, 15), person:num(cfg.deskPerPerson, 8) } }); }
