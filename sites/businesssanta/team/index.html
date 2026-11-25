@@ -233,7 +233,7 @@ function signin(){
   $("#sf").onsubmit = e => { e.preventDefault(); act(async () => { await api("login", { code:$("#code").value }); boot(); }, "Signing in…"); };
 }
 async function boot(){
-  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail }); }catch(e){ return; }
+  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail, roles:j.roles || ["sales", "comms", "pm", "qa", "manager"] }); }catch(e){ return; }
   $("#who").textContent = ME.name + " · " + (RNAME[ME.role] || ME.role); $("#out").classList.remove("hide");
   route();
 }
