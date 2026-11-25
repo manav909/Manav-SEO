@@ -110,8 +110,9 @@ async function analyse(o, cfg){
   if(Array.isArray(d.actions)){ o.actions = (o.actions || []).filter(a => !(a.by === "Order desk" && a.status === "open")); mergeActions(o, d.actions, true); }
   if(d.msgs && !(o.queue || []).some(q => q.auto)){
     o.queue = o.queue || [];
-    if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
-    if(d.msgs.questions) o.queue.push({ id:nid("q"), auto:true, kind:"question", text:str(d.msgs.questions, 4000), at:now(), by:"Order desk", sent:false });
+    const cAct = re => (d.actions || []).some(a => a.type === "client" && re.test((a.title || "") + " " + (a.message || "")));
+    if(d.msgs.access && !cAct(/access|search console|login|admin/i)) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
+    if(d.msgs.questions && !cAct(/question|confirm|clarif/i)) o.queue.push({ id:nid("q"), auto:true, kind:"question", text:str(d.msgs.questions, 4000), at:now(), by:"Order desk", sent:false });
   }
   if(o.stage === "access" && o.access.length && o.access.every(y => ["received", "skip"].includes(y.status))){ setStage(o, "work"); log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
   return { ok:true, usd:r.usd };
@@ -402,6 +403,7 @@ export async function hourlySync(){
   const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
   for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
   try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
+  for(const o of open) if(o.stage === "work") try{ const n = await autoProof(o); if(n) done.push(o.id + " proofs:" + n); }catch(e){ done.push(o.id + " proofs: " + e.message); }
   for(const o of open) await saveO(o);
   // Work history for every client site that has none yet (or older than 30 days), two a run
   { let n = 0; const all = await loadAll(1000, true);
@@ -616,6 +618,45 @@ export async function driveReports(force){
       if(await gPut(email, st, k, o.id + " · " + domOf(o.client.website), st.records.id, "doc", rec)){ wrote++; n++; } st.files[k].seen = last; }
     st.at = now(); st.error = ""; await setJ(REPK, st); return "wrote " + wrote + " files";
   }catch(e){ st.error = e.message; await setJ(REPK, st); throw e; }
+}
+
+/* Proof found in what the team shares (our documents, project folder files, links in team emails and chats) is attached to the
+   deliverable it proves, checked, and the deliverable is marked done when the check says complete. When every deliverable is done
+   with checked proof, the order moves to QA by itself. QA's pass and the delivery stay human. */
+async function autoProof(o){
+  if(o.stage !== "work" || !aiOn() || !(o.deliverables || []).length) return 0;
+  const ev = [], seen = new Set(), add = (url, title, ctx, at) => { if(!url || seen.has(url)) return; seen.add(url); ev.push({ url, title:str(title, 140), ctx:str(ctx, 300), at:at || "" }); };
+  for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false)) add(d.link, d.name, (d.kind || "") + " file, " + (d.why || ""), d.modified);
+  for(const f of o.folderFiles || []) add(f.link, f.name, "file in the project folder" + (f.by ? ", by " + f.by : ""), f.modified);
+  const links = (t, title, at) => (String(t || "").match(/https?:\/\/[^\s)>"']+/g) || []).slice(0, 4).forEach(u => add(u.replace(/[.,]+$/, ""), title, String(t).slice(0, 300), at));
+  for(const m of (o.mails || []).slice(-20)) links(m.text, "Email: " + (m.subject || ""), m.date);
+  for(const m of (o.teamChat || []).slice(-60)) links(m.text, "Team chat, " + (m.by || ""), m.at);
+  const used = new Set((o.deliverables || []).flatMap(d => proofsOf(d).map(p => p.url)));
+  const cand = ev.filter(e => !used.has(e.url) && !/accounts\.google|\/signin|login/i.test(e.url)).slice(0, 30);
+  const key = sha(cand.map(e => e.url).join("|") + "|" + o.deliverables.map(d => d.id + (d.done ? 1 : 0)).join(",")).slice(0, 16);
+  if(!cand.length || o.autoProofKey === key) return 0; o.autoProofKey = key;
+  const system = `You match evidence the project team shared to the deliverables of one order of an SEO, web and ads agency. A match means this file or link is the proof that the deliverable was done (the report, the sheet of fixes, the live page). Not a match: requirement emails, client briefs, raw exports that only show the problem, tool notices. Be strict. No dashes.
+Answer with one JSON object only: {"matches":[{"d":"deliverable id","e":0,"confidence":0.9,"why":"one line"}]}`;
+  const user = `Order ${o.id}, site ${o.client.website}.\nDELIVERABLES:\n${o.deliverables.map(d => `${d.id}: ${d.text}${d.done ? " (done)" : ""}${proofsOf(d).length ? " [proof: " + proofsOf(d).map(p => p.name).join(", ") + "]" : ""}`).join("\n")}\nEVIDENCE:\n${cand.map((e, i) => `[${i}] ${e.title} ${e.at ? "(" + String(e.at).slice(0, 10) + ")" : ""} ${e.url}\n${e.ctx}`).join("\n")}`;
+  const r = await askAI("autoproof", "claude-haiku-5-5", system, user, 2000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  let n = 0;
+  for(const m of (r.data && r.data.matches) || []){
+    const d = o.deliverables.find(x => x.id === m.d), e = cand[m.e]; if(!d || !e || d.done || (m.confidence || 0) < 0.8 || proofsOf(d).some(p => p.url === e.url)) continue;
+    let p = null;
+    try{ if(isDrive(e.url)){ const mt = await driveMeta(e.url); if(mt.ok) p = { id:nid("p"), kind:"drive", url:e.url, name:mt.name, meta:trimMeta(mt), at:now(), by:"Order desk", auto:str(m.why, 200) }; }
+      else { const c = await checkLink(e.url); if(c.ok) p = { id:nid("p"), kind:"link", url:e.url, name:c.title || e.url, check:{ status:c.status, ok:c.ok, title:c.title, final:c.final }, at:now(), by:"Order desk", auto:str(m.why, 200) }; } }catch(x){}
+    if(!p) continue;
+    d.proofs = proofsOf(d).concat(p); delete d.proof; n++;
+    try{ await runProofCheck(o, d); }catch(x){}
+    const ok = d.check && /complete/i.test(d.check.verdict || "");
+    if(ok) d.done = true;
+    log(o, { name:"Order desk" }, "Proof found in what the team shared for \"" + d.text.slice(0, 60) + "\": " + p.name + (ok ? ". Checked complete, marked done." : ". Check found gaps, so it stays open for the PM."));
+  }
+  groupDocs(o);
+  if(o.deliverables.every(d => d.done && proofsOf(d).length) && !staleProofs(o).length){
+    o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every deliverable is done with checked proof. Sent to QA.");
+  }
+  return n;
 }
 
 function score(orders, cfg, month){
@@ -903,7 +944,7 @@ async function handle(request){
       x.active = !x.active; x.offAt = now(); await setJ(RK(d), list); log(o, w, "Access " + x.system + " via " + x.account + (x.active ? " active again" : " marked removed")); }
     else if(op === "useProp"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); o.google = o.google || {}; o.google[q.kind === "ga" ? "ga" : "gsc"] = { id:str(q.pid, 200), email:str(q.email, 120) };
       log(o, w, "Uses " + (q.kind === "ga" ? "Analytics " : "Search Console ") + str(q.pid, 200) + " through " + str(q.email, 120)); }
-    else if(op === "sync"){ const r = await syncTeam(o); try{ r.new += await matchDocs([o]); }catch(e){} log(o, w, "Checked the team's folder, email and chat: " + r.new + " new" + (Object.keys(r.errors || {}).length ? " (some sources could not be read)" : "")); }
+    else if(op === "sync"){ const r = await syncTeam(o); try{ r.new += await matchDocs([o]); }catch(e){} try{ o.autoProofKey = ""; r.new += await autoProof(o); }catch(e){} log(o, w, "Checked the team's folder, email and chat: " + r.new + " new" + (Object.keys(r.errors || {}).length ? " (some sources could not be read)" : "")); }
     else if(op === "doc"){ const x = find("docs", q.did); if(!x) return bad("Not found"); if(q.ours){ x.status = "linked"; x.by2 = w.name; } else { x.status = "rejected"; x.by2 = w.name; }
       await cmd("SET", DK(x.id), JSON.stringify({ order:q.ours ? o.id : "", confidence:q.ours ? 1 : 0, at:now(), by:w.name }), "EX", 60 * 60 * 24 * 365);
       if(q.ours && q.deliv){ const d = find("deliverables", q.deliv); if(d){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"drive", url:x.link, name:x.name, meta:{ ok:true, id:x.id, name:x.name, kind:x.kind, modified:x.modified, lastBy:x.by, via:x.via }, at:now(), by:w.name }); delete d.proof; } }
