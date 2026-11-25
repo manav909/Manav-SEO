@@ -858,6 +858,9 @@ Answer with one JSON object only: {"tasks":["Amit: add a tab named \\"GSC review
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
   const tasks = ((r.data || {}).tasks || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/\s+([.,])/g, "$1").trim()).filter(Boolean).slice(0, 12);
   if(!tasks.length) return "";
+  // every task starts with a name (the most common one if missing); no full stop glued to a link
+  const names = tasks.map(t => (t.match(/^([A-Z][a-z]+):/) || [])[1]).filter(Boolean), top = names.sort((a, b) => names.filter(x => x === b).length - names.filter(x => x === a).length)[0];
+  for(let i = 0; i < tasks.length; i++){ if(top && !/^[A-Z][a-z]+:/.test(tasks[i])) tasks[i] = top + ": " + tasks[i].charAt(0).toLowerCase() + tasks[i].slice(1); tasks[i] = tasks[i].replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2"); }
   return `Hi team. For ${domOf(o.client.website)}, please do these:\n\n${tasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", is this plan okay?\n" : ""}Reply "done" when you finish a task.`;
 }
 function stepsText(o){
