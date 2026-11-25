@@ -146,6 +146,12 @@ export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").to
   .replace(/^copy of\s+/, "").replace(/(https?):\/\/(www\.)?/g, "$1 ").replace(/\(\d+\)/g, "").replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}|\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}/g, "")
   .replace(/\b(v|ver|version|final|draft|new|latest|updated)\s*\d*\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 export async function docText(d, max){ return fileText(d, max || 20000); }
+/* Raw bytes of a picture the team shared (Drive or uploaded in a chat), so the check can look at it */
+export async function fileBytes(d){
+  if(!d.via) return null; const tok = await (await import("./google.mjs")).accessTokenAs(d.via);
+  const u = d.media ? "https://chat.googleapis.com/v1/media/" + d.media + "?alt=media" : "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&alt=media";
+  const r = await fetch(u, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) throw new Error("HTTP " + r.status); return Buffer.from(await r.arrayBuffer());
+}
 /* Text of any file the team shares: Google Docs, Sheets (every tab) and Slides; Word, Excel, PowerPoint, PDF, CSV and text files in Drive;
    and files uploaded straight into a Google Chat group. Returns "" only when the file truly has no readable text. */
 export async function fileText(d, max){

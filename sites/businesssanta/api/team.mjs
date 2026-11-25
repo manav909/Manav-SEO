@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, fileBytes, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -748,19 +748,27 @@ async function buildCheck(o, fresh){
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
   if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
   const reads = [];
-  // Every current document is read (no file is skipped); a shared budget keeps the check affordable: reports first and in full, data files after
+  // Every current document is read (no file is skipped): reports in full first, then data files share what is left; pictures are looked at
   const cur = (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified)));
-  let budget = 90000; const readLog = [];
-  for(const [i, d] of cur.entries()){ const left = cur.length - i, share = Math.max(2500, Math.floor(budget / left)), cap = d.kind === "data" ? Math.min(share, 8000) : Math.min(share, 30000);
+  const isPic = d => /^image\//.test(d.mime || "") || /\.(png|jpe?g|gif|webp)$/i.test(d.name || "");
+  let budget = 140000; const readLog = [], pics = [];
+  const txtDocs = cur.filter(d => !isPic(d)), nData = txtDocs.filter(d => d.kind === "data").length;
+  for(const [i, d] of txtDocs.entries()){ const left = txtDocs.length - i, dataLeft = txtDocs.slice(i).filter(x => x.kind === "data").length;
+    const cap = d.kind === "data" ? Math.max(2500, Math.min(12000, Math.floor(budget / Math.max(1, dataLeft)))) : Math.max(4000, Math.min(40000, budget - 3000 * dataLeft));
     try{ const full = await docText(d, 200000), t = full.slice(0, cap); budget -= t.length;
-      readLog.push({ id:d.id, name:d.name, chars:full.length, used:t.length, whole:t.length >= full.length, ok:!!full });
+      readLog.push({ id:d.id, name:d.name, chars:full.length, used:t.length, whole:t.length >= full.length, ok:!!full, kind:d.kind });
       if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t + (t.length < full.length ? "\n[file continues: " + (full.length - t.length) + " more characters not shown]" : "") }); }
     catch(e){ readLog.push({ id:d.id, name:d.name, chars:0, used:0, whole:false, ok:false, err:str(e.message, 80) }); } }
+  for(const d of cur.filter(isPic).slice(0, 8)){
+    try{ const b = await fileBytes(d); if(b && b.length < 4.5e6){ const mt = /^image\//.test(d.mime || "") ? d.mime : "image/" + (String(d.name).split(".").pop().toLowerCase().replace("jpg", "jpeg"));
+        pics.push({ name:d.name, by:d.by, modified:d.modified, why:d.why, mt, b64:b.toString("base64") }); readLog.push({ id:d.id, name:d.name, picture:true, ok:true, whole:true, chars:0, used:0 }); }
+      else readLog.push({ id:d.id, name:d.name, picture:true, ok:false, err:"picture too large" }); }
+    catch(e){ readLog.push({ id:d.id, name:d.name, picture:true, ok:false, err:str(e.message, 80) }); } }
   o.readLog = { at:now(), docs:readLog, messages:(o.teamChat || []).length, groups:Object.values(o.chatFull || {}).map(g => g) };
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
-  const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
+  const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
   const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
