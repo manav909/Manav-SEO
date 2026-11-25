@@ -415,7 +415,13 @@ function groupDocs(o){
   for(const d of (o.docs || []).filter(x => x.status !== "rejected")){ const k = docGroup(d); d.group = k; (g.get(k) || g.set(k, []).get(k)).push(d); }
   for(const l of g.values()){ l.sort((a, b) => String(b.modified || "").localeCompare(String(a.modified || ""))); l.forEach((d, i) => { d.current = i === 0; d.versions = l.length; }); }
   o.docGroups = o.docGroups || {};
+  /* A proof that points to an older copy is flagged with the newest one, so nobody sends QA or the client an outdated file */
+  const byId = new Map((o.docs || []).map(d => [d.id, d]));
+  for(const dv of o.deliverables || []) for(const p of proofsOf(dv)){ const d = p.kind === "drive" && byId.get((p.meta || {}).id); if(!d) { delete p.newer; continue; }
+    const cur = d.current ? null : (o.docs || []).find(x => x.group === d.group && x.current && x.status !== "rejected");
+    if(cur && cur.id !== d.id) p.newer = { id:cur.id, name:cur.name, link:cur.link, modified:cur.modified, by:cur.by }; else delete p.newer; }
 }
+const staleProofs = o => (o.deliverables || []).flatMap(d => proofsOf(d).filter(p => p.newer).map(p => p.name || "a file"));
 
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
@@ -736,7 +742,12 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       o.queue.push(x); log(o, w, "Client replied" + (x.digest ? ": " + str(x.digest.summary, 200) : "")); }
     else if(op === "drop"){ need("pm"); const x = find("queue", q.qid); if(!x || x.sent) return bad("Only unsent messages can be dropped"); o.queue = o.queue.filter(y => y !== x); log(o, w, "Dropped a message that is not needed: " + x.kind); }
     else if(op === "seen"){ const x = find("queue", q.qid); if(x){ x.seen = true; x.seenBy = w.name; } if(q.clearAlert) o.alert = ""; }
-    else if(op === "toQA"){ need("pm"); const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
+    else if(op === "proofNewest"){ need("pm"); const d = find("deliverables", q.did); if(!d) return bad("Not found"); groupDocs(o);
+      const p = proofsOf(d).find(x => x.id === q.pid); if(!p || !p.newer) return bad("This proof is already the newest copy");
+      const cur = find("docs", p.newer.id); d.proofs = proofsOf(d); delete d.proof;
+      Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
+      log(o, w, "Proof switched to the newest copy: " + cur.name); }
+    else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
       setStage(o, "qa"); log(o, w, "Sent to QA"); }
     else if(op === "qa"){ need("qa"); if(o.stage !== "qa") return bad("This order is not waiting for QA");
@@ -746,6 +757,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       fails.forEach(d => { d.done = false; d.check = null; });
       log(o, w, res === "pass" ? "QA passed every deliverable. Ready to deliver." : "QA sent back " + fails.length + ": " + note); }
     else if(op === "deliver"){ need("comms"); if(o.stage !== "ready") return bad("Deliver only after QA passes");
+      groupDocs(o); { const st = staleProofs(o); if(st.length){ setStage(o, "qa"); o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "A newer copy appeared for: " + st.join(", ") + ". Sent back to QA."); await saveO(o); return bad("A newer copy of " + st.join(", ") + " appeared after QA. The order went back to QA so the newest is checked."); } }
       const passAt = ((o.qaRounds || []).filter(r => r.result === "pass").pop() || {}).at || "", changed = [];
       for(const d of o.deliverables) for(const p of proofsOf(d)) if(p.kind === "drive"){ const m = await driveMeta(p.url); if(m.ok && passAt && m.modified > passAt) changed.push(m.name); }
       if(changed.length){ setStage(o, "qa"); o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "Changed after QA passed: " + changed.join(", ") + ". Sent back to QA."); await saveO(o); return bad("These were changed after QA passed: " + changed.join(", ") + ". The order went back to QA."); }

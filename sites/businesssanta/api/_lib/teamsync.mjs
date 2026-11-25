@@ -94,9 +94,9 @@ Answer with one JSON object only: {"files":[{"id":"","order":"order id or empty"
   return { system, user };
 }
 
-/* Versions: copies of the same document are grouped (dates, "copy of", (1) and http/https ignored); the newest is the one we read. */
+/* Versions: copies of the same document are grouped (dates, "copy of", (1) and version words ignored; http and https stay apart, as they are different Search Console properties); the newest is the one we read. */
 export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").toLowerCase()
-  .replace(/^copy of\s+/, "").replace(/https?:\/\/(www\.)?/g, "").replace(/\(\d+\)/g, "").replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}|\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}/g, "")
+  .replace(/^copy of\s+/, "").replace(/(https?):\/\/(www\.)?/g, "$1 ").replace(/\(\d+\)/g, "").replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}|\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}/g, "")
   .replace(/\b(v|ver|version|final|draft|new|latest|updated)\s*\d*\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 export async function docText(d, max){
   if(!d.via) return "";
