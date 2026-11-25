@@ -223,7 +223,7 @@ async function api(a, body, params){
 function busy(t){ $("#busyT").textContent = t || "Working…"; $("#busy").classList.toggle("hide", !t); }
 function toast(t, bad){ const d = document.createElement("div"); d.className = "toast"; d.textContent = t; if(bad) d.style.borderColor = "var(--bad)"; document.body.appendChild(d); setTimeout(() => d.remove(), 4200); }
 async function act(fn, t){ busy(t); try{ return await fn(); }catch(e){ if(e.message !== "signin") toast(e.message, 1); }finally{ busy(""); } }
-const can = w => ME.role === "admin" || ME.role === "manager" || (Array.isArray(w) ? w : [w]).includes(ME.role);
+const can = w => { const l = Array.isArray(w) ? w : [w]; return ME.role === "admin" || ME.role === "manager" || l.includes(ME.role) || (ME.role === "sales" && l.includes("comms")); };
 
 function signin(){
   $("#out").classList.add("hide"); $("#who").textContent = "Team";
@@ -274,7 +274,8 @@ async function refresh(){ const [l, q] = await Promise.all([api("list"), api("qu
 /* Orders board, with each person's next steps on top */
 async function board(){
   await refresh();
-  const mine = o => ME.role === "admin" || ME.role === "manager" || (ME.role === "pm" && o.pm === ME.uid) || (ME.role === "qa" && (o.qa === ME.uid || !o.qa)) || (ME.role === "sales" && o.by === ME.uid) || ME.role === "comms";
+  // Sales and client messages see every order (they share the client side); the project team sees its own
+  const mine = o => ["admin", "manager", "sales", "comms"].includes(ME.role) || (ME.role === "pm" && (o.pm === ME.uid || !o.pm)) || (ME.role === "qa" && (o.qa === ME.uid || !o.qa));
   const next = [];
   ORD.filter(o => !["done","cancelled"].includes(o.stage)).forEach(o => {
     const hot = o.flags.some(f => f.k === "bad"), go = (t, d) => next.push({ id:o.id, t, d, hot });
@@ -283,10 +284,10 @@ async function board(){
       if(o.stage === "work") go(o.id + ": finish the work", "Each deliverable needs a proof link, then send to QA");
     }
     if((ME.role === "qa" || ME.role === "admin" || ME.role === "manager") && o.stage === "qa") go(o.id + ": QA check", "Check every deliverable live");
-    if((ME.role === "comms" || ME.role === "admin" || ME.role === "manager") && o.stage === "ready") go(o.id + ": deliver", "QA passed. Send the delivery to the client");
+    if(["comms", "sales", "admin", "manager"].includes(ME.role) && o.stage === "ready") go(o.id + ": deliver", "QA passed. Send the delivery to the client");
     if((ME.role === "admin" || ME.role === "manager") && !o.pm) go(o.id + ": pick the project team", o.client.name || o.gigName);
   });
-  if(QUEUE.length && (ME.role === "comms" || ME.role === "admin" || ME.role === "manager")) next.unshift({ link:"#msgs", t:QUEUE.length + " client message" + (QUEUE.length > 1 ? "s" : ""), d:"To send or to read", hot:true });
+  if(QUEUE.length && ["comms", "sales", "admin", "manager"].includes(ME.role)) next.unshift({ link:"#msgs", t:QUEUE.length + " client message" + (QUEUE.length > 1 ? "s" : ""), d:"To send or to read", hot:true });
   const cols = STAGES.map(([k, n]) => { const l = ORD.filter(o => o.stage === k && mine(o)); return `<div class="col"><h3><span>${n}</span><span>${l.length}</span></h3>${l.map(card).join("") || `<div class="empty-col">Nothing here</div>`}</div>`; }).join("");
   app.innerHTML = tabs("board") + (next.length ? `<div><div class="lbl" style="margin-bottom:8px">Your next steps</div><div class="next">${next.slice(0, 12).map(n => `<a href="${n.link || "#o=" + n.id}" class="${n.hot ? "hot" : ""}"><b>${E(n.t)}</b>${E(n.d)}</a>`).join("")}</div></div>` : "")
     + (ORD.length ? `<div class="board">${cols}</div>` : `<div class="card"><h2>No orders yet</h2><p class="note">${can("sales") ? `When a client hires us, open <a href="#new">New order</a> and paste the whole chat.` : "Orders appear here as soon as sales adds them."}</p></div>`);

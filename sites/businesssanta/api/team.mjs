@@ -14,7 +14,7 @@ import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
 const ROLES = ["sales", "comms", "pm", "qa", "manager"];
-const CAN = { create:["sales"], lead:["sales"], comms:["comms"], pm:["pm"], qa:["qa"], assign:["manager"], admin:[] };
+const CAN = { create:["sales"], lead:["sales"], comms:["comms", "sales"], pm:["pm"], qa:["qa"], assign:["manager"], admin:[] };
 const can = (w, what) => w.role === "admin" || w.role === "manager" && what !== "admin" || (CAN[what] || []).includes(w.role);
 const H = { "content-type":"application/json", "cache-control":"no-store" };
 const out = (d, s, h) => new Response(JSON.stringify(d), { status:s || 200, headers:Object.assign({}, H, h || {}) });
