@@ -831,7 +831,7 @@ function perfFromCheck(o){
   const ck = o.check || {}, reqs = ck.requirements || [], evs = []; o.perfSeen = o.perfSeen || {}; o.tasks = o.tasks || {};
   for(const r of ck.rows || []){ const q = reqs.find(x => x.id === r.r) || {}; if((q.phase || "project") !== "project") continue;
     const who = String(r.claimBy || "").trim();
-    if(who){ const res = r.status === "done" ? "confirmed" : r.status === "not done" ? "contradicted" : "unproven", k = r.r + ":" + who + ":" + res;
+    if(who){ const cr = String(r.claimResult || ""), res = /^contradicted/.test(cr) ? "contradicted" : /^confirmed/.test(cr) || r.status === "done" ? "confirmed" : "unproven", k = r.r + ":" + who + ":" + res;
       if(!o.perfSeen[k]){ o.perfSeen[k] = 1; evs.push({ type:"claim", who, order:o.id, task:str(q.text, 160), result:res }); } }
     const owner = String(r.who || "").trim();
     if(r.status !== "done" && owner && !/^(sales|pm|qa|team)$/i.test(owner) && !o.tasks[r.r]) o.tasks[r.r] = { who:owner, openAt:now(), task:str(q.text, 160) };
@@ -1014,6 +1014,7 @@ async function handle(request){
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
+  if(a === "perfReset"){ if(!isA) return bad("For Manav only", 403); await cmd("DEL", PF); return out({ ok:true }); }
   if(a === "perf"){ if(!isA) return bad("For Manav only", 403); return out({ ok:true, people:await perfData(num(url.searchParams.get("days"), 30)) }); }
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
     for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
