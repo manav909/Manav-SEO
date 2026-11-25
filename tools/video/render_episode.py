@@ -95,7 +95,7 @@ def shot(d, im, s, t, T):
         heading(d, s['title']); top = 320
     else:
         top = 205
-    bot = 890
+    bot = 860   # 25 Nov 2026: the source line under the screenshot must clear a two-line subtitle box
     areaw = 980 if hl else 1600
     z = min(areaw / sc.width, (bot - top) / sc.height, 1.5)
     shw, shh = int(sc.width * z), int(sc.height * z)
@@ -180,8 +180,11 @@ def three(d, im, s, t, T):
         d_off = int((1 - ease(t, a0)) * 50)
         x = x
         d.rounded_rectangle((x, 340, x + 533, 860), 26, fill=(28, 40, 66), outline=YEL if k == 2 else (60, 74, 100), width=3)
-        d.text((x + 266, 460), str(k + 1), font=F(120), fill=YEL, anchor='mm')
-        d.text((x + 266, 600), a, font=F(58), fill=WHITE, anchor='mm')
+        if s.get('bignum'):   # 25 Nov 2026: cold open cards show the result itself big, with no 1, 2, 3 index above it
+            d.text((x + 266, 500), a, font=F(150), fill=YEL, anchor='mm')
+        else:
+            d.text((x + 266, 460), str(k + 1), font=F(120), fill=YEL, anchor='mm')
+            d.text((x + 266, 600), a, font=F(58), fill=WHITE, anchor='mm')
         for j, ln in enumerate(wrap(d, b, F(38, 'Regular'), 460)):
             d.text((x + 266, 690 + j * 50), ln, font=F(38, 'Regular'), fill=MUT, anchor='mm')
     d.text((W // 2, 885), s['cap'], font=F(26, 'SemiBold'), fill=MUT, anchor='mt')
