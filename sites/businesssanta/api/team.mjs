@@ -816,7 +816,10 @@ async function buildCheck(o, fresh){
   try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){}
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
-  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
+  // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
+  const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "")) || ((o.readLog || {}).docs || []).some(d => !d.ok);
+  o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
+  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && !unsure && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
   return o.check;
 }
 
@@ -889,7 +892,8 @@ async function writeGroupMsg(o){
   if(!open.length){ o.groupMsgLeftOut = []; return ""; }
   const done = proj.filter(r => r.status === "done").map(r => ({ asked:((reqs.find(x => x.id === r.r) || {}).text) || "", found:r.found }));
   // The sources a point may quote from, word for word
-  const rm = ck.reqMail || null, fmtD = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toISOString().slice(0, 10); };
+  const fwdD = m => { if(!m) return ""; const x = String(m.text || "").slice(0, 2000).match(/\nDate:\s*([^\n]+)/); const t = x ? Date.parse(x[1].replace(/\s+at\s+/, " ")) : NaN; return isNaN(t) ? m.date : new Date(t).toISOString(); };
+  const rm0 = ck.reqMail || null, rm = rm0 ? Object.assign({}, rm0, { date:/^(fwd?|fw):/i.test(rm0.subject || "") ? fwdD(rm0) : rm0.date }) : null, fmtD = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toISOString().slice(0, 10); };
   const src = [];
   if(rm) src.push({ key:"requirement email", date:fmtD(rm.date), text:rm.text || "" });
   const nm = f => String(f || "").replace(/<.*>/, "").replace(/"/g, "").trim().split(/[ @]/)[0];
