@@ -35,6 +35,8 @@ EMAILS (index, date, from, to, subject, text):
 ${(o.mails || []).map((m, i) => `[${i}] ${m.date} from ${m.from} to ${m.to || ""} | ${m.subject}\n${cut(m.text, 2500)}`).join("\n---\n") || "none"}
 PROJECT GROUP CHAT:
 ${(o.teamChat || []).map(m => `${m.at} ${m.by}: ${cut(m.text, 600)}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n") || "none"}
+SENIOR DISCUSSION ABOUT THIS ORDER (managers, PM, head of department; their view carries weight, a manager's word settles):
+${(o.seniorNotes || []).slice(-20).map(m => `${m.at} ${m.by} in ${m.group}: ${cut(m.text, 500)}`).join("\n") || "none"}
 ACCESS GROUP:
 ${(o.accessChat || []).map(m => `${m.at} ${m.by}: ${cut(m.text, 400)}`).join("\n") || "none"}`;
   return { system, user };
@@ -93,6 +95,7 @@ LIVE CHECKS ON THE CLIENT'S SITE (read now):
 ${JSON.stringify(probes)}
 SEARCH CONSOLE AND SITE CHECK (read with our access):
 ${verifyTxt || "not available"}
+SENIOR DISCUSSION (managers, PM, head; a manager's word settles a situation): ${JSON.stringify((o.seniorNotes || []).slice(-12).map(m => ({ at:m.at, by:m.by, said:cut(m.text, 400) })))}
 ACCESS ITEMS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status, note:a.note || "" })))}`.slice(0, 110000);
   return { system, user };
 }

@@ -408,6 +408,7 @@ async function syncTeam(o){
 export async function hourlySync(){
   const done = [];
   try{ done.push("new work: " + await discover()); }catch(e){ done.push("new work: " + e.message); }
+  try{ done.push("senior groups: " + await readCommon()); }catch(e){ done.push("senior groups: " + e.message); }
   const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
   for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
   try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
@@ -811,6 +812,26 @@ TEAM FILES READ: ${JSON.stringify(ck.files || [])}`.slice(0, 90000);
   return o.draftReport;
 }
 
+/* Which order a message is about: its order number, the client's site or the client's name */
+function orderInText(text, orders){
+  const t = String(text || "").toLowerCase();
+  return orders.find(o => t.includes(o.id.toLowerCase())) || orders.find(o => { const d = domOf(o.client.website); return d && (t.includes(d) || (d.split(".")[0].length >= 5 && t.includes(d.split(".")[0]))); }) || orders.find(o => (o.client.name || "").length >= 5 && t.includes(o.client.name.toLowerCase())) || null;
+}
+/* Common groups of seniors (not one order's project group, not the access group): messages about an order become senior notes on it */
+async function readCommon(){
+  const cfg = await cfgOf(), as = await poster(cfg) || cfg.chatAs; if(!as) return "no account";
+  const since = (await cmd("GET", P + "common:at")) || new Date(Date.now() - 3 * 864e5).toISOString(), started = now();
+  const orders = (await loadAll(300)).filter(o => !["done", "cancelled"].includes(o.stage)), own = new Set(orders.map(o => (groupOf(o) || {}).id).filter(Boolean));
+  const spaces = (await mySpaces(as)).filter(x => !/^DIRECT_MESSAGE$/i.test(x.type) && !own.has(x.id) && !/access/i.test(x.name)).slice(0, 15); let n = 0; const touched = new Set();
+  for(const sp of spaces){ let msgs = []; try{ msgs = await chatSince(as, sp.id, since); }catch(e){ continue; }
+    for(const m of msgs){ const o = orderInText(m.text, orders); if(!o || /^Order desk:/.test(m.text)) continue;
+      if((o.seniorNotes || []).some(x => x.id === m.id)) continue;
+      (o.seniorNotes = o.seniorNotes || []).push({ id:m.id, at:m.at, by:m.by, group:sp.name, text:str(m.text, 1500) }); o.seniorNotes = o.seniorNotes.slice(-60); touched.add(o); n++; } }
+  for(const o of touched){ log(o, { name:"Order desk" }, "New senior discussion about this order in " + [...new Set(o.seniorNotes.slice(-5).map(x => x.group))].join(", ")); o.checkAt = ""; await saveO(o); }
+  await cmd("SET", P + "common:at", started);
+  return n + " senior notes";
+}
+
 /* The order desk in the project group: posts the steps to reach QA, and answers the team's questions in the thread.
    It posts as the account chosen in Team and settings (Manav's), and starts each message with "Order desk:" unless that is turned off. */
 const groupOf = o => { const n = {}; (o.teamChat || []).filter(m => m.spaceId && !/access/i.test(m.space || "")).forEach(m => n[m.spaceId] = (n[m.spaceId] || 0) + 1); const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0]; return id ? { id, name:((o.teamChat || []).find(m => m.spaceId === id) || {}).space || "" } : null; };
@@ -828,7 +849,10 @@ function stepsText(o){
 }
 async function postSteps(o, cfg, by){
   const as = await poster(cfg); if(!as) throw new Error("Choose the account to post as in Team and settings, and connect it with Google Chat permission");
-  const g = groupOf(o); if(!g) throw new Error("No project group found for this order yet. Add seo@indiit.com to the project's Google Chat group");
+  let g = groupOf(o);
+  if(!g){ const names = [...new Set((o.teamChat || []).map(m => m.space).filter(n2 => n2 && !/access/i.test(n2)))], sp = (await mySpaces(as)).find(x => names.includes(x.name));
+    if(sp){ g = { id:sp.id, name:sp.name }; (o.teamChat || []).forEach(m => { if(m.space === sp.name && !m.spaceId) m.spaceId = sp.id; }); } }
+  if(!g) throw new Error("No project group found for this order yet. Add seo@indiit.com to the project's Google Chat group");
   const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
   const m = await postChat(as, g.id, deskSay(cfg, t));
   o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12) }).slice(-30);
@@ -898,7 +922,7 @@ async function mentionsRun(cfg, as){
     let msgs = []; try{ msgs = await chatSince(as, sp.id, since); }catch(e){ continue; }
     const callRe = new RegExp("@(manav|seo desk|order desk|desk|indi ?it( solutions)?|" + String(as).split("@")[0].replace(/[^a-z0-9]/gi, "") + ")(\\b|\\s|$)", "i");
     for(const m of msgs.filter(x => callRe.test(x.text) && !/^Order desk:/.test(x.text))){
-      const o = bySpace[sp.id] || null, ck = (o && o.check) || {};
+      const o = bySpace[sp.id] || orderInText(m.text, orders), ck = (o && o.check) || {};
       const system = `Someone in an agency's team chat group mentioned the order desk or @Manav, the head of the department. You answer as the order desk, in the same thread, so work does not wait. Read what they need. If you can answer from the order facts (what to do, where, access status, files, live checks), answer like a friendly colleague in one to four short lines, only what they need to act. No meta talk (never explain why a task exists or how the desk checks things). If it is a technical question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names, as short as possible. If it needs Manav himself (an approval, money, prices, scope change, anything about or with the client, hiring, people problems), say kindly that Manav will reply soon, and set needsManav. Never share passwords, logins, prices or the client's own messages. Use VERY SIMPLE English a 4th grade child can follow. No dashes.
 First decide if it is GENUINE: a real question or request about project work, a client order, access, or a technical task. Greetings, thanks, jokes, chit chat and topics outside work are not genuine: then leave answer empty.
 Answer with one JSON object only: {"genuine":true,"topic":"two to four words, for example robots.txt or Search Console access","qtype":"work | technical | access | client | other","answer":"","needsManav":false,"summary":"one line for Manav: who needs what"}`;
