@@ -199,6 +199,31 @@ function applyRegister(o, reg){
   }
 }
 
+/* Clients: one record per marketplace username, holding every order. Payments are for Manav (HoD) only. */
+const cidOf = n => String(n || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "unknown";
+const CK = id => P + "cl:" + id, CLS = P + "clients";
+async function touchClient(o){
+  const id = o.cid || (o.cid = cidOf(o.client.name)); const c = (await getJ(CK(id))) || { id, name:o.client.name, first:o.at, orders:[], sites:[], notes:"", tags:[] };
+  if(!c.orders.includes(o.id)) c.orders.push(o.id); if(o.client.website && !c.sites.includes(domOf(o.client.website))) c.sites.push(domOf(o.client.website));
+  c.country = o.client.country || c.country; c.last = o.at > (c.last || "") ? o.at : c.last; if(o.ai && o.ai.profile) c.profile = o.ai.profile;
+  await pipe([["SET", CK(id), JSON.stringify(c)], ["SADD", CLS, id]]); return c;
+}
+const payOf = o => Object.assign({ status:"paid", extras:[], tip:0, refund:0 }, o.pay || {});
+function payNums(o, cfg){
+  const p = payOf(o), feeR = (o.fee != null ? o.fee : cfg.fee) / 100, extras = (p.extras || []).reduce((a, x) => a + num(x.amount, 0), 0), gross = num(o.price, 0) + extras + num(p.tip, 0) - num(p.refund, 0);
+  return { status:p.status, gross:+gross.toFixed(2), net:+(gross * (1 - feeR)).toFixed(2), extras:+extras.toFixed(2), tip:num(p.tip, 0), refund:num(p.refund, 0), clearsOn:p.clearsOn || "", clearedAt:p.clearedAt || "" };
+}
+function clientSummary(c, list, cfg, admin){
+  const os = list.filter(o => o.cid === c.id || (!o.cid && cidOf(o.client.name) === c.id));
+  const open = os.filter(o => !["done", "cancelled"].includes(o.stage)), rated = os.filter(o => o.rating);
+  const r = { id:c.id, name:c.name, country:c.country, sites:c.sites, first:c.first, last:c.last, orders:os.length, open:open.length, tags:c.tags || [],
+    rating:rated.length ? +(rated.reduce((a, o) => a + o.rating, 0) / rated.length).toFixed(1) : null, retainer:os.some(o => o.retainer), repeat:os.length > 1,
+    revisions:os.reduce((a, o) => a + (o.revisions || []).filter(x => x.ours).length, 0), flags:open.flatMap(o => flags(o).filter(f => f.k === "bad")).length };
+  if(admin){ const ps = os.filter(o => o.stage !== "cancelled").map(o => payNums(o, cfg)); r.gross = +ps.reduce((a, x) => a + x.gross, 0).toFixed(2); r.net = +ps.reduce((a, x) => a + x.net, 0).toFixed(2);
+    r.pending = +ps.filter(x => x.status !== "cleared" && !/refund|cancel/.test(x.status)).reduce((a, x) => a + x.net, 0).toFixed(2); }
+  return r;
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -248,8 +273,29 @@ async function handle(request){
   if(a === "access"){ const site = str(url.searchParams.get("site"), 200), d = domOf(site); let gp = [];
     try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
-  if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => summary(o, cfg)) }); }
-  if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o) }); }
+  const isA = w.role === "admin";
+  const strip = o => { if(isA) return o; const c = Object.assign({}, o); delete c.pay; return c; };
+  if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; return x; }) }); }
+  if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
+    const c = await getJ(CK(o.cid || cidOf(o.client.name)));
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), client:c ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
+  if(a === "clients"){ const all = await loadAll(1000);
+    for(const o of all) if(!o.cid){ o.cid = cidOf(o.client.name); await touchClient(o); await saveO(o); }
+    const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
+    return out({ ok:true, clients:cs.map(c => clientSummary(c, all, cfg, isA)).sort((x, y) => (y.last || "").localeCompare(x.last || "")) }); }
+  if(a === "client"){ const c = await getJ(CK(str(url.searchParams.get("id"), 80))); if(!c) return bad("Client not found", 404); const all = await loadAll(1000), os = all.filter(o => o.cid === c.id);
+    const regs = {}; for(const d of c.sites || []) regs[d] = await regOf(d);
+    return out({ ok:true, client:c, summary:clientSummary(c, all, cfg, isA), orders:os.map(o => Object.assign(summary(o, cfg), isA ? { pay:payNums(o, cfg) } : { econ:undefined })), register:regs,
+      actions:os.flatMap(o => (o.actions || []).filter(x => x.status !== "done").map(x => Object.assign({ order:o.id }, x))).slice(0, 40) }); }
+  if(a === "clientSave"){ if(!can(w, "assign")) return bad("Only Manav and managers", 403); const c = await getJ(CK(str(q.id, 80))); if(!c) return bad("Client not found", 404);
+    if(q.notes != null) c.notes = redact(str(q.notes, 4000)); if(Array.isArray(q.tags)) c.tags = q.tags.slice(0, 10).map(t => str(t, 30)); await setJ(CK(c.id), c); return out({ ok:true, client:c }); }
+  if(a === "payments"){ if(!isA) return bad("Payments are for Manav only", 403); const all = (await loadAll(1000)).filter(o => o.stage !== "cancelled"), m = str(url.searchParams.get("m"), 7) || now().slice(0, 7);
+    const rows = all.map(o => Object.assign({ id:o.id, cid:o.cid, client:o.client.name, at:o.at, stage:o.stage, deliveredAt:o.deliveredAt || "", closedAt:o.closedAt || "" }, payNums(o, cfg)));
+    const inM = rows.filter(r => r.at.slice(0, 7) === m), sum = (l, k) => +l.reduce((a, x) => a + x[k], 0).toFixed(2);
+    const byC = {}; rows.forEach(r => { const x = byC[r.cid] = byC[r.cid] || { cid:r.cid, client:r.client, orders:0, gross:0, net:0, pending:0 }; x.orders++; x.gross += r.gross; x.net += r.net; if(r.status !== "cleared" && !/refund|cancel/.test(r.status)) x.pending += r.net; });
+    return out({ ok:true, month:m, totals:{ orders:inM.length, gross:sum(inM, "gross"), net:sum(inM, "net"), tips:sum(inM, "tip"), refunds:sum(inM, "refund"),
+      pending:sum(rows.filter(r => r.status !== "cleared" && !/refund|cancel/.test(r.status)), "net"), cleared:sum(rows.filter(r => r.status === "cleared" && (r.clearedAt || "").slice(0, 7) === m), "net") },
+      rows:rows.sort((x, y) => y.at.localeCompare(x.at)), clients:Object.values(byC).map(x => Object.assign(x, { gross:+x.gross.toFixed(2), net:+x.net.toFixed(2), pending:+x.pending.toFixed(2) })).sort((a, b) => b.net - a.net) }); }
 
   if(a === "queue"){ const all = await loadAll(); const items = [];
     all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.queue || []).forEach(x => { if(!x.sent || (x.reply && !x.seen)) items.push(Object.assign({ order:o.id, client:o.client.name, stage:o.stage }, x)); }));
@@ -289,6 +335,7 @@ async function handle(request){
     if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
     if(!ai.ok && ai.why) log(o, { name:"Order desk" }, "Brief not made: " + ai.why);
     if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
+    o.cid = cidOf(o.client.name); await touchClient(o);
     await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
     return out({ ok:true, id, ai }); }
 
@@ -334,12 +381,18 @@ async function handle(request){
     else if(op === "update"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503);
       const raw = redact(str(q.text, 90000)); if(raw.length < 3) return bad("Paste something first");
       const k = await intake(o, raw, w); o.lastUpdateAt = now(); o.lastUpdateBy = w.name;
-      if(!k.added){ log(o, w, "Pasted the conversation again: nothing new found"); await saveO(o); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o), info:"Nothing new in that paste. The thread is already up to date." }); }
+      if(!k.added){ log(o, w, "Pasted the conversation again: nothing new found"); await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:"Nothing new in that paste. The thread is already up to date." }); }
       const d = await rethink(o, k.fresh);
       log(o, w, (k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") + " added" : { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[k.kind] + " added") + (d.changed ? ". " + str(d.changed, 300) : ""));
-      await saveO(o); return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
+      await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
       x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
+    else if(op === "pay"){ if(w.role !== "admin") return bad("Payments are for Manav only", 403); const p = payOf(o);
+      if(q.status && ["paid", "pending clearance", "cleared", "refunded", "cancelled"].includes(q.status)){ p.status = q.status; if(q.status === "cleared") p.clearedAt = now().slice(0, 10); }
+      if(q.clearsOn && /^\d{4}-\d{2}-\d{2}$/.test(q.clearsOn)) p.clearsOn = q.clearsOn;
+      if(q.extra && num(q.extra.amount, 0) > 0) p.extras.push({ what:str(q.extra.what, 120), amount:num(q.extra.amount, 0), at:now() });
+      if(q.tip != null) p.tip = Math.max(0, num(q.tip, 0)); if(q.refund != null) p.refund = Math.max(0, num(q.refund, 0)); if(q.note != null) p.note = str(q.note, 400);
+      o.pay = p; log(o, w, "Payment updated: " + p.status); }
     else if(op === "regAdd"){ if(!can(w, "pm") && !can(w, "comms")) return bad("Your role cannot do this step"); const d = domOf(o.client.website); if(!d) return bad("This order has no client website");
       const system = Object.keys(SYS).includes(q.system) ? q.system : "Other", account = redact(str(q.account, 120)); if(!account) return bad("Type which account or user we use (email or username), never the password");
       if(/pass(word)?|pwd/i.test(String(q.account) + String(q.note) + String(q.holder))) return bad("Do not type passwords here. Write only which account we use and where the login is kept.");
@@ -397,8 +450,8 @@ async function handle(request){
       if(q.price != null && num(q.price, 0) > 0){ o.price = num(q.price, 0); } log(o, w, "Order details edited"); }
     else if(op === "cancel"){ need("assign"); o.stage = "cancelled"; log(o, w, "Cancelled: " + str(q.why, 300)); }
     else return bad("Unknown step");
-    await saveO(o);
-    return out({ ok:true, order:o, econ:econ(o, cfg), flags:flags(o) });
+    await saveO(o); if(o.cid) touchClient(o).catch(() => {});
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o) });
   }
   return bad("Unknown request", 404);
 }

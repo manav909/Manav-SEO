@@ -168,6 +168,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .ac2.open{border-left-color:var(--warn)}.ac2.sent,.ac2.waiting{border-left-color:var(--y)}.ac2.done{border-left-color:var(--ok);opacity:.75}.ac2.blocked{border-left-color:var(--bad)}
 .ach{display:flex;gap:10px;align-items:flex-start}.ach .tx{flex:1;min-width:0}.ach b{color:var(--ink);font-size:14.5px}
 .newb{display:inline-block;font-size:11px;font-weight:700;color:#0b0d14;background:var(--y);border-radius:6px;padding:0 6px;margin-bottom:4px}
+.clink{color:inherit;text-decoration:none}.clink:hover{color:var(--y)}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -181,6 +182,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 <script>
 const $ = s => document.querySelector(s), app = $("#app");
 const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const num2 = v => { const x = Number(v); return isFinite(x) ? x : 0; };
 const money = v => v == null ? "n/a" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits:2 });
 const STAGES = [["access","Waiting for access"],["work","In work"],["qa","QA check"],["ready","Ready to deliver"],["delivered","Delivered"],["done","Closed"]];
 const SN = Object.fromEntries(STAGES.concat([["cancelled","Cancelled"]]));
@@ -213,11 +215,11 @@ async function boot(){
 $("#out").onclick = () => act(async () => { await api("logout", {}); location.hash = ""; signin(); });
 window.onhashchange = route;
 function tabs(on){
-  const t = [["board","Orders"]];
+  const t = [["board","Orders"],["clients","Clients"]];
   if(can("sales")) t.push(["new","New order"], ["lead","Lead help"]);
   t.push(["msgs","Client messages"]);
   if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
-  if(ME.role === "admin") t.push(["people","Team and settings"]);
+  if(ME.role === "admin") t.push(["pay","Payments"], ["people","Team and settings"]);
   const qn = QUEUE.length;
   return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}</nav>
   ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
@@ -232,6 +234,9 @@ async function route(){
     if(h === "msgs") return msgs();
     if(h === "score") return scorecard();
     if(h === "people") return peoplePage();
+    if(h === "clients") return clientsPage();
+    if(h.startsWith("c=")) return clientPage(decodeURIComponent(h.slice(2)));
+    if(h === "pay") return payPage();
     return board();
   }catch(e){ if(e.message !== "signin") app.innerHTML = `<div class="card err">${E(e.message)}</div>`; }
 }
@@ -293,10 +298,11 @@ function newOrder(){
 }
 
 /* One order */
-let CUR = null;
+let CUR = null, CLINFO = null;
 async function order(id){
+  CLINFO = null;
   if(!CUR || CUR.order.id !== id) OTAB = "overview";
-  const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j; drawOrder();
+  const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j; CLINFO = j.client; drawOrder();
 }
 async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…"); if(r){ CUR = r; drawOrder(); } return r; }
 let OTAB = "overview";
@@ -364,8 +370,8 @@ function drawOrder(){
   const actSec = acts.length ? sec("Action plan", "Every risk, remark and open promise as a step with an owner. Copy the message, send it, then set the status. Replies go into the update box above.", acts.map(actCard).join(""),
     `<span class="chip ${acts.some(a => a.status === "blocked") ? "bad" : acts.every(a => a.status === "done") ? "ok" : "warn"}">${acts.filter(a => a.status === "done").length} of ${acts.length} done</span>`) : "";
   const header = `<section class="card ohero"><div class="oh1"><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)} package</div>
-    <h1>${E(o.client.name || "Client")} <span class="hp ${h.k}">${h.t}</span></h1>
-    <div class="ometa">${o.client.country ? `<span>${E(o.client.country)}</span>` : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}<span>Sold by ${E(o.byName)} on ${fmtD(o.at)}</span></div></div>
+    <h1><a class="clink" href="#c=${E(o.cid || "")}">${E(o.client.name || "Client")}</a> <span class="hp ${h.k}">${h.t}</span></h1>
+    <div class="ometa">${o.client.country ? `<span>${E(o.client.country)}</span>` : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}<span>Sold by ${E(o.byName)} on ${fmtD(o.at)}</span>${CLINFO ? `<a href="#c=${E(CLINFO.id)}">${CLINFO.orders > 1 ? CLINFO.orders + " orders from this client" : "First order from this client"}</a>` : ""}</div></div>
     <div class="oacts">${nextBtn}</div></section>
    <div class="steps">${STAGES.map((s, i) => `<span class="${i === si ? "on" : i < si ? "done" : ""}"><i>${i < si ? "✓" : i + 1}</i>${s[1]}</span>`).join("")}${o.stage === "cancelled" ? `<span class="on"><i>×</i>Cancelled</span>` : ""}</div>
    <div class="kpis">
@@ -373,7 +379,7 @@ function drawOrder(){
     <div><span>Access</span><b class="${accOk === o.access.length ? "g" : "w"}">${accOk} / ${o.access.length}</b><small>${accOk === o.access.length ? "Complete" : "Missing items"}</small></div>
     <div><span>Deliverables</span><b>${delDone} / ${o.deliverables.length}</b><small>Done with proof</small></div>
     <div><span>Promises</span><b class="${h.over ? "r" : ""}">${openP} open</b><small>${h.over ? h.over + " overdue" : "None overdue"}</small></div>
-    <div><span>We keep</span><b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)}</b><small>${x.margin}% of ${money(x.price)}</small></div>
+    ${x ? `<div><span>We keep</span><b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)}</b><small>${x.margin}% of ${money(x.price)}</small></div>` : `<div><span>Actions</span><b>${(o.actions || []).filter(a => a.status !== "done").length} open</b><small>${(o.actions || []).filter(a => a.status === "blocked").length} blocked</small></div>`}
     <div><span>Price check</span><b class="${vcol === "bad" ? "r" : vcol === "ok" ? "g" : ""}" style="font-size:16px;text-transform:capitalize">${E(pr.verdict || "Pending")}</b><small>${pr.fair ? "Fair: " + E(pr.fair) : ""}</small></div>
    </div>
    ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b>${a.d ? `<br>${E(a.d)}` : ""}${a.list ? `<div class="alist">${a.list.slice(0, 4).map(t => `<span>${E(String(t).replace(/\s*\((said|asked|agreed)[^)]*\)\s*$/i, ""))}</span>`).join("")}${a.list.length > 4 ? `<span class="more">and ${a.list.length - 4} more</span>` : ""}</div>` : ""}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}" data-jump="${a.go === "overview" ? "prom" : ""}">${a.goT || "Open"}</button>` : "")}</div>`)}</section>` : ""}
@@ -391,7 +397,8 @@ function drawOrder(){
       `<table class="t2"><thead><tr><th style="width:40%">Risk</th><th>How we prevent it</th><th>Level</th><th>Status</th></tr></thead><tbody>${L(ai.risks, r => `<tr><td><b>${E(r.risk)}</b></td><td>${E(r.prevent)}</td><td><span class="chip ${r.level === "high" ? "bad" : r.level === "low" ? "n" : "warn"}">${E(r.level || "medium")}</span></td><td><span class="chip ${/handled/.test(r.status || "") ? "ok" : /happened/.test(r.status || "") ? "bad" : /watch/.test(r.status || "") ? "y" : "warn"}">${E({ open:"Open", watch:"Watching", handled:"Handled", happened:"Happened" }[r.status] || "Open")}</span></td></tr>`)}</tbody></table>`) : ""}
     ${(ai.remarks || []).length || o.remarks ? sec("Special remarks", "What the chat alone does not make obvious.", `<ul class="clean">${o.remarks ? `<li><span class="tag">Sales</span>${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
    </div><div>
-    ${sec("Money on this order", "What the order really earns after the fee, team time and AI.",
+    ${x ? sec("Payment", "Only you see this. Track the money for this order until it clears.", payCard(o, CUR.pay)) : ""}
+    ${!x ? "" : sec("Money on this order", "What the order really earns after the fee, team time and AI.",
       `<table class="money"><tr><td>Client paid</td><td>${money(x.price)}</td></tr><tr><td>Marketplace fee</td><td>− ${money(x.fee)}</td></tr><tr><td>Team time (${x.hours} h logged)</td><td>− ${money(x.team)}</td></tr><tr><td>AI helpers</td><td>− ${money(x.ai)}</td></tr>
        <tr class="tot"><td>We keep</td><td class="${x.net >= 0 ? "g" : "r"}">${money(x.net)} <small>${x.margin}%</small></td></tr></table>
        <p class="note" style="margin:10px 0 0">Planned: ${x.planHours} h, keeps ${money(x.planNet)} (${x.planMargin}%).</p>`)}
@@ -496,6 +503,7 @@ function wireOrder(o){
   on("#ask", () => { const t = prompt("What should we ask the client? Write it as the message to send."); if(t) doOp("ask", { text:t, kind:"question" }, "Sending to the client messages person…"); });
   on("#repb", () => doOp("reply", { text:$("#rep").value }, "Reading the reply…"));
   on("#toqa", () => doOp("toQA"));
+  on("#pyB", () => { const ex = num2($("#pyEa").value); doOp("pay", { status:$("#pyS").value, clearsOn:$("#pyC").value, tip:$("#pyT").value, refund:$("#pyR").value, extra:ex > 0 ? { what:$("#pyEw").value, amount:ex } : null }); });
   on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order…"); });
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => toast("Copied")); });
@@ -533,6 +541,43 @@ async function accFile(o){
   el.querySelectorAll("[data-use]").forEach(b => b.onclick = () => { const [kind, pid, email] = b.dataset.use.split("|"); doOp("useProp", { kind, pid, email }); });
   el.querySelectorAll("[data-roff]").forEach(b => b.onclick = () => doOp("regOff", { rid:b.dataset.roff }));
   const rb = $("#rgB"); if(rb) rb.onclick = () => doOp("regAdd", { system:$("#rgS").value, account:$("#rgA").value, level:$("#rgL").value, holder:$("#rgH").value, note:$("#rgN").value });
+}
+
+const PST = { "paid":["Paid by client","y"], "pending clearance":["Pending clearance","warn"], "cleared":["Cleared","ok"], "refunded":["Refunded","bad"], "cancelled":["Cancelled","bad"] };
+function payCard(o, p){ if(!p) return "";
+  return `<div class="kv"><div>Status<b style="font-size:15px"><span class="chip ${PST[p.status][1]}">${PST[p.status][0]}</span></b></div><div>Total paid<b>${money(p.gross)}</b>${p.extras ? "incl. extras " + money(p.extras) : ""}${p.tip ? " · tip " + money(p.tip) : ""}</div><div>We receive<b class="g">${money(p.net)}</b>after the fee</div><div>${p.status === "cleared" ? "Cleared" : "Clears on"}<b style="font-size:15px">${p.status === "cleared" ? fmtD(p.clearedAt) : p.clearsOn ? fmtD(p.clearsOn) : "Not set"}</b></div></div>
+   <div class="fg" style="margin-top:12px"><label class="f">Status<select id="pyS">${Object.keys(PST).map(k => `<option value="${k}" ${k === p.status ? "selected" : ""}>${PST[k][0]}</option>`).join("")}</select></label><label class="f">Clears on<input id="pyC" type="date" value="${E(p.clearsOn)}"></label>
+   <label class="f">Tip (USD)<input id="pyT" type="number" min="0" value="${p.tip || ""}"></label><label class="f">Refund (USD)<input id="pyR" type="number" min="0" value="${p.refund || ""}"></label>
+   <label class="f w2">Extra paid for<input id="pyEw" placeholder="e.g. 5 more pages"></label><label class="f">Extra amount (USD)<input id="pyEa" type="number" min="0"></label><button class="btn sm pri" id="pyB" style="align-self:end">Save payment</button></div>`; }
+async function clientsPage(){
+  const j = await api("clients"), A = ME.role === "admin";
+  app.innerHTML = tabs("clients") + `<div class="card"><h2>Clients</h2><p class="note">Every client with all their orders. Open one to see the whole relationship: orders, sites, access on file, open actions${A ? " and payments" : ""}.</p>
+   ${j.clients.length ? `<table class="t2"><thead><tr><th>Client</th><th>Orders</th><th>Last order</th><th>Relationship</th>${A ? "<th>Net earned</th><th>Pending</th>" : ""}</tr></thead><tbody>${j.clients.map(c => `<tr><td><a class="clink" href="#c=${E(c.id)}"><b>${E(c.name)}</b></a><div class="sub">${E(c.country || "")}${c.sites.length ? " · " + c.sites.map(E).join(", ") : ""}</div></td>
+     <td>${c.orders}${c.open ? ` <span class="chip warn">${c.open} open</span>` : ""}</td><td>${fmtD(c.last)}</td><td>${c.retainer ? `<span class="chip ok">Monthly plan</span>` : c.repeat ? `<span class="chip ok">Repeat client</span>` : `<span class="chip n">One order so far</span>`}${c.rating ? ` <span class="chip y">★ ${c.rating}</span>` : ""}${c.flags ? ` <span class="chip bad">${c.flags} issue${c.flags > 1 ? "s" : ""}</span>` : ""}</td>
+     ${A ? `<td>${money(c.net)}</td><td>${c.pending ? money(c.pending) : "0"}</td>` : ""}</tr>`).join("")}</tbody></table>` : `<p class="note">Clients appear here with their first order.</p>`}</div>`;
+}
+async function clientPage(id){
+  const j = await api("client", null, "&id=" + encodeURIComponent(id)), c = j.client, sm = j.summary, A = ME.role === "admin", pf = c.profile || {};
+  app.innerHTML = tabs("clients") + `<section class="card ohero"><div><div class="lbl">Client · since ${fmtD(c.first)}</div><h1>${E(c.name)} ${sm.retainer ? `<span class="hp ok">Monthly plan</span>` : sm.repeat ? `<span class="hp ok">Repeat client</span>` : `<span class="hp warn">One order so far</span>`}</h1>
+    <div class="ometa">${c.country ? `<span>${E(c.country)}</span>` : ""}${(c.sites || []).map(d => `<a href="https://${E(d)}" target="_blank" rel="noopener">${E(d)}</a>`).join("")}</div></div></section>
+   <div class="kpis"><div><span>Orders</span><b>${sm.orders}</b><small>${sm.open} open</small></div><div><span>Rating</span><b>${sm.rating ? "★ " + sm.rating : "n/a"}</b><small>average</small></div><div><span>Revisions</span><b class="${sm.revisions ? "w" : "g"}">${sm.revisions}</b><small>our fault</small></div>
+    ${A ? `<div><span>Total paid</span><b>${money(sm.gross)}</b><small>all orders</small></div><div><span>Net earned</span><b class="g">${money(sm.net)}</b><small>after fees</small></div><div><span>Pending</span><b class="${sm.pending ? "w" : ""}">${money(sm.pending)}</b><small>not cleared yet</small></div>` : `<div><span>Last order</span><b style="font-size:16px">${fmtD(c.last)}</b><small></small></div><div><span>Open actions</span><b>${j.actions.length}</b><small>across orders</small></div>`}</div>
+   <div class="og"><div>
+    ${sec("Orders", "Every order from this client, newest first.", `<table class="t2"><thead><tr><th>Order</th><th>Stage</th><th>Due</th>${A ? "<th>Payment</th>" : ""}</tr></thead><tbody>${j.orders.sort((a, b) => b.at.localeCompare(a.at)).map(o => `<tr><td><a href="#o=${E(o.id)}"><b>${E(o.id)}</b></a><div class="sub">${E(o.gigName)} · ${E(o.pkg)} · ${fmtD(o.at)}</div>${o.flags.filter(f => f.k === "bad").slice(0, 2).map(f => `<div class="sub" style="color:var(--bad)">${E(f.t)}</div>`).join("")}</td><td><span class="chip n">${E(SN[o.stage] || o.stage)}</span></td><td>${fmtD(o.deadline)}</td>${A ? `<td>${money(o.pay.gross)} <span class="chip ${PST[o.pay.status][1]}">${PST[o.pay.status][0]}</span></td>` : ""}</tr>`).join("")}</tbody></table>`)}
+    ${j.actions.length ? sec("Open actions across orders", "", j.actions.map(a => `<div class="arow"><span class="dot ${a.status === "blocked" ? "bad" : "warn"}"></span><div class="tx"><b>${E(a.title)}</b><br><span class="sub">${E(a.order)} · ${E(a.status)}</span></div><a class="btn sm" href="#o=${E(a.order)}">Open</a></div>`).join("")) : ""}
+   </div><div>
+    ${pf.goal ? sec("Who they are", "From their latest order.", `<dl class="dl"><dt>Who</dt><dd>${E(pf.type)}</dd><dt>Really wants</dt><dd>${E(pf.goal)}</dd><dt>How they talk</dt><dd>${E(pf.style)}</dd><dt>Watch out</dt><dd>${E(pf.watch)}</dd><dt>Budget</dt><dd>${E(pf.budget)}</dd></dl>`) : ""}
+    ${sec("Notes about this client", "For everyone who works with them. Never passwords.", `<textarea id="cN" placeholder="e.g. prefers messages to calls, always asks for a recording">${E(c.notes || "")}</textarea>${can("assign") ? `<button class="btn sm" id="cNb" style="margin-top:8px">Save notes</button>` : ""}`)}
+    ${sec("Access on file", "Kept from earlier orders, reused by new ones.", Object.entries(j.register).map(([d, l]) => `<div class="lbl" style="margin:6px 0">${E(d)}</div>` + (l.length ? `<ul class="clean">${l.map(r => `<li><b>${E(r.system)}</b>: ${E(r.account)}${r.level ? " · " + E(r.level) : ""}${r.active === false ? " (removed)" : ""}</li>`).join("")}</ul>` : `<p class="note">Nothing on file.</p>`)).join("") || `<p class="note">No sites yet.</p>`)}
+   </div></div>`;
+  const nb = $("#cNb"); if(nb) nb.onclick = () => act(async () => { await api("clientSave", { id:c.id, notes:$("#cN").value }); toast("Saved"); });
+}
+async function payPage(){
+  const m = new Date().toISOString().slice(0, 7), j = await api("payments", null, "&m=" + m), t = j.totals;
+  app.innerHTML = tabs("pay") + `<div class="card"><h2>Payments · ${E(m)}</h2><p class="note">Only you see this page. Totals for orders placed this month; pending is everything not cleared yet.</p>
+   <div class="sc"><div>Orders<b>${t.orders}</b></div><div>Clients paid<b>${money(t.gross)}</b>incl. extras and tips</div><div>We receive<b>${money(t.net)}</b>after fees</div><div>Cleared this month<b>${money(t.cleared)}</b></div><div>Pending clearance<b>${money(t.pending)}</b>all orders</div><div>Refunds<b>${money(t.refunds)}</b></div></div></div>
+   <div class="og"><div>${sec("By order", "Click an order to update its payment.", `<table class="t2"><thead><tr><th>Order</th><th>Client</th><th>Paid</th><th>We receive</th><th>Status</th></tr></thead><tbody>${j.rows.map(r => `<tr><td><a href="#o=${E(r.id)}"><b>${E(r.id)}</b></a><div class="sub">${fmtD(r.at)}</div></td><td><a href="#c=${E(r.cid)}">${E(r.client)}</a></td><td>${money(r.gross)}</td><td>${money(r.net)}</td><td><span class="chip ${PST[r.status][1]}">${PST[r.status][0]}</span>${r.clearsOn && r.status !== "cleared" ? `<div class="sub">Clears ${fmtD(r.clearsOn)}</div>` : ""}</td></tr>`).join("") || `<tr><td colspan="5">No orders yet</td></tr>`}</tbody></table>`)}</div>
+   <div>${sec("By client", "Lifetime value of each client.", `<table class="t2"><thead><tr><th>Client</th><th>Orders</th><th>We received</th><th>Pending</th></tr></thead><tbody>${j.clients.map(c => `<tr><td><a href="#c=${E(c.cid)}"><b>${E(c.client)}</b></a></td><td>${c.orders}</td><td>${money(c.net)}</td><td>${c.pending ? money(c.pending) : "0"}</td></tr>`).join("")}</tbody></table>`)}</div></div>`;
 }
 
 /* Client messages queue */
