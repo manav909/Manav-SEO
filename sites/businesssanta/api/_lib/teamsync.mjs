@@ -2,6 +2,12 @@
    the project's Drive folder, emails the account is copied on, and Google Chat spaces it is a member of.
    Orders are matched by order number (O-1001) or the client's site (pwmania.com / pwmania). */
 import { apiAs, accounts } from "./google.mjs";
+import { officeText } from "./orderai.mjs";
+/* A Google Sheet as text, every tab (the plain-text export gives only the first tab) */
+async function sheetText(id, tok){
+  const r = await fetch("https://www.googleapis.com/drive/v3/files/" + id + "/export?mimeType=" + encodeURIComponent("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), { headers:{ authorization:"Bearer " + tok } });
+  if(!r.ok) return ""; return officeText(Buffer.from(await r.arrayBuffer()), "sheet.xlsx");
+}
 
 const host = u => { try{ return new URL(/^https?:/i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); }catch(e){ return ""; } };
 const keysOf = o => { const h = host(o.client.website), root = h.split(".")[0]; return { id:o.id, h, root:root && root.length >= 4 ? root : "" }; };
@@ -118,6 +124,7 @@ export async function docPeek(c){
   const D = "https://www.googleapis.com/drive/v3/files/" + c.id;
   try{
     const tok = await (await import("./google.mjs")).accessTokenAs(c.via);
+    if(/spreadsheet$/.test(c.mime || "")){ const t = await sheetText(c.id, tok); if(t) return maskCreds(t.replace(/\s+/g, " "), true).slice(0, 1500); }
     const url = /document$|presentation$/.test(c.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(c.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(c.mime || "") ? D + "?alt=media" : "";
     if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) return "";
     return maskCreds((await r.text()).replace(/\s+/g, " "), true).slice(0, 1500);
@@ -139,6 +146,7 @@ export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").to
 export async function docText(d, max){
   if(!d.via) return "";
   const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
+  if(/spreadsheet$/.test(d.mime || "")){ const t = await sheetText(d.id, tok); if(t) return maskCreds(t, true).slice(0, max || 20000); }
   const url = /document$|presentation$/.test(d.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(d.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(d.mime || "") ? D + "?alt=media" : "";
   if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); return r.ok ? maskCreds(await r.text(), true).slice(0, max || 20000) : "";
 }
