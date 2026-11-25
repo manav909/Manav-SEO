@@ -66,7 +66,7 @@ export async function syncOrder(o){
         for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
           const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=50&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
           for(const m of (ms.messages || []).reverse()) if(!(o.teamChat || []).some(x => x.id === m.name))
-            out.chat.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean),
+            out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean),
               links:(m.attachment || []).filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId })) });
         } }catch(e){ out.errors.chat = e.message; }
     }
@@ -233,4 +233,15 @@ ${h.files.map(f => `${String(f.created || "").slice(0, 10)} to ${String(f.modifi
 GROUP CHAT (${h.chat.length}):
 ${h.chat.map(m => `${String(m.at).slice(0, 10)} ${m.space} ${m.by}: ${m.text}`).join("\n")}`.slice(0, 120000);
   return { system, user };
+}
+
+/* Post in a Google Chat space as the connected account (a reply goes into the given thread) */
+export async function postChat(email, space, text, thread){
+  const tok = await (await import("./google.mjs")).accessTokenAs(email);
+  const r = await fetch("https://chat.googleapis.com/v1/" + space + "/messages" + (thread ? "?messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" : ""), { method:"POST", headers:{ authorization:"Bearer " + tok, "content-type":"application/json" }, body:JSON.stringify(Object.assign({ text:String(text).slice(0, 4000) }, thread ? { thread:{ name:thread } } : {})) });
+  const j = await r.json().catch(() => ({})); if(!r.ok) throw new Error("Google Chat " + r.status + ": " + ((j.error || {}).message || "").slice(0, 160)); return j;
+}
+export async function chatSince(email, space, since){
+  const r = await apiAs(email, "https://chat.googleapis.com/v1/" + space + "/messages?pageSize=50&orderBy=createTime%20asc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
+  return (r.messages || []).map(m => ({ id:m.name, at:m.createTime, by:(m.sender && m.sender.displayName) || "", sender:m.sender ? m.sender.name : "", thread:m.thread ? m.thread.name : "", text:maskCreds(String(m.text || "")).slice(0, 2000) }));
 }

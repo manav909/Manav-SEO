@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -298,7 +298,7 @@ function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     check:o.check ? Object.assign({}, o.check, { chatNotInMail:undefined }) : null,
-    draftReport:o.draftReport,
+    draftReport:o.draftReport, deskPosts:o.deskPosts,
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
@@ -756,6 +756,7 @@ async function buildCheck(o, fresh){
   if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && !staleProofs(o).length){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
+  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
   return o.check;
 }
 
@@ -793,6 +794,65 @@ TEAM FILES READ: ${JSON.stringify(ck.files || [])}`.slice(0, 90000);
   o.draftReport = { at:now(), id:f.id, link:f.link, name, html, approved:false, via:acc.email, notVerified:d.notVerified || [] };
   log(o, { name:"Order desk" }, "Work report draft written from verified work only: " + name);
   return o.draftReport;
+}
+
+/* The order desk in the project group: posts the steps to reach QA, and answers the team's questions in the thread.
+   It posts as the account chosen in Team and settings (Manav's), and starts each message with "Order desk:" unless that is turned off. */
+const groupOf = o => { const n = {}; (o.teamChat || []).filter(m => m.spaceId && !/access/i.test(m.space || "")).forEach(m => n[m.spaceId] = (n[m.spaceId] || 0) + 1); const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0]; return id ? { id, name:((o.teamChat || []).find(m => m.spaceId === id) || {}).space || "" } : null; };
+async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a = (await gAccounts()).find(x => x.email === as); return a && a.post ? a.email : null; }
+const deskSay = (cfg, t) => (cfg.deskTag === false ? "" : "Order desk: ") + t;
+function stepsText(o){
+  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
+  const path = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || ""));
+  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || ""));
+  if(!path.length && !open.length) return "";
+  const lines = path.length ? path.map((p, i) => `${i + 1}. ${p.who}: ${p.do}${p.where ? "\n   Where: " + p.where : ""}${p.check ? "\n   Then: " + p.check : ""}`) : open.map((r, i) => `${i + 1}. ${r.who || "Team"}: ${r.toPass}${r.where ? "\n   Where: " + r.where : ""}${r.check ? "\n   Then: " + r.check : ""}`);
+  return `*${domOf(o.client.website)}: what to do next*\n\n${lines.join("\n\n")}\n\nWhen you finish a step, write "done" here. Have a question? Reply in this thread.`;
+}
+async function postSteps(o, cfg, by){
+  const as = await poster(cfg); if(!as) throw new Error("Choose the account to post as in Team and settings, and connect it with Google Chat permission");
+  const g = groupOf(o); if(!g) throw new Error("No project group found for this order yet. Add seo@indiit.com to the project's Google Chat group");
+  const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
+  const m = await postChat(as, g.id, deskSay(cfg, t));
+  o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12) }).slice(-30);
+  o.chatPollAt = o.chatPollAt || now();
+  log(o, by || { name:"Order desk" }, "Steps to reach QA posted in the project group " + (g.name || ""));
+}
+/* Every 10 minutes: questions to the desk in project groups get an answer in their thread */
+export async function chatAnswers(){
+  const cfg = await cfgOf(), as = await poster(cfg); if(!as || !aiOn()) return "off";
+  const open = (await loadAll(300)).filter(o => ["access", "work", "qa"].includes(o.stage) && (o.deskPosts || []).length), done = [];
+  for(const o of open.slice(0, 25)){
+    const g = groupOf(o); if(!g) continue; let msgs = [];
+    try{ msgs = await chatSince(as, g.id, o.chatPollAt || new Date(Date.now() - 15 * 6e4).toISOString()); }catch(e){ done.push(o.id + ": " + e.message); continue; }
+    if(!msgs.length) continue; o.chatPollAt = msgs[msgs.length - 1].at;
+    const mine = new Set((o.deskPosts || []).map(p => p.sender).filter(Boolean)), threads = new Set((o.deskPosts || []).map(p => p.thread).filter(Boolean));
+    let changed = false;
+    for(const m of msgs){
+      if(mine.has(m.sender) && /^Order desk:/.test(m.text)) continue;
+      const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
+      if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
+      if(!asked || mine.has(m.sender) && cfg.deskTag !== false) continue;
+      const ck = o.check || {}, pv = projView(o);
+      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
+Answer with one JSON object only: {"answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
+      const user = `QUESTION from ${m.by}: ${m.text}
+ORDER FACTS: site ${o.client.website}, stage ${o.stage}.
+REQUIREMENTS AND STATUS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, phase:((ck.requirements || []).find(q => q.id === r.r) || {}).phase, doneWhen:((ck.requirements || []).find(q => q.id === r.r) || {}).doneWhen, status:r.status, found:r.found, toPass:r.toPass, where:r.where, check:r.check })))}
+ACCESS: ${JSON.stringify((pv.access || []).map(a => ({ item:a.item, level:a.level, status:a.status })))}
+FILES READ: ${JSON.stringify(ck.files || [])}
+LIVE CHECKS: ${JSON.stringify(ck.probes || []).slice(0, 6000)}
+SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
+      try{ const r = await askAI("deskanswer", "claude-haiku-5-5", system, user, 1200), d = r.data || {}; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+        if(!d.answer) continue;
+        await postChat(as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), m.thread);
+        log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
+        if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
+        changed = true; done.push(o.id + " answered"); }catch(e){ done.push(o.id + " answer: " + e.message); }
+    }
+    await saveO(o);
+  }
+  return done.join(", ") || "nothing new";
 }
 
 function score(orders, cfg, month){
@@ -940,7 +1000,8 @@ async function handle(request){
 
   if(a === "person" || a === "personOff" || a === "newCode" || a === "cfg" || a === "personRoles"){
     if(w.role !== "admin") return bad("Only Manav can change people and settings", 403);
-    if(a === "cfg"){ const c = { fee:Math.min(50, Math.max(0, num(q.fee, cfg.fee))), hourly:Math.min(200, Math.max(0, num(q.hourly, cfg.hourly))) }; await setJ(T.cfg, c); return out({ ok:true, cfg:c }); }
+    if(a === "cfg"){ const c = Object.assign({}, cfg, { fee:Math.min(50, Math.max(0, num(q.fee, cfg.fee))), hourly:Math.min(200, Math.max(0, num(q.hourly, cfg.hourly))) },
+        q.chatAs !== undefined ? { chatAs:str(q.chatAs, 120) } : {}, q.autoPost !== undefined ? { autoPost:!!q.autoPost } : {}, q.deskTag !== undefined ? { deskTag:!!q.deskTag } : {}); await setJ(T.cfg, c); return out({ ok:true, cfg:c }); }
     let p;
     if(a === "person"){ const rs = (Array.isArray(q.roles) ? q.roles : [q.role]).filter(r => ROLES.includes(r)); const name = str(q.name, 60); if(!name || !rs.length) return bad("Type the name and pick at least one role"); p = { id:nid("u"), name, role:rs[0], roles:[...new Set(rs)], rev:1, at:now() }; }
     else { const raw = await cmd("HGET", T.people, str(q.uid, 20)); p = raw ? JSON.parse(raw) : null; if(!p) return bad("Person not found", 404); }
@@ -1149,6 +1210,7 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "postSteps"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); try{ await postSteps(o, cfg, w); }catch(e){ return bad(e.message); } }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });

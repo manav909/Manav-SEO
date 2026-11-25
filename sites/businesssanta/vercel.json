@@ -175,6 +175,9 @@
     },
     "api/team-sync.mjs": {
       "maxDuration": 300
+    },
+    "api/team-chat.mjs": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -185,6 +188,10 @@
     {
       "path": "/api/team-sync",
       "schedule": "23 * * * *"
+    },
+    {
+      "path": "/api/team-chat",
+      "schedule": "*/10 * * * *"
     }
   ],
   "git": {

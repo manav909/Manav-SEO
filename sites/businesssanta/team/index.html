@@ -236,6 +236,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .rdraft{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;border:1px solid rgba(96,165,250,.45);background:rgba(96,165,250,.06);border-radius:12px;padding:12px 16px;margin-bottom:12px}.rdraft>div:first-child{flex:1;min-width:260px}.rdraft p{margin:4px 0 0}
 .repv{background:#fff;color:#1a1a1a;border-radius:10px;padding:18px 22px;margin-top:8px;max-height:520px;overflow:auto;font-size:14px;line-height:1.6}.repv h1{font-size:20px;color:#111}.repv h2{font-size:16px;color:#111;margin-top:16px}.repv table{border-collapse:collapse;width:100%;margin:6px 0}.repv th,.repv td{border:1px solid #d5dbe3;padding:6px 8px;text-align:left;font-size:13.5px}.repv th{background:#eef2f7}
 .pw{font-size:13px;color:var(--sub);margin-top:4px;line-height:1.45}.pw span{display:inline-block;min-width:52px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.ck2{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:14px;line-height:1.45}.ck2 input{width:auto;min-height:0;margin-top:3px}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -525,7 +526,7 @@ function drawOrder(){
      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${files.length ? `<span class="sub">Work report read: ${L(files, f => `<a href="${E(f.link || "#")}" target="_blank" rel="noopener">${E(f.name)}</a> (${ago(f.modified)})`)}</span>` : ""}</div>
      <details class="mx"><summary>Group chat (${chat.length})</summary><div class="cv tchat">${L(chat.slice(-30), m => `<div class="bu c"><span class="mt"><b>${E(m.by || "Team")}</b> · ${ago(m.at)}</span>${E(m.text)}${(m.links || []).length ? `<span class="fi">📎 ${L(m.links, l => `<a href="${E(l.url)}" target="_blank" rel="noopener">${E(l.name)}</a>`)}</span>` : (m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`)}</div></details>
      <details class="mx"><summary>Emails (${(o.mails || []).length})</summary>${L((o.mails || []).slice().reverse().slice(0, 10), m => `<details class="mrow"><summary><b>${E(m.subject || "(no subject)")}</b><span>${E((m.from || "").replace(/<.*>/, ""))} · ${ago(m.date)}</span></summary><div class="msg">${E(m.text)}</div></details>`)}</details>
-     <div class="row" style="gap:8px;margin-top:10px">${can("pm") && o.stage === "work" ? `<button class="btn sm" id="toqa">Send to QA</button><button class="btn sm ghost" id="hrs">Log hours</button>` : ""}<button class="btn sm ghost" id="tsync">Read the group chat and files now</button></div>`, !PJ ? false : o.stage === "work");
+     <div class="row" style="gap:8px;margin-top:10px">${can("pm") && o.stage === "work" ? `<button class="btn sm" id="toqa">Send to QA</button><button class="btn sm ghost" id="hrs">Log hours</button>` : ""}<button class="btn sm ghost" id="tsync">Read the group chat and files now</button>${(can("pm") || can("comms") || can("assign")) && (ck.pathToQA || []).length && !ck.readyForQA ? `<button class="btn sm" id="postS">Post these steps in the project group</button>` : ""}</div>${(o.deskPosts || []).length ? `<p class="sub" style="margin-top:6px">Last posted in the project group ${ago(o.deskPosts[o.deskPosts.length - 1].at)}. Questions there get an answer in about 10 minutes.</p>` : ""}`, !PJ ? false : o.stage === "work");
   // 5. Access
   const accLeft = o.access.filter(a => !["received", "skip"].includes(a.status)).length;
   const s5 = box(5, "Access", accLeft ? chip(accLeft + " missing", "warn") : chip("All in", "ok"),
@@ -558,6 +559,7 @@ function drawOrder(){
   const acc = document.querySelector("#accfile"); if(acc) accFile(o);
   if($("#ckB")) $("#ckB").onclick = () => doOp("check", {}, "Checking every requirement against the group chat, the work report and the live site (about a minute)…");
   if($("#packB")) $("#packB").onclick = () => doOp("pack", {}, "Building the delivery pack (about a minute)…");
+  if($("#postS")) $("#postS").onclick = () => { if(confirm("Post these steps in the project group now?")) doOp("postSteps", {}, "Posting in the project group…"); };
   if($("#repW")) $("#repW").onclick = () => doOp("draftReport", {}, "Writing the report from verified work only (about a minute)…");
   if($("#repOk")) $("#repOk").onclick = () => { if(confirm("Approve this as our work report? It will count as the work report for this order.")) doOp("approveReport", {}, "Approving and checking the order again (about a minute)…"); };
 }
@@ -872,6 +874,7 @@ async function peoplePage(){
      <button class="btn pri" style="margin-top:10px">Add person</button></form><div id="pc"></div></div>
    <div class="card"><h2>Google accounts</h2><p class="note">Every Google account the team uses for client access. The order desk reads Search Console, Analytics and Drive proof with whichever account can see it. Connecting asks you to sign in to that account; it is read-only.</p><div id="gacc"><p class="note">Loading…</p></div>
     <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap"><a class="btn sm pri" href="/api/portal?a=g-start&team=1">Connect another Google account</a><button class="btn sm" id="gref" type="button">Refresh what each account can see</button></div></div>
+   <div class="card" id="deskc"><h2>Order desk in project groups</h2><p class="note">Loading…</p></div>
    <form class="card" id="cf"><h2>Money settings</h2><p class="note">Used for the money view of every order and the price check.</p>
    <div class="grid" style="gap:10px"><label class="f">Marketplace fee (%)<input id="cfee" type="number" min="0" max="50" value="${ME.cfg.fee}"></label><label class="f">Team cost per hour (USD)<input id="chr" type="number" min="0" step="0.5" value="${ME.cfg.hourly}"></label></div>
    <button class="btn pri" style="margin-top:12px">Save</button></form></div>`;
@@ -882,6 +885,16 @@ async function peoplePage(){
   document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
   const gl = async ref => { try{ const g = await api("gaccs", null, ref ? "&refresh=1" : ""); $("#gacc").innerHTML = g.accounts.length ? `<table class="t2"><tbody>${g.accounts.map(a => `<tr><td><b>${E(a.email)}</b>${a.primary ? ` <span class="chip y">Main portal account</span>` : ""}</td><td>${a.gsc} Search Console · ${a.ga} Analytics</td><td>${a.drive ? `<span class="chip ok">Drive</span>` : `<span class="chip warn">No Drive</span>`} ${a.gmail ? `<span class="chip ok">Email</span>` : ""} ${a.chat ? `<span class="chip ok">Chat</span>` : ""}${!a.primary && (!a.gmail || !a.chat) ? `<div class="sub">Connect it again to add email and chat reading</div>` : ""}</td></tr>`).join("")}</tbody></table><p class="sub">Checked ${ago(g.at)}</p>` : `<p class="note">No Google account connected yet.</p>`; }catch(e){ $("#gacc").innerHTML = `<p class="note">${E(e.message)}</p>`; } };
   gl(false); $("#gref").onclick = () => act(() => gl(true), "Asking Google what each account can see…");
+  (async () => { const g = await api("gaccs").catch(() => ({ accounts:[] })), acs = g.accounts || [], c = ME.cfg || {}, el = $("#deskc"); if(!el) return;
+    const cur = acs.find(a => a.email === c.chatAs);
+    el.innerHTML = `<h2>Order desk in project groups</h2><p class="note">The desk posts "what to do next" in each order's project group and answers the team's questions there, in very simple English. It posts as the account you pick here.</p>
+      <label class="f" style="margin-top:8px">Post in project groups as<select id="dkAs"><option value="">Nobody (posting off)</option>${acs.map(a => `<option value="${E(a.email)}" ${a.email === c.chatAs ? "selected" : ""}>${E(a.email)}${a.post ? "" : " (needs reconnect)"}</option>`).join("")}</select></label>
+      ${c.chatAs && !(cur && cur.post) ? `<p class="sub" style="margin-top:6px">This account needs Google Chat posting permission. <a href="/api/portal?a=g-start&team=1">Reconnect it here</a> and pick ${E(c.chatAs)}.</p>` : ""}
+      ${!acs.some(a => a.post) ? `<p class="sub" style="margin-top:6px">Your account is not on the list? <a href="/api/portal?a=g-start&team=1">Connect the Google account you use in the project groups</a>.</p>` : ""}
+      <label class="ck2"><input type="checkbox" id="dkAuto" ${c.autoPost ? "checked" : ""}> Post new steps by itself after every check (otherwise the PM or Sales presses the button on the order)</label>
+      <label class="ck2"><input type="checkbox" id="dkTag" ${c.deskTag === false ? "" : "checked"}> Start each message with "Order desk:" (recommended: the team knows the desk wrote it)</label>
+      <button class="btn sm pri" id="dkSave" style="margin-top:10px">Save</button>`;
+    $("#dkSave").onclick = () => act(async () => { const r = await api("cfg", { fee:(ME.cfg || {}).fee, hourly:(ME.cfg || {}).hourly, chatAs:$("#dkAs").value, autoPost:$("#dkAuto").checked, deskTag:$("#dkTag").checked }); ME.cfg = r.cfg; toast("Saved"); peoplePage(); }); })();
   $("#cf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("cfg", { fee:$("#cfee").value, hourly:$("#chr").value }); ME.cfg = r.cfg; toast("Saved"); }); };
 }
 boot();

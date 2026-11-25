@@ -90,7 +90,7 @@ const PRICE = { "claude-sonnet-5-5":[2, 10], "claude-haiku-5-5":[0.1, 0.5] };
 export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
 /* Speed: copying and sorting jobs run on Haiku with no thinking; judgement jobs run on Sonnet at medium effort (default is high). */
 const FAST = { output_config:{ effort:"low" }, thinking:{ type:"disabled" } }, MED = { output_config:{ effort:"medium" } };
-const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED, teamreply:MED, intel:MED, hod:MED, docs:FAST, diff:MED, signals:FAST, history:MED, accesschat:FAST, autoproof:FAST, pack:MED, check1:MED, check2:MED, draftreport:MED };
+const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED, teamreply:MED, intel:MED, hod:MED, docs:FAST, diff:MED, signals:FAST, history:MED, accesschat:FAST, autoproof:FAST, pack:MED, check1:MED, check2:MED, draftreport:MED, deskanswer:FAST };
 export async function askAI(kind, model, system, user, maxTokens){
   const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
     headers:{ "x-api-key":process.env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "content-type":"application/json" },
