@@ -258,22 +258,22 @@ async function route(){
   if(!ME) return;
   const h = location.hash.slice(1) || ((ME.role === "pm" || ME.role === "qa") ? "my" : "board");
   try{
-    if(h.startsWith("o=")) return order(decodeURIComponent(h.slice(2)));
-    if(h === "new") return newOrder();
-    if(h === "lead") return lead();
-    if(h === "msgs") return msgs();
-    if(h === "score") return scorecard();
-    if(h === "people") return peoplePage();
-    if(h === "clients") return clientsPage();
-    if(h.startsWith("c=")) return clientPage(decodeURIComponent(h.slice(2)));
-    if(h === "pay") return payPage();
-    if(h === "my") return myWork();
-    if(h === "hod") return hodPage();
-    if(h === "access") return myWork(true);
-    return board();
-  }catch(e){ if(e.message !== "signin") app.innerHTML = `<div class="card err">${E(e.message)}</div>`; }
+    if(h.startsWith("o=")) return await order(decodeURIComponent(h.slice(2)));
+    if(h === "new") return await newOrder();
+    if(h === "lead") return await lead();
+    if(h === "msgs") return await msgs();
+    if(h === "score") return await scorecard();
+    if(h === "people") return await peoplePage();
+    if(h === "clients") return await clientsPage();
+    if(h.startsWith("c=")) return await clientPage(decodeURIComponent(h.slice(2)));
+    if(h === "pay") return await payPage();
+    if(h === "my") return await myWork();
+    if(h === "hod") return await hodPage();
+    if(h === "access") return await myWork(true);
+    return await board();
+  }catch(e){ if(e.message !== "signin") app.innerHTML = tabs("") + `<div class="card err"><h2>Not available</h2><p>${E(e.message)}</p><a class="btn sm" href="#">Back to your work</a></div>`; }
 }
-async function refresh(){ const [l, q] = await Promise.all([api("list"), api("queue")]); ORD = l.orders; QUEUE = q.items; }
+async function refresh(){ const PJ = ME.role === "pm" || ME.role === "qa"; const [l, q] = await Promise.all([api("list"), PJ ? Promise.resolve({ items:[] }) : api("queue")]); ORD = l.orders; QUEUE = q.items; }
 
 /* Orders board, with each person's next steps on top */
 async function board(){

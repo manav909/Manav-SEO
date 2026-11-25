@@ -411,6 +411,7 @@ async function handle(request){
   const strip = o => { if(isA) return o; if(isProj(w)) return projView(o); const c = Object.assign({}, o); delete c.pay; return c; };
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
+  if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
   if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
   if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); const day = now().slice(0, 10), key = P + "hod:" + day;
     const all = (await loadAll(500)).filter(o => o.stage !== "cancelled"), open = all.filter(o => !["done"].includes(o.stage)), ds = open.map(delays);
