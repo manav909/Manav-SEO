@@ -12,10 +12,10 @@ export function planPrompt(o, gig, convoText){
   const system = `You plan the check of one order at an SEO, web and ads agency.
 First find the REQUIREMENT EMAIL: the email our sales side sent to the project team listing what to do for this order (not Google or tool notices, not client messages). If there are several, the latest complete one wins; give its index, or -1 if none.
 Then write the REQUIREMENTS: the work the project team must do. Take them from the requirement email first. Use the order scope (package and offer) to judge what is in scope. Use the client chat only to frame them; list what the client asked in chat that the email leaves out as "chatNotInMail", and email items outside the paid scope as "outOfScope". If there is no requirement email, take requirements from the order scope and what was agreed in chat, and say so.
-Then CLAIMS: what the team said is done, in the group chat and emails, with who and when, per requirement.
+Then CLAIMS: what the PROJECT TEAM said is done, only from the project group chat and team emails, with who and when, per requirement. What our sales side told the client in the client chat is not a team claim; give it separately as "told".
 Then PROBES: live checks on the client's own site that prove or disprove each claim (at most 12), only on the client's site. A probe reads one URL and looks at: "title", "description", "h1", "robots" (meta robots), "canonical", "status", "robotstxt" (the robots.txt text), or "text:<exact phrase>". Pick the pages named in the work report or chat.
 No dashes. Answer with one JSON object only:
-{"reqMail":{"index":-1,"why":"one line"},"requirements":[{"id":"r1","text":"plain requirement","source":"requirement email | order scope | client chat","note":""}],"chatNotInMail":["client asked, not in the email"],"outOfScope":["in the email, outside what was paid"],"claims":[{"r":"r1","by":"","at":"","what":"what they said"}],"probes":[{"r":"r1","url":"https://...","look":"title","expect":"what right looks like"}]}`;
+{"reqMail":{"index":-1,"why":"one line"},"requirements":[{"id":"r1","text":"plain requirement","source":"requirement email | order scope | client chat","note":""}],"chatNotInMail":["client asked, not in the email"],"outOfScope":["in the email, outside what was paid"],"claims":[{"r":"r1","by":"","at":"","what":"what they said"}],"told":[{"r":"r1","at":"","what":"what we told the client in chat"}],"probes":[{"r":"r1","url":"https://...","look":"title","expect":"what right looks like"}]}`;
   const user = `ORDER ${o.id} for ${o.client.name || ""}, site ${o.client.website}, deadline ${o.deadline}.
 ORDER SCOPE: gig "${(gig || {}).name || ""}", ${o.pkg} package: ${pk.what || ""}. Extras: ${o.extras || "none"}. What was sold: ${ai.summary || ""}
 PROMISES IN CHAT: ${JSON.stringify((ai.promises || []).map(p => ({ what:p.what, by:p.by })))}
@@ -60,13 +60,14 @@ export function judgePrompt(o, plan, reqMail, reads, probes, verifyTxt){
 Status per requirement: "verified" (live check or Google confirms it), "said done, not proven" (the team says so but no report line or live check shows it), "contradicted" (the live site or report shows otherwise), "not started" (nothing said, nothing shown).
 Then list every PROBLEM by step, each with who must act, including steps that might go wrong (for example a promise date that will be missed, access that is not enough, a report the client cannot read). Steps: client chat, order scope, requirement email, group chat, work report, access, QA, delivery.
 No dashes. Plain words, no ids in text. Answer with one JSON object only:
-{"verdict":"one line for the HoD","readyForQA":false,"rows":[{"r":"r1","team":"who said what, when, or nothing said","report":"file and tab that shows it, or not in the report","live":"what the live check or Google shows, or cannot be checked live","status":"verified | said done, not proven | contradicted | not started","problem":"what is wrong or missing, empty if fine"}],"problems":[{"step":"","text":"","who":"sales | PM | QA | manager"}]}`;
+{"verdict":"one line for the HoD","readyForQA":false,"rows":[{"r":"r1","team":"what the project team said in the group chat or team emails (who, when), or nothing said","told":"what we told the client about it, or empty","report":"file and tab that shows it, or not in the report","live":"what the live check or Google shows, or cannot be checked live","status":"verified | said done, not proven | contradicted | not started","problem":"what is wrong or missing, empty if fine"}],"problems":[{"step":"","text":"","who":"sales | PM | QA | manager"}]}`;
   const user = `ORDER ${o.id}, site ${o.client.website}, deadline ${o.deadline}, today ${new Date().toISOString().slice(0, 10)}.
 REQUIREMENT EMAIL: ${reqMail ? reqMail.subject + " (" + reqMail.date + ", from " + reqMail.from + ")" : "none found"}
 REQUIREMENTS: ${JSON.stringify(plan.requirements || [])}
 CLIENT ASKED IN CHAT, NOT IN THE EMAIL: ${JSON.stringify(plan.chatNotInMail || [])}
 IN THE EMAIL, OUTSIDE THE PAID SCOPE: ${JSON.stringify(plan.outOfScope || [])}
-WHAT THE TEAM SAYS: ${JSON.stringify(plan.claims || [])}
+WHAT THE PROJECT TEAM SAYS (group chat and team emails only): ${JSON.stringify(plan.claims || [])}
+WHAT WE TOLD THE CLIENT IN CHAT: ${JSON.stringify(plan.told || [])}
 WORK REPORT AND FILES (every tab read):
 ${reads.map(x => "FILE: " + x.name + " (changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none shared"}
 LIVE CHECKS ON THE CLIENT'S SITE (read now):
