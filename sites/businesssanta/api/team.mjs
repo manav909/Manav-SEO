@@ -767,6 +767,9 @@ async function buildCheck(o, fresh){
   o.readLog = { at:now(), docs:readLog, messages:(o.teamChat || []).length, groups:Object.values(o.chatFull || {}).map(g => g) };
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
+  // Quick fixes already asked: their pages are read live so the desk knows when each is done
+  for(const qf of ((o.check || {}).quickFixes || []).filter(q => q.status !== "done").slice(0, 6)) for(const u of (qf.pages || []).slice(0, 8))
+    try{ probes.push(Object.assign({ r:"quick fix " + qf.id, expect:qf.what }, await probe(o.client.website, { url:u, look:qf.look || "description" }))); }catch(e){}
   // Pages the team's files say were changed are read live by the desk itself, so nobody is asked to "confirm" what the desk can see
   { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), cands = [], tcount = {};
     const abs = raw => /^\//.test(raw) ? (() => { try{ return new URL(/^https?:/i.test(o.client.website) ? o.client.website : "https://" + o.client.website).origin + raw; }catch(e){ return ""; } })() : raw;
@@ -795,6 +798,10 @@ async function buildCheck(o, fresh){
   const d2 = walk(r2.data || {}); d2.verdict = noId(d2.verdict); d2.verdictTeam = noId(d2.verdictTeam); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); x.where = noId(x.where); x.check = noId(x.check); });
   d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
   d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
+  const prevQF = (o.check || {}).quickFixes || [];
+  d2.quickFixes = (d2.quickFixes || []).slice(0, 6).map((q, i) => { const old = prevQF.find(x => x.id === q.id);
+    return { id:old ? old.id : "q" + (Math.max(0, ...prevQF.map(x => parseInt(String(x.id).slice(1)) || 0)) + i + 1), what:noId(str(q.what, 300)), pages:(q.pages || []).map(u => str(u, 300)).slice(0, 12), look:["description", "title", "h1"].includes(q.look) ? q.look : "description",
+      status:q.status === "done" ? "done" : "open", found:noId(str(q.found, 240)), invitedBy:str(q.invitedBy, 300), at:old ? old.at : now(), doneAt:q.status === "done" ? (old && old.doneAt) || now() : "" }; });
   o.check = Object.assign(d2, { claims:(plan.claims || []).slice(0, 40).map(c => ({ r:str(c.r, 12), by:role(str(c.by, 60)), at:str(c.at, 40), what:str(c.what, 240) })), at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
     probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
@@ -908,7 +915,7 @@ async function writeGroupMsg(o){
   const proj = (ck.rows || []).filter(r => ph(r) === "project" && !/sales/i.test(r.who || ""));
   const open = proj.filter(r => r.status !== "done").map(r => { const q = reqs.find(x => x.id === r.r) || {};
     return { id:r.r, asked:q.text, status:r.status, found:r.found, missing:r.toPass, live:r.live, report:r.report, who:r.who }; });
-  if(!open.length){ o.groupMsgLeftOut = []; return ""; }
+  if(!open.length && !(ck.quickFixes || []).some(q => q.status !== "done")){ o.groupMsgLeftOut = []; return ""; }
   const done = proj.filter(r => r.status === "done").map(r => ({ asked:((reqs.find(x => x.id === r.r) || {}).text) || "", found:r.found }));
   // The sources a point may quote from, word for word
   const fwdD = m => { if(!m) return ""; const x = String(m.text || "").slice(0, 2000).match(/\nDate:\s*([^\n]+)/); const t = x ? Date.parse(x[1].replace(/\s+at\s+/, " ")) : NaN; return isNaN(t) ? m.date : new Date(t).toISOString(); };
@@ -924,11 +931,12 @@ async function writeGroupMsg(o){
   const pm = (o.pmName || "").split(" ")[0];
   const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
 Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm". State only what the findings VERIFIED: when the findings say something was not read, not checked, or will be read later, make NO point about it (the desk checks it itself) and never write it as not done.
-Each point: "title" (two to five words), "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Say what is wrong in words anyone understands, and in a few words why it matters (for example: "the sitemap line in robots.txt is missing the word Sitemap: at the start, so search engines skip it"). Never write a bare web address as if it were the problem. Put any exact text the person must type or paste inside backticks, for example \`Sitemap: https://site/sitemap_index.xml\`. Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
+Each point: "title" (two to five words), for a quick fix list its pages (short paths) in "now", "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Say what is wrong in words anyone understands, and in a few words why it matters (for example: "the sitemap line in robots.txt is missing the word Sitemap: at the start, so search engines skip it"). Never write a bare web address as if it were the problem. Put any exact text the person must type or paste inside backticks, for example \`Sitemap: https://site/sitemap_index.xml\`. Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
 Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
 Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
   const user = `SITE: ${o.client.website}
 OPEN ITEMS (findings from the check): ${JSON.stringify(open)}
+QUICK FIXES (small, they do not stop QA; write a point for each with id as given): ${JSON.stringify(((ck.quickFixes || []).filter(q => q.status !== "done")).map(q => ({ id:q.id, fix:q.what, pages:q.pages, now:q.found, invited:q.invitedBy })))}
 ALREADY VERIFIED DONE (never mention): ${JSON.stringify(done)}
 SOURCES:
 ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice(0, x.key === "requirement email" ? 8000 : 2500)}`).join("\n\n").slice(0, 70000)}`;
@@ -947,7 +955,8 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
     const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key))[0];
     return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
   const seen = new Set(), pts = [], left = [];
-  for(const p2 of d.points || []){ const it = open.find(x => x.id === p2.id); if(!it) continue;
+  const qfs = (ck.quickFixes || []).filter(q => q.status !== "done");
+  for(const p2 of d.points || []){ const qf = qfs.find(x => x.id === p2.id), it = open.find(x => x.id === p2.id) || (qf ? { id:qf.id, quick:true } : null); if(!it) continue;
     const ex = clean(p2.expected).replace(/^(needed|expected|it should)\s*:?\s*/i, ""), title = clean(p2.title), text = [clean(p2.now), ex ? "Needed: " + ex.charAt(0).toLowerCase() + ex.slice(1) : ""].filter(Boolean).join(" "), k = norm(title);
     if(!text || seen.has(k)) continue; seen.add(k);
     const pr = prove(p2); if(!pr){ left.push({ id:it.id, title, text }); continue; }
@@ -963,7 +972,8 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "client chat":"Still open, asked by the client" };
   let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
-  for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k); if(g.length) msg += `\n\n**${HEAD[k]}**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
+  for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k && !p2.it.quick); if(g.length) msg += `\n\n**${HEAD[k]}**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
+  { const g = pts.filter(p2 => p2.it.quick); if(g.length) msg += `\n\n**Quick fixes, please do these too (they do not stop QA)**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
   return msg + `\n\n${pm ? pm + ", please check this list is right.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
