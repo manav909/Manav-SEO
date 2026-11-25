@@ -15,7 +15,8 @@ const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cf
 const TTL = 60 * 60 * 24 * 14;
 const ROLES = ["sales", "comms", "pm", "qa", "manager"];
 const CAN = { create:["sales"], lead:["sales"], comms:["comms", "sales"], pm:["pm"], qa:["qa"], assign:["manager"], admin:[] };
-const can = (w, what) => w.role === "admin" || w.role === "manager" && what !== "admin" || (CAN[what] || []).includes(w.role);
+const rolesOf = p => (Array.isArray(p.roles) && p.roles.length ? p.roles : [p.role]).filter(r => ROLES.includes(r));
+const can = (w, what) => { const rs = w.roles || [w.role]; return w.role === "admin" || rs.includes("manager") && what !== "admin" || rs.some(r => (CAN[what] || []).includes(r)); };
 const H = { "content-type":"application/json", "cache-control":"no-store" };
 const out = (d, s, h) => new Response(JSON.stringify(d), { status:s || 200, headers:Object.assign({}, H, h || {}) });
 const bad = (m, s) => out({ ok:false, error:m }, s || 400);
@@ -33,11 +34,11 @@ async function who(request){
   if(s.role !== "team") return null;
   const raw = await cmd("HGET", T.people, s.uid); const p = raw ? JSON.parse(raw) : null;
   if(!p || p.off || (p.rev || 1) !== (s.rev || 1)) return null;
-  return { role:p.role, uid:p.id, name:p.name, tok:t };
+  const rs = rolesOf(p); return { role:rs[0], roles:rs, uid:p.id, name:p.name, tok:t };
 }
 /* With only one active PM (or one QA), every order gets that person by default; with more, a manager picks */
 function autoAssign(o, ps, w){
-  let ch = false; const one = r => { const l = ps.filter(p => p.role === r && !p.off); return l.length === 1 ? l[0] : null; };
+  let ch = false; const one = r => { const l = ps.filter(p => rolesOf(p).includes(r) && !p.off); return l.length === 1 ? l[0] : null; };
   const pm = one("pm"), qa = one("qa");
   if(!o.pm && pm){ o.pm = pm.id; o.pmName = pm.name; ch = true; }
   if(!o.qa && qa){ o.qa = qa.id; o.qaName = qa.name; ch = true; }
@@ -285,7 +286,8 @@ async function fileBlocks(files, text){
 }
 
 /* What the project team (PM and QA) may see: the work, never the client chat, money or sales notes, except messages sales shared */
-const isProj = w => w.role === "pm" || w.role === "qa";
+// Project-team limits apply only to people whose every role is PM or QA; anyone who also sells or talks to clients sees the client side
+const isProj = w => (w.roles || [w.role]).every(r => r === "pm" || r === "qa");
 function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
@@ -399,8 +401,8 @@ async function handle(request){
   if(!w) return out({ ok:false, signin:true }, 401);
   const cfg = await cfgOf();
 
-  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, uid:w.uid }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
-    people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:p.role })), access:ACCESS });
+  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, myRoles:w.roles || [w.role], uid:w.uid }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
+    people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:rolesOf(p)[0], roles:rolesOf(p) })), access:ACCESS });
 
   if(a === "gaccs"){ const ac = await gAccounts(); let pr = { items:[], at:"" }; try{ pr = url.searchParams.get("refresh") && w.role === "admin" ? await refreshProps() : await gProps(); }catch(e){ pr.error = e.message; }
     return out({ ok:true, accounts:ac.map(x => Object.assign(x, { gsc:pr.items.filter(i => i.email === x.email && i.kind === "gsc").length, ga:pr.items.filter(i => i.email === x.email && i.kind === "ga").length })), at:pr.at, errors:pr.errors || {} }); }
@@ -427,7 +429,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       orders:ds.sort((a2, b) => (b.late - a2.late) || (Object.values(b.hours).reduce((p, q) => p + q, 0) - Object.values(a2.hours).reduce((p, q) => p + q, 0))), team:by(x => x.pm, "team"), sales:by(x => x.sales, "sales"), insight }); }
   if(a === "inbox"){ const all = (await loadAll(400)).filter(o => !["done", "cancelled"].includes(o.stage)), items = [], mine = [];
     for(const o of all){
-      const assigned = o.pm === w.uid || o.qa === w.uid || !isProj(w) || (!o.pm && w.role === "pm");
+      const assigned = o.pm === w.uid || o.qa === w.uid || !isProj(w) || (!o.pm && (w.roles || []).includes("pm"));
       if(!assigned) continue;
       mine.push({ id:o.id, site:domOf(o.client.website), deadline:o.deadline, stage:o.stage, pmName:o.pmName || "", accessLeft:(o.access || []).filter(x => !["received", "skip"].includes(x.status)).length,
         done:(o.deliverables || []).filter(d => d.done).length, total:(o.deliverables || []).length, flags:flags(o).filter(f => !/message|reply|update/i.test(f.t)) });
@@ -469,7 +471,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     return out({ ok:true, score:score(all, cfg, m), ai:{ calls:aiu.calls || 0, usd:+((aiu.micro || 0) / 1e6).toFixed(3), order:+((aiu["micro:order"] || 0) / 1e6).toFixed(3),
       lead:+((aiu["micro:lead"] || 0) / 1e6).toFixed(3), format:+((aiu["micro:format"] || 0) / 1e6).toFixed(3), reply:+((aiu["micro:reply"] || 0) / 1e6).toFixed(3), credit:200 } }); }
 
-  if(a === "leads"){ const l = (await cmd("LRANGE", T.leads, 0, 99)).map(x => JSON.parse(x)); return out({ ok:true, leads:w.role === "admin" || w.role === "manager" ? l : l.filter(x => x.by === w.uid) }); }
+  if(a === "leads"){ const l = (await cmd("LRANGE", T.leads, 0, 99)).map(x => JSON.parse(x)); return out({ ok:true, leads:can(w, "assign") ? l : l.filter(x => x.by === w.uid) }); }
   if(a === "lead"){ if(!can(w, "lead")) return bad("Lead help is for sales", 403);
     if(!aiOn()) return bad("AI helpers are off until the API key is added in Vercel", 503);
     if(await rateLimit("tmlead:" + w.uid, 40, 3600)) return bad("Too many lead checks this hour", 429);
@@ -502,20 +504,24 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
     return out({ ok:true, id, ai }); }
 
-  if(a === "person" || a === "personOff" || a === "newCode" || a === "cfg"){
+  if(a === "person" || a === "personOff" || a === "newCode" || a === "cfg" || a === "personRoles"){
     if(w.role !== "admin") return bad("Only Manav can change people and settings", 403);
     if(a === "cfg"){ const c = { fee:Math.min(50, Math.max(0, num(q.fee, cfg.fee))), hourly:Math.min(200, Math.max(0, num(q.hourly, cfg.hourly))) }; await setJ(T.cfg, c); return out({ ok:true, cfg:c }); }
     let p;
-    if(a === "person"){ const role = ROLES.includes(q.role) ? q.role : ""; const name = str(q.name, 60); if(!name || !role) return bad("Type the name and pick the role"); p = { id:nid("u"), name, role, rev:1, at:now() }; }
+    if(a === "person"){ const rs = (Array.isArray(q.roles) ? q.roles : [q.role]).filter(r => ROLES.includes(r)); const name = str(q.name, 60); if(!name || !rs.length) return bad("Type the name and pick at least one role"); p = { id:nid("u"), name, role:rs[0], roles:[...new Set(rs)], rev:1, at:now() }; }
     else { const raw = await cmd("HGET", T.people, str(q.uid, 20)); p = raw ? JSON.parse(raw) : null; if(!p) return bad("Person not found", 404); }
+    if(a === "personRoles"){ const rs = (Array.isArray(q.roles) ? q.roles : []).filter(r => ROLES.includes(r)); if(!rs.length) return bad("Pick at least one role");
+      p.roles = [...new Set(rs)]; p.role = p.roles[0]; await cmd("HSET", T.people, p.id, JSON.stringify(p));
+      if(p.roles.some(r => r === "pm" || r === "qa")){ const ps = await people(); for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage))) if(autoAssign(o, ps)) await saveO(o); }
+      return out({ ok:true, roles:p.roles }); }
     if(a === "personOff"){ p.off = !p.off; p.rev = (p.rev || 1) + 1; await cmd("HSET", T.people, p.id, JSON.stringify(p)); return out({ ok:true }); }
     if(p.codeHash) await cmd("DEL", T.code(p.codeHash));
     const code = crypto.randomBytes(8).toString("base64").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 10).padEnd(10, "7");
     p.codeHash = sha(code); p.rev = (p.rev || 1) + (a === "newCode" ? 1 : 0);
     await pipe([["HSET", T.people, p.id, JSON.stringify(p)], ["SET", T.code(p.codeHash), p.id]]);
-    if(["pm", "qa"].includes(p.role)){ const ps = await people(); for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage))) if(autoAssign(o, ps)) await saveO(o); }
+    if(rolesOf(p).some(r => r === "pm" || r === "qa")){ const ps = await people(); for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage))) if(autoAssign(o, ps)) await saveO(o); }
     return out({ ok:true, id:p.id, code }); }
-  if(a === "people"){ if(w.role !== "admin") return bad("Only Manav", 403); return out({ ok:true, people:(await people()).map(p => ({ id:p.id, name:p.name, role:p.role, off:!!p.off, at:p.at })) }); }
+  if(a === "people"){ if(w.role !== "admin") return bad("Only Manav", 403); return out({ ok:true, people:(await people()).map(p => ({ id:p.id, name:p.name, role:rolesOf(p)[0], roles:rolesOf(p), off:!!p.off, at:p.at })) }); }
 
   if(a === "do"){
     const o = await getJ(T.ord(str(q.id, 20))); if(!o) return bad("Order not found", 404);

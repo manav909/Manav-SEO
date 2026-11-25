@@ -198,13 +198,14 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .pqh{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.pqh b{color:var(--ink);font-size:14px;line-height:1.45}.pqi textarea{min-height:54px;margin-top:8px;font-size:14px}.pqi input[data-pr]{margin-top:8px;min-height:38px;font-size:14px}
 .pqd{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:12.5px;color:var(--mut);cursor:pointer}.pqd input{width:auto;min-height:0}
 @media(max-width:620px){.pq{margin-left:0}}
+.rolepick{display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px;color:var(--sub)}.rolepick label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}.rolepick input{width:auto;min-height:0}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
 <body>
 <header class="top">
   <a class="brand" href="/team"><img src="/assets/img/logo-96.webp" alt=""><span><b>Order desk</b><small id="who">Team</small></span></a>
-  <div class="row" style="gap:8px"><button class="btn sm ghost hide" id="out" type="button">Sign out</button></div>
+  <div class="row" style="gap:8px"><select id="viewas" class="hide" style="min-height:36px;width:auto;font-size:13.5px"></select><button class="btn sm ghost hide" id="out" type="button">Sign out</button></div>
 </header>
 <main class="wrap" id="app"><div class="card">Loading…</div></main>
 <div class="busy hide" id="busy"><div class="spin"></div><div id="busyT">Working…</div></div>
@@ -227,7 +228,8 @@ async function api(a, body, params){
 function busy(t){ $("#busyT").textContent = t || "Working…"; $("#busy").classList.toggle("hide", !t); }
 function toast(t, bad){ const d = document.createElement("div"); d.className = "toast"; d.textContent = t; if(bad) d.style.borderColor = "var(--bad)"; document.body.appendChild(d); setTimeout(() => d.remove(), 4200); }
 async function act(fn, t){ busy(t); try{ return await fn(); }catch(e){ if(e.message !== "signin") toast(e.message, 1); }finally{ busy(""); } }
-const can = w => { const l = Array.isArray(w) ? w : [w]; return ME.role === "admin" || ME.role === "manager" || l.includes(ME.role) || (ME.role === "sales" && l.includes("comms")); };
+// Permissions come from every role the person holds; ME.role is the view they chose (View as)
+const can = w => { const l = Array.isArray(w) ? w : [w], rs = ME.myRoles || [ME.role]; return rs.includes("admin") || rs.includes("manager") || rs.some(r => l.includes(r) || (r === "sales" && l.includes("comms"))); };
 
 function signin(){
   $("#out").classList.add("hide"); $("#who").textContent = "Team";
@@ -238,7 +240,13 @@ function signin(){
 }
 async function boot(){
   try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail, roles:j.roles || ["sales", "comms", "pm", "qa", "manager"] }); }catch(e){ return; }
-  $("#who").textContent = ME.name + " · " + (RNAME[ME.role] || ME.role); $("#out").classList.remove("hide");
+  ME.myRoles = ME.myRoles || [ME.role];
+  let v = ""; try{ v = localStorage.getItem("od-view") || ""; }catch(e){}
+  ME.role = ME.myRoles.includes(v) ? v : ME.myRoles[0];
+  $("#who").textContent = ME.name + " · " + ME.myRoles.map(r => RNAME[r] || r).join(" + "); $("#out").classList.remove("hide");
+  const vs = $("#viewas");
+  if(ME.myRoles.length > 1){ vs.innerHTML = ME.myRoles.map(r => `<option value="${r}" ${r === ME.role ? "selected" : ""}>View as ${RNAME[r] || r}</option>`).join(""); vs.classList.remove("hide");
+    vs.onchange = () => { ME.role = vs.value; try{ localStorage.setItem("od-view", vs.value); }catch(e){} location.hash = ""; route(); }; } else vs.classList.add("hide");
   route();
 }
 $("#out").onclick = () => act(async () => { await api("logout", {}); location.hash = ""; signin(); });
@@ -782,15 +790,20 @@ async function scorecard(){
 async function peoplePage(){
   const j = await api("people");
   app.innerHTML = tabs("people") + `<div class="og"><div class="card"><h2>Team</h2><p class="note">Each person signs in with their own code. You see the code once, right after you create it. If a code is lost or someone leaves, make a new code or switch them off.</p>
-   ${j.people.map(p => `<div class="ln"><div class="tx"><b>${E(p.name)}</b> <span class="chip n">${E(RNAME[p.role])}</span>${p.off ? ` <span class="chip bad">Off</span>` : ""}</div><div class="ac"><button class="btn sm" data-nc="${p.id}">New code</button><button class="btn sm ${p.off ? "" : "danger"}" data-off="${p.id}">${p.off ? "Switch on" : "Switch off"}</button></div></div>`).join("") || `<p class="note">No one yet.</p>`}
-   <form id="pf" class="fg" style="margin-top:14px"><label class="f w2">Name<input id="pn" placeholder="e.g. Divyanshi"></label><label class="f">Role<select id="pr">${ME.roles.map(r => `<option value="${r}">${RNAME[r]}</option>`).join("")}</select></label><button class="btn pri" style="align-self:end">Add person</button></form><div id="pc"></div></div>
+   ${j.people.map(p => `<div class="ln"><div class="tx"><b>${E(p.name)}</b> ${(p.roles || [p.role]).map(r => `<span class="chip n">${E(RNAME[r])}</span>`).join(" ")}${p.off ? ` <span class="chip bad">Off</span>` : ""}
+      <div class="rolepick" data-rp="${p.id}">${ME.roles.map(r => `<label><input type="checkbox" value="${r}" ${(p.roles || [p.role]).includes(r) ? "checked" : ""}> ${RNAME[r]}</label>`).join("")}<button class="btn sm" data-rsave="${p.id}">Save roles</button></div></div>
+      <div class="ac"><button class="btn sm" data-nc="${p.id}">New code</button><button class="btn sm ${p.off ? "" : "danger"}" data-off="${p.id}">${p.off ? "Switch on" : "Switch off"}</button></div></div>`).join("") || `<p class="note">No one yet.</p>`}
+   <form id="pf" style="margin-top:14px"><div class="fg"><label class="f w2">Name<input id="pn" placeholder="e.g. Divyanshi"></label></div>
+     <div class="lbl" style="margin:10px 0 6px">Roles (tick all the jobs this person does)</div><div class="rolepick" id="pnr">${ME.roles.map((r, i) => `<label><input type="checkbox" value="${r}" ${i === 0 ? "checked" : ""}> ${RNAME[r]}</label>`).join("")}</div>
+     <button class="btn pri" style="margin-top:10px">Add person</button></form><div id="pc"></div></div>
    <div class="card"><h2>Google accounts</h2><p class="note">Every Google account the team uses for client access. The order desk reads Search Console, Analytics and Drive proof with whichever account can see it. Connecting asks you to sign in to that account; it is read-only.</p><div id="gacc"><p class="note">Loading…</p></div>
     <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap"><a class="btn sm pri" href="/api/portal?a=g-start&team=1">Connect another Google account</a><button class="btn sm" id="gref" type="button">Refresh what each account can see</button></div></div>
    <form class="card" id="cf"><h2>Money settings</h2><p class="note">Used for the money view of every order and the price check.</p>
    <div class="grid" style="gap:10px"><label class="f">Marketplace fee (%)<input id="cfee" type="number" min="0" max="50" value="${ME.cfg.fee}"></label><label class="f">Team cost per hour (USD)<input id="chr" type="number" min="0" step="0.5" value="${ME.cfg.hourly}"></label></div>
    <button class="btn pri" style="margin-top:12px">Save</button></form></div>`;
   const showCode = (name, code) => { $("#pc").innerHTML = `<div class="note" style="margin-top:12px;border-color:var(--y)"><b>Sign-in for ${E(name)}</b><br>Send them this page: <b>businesssanta.com/team</b> and this code:<br><span class="code">${E(code)}</span><br>It will not be shown again.</div>`; };
-  $("#pf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("person", { name:$("#pn").value, role:$("#pr").value }); const n = $("#pn").value; await peoplePage(); showCode(n, r.code); const me = await api("me"); ME.people = me.people; }); };
+  document.querySelectorAll("[data-rsave]").forEach(b => b.onclick = () => act(async () => { const roles = [...document.querySelectorAll(`[data-rp="${b.dataset.rsave}"] input:checked`)].map(i => i.value); await api("personRoles", { uid:b.dataset.rsave, roles }); toast("Roles saved. They apply at that person's next page load."); peoplePage(); }));
+  $("#pf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("person", { name:$("#pn").value, roles:[...document.querySelectorAll("#pnr input:checked")].map(i => i.value) }); const n = $("#pn").value; await peoplePage(); showCode(n, r.code); const me = await api("me"); ME.people = me.people; }); };
   document.querySelectorAll("[data-nc]").forEach(b => b.onclick = () => act(async () => { const r = await api("newCode", { uid:b.dataset.nc }); const p = j.people.find(x => x.id === b.dataset.nc); showCode(p.name, r.code); }));
   document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
   const gl = async ref => { try{ const g = await api("gaccs", null, ref ? "&refresh=1" : ""); $("#gacc").innerHTML = g.accounts.length ? `<table class="t2"><tbody>${g.accounts.map(a => `<tr><td><b>${E(a.email)}</b>${a.primary ? ` <span class="chip y">Main portal account</span>` : ""}</td><td>${a.gsc} Search Console · ${a.ga} Analytics</td><td>${a.drive ? `<span class="chip ok">Drive on</span>` : `<span class="chip warn">Reconnect for Drive</span>`}</td></tr>`).join("")}</tbody></table><p class="sub">Checked ${ago(g.at)}</p>` : `<p class="note">No Google account connected yet.</p>`; }catch(e){ $("#gacc").innerHTML = `<p class="note">${E(e.message)}</p>`; } };
