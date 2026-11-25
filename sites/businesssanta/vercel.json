@@ -3,6 +3,32 @@
   "trailingSlash": false,
   "headers": [
     {
+      "source": "/team",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        }
+      ]
+    },
+    {
+      "source": "/team/(.*)",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        }
+      ]
+    },
+    {
       "source": "/portal",
       "headers": [
         {
@@ -143,6 +169,9 @@
     },
     "api/portal-hq.mjs": {
       "maxDuration": 30
+    },
+    "api/team.mjs": {
+      "maxDuration": 120
     }
   },
   "crons": [

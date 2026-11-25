@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Order desk · Team</title>
+<link rel="icon" href="/favicon.png">
+<link rel="stylesheet" href="/portal/portal.css">
+<style>
+.wrap{max-width:1400px;margin:0 auto;padding:18px 22px 60px;display:flex;flex-direction:column;gap:16px}
+@media(max-width:560px){.wrap{padding:12px}}
+nav.tabs{display:flex;gap:6px;flex-wrap:wrap}
+nav.tabs a{padding:9px 14px;border-radius:10px;background:var(--raise);color:var(--sub);text-decoration:none;font-weight:600;font-size:14px;display:inline-flex;gap:6px;align-items:center}
+nav.tabs a.on{background:var(--y);color:#0b0d14}
+nav.tabs a .n{background:var(--bad);color:#fff;border-radius:999px;padding:0 7px;font-size:12px}
+.next{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.next a{display:block;padding:14px;border-radius:12px;background:var(--panel);border:1px solid var(--line);text-decoration:none;color:var(--sub);font-size:14px}
+.next a b{display:block;color:var(--ink);font-size:15px;margin-bottom:2px}
+.next a.hot{border-color:var(--bad)}
+.board{display:grid;grid-template-columns:repeat(6,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px}
+.col{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;min-height:200px;display:flex;flex-direction:column;gap:10px}
+.col h3{display:flex;justify-content:space-between;font-size:14px;color:var(--sub);margin:0}
+.oc{display:block;background:var(--raise);border-radius:12px;padding:12px;text-decoration:none;color:var(--sub);font-size:13px;border:1px solid transparent}
+.oc:hover{border-color:#3a4052}
+.oc b{color:var(--ink);font-size:14.5px;display:block}
+.oc .fl{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.oc .chip{font-size:11.5px;padding:1px 8px}
+.empty-col{font-size:13px;color:var(--mut);padding:8px}
+.fg{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
+.fg .w2{grid-column:span 2}.fg .w4{grid-column:1/-1}
+@media(max-width:900px){.fg{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.fg{grid-template-columns:minmax(0,1fr)}.fg .w2{grid-column:auto}}
+textarea{min-height:120px;padding:10px 12px;line-height:1.45}
+textarea.big{min-height:260px}
+.pk{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pk label{display:block;padding:10px 12px;border-radius:10px;background:var(--raise);border:1px solid var(--line);cursor:pointer;font-size:13px;color:var(--sub)}
+.pk label b{display:block;color:var(--ink);font-size:15px}
+.pk input{display:none}.pk label.on{border-color:var(--y);background:rgba(253,185,19,.08)}
+@media(max-width:620px){.pk{grid-template-columns:1fr}}
+.ohead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start}
+.steps{display:flex;gap:4px;flex-wrap:wrap}
+.steps span{padding:6px 10px;border-radius:8px;background:var(--raise);font-size:12.5px;color:var(--mut);font-weight:600}
+.steps span.on{background:var(--y);color:#0b0d14}.steps span.done{color:var(--ok)}
+.og{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px}
+@media(max-width:1000px){.og{grid-template-columns:minmax(0,1fr)}}
+.og>div{display:flex;flex-direction:column;gap:16px}
+.ln{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--soft);font-size:14px;color:var(--sub)}
+.ln:last-child{border-bottom:0}
+.ln .tx{flex:1;min-width:0;overflow-wrap:anywhere}.ln .tx b{color:var(--ink)}
+.ln .ac{display:flex;gap:6px;flex-wrap:wrap;flex:none}
+@media(max-width:620px){.ln{flex-direction:column}}
+.kv{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.kv div{background:var(--raise);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--mut)}
+.kv div b{display:block;font-size:18px;color:var(--ink)}
+.kv div b.g{color:var(--ok)}.kv div b.r{color:var(--bad)}
+@media(max-width:620px){.kv{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.msg{white-space:pre-wrap;background:var(--raise);border-radius:10px;padding:12px;font-size:14px;color:var(--ink);line-height:1.5}
+ul.p{margin:0;padding-left:18px;color:var(--sub);font-size:14px}ul.p li{margin:3px 0}
+.tl{font-size:13px;color:var(--mut);max-height:320px;overflow:auto}.tl div{padding:6px 0;border-bottom:1px solid var(--soft)}.tl b{color:var(--sub)}
+.verdict{font-size:20px;font-weight:700;text-transform:capitalize}
+.sc{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.sc div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--mut)}
+.sc div b{display:block;font-size:24px;color:var(--ink)}
+.code{font:700 22px ui-monospace,Menlo,monospace;letter-spacing:.12em;background:var(--raise);padding:10px 14px;border-radius:10px;color:var(--y);display:inline-block}
+.busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
+</style>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/team"><img src="/assets/img/logo-96.webp" alt=""><span><b>Order desk</b><small id="who">Team</small></span></a>
+  <div class="row" style="gap:8px"><button class="btn sm ghost hide" id="out" type="button">Sign out</button></div>
+</header>
+<main class="wrap" id="app"><div class="card">Loading…</div></main>
+<div class="busy hide" id="busy"><div class="spin"></div><div id="busyT">Working…</div></div>
+<script>
+const $ = s => document.querySelector(s), app = $("#app");
+const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+const money = v => v == null ? "n/a" : "$" + Number(v).toLocaleString("en-US", { maximumFractionDigits:2 });
+const STAGES = [["access","Waiting for access"],["work","In work"],["qa","QA check"],["ready","Ready to deliver"],["delivered","Delivered"],["done","Closed"]];
+const SN = Object.fromEntries(STAGES.concat([["cancelled","Cancelled"]]));
+const RNAME = { admin:"Owner", sales:"Sales", comms:"Client messages", pm:"Project team", qa:"QA", manager:"Manager" };
+let ME = null, ORD = [], QUEUE = [];
+async function api(a, body, params){
+  const r = await fetch("/api/team?a=" + a + (params || ""), body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({ ok:false, error:"No answer" }));
+  if(j.signin){ signin(); throw new Error("signin"); }
+  if(!j.ok) throw new Error(j.error || "Something went wrong");
+  return j;
+}
+function busy(t){ $("#busyT").textContent = t || "Working…"; $("#busy").classList.toggle("hide", !t); }
+function toast(t, bad){ const d = document.createElement("div"); d.className = "toast"; d.textContent = t; if(bad) d.style.borderColor = "var(--bad)"; document.body.appendChild(d); setTimeout(() => d.remove(), 4200); }
+async function act(fn, t){ busy(t); try{ return await fn(); }catch(e){ if(e.message !== "signin") toast(e.message, 1); }finally{ busy(""); } }
+const can = w => ME.role === "admin" || ME.role === "manager" || (Array.isArray(w) ? w : [w]).includes(ME.role);
+
+function signin(){
+  $("#out").classList.add("hide"); $("#who").textContent = "Team";
+  app.innerHTML = `<div class="card" style="max-width:460px;margin:40px auto"><h1>Sign in</h1><p class="note">Type the sign-in code Manav gave you.</p>
+  <form id="sf" class="grid" style="gap:12px"><label class="f">Your code<input id="code" autocomplete="off" autocapitalize="characters" placeholder="10 letters and numbers"></label><button class="btn pri">Sign in</button></form>
+  <p class="note" style="margin-top:14px">Manav: sign in on the <a href="/portal/admin">admin console</a>, then come back here.</p></div>`;
+  $("#sf").onsubmit = e => { e.preventDefault(); act(async () => { await api("login", { code:$("#code").value }); boot(); }, "Signing in…"); };
+}
+async function boot(){
+  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access }); }catch(e){ return; }
+  $("#who").textContent = ME.name + " · " + (RNAME[ME.role] || ME.role); $("#out").classList.remove("hide");
+  route();
+}
+$("#out").onclick = () => act(async () => { await api("logout", {}); location.hash = ""; signin(); });
+window.onhashchange = route;
+function tabs(on){
+  const t = [["board","Orders"]];
+  if(can("sales")) t.push(["new","New order"], ["lead","Lead help"]);
+  t.push(["msgs","Client messages"]);
+  if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
+  if(ME.role === "admin") t.push(["people","Team and settings"]);
+  const qn = QUEUE.length;
+  return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}</nav>
+  ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
+}
+async function route(){
+  if(!ME) return;
+  const h = location.hash.slice(1) || "board";
+  try{
+    if(h.startsWith("o=")) return order(decodeURIComponent(h.slice(2)));
+    if(h === "new") return newOrder();
+    if(h === "lead") return lead();
+    if(h === "msgs") return msgs();
+    if(h === "score") return scorecard();
+    if(h === "people") return peoplePage();
+    return board();
+  }catch(e){ if(e.message !== "signin") app.innerHTML = `<div class="card err">${E(e.message)}</div>`; }
+}
+async function refresh(){ const [l, q] = await Promise.all([api("list"), api("queue")]); ORD = l.orders; QUEUE = q.items; }
+
+/* Orders board, with each person's next steps on top */
+async function board(){
+  await refresh();
+  const mine = o => ME.role === "admin" || ME.role === "manager" || (ME.role === "pm" && o.pm === ME.uid) || (ME.role === "qa" && (o.qa === ME.uid || !o.qa)) || (ME.role === "sales" && o.by === ME.uid) || ME.role === "comms";
+  const next = [];
+  ORD.filter(o => !["done","cancelled"].includes(o.stage)).forEach(o => {
+    const hot = o.flags.some(f => f.k === "bad"), go = (t, d) => next.push({ id:o.id, t, d, hot });
+    if((ME.role === "pm" && o.pm === ME.uid) || ME.role === "admin" || ME.role === "manager"){
+      if(o.stage === "access" && o.accessLeft) go(o.id + ": check access", o.accessLeft + " access item" + (o.accessLeft > 1 ? "s" : "") + " still missing");
+      if(o.stage === "work") go(o.id + ": finish the work", "Each deliverable needs a proof link, then send to QA");
+    }
+    if((ME.role === "qa" || ME.role === "admin" || ME.role === "manager") && o.stage === "qa") go(o.id + ": QA check", "Check every deliverable live");
+    if((ME.role === "comms" || ME.role === "admin" || ME.role === "manager") && o.stage === "ready") go(o.id + ": deliver", "QA passed. Send the delivery to the client");
+    if((ME.role === "admin" || ME.role === "manager") && !o.pm) go(o.id + ": pick the project team", o.client.name || o.gigName);
+  });
+  if(QUEUE.length && (ME.role === "comms" || ME.role === "admin" || ME.role === "manager")) next.unshift({ link:"#msgs", t:QUEUE.length + " client message" + (QUEUE.length > 1 ? "s" : ""), d:"To send or to read", hot:true });
+  const cols = STAGES.map(([k, n]) => { const l = ORD.filter(o => o.stage === k && mine(o)); return `<div class="col"><h3><span>${n}</span><span>${l.length}</span></h3>${l.map(card).join("") || `<div class="empty-col">Nothing here</div>`}</div>`; }).join("");
+  app.innerHTML = tabs("board") + (next.length ? `<div><div class="lbl" style="margin-bottom:8px">Your next steps</div><div class="next">${next.slice(0, 12).map(n => `<a href="${n.link || "#o=" + n.id}" class="${n.hot ? "hot" : ""}"><b>${E(n.t)}</b>${E(n.d)}</a>`).join("")}</div></div>` : "")
+    + (ORD.length ? `<div class="board">${cols}</div>` : `<div class="card"><h2>No orders yet</h2><p class="note">${can("sales") ? `When a client hires us, open <a href="#new">New order</a> and paste the whole chat.` : "Orders appear here as soon as sales adds them."}</p></div>`);
+}
+function card(o){
+  const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5);
+  return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.id)}</b>${E(o.id)} · ${E(o.gigName)}<br>${money(o.price)} · ${left >= 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "late"}${o.revisions ? " · " + o.revisions + " revision" + (o.revisions > 1 ? "s" : "") : ""}
+  <div class="fl">${o.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.verdict ? `<span class="chip n">${E(o.verdict)}</span>` : ""}</div></a>`;
+}
+
+/* New order */
+function newOrder(){
+  if(!can("sales")) return board();
+  const g0 = ME.gigs[0], d = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+  app.innerHTML = tabs("new") + `<form class="card" id="nf"><h2>New hired order</h2><p class="note">Paste everything: the whole chat, call notes, anything you promised. The order desk reads it and prepares the brief, access list, client profile and price check, so the project team never has to read the chat.</p>
+  <div class="fg">
+   <label class="f w2">Gig<select id="gig">${ME.gigs.map(g => `<option value="${g.id}">${E(g.name)}</option>`).join("")}</select></label>
+   <label class="f">Price the client paid (USD)<input id="price" type="number" min="1" step="1"></label>
+   <label class="f">Deadline<input id="deadline" type="date" value="${d}"></label>
+   <div class="w4"><div class="lbl" style="margin-bottom:6px">Package</div><div class="pk" id="pk"></div></div>
+   <label class="f">Client name or username<input id="client" placeholder="As shown in the chat"></label>
+   <label class="f">Country<input id="country" placeholder="e.g. United States"></label>
+   <label class="f w2">Client website<input id="website" placeholder="https://"></label>
+   <label class="f w4">Extras added to the order<input id="extras" placeholder="e.g. 2 extra pages, fast delivery"></label>
+   <label class="f w4">The whole chat with the client<textarea class="big" id="chat" placeholder="Paste the full conversation, from the first message to the order"></textarea></label>
+   <label class="f w2">Call notes<textarea id="calls" placeholder="What was said on calls: goals, worries, promises"></textarea></label>
+   <label class="f w2">Special remarks for the team<textarea id="remarks" placeholder="Anything the chat does not show: client mood, what we promised, what to avoid"></textarea></label>
+  </div><div class="row" style="margin-top:14px;gap:10px"><button class="btn pri">Create order</button><span class="note" id="nfh"></span></div></form>`;
+  const drawPk = () => { const g = ME.gigs.find(x => x.id === $("#gig").value), cur = (document.querySelector("#pk input:checked") || {}).value || "standard";
+    $("#pk").innerHTML = ["basic","standard","premium"].map(k => `<label class="${k === cur ? "on" : ""}"><input type="radio" name="pkg" value="${k}" ${k === cur ? "checked" : ""}><b>${k[0].toUpperCase() + k.slice(1)} · $${g.packages[k].price}</b>${E(g.packages[k].what)}</label>`).join("");
+    $("#price").value = g.packages[cur].price; $("#nfh").textContent = "Access we will ask for: " + (ME.access[g.cat] || []).map(a => a.item).join(", ");
+    $("#website").placeholder = g.cat === "ecom" ? "https://yourstore.com" : g.cat === "ads" ? "https://landing-page.com" : "https://clientsite.com";
+    document.querySelectorAll("#pk input").forEach(i => i.onchange = drawPk); };
+  $("#gig").onchange = drawPk; drawPk();
+  $("#nf").onsubmit = e => { e.preventDefault(); const v = id => $("#" + id).value;
+    act(async () => { const r = await api("create", { gig:v("gig"), pkg:(document.querySelector("#pk input:checked") || {}).value, price:v("price"), deadline:v("deadline"), client:v("client"), country:v("country"), website:v("website"), extras:v("extras"), chat:v("chat"), calls:v("calls"), remarks:v("remarks") });
+      if(r.ai && !r.ai.ok) toast(r.ai.why, 1); location.hash = "#o=" + r.id; }, ME.ai ? "The order desk is reading the chat and checking the website. About 30 to 60 seconds." : "Creating the order…"); };
+}
+
+/* One order */
+let CUR = null;
+async function order(id){
+  const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j; drawOrder();
+}
+async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…"); if(r){ CUR = r; drawOrder(); } return r; }
+function drawOrder(){
+  const o = CUR.order, x = CUR.econ, ai = o.ai || {}, gig = ME.gigs.find(g => g.id === o.gig) || {};
+  const si = STAGES.findIndex(s => s[0] === o.stage);
+  const L = (arr, f) => (arr || []).map(f).join("");
+  const pr = ai.price || {}, pf = ai.profile || {}, st = ai.site || {}, rt = ai.retainer || {};
+  const pmOpt = r => `<option value="">Not set</option>` + ME.people.filter(p => p.role === r || p.role === "manager").map(p => `<option value="${p.id}" ${o[r] === p.id ? "selected" : ""}>${E(p.name)}</option>`).join("");
+  const acc = L(o.access, a => `<div class="ln"><div class="tx"><b>${E(a.item)}</b> <span class="chip ${a.status === "received" ? "ok" : a.status === "wrong" ? "bad" : a.status === "asked" ? "warn" : "n"}">${{ needed:"Not asked yet", asked:"Asked", received:"Received, level checked", wrong:"Wrong level" }[a.status]}</span><br>Level: ${E(a.level)}<br><span style="color:var(--mut)">${E(a.why)}${a.note ? " · " + E(a.note) : ""}</span></div>
+    ${can("pm") ? `<div class="ac"><button class="btn sm" data-acc="${a.id}" data-s="received">Received, level right</button><button class="btn sm danger" data-acc="${a.id}" data-s="wrong">Wrong level</button></div>` : ""}</div>`);
+  const del = L(o.deliverables, d => `<div class="ln"><div class="tx"><b>${d.done ? "✓ " : ""}${E(d.text)}</b>${d.proof ? `<br>Proof: <a href="${E(/^https?:/.test(d.proof) ? d.proof : "#")}" target="_blank" rel="noopener">${E(d.proof)}</a>` : `<br><span style="color:var(--mut)">No proof yet</span>`}${d.qa ? ` <span class="chip ${d.qa === "pass" ? "ok" : "bad"}">QA ${d.qa}</span>${d.qaNote ? " " + E(d.qaNote) : ""}` : ""}</div>
+    ${can("pm") && ["work"].includes(o.stage) ? `<div class="ac"><button class="btn sm" data-proof="${d.id}">${d.proof ? "Change proof" : "Add proof"}</button>${d.proof && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}</div>` : ""}</div>`);
+  const q = L((o.queue || []).slice().reverse(), m => `<div class="ln"><div class="tx"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions", delivery:"Delivery" }[m.kind] || "Message"}</b> <span class="chip ${m.kind === "reply" ? (m.seen ? "n" : "y") : m.sent ? "ok" : "warn"}">${m.kind === "reply" ? (m.seen ? "Read" : "New") : m.sent ? "Sent" : "To send"}</span> <span style="color:var(--mut)">${E(m.by)}, ${new Date(m.at).toLocaleString()}</span>
+    <div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div>${m.digest ? `<p style="margin:8px 0 0"><b>What it means:</b> ${E(m.digest.summary)}${m.digest.scopeChange ? `<br><b style="color:var(--bad)">New request:</b> ${E(m.digest.scopeChange)}` : ""}${(m.digest.actions || []).length ? "<br><b>Do now:</b> " + m.digest.actions.map(E).join("; ") : ""}</p>` : ""}</div>
+    <div class="ac">${!m.sent && can("comms") ? `<button class="btn sm" data-copy="${m.id}">Copy</button><button class="btn sm pri" data-sent="${m.id}">Mark sent</button>` : ""}${m.kind === "reply" && !m.seen ? `<button class="btn sm" data-seen="${m.id}">Got it</button>` : ""}</div></div>`);
+  const nextBtn = {
+    access: can("assign") ? `<button class="btn" id="anyway">Start before all access is in</button>` : "",
+    work: can("pm") ? `<button class="btn pri" id="toqa">Send to QA</button>` : "",
+    qa: can("qa") ? `<button class="btn pri" id="qapass">QA pass</button><button class="btn danger" id="qafail">Send back with notes</button>` : "",
+    ready: can("comms") ? `<button class="btn pri" id="deliver">Delivered to the client</button>` : "",
+    delivered: can("comms") ? `<button class="btn danger" id="rev">Client asked for a revision</button><button class="btn pri" id="close">Client accepted: close</button>` : ""
+  }[o.stage] || "";
+  app.innerHTML = tabs("board") + `<div class="card"><div class="ohead"><div><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)}</div><h1>${E(o.client.name || "Client")}</h1>
+   <div class="note">${o.client.country ? E(o.client.country) + " · " : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website)}</a> · ` : ""}Due ${E(o.deadline)} · Sold by ${E(o.byName)}</div>
+   <div class="fl" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${CUR.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.alert ? `<button class="btn sm" id="clr">Checked, clear alert</button>` : ""}</div></div>
+   <div class="row" style="gap:8px;flex-wrap:wrap">${nextBtn}</div></div>
+   <div class="steps" style="margin-top:14px">${STAGES.map((s, i) => `<span class="${i === si ? "on" : i < si ? "done" : ""}">${i < si ? "✓ " : ""}${s[1]}</span>`).join("")}${o.stage === "cancelled" ? `<span class="on">Cancelled</span>` : ""}</div></div>
+  <div class="og"><div>
+   <div class="card"><h2>What we sold, in plain words</h2>${ai.summary ? `<p>${E(ai.summary)}</p>` : `<p class="note">${ME.ai ? "Not ready yet." : "Turns on with the AI helpers."}</p>`}
+    ${ai.kt ? `<div class="lbl" style="margin:10px 0 6px">Handover note for the project team</div><div class="msg">${E(ai.kt)}</div>` : ""}
+    ${(ai.remarks || []).length || o.remarks ? `<div class="lbl" style="margin:12px 0 6px">Special remarks</div><ul class="p">${o.remarks ? `<li><b>From sales:</b> ${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>` : ""}
+    ${(ai.risks || []).length ? `<div class="lbl" style="margin:12px 0 6px">Where this order could go wrong</div><ul class="p">${L(ai.risks, r => `<li><b>${E(r.risk)}</b>: ${E(r.prevent)}</li>`)}</ul>` : ""}
+    ${(ai.questions || []).length ? `<div class="lbl" style="margin:12px 0 6px">Confirm with the client before starting</div><ul class="p">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>
+   <div class="card"><h2>1. Access <span class="chip ${o.access.every(a => a.status === "received") ? "ok" : "warn"}">${o.access.filter(a => a.status === "received").length} of ${o.access.length}</span></h2><p class="note">Work starts only when every item is received and the level is checked. Wrong level is the most common reason for lost days.</p>${acc}
+    ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:8px">Add an access item</button>` : ""}</div>
+   <div class="card"><h2>2. Work and proof</h2><p class="note">Every deliverable needs proof: a live link, a report link or a screenshot link. QA only gets work that has proof for everything.</p>${del}
+    ${can("pm") && o.stage === "work" ? `<div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="adddel">Add a deliverable</button><button class="btn sm" id="hrs">Log hours</button><button class="btn sm" id="ask">Ask the client something</button></div>` : ""}
+    ${(ai.qa || []).length ? `<div class="lbl" style="margin:12px 0 6px">What QA will check</div><ul class="p">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>
+   <div class="card"><h2>Client messages</h2><p class="note">Only the client messages person sends these on the marketplace. Paste every client reply here so the team sees it at once.</p>${q || `<p class="note">No messages yet.</p>`}
+    ${can("comms") ? `<label class="f" style="margin-top:10px">Client's new message<textarea id="rep" placeholder="Paste the client's reply here"></textarea></label><button class="btn sm" id="repb" style="margin-top:8px">Add the reply</button>` : ""}</div>
+  </div><div>
+   <div class="card"><h2>Money on this order</h2><div class="kv"><div>Price<b>${money(x.price)}</b></div><div>Marketplace fee<b>${money(x.fee)}</b></div><div>Team cost<b>${money(x.team)}</b>${x.hours} h</div><div>AI cost<b>${money(x.ai)}</b></div></div>
+    <div class="kv" style="margin-top:10px"><div style="grid-column:span 2">We keep<b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)} (${x.margin}%)</b></div><div style="grid-column:span 2">Planned<b>${money(x.planNet)} (${x.planMargin}%)</b>${x.planHours} h planned</div></div>
+    ${pr.verdict ? `<div style="margin-top:14px"><div class="lbl">Price check</div><div class="verdict" style="color:${/under/i.test(pr.verdict) ? "var(--bad)" : /bargain/i.test(pr.verdict) ? "var(--ok)" : "var(--y)"}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note">Fair price for this scope: ${E(pr.fair)}</p></div>` : ""}</div>
+   ${can("assign") ? `<div class="card"><h2>Team on this order</h2><div class="grid" style="gap:10px"><label class="f">Project team<select id="pmS">${pmOpt("pm")}</select></label><label class="f">QA<select id="qaS">${pmOpt("qa")}</select></label></div></div>` : `<div class="card"><h2>Team</h2><p>Project team: ${E(o.pmName || "not set")}<br>QA: ${E(o.qaName || "not set")}</p></div>`}
+   ${pf.goal ? `<div class="card"><h2>Client profile</h2><ul class="p"><li><b>Type:</b> ${E(pf.type)}</li><li><b>Really wants:</b> ${E(pf.goal)}</li><li><b>Talks like:</b> ${E(pf.style)}</li><li><b>Watch out:</b> ${E(pf.watch)}</li><li><b>Budget signal:</b> ${E(pf.budget)}</li></ul></div>` : ""}
+   ${o.site ? `<div class="card"><h2>Website check</h2>${o.site.error ? `<p class="err">${E(o.site.error)}</p>` : `<p class="note">${E(o.site.cms)} · ${o.site.https ? "HTTPS" : "No HTTPS"} · opened in ${(o.site.ms / 1000).toFixed(1)} s · ${o.site.h1} H1 · ${o.site.imagesNoAlt} of ${o.site.images} images without alt${o.site.noindex ? " · <b style='color:var(--bad)'>noindex</b>" : ""}</p>`}
+    ${st.verdict ? `<p>${E(st.verdict)}</p>` : ""}${(st.issues || []).length ? `<ul class="p">${L(st.issues, r => `<li>${E(r)}</li>`)}</ul>` : ""}${(st.quickWins || []).length ? `<div class="lbl" style="margin:10px 0 6px">Quick wins that delight</div><ul class="p">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>` : ""}
+   ${(ai.pitch || []).length || rt.offer ? `<div class="card"><h2>Grow this client</h2>${(ai.pitch || []).length ? `<ul class="p">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}${rt.offer ? `<div class="lbl" style="margin:12px 0 6px">Monthly plan to offer</div><p><b>${E(rt.offer)}</b> · ${E(rt.price)}<br>When: ${E(rt.when)}</p><div class="msg">${E(rt.line)}</div>` : ""}</div>` : ""}
+   <div class="card"><h2>What happened</h2><div class="tl">${L(o.timeline, t => `<div><b>${E(t.who)}</b> ${E(t.what)}<br>${new Date(t.at).toLocaleString()}</div>`)}</div>
+    <div class="row" style="gap:8px;margin-top:10px">${can("pm") ? `<button class="btn sm" id="rerun">Run the order desk again</button>` : ""}<button class="btn sm" id="nt">Add a note</button>${can("assign") && !["done","cancelled"].includes(o.stage) ? `<button class="btn sm danger" id="cnl">Cancel order</button>` : ""}</div></div>
+  </div></div>`;
+  const on = (s, f) => { const el = $(s); if(el) el.onclick = f; };
+  document.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { const note = b.dataset.s === "wrong" ? prompt("What is wrong with the level? (the client message will ask again)") : ""; if(note === null) return; doOp("access", { aid:b.dataset.acc, status:b.dataset.s, note }); });
+  document.querySelectorAll("[data-proof]").forEach(b => b.onclick = () => { const p = prompt("Proof link: live page, report or screenshot link"); if(p) doOp("deliv", { did:b.dataset.proof, proof:p }); });
+  document.querySelectorAll("[data-done]").forEach(b => b.onclick = () => doOp("deliv", { did:b.dataset.done, done:true }));
+  document.querySelectorAll("[data-sent]").forEach(b => b.onclick = () => doOp("sent", { qid:b.dataset.sent }));
+  document.querySelectorAll("[data-seen]").forEach(b => b.onclick = () => doOp("seen", { qid:b.dataset.seen }));
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => { const m = o.queue.find(x => x.id === b.dataset.copy); navigator.clipboard.writeText(m.text).then(() => toast("Copied. Replace [our access email] before sending.")); });
+  on("#addacc", () => { const it = prompt("Access item (e.g. Google Tag Manager)"); if(!it) return; const lv = prompt("Exact level needed (e.g. Publish)") || ""; doOp("addAccess", { item:it, level:lv }); });
+  on("#adddel", () => { const t = prompt("Deliverable (concrete and checkable)"); if(t) doOp("addDeliv", { text:t }); });
+  on("#hrs", () => { const h = prompt("Hours worked today on this order"); if(!h) return; doOp("hours", { h, note:prompt("What you did (short)") || "" }); });
+  on("#ask", () => { const t = prompt("What should we ask the client? Write it as the message to send."); if(t) doOp("ask", { text:t, kind:"question" }, "Sending to the client messages person…"); });
+  on("#repb", () => doOp("reply", { text:$("#rep").value }, "Reading the reply…"));
+  on("#toqa", () => doOp("toQA"));
+  on("#qapass", () => { if(confirm("Every deliverable checked live and the proof matches?")) doOp("qa", { result:"pass", checks:o.deliverables.map(d => ({ did:d.id, ok:true })) }); });
+  on("#qafail", () => { const fails = o.deliverables.filter(d => confirm("Is this one wrong or not live?\n\n" + d.text)); const n = prompt("What exactly is wrong? (the project team will see this)"); if(n) doOp("qa", { result:"fail", note:n, checks:o.deliverables.map(d => ({ did:d.id, ok:!fails.includes(d) })) }); });
+  on("#deliver", () => doOp("deliver"));
+  on("#rev", () => { const r = prompt("Why? Type 1, 2, 3, 4 or 5\n1 Wrong work\n2 Missed something we promised\n3 Not live or not showing\n4 Report wrong\n5 Client changed what they want"); const map = { 1:"Wrong work", 2:"Missed requirement", 3:"Not live", 4:"Report wrong", 5:"Client changed scope" }; if(!map[r]) return; doOp("revision", { reason:map[r], note:prompt("What exactly did the client say?") || "" }); });
+  on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
+  on("#anyway", () => { const w = prompt("Why should work start before all access is in?"); if(w) doOp("startAnyway", { why:w }); });
+  on("#rerun", () => doOp("analyse", {}, "The order desk is reading everything again…"));
+  on("#nt", () => { const t = prompt("Note for the team"); if(t) doOp("note", { text:t }); });
+  on("#cnl", () => { const w = prompt("Why cancel?"); if(w) doOp("cancel", { why:w }); });
+  on("#clr", () => doOp("seen", { clearAlert:true }));
+  const pmS = $("#pmS"), qaS = $("#qaS"); if(pmS) pmS.onchange = () => doOp("assign", { pm:pmS.value }); if(qaS) qaS.onchange = () => doOp("assign", { qa:qaS.value });
+}
+
+/* Client messages queue */
+async function msgs(){
+  await refresh();
+  app.innerHTML = tabs("msgs") + `<div class="card"><h2>Client messages</h2><p class="note">Messages to send on the marketplace, and client replies the team has not read yet. Copy, send, then mark sent.</p>
+  ${QUEUE.map(m => `<div class="ln"><div class="tx"><b>${E(m.order)} · ${E(m.client || "")}</b> <span class="chip ${m.kind === "reply" ? "y" : "warn"}">${m.kind === "reply" ? "Reply not read yet" : "To send"}</span> <span style="color:var(--mut)">${E(m.by)}</span><div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div></div>
+   <div class="ac"><a class="btn sm" href="#o=${E(m.order)}">Open order</a></div></div>`).join("") || `<p class="note">All clear.</p>`}</div>`;
+}
+
+/* Lead help */
+async function lead(){
+  const l = await api("leads");
+  app.innerHTML = tabs("lead") + `<div class="og"><div><form class="card" id="lf"><h2>Lead help</h2><p class="note">Stuck with a lead? Paste the whole chat. You get what they really want, how to answer their doubts, the right offer and the exact next message.</p>
+   <label class="f">Name for this lead<input id="lt" placeholder="Client name or username"></label>
+   <label class="f" style="margin-top:10px">The whole chat<textarea class="big" id="lc" placeholder="Paste every message so far"></textarea></label>
+   <label class="f" style="margin-top:10px">Your note<input id="ln" placeholder="e.g. they went quiet after the price"></label>
+   <button class="btn pri" style="margin-top:12px" ${ME.ai ? "" : "disabled"}>Help me with this lead</button></form><div id="lr"></div></div>
+   <div><div class="card"><h2>Earlier leads</h2>${(l.leads || []).map(x => `<div class="ln"><div class="tx"><b>${E(x.title)}</b> ${x.result ? `<span class="chip ${x.result.stage === "hot" ? "ok" : x.result.stage === "warm" ? "warn" : "n"}">${E(x.result.stage)} · ${E(x.result.chance)}%</span>` : ""}<br><span style="color:var(--mut)">${E(x.byName)}, ${new Date(x.at).toLocaleString()}</span></div><div class="ac"><button class="btn sm" data-l="${x.id}">Open</button></div></div>`).join("") || `<p class="note">None yet.</p>`}</div></div></div>`;
+  const show = x => { const r = x.result || {}, of = r.offer || {}, g = ME.gigs.find(y => y.id === of.gig);
+    $("#lr").innerHTML = `<div class="card"><h2>${E(x.title)} <span class="chip ${r.stage === "hot" ? "ok" : r.stage === "warm" ? "warn" : "n"}">${E(r.stage)} · ${E(r.chance)}% chance</span></h2>
+     <p><b>They really want:</b> ${E(r.wants)}</p><p><b>What stops them:</b> ${E(r.blocker)}</p>
+     <div class="lbl" style="margin:10px 0 6px">Send this next</div><div class="msg">${E(r.reply)}</div><button class="btn sm" id="cp" style="margin-top:8px">Copy</button>
+     <div class="lbl" style="margin:14px 0 6px">Offer</div><p>${g ? E(g.name) + " · " + E(of.package) + " · $" + E(of.price) : ""}${of.custom ? "<br>" + E(of.custom) : ""}</p>
+     ${(r.objections || []).length ? `<div class="lbl" style="margin:12px 0 6px">If they say</div><ul class="p">${r.objections.map(o => `<li><b>${E(o.objection)}</b>: ${E(o.answer)}</li>`).join("")}</ul>` : ""}
+     ${(r.dont || []).length ? `<div class="lbl" style="margin:12px 0 6px">Do not</div><ul class="p">${r.dont.map(o => `<li>${E(o)}</li>`).join("")}</ul>` : ""}
+     <p style="margin-top:10px"><b>Follow up:</b> ${E(r.followup)}</p>${(r.redFlags || []).length ? `<p style="color:var(--bad)"><b>Watch:</b> ${r.redFlags.map(E).join("; ")}</p>` : ""}</div>`;
+    $("#cp").onclick = () => navigator.clipboard.writeText(r.reply || "").then(() => toast("Copied")); };
+  document.querySelectorAll("[data-l]").forEach(b => b.onclick = () => show(l.leads.find(x => x.id === b.dataset.l)));
+  $("#lf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("lead", { title:$("#lt").value, chat:$("#lc").value, note:$("#ln").value }); show(r.lead); }, "Reading the chat…"); };
+}
+
+/* Scorecard */
+async function scorecard(){
+  const m = new URLSearchParams(location.search).get("m") || new Date().toISOString().slice(0, 7), j = await api("score", null, "&m=" + m), s = j.score, ai = j.ai;
+  const P = v => v == null ? "n/a" : v + "%";
+  app.innerHTML = tabs("score") + `<div class="card"><h2>Scorecard · ${E(m)}</h2><p class="note">The order system works when clients are happy with correct work, the team makes fewer mistakes, clients come back, and every order makes money.</p>
+  <div class="lbl" style="margin:10px 0 8px">Clients happy with correct work</div><div class="sc"><div>Client got it right first time<b>${P(s.clientRight)}</b>no revision our fault</div><div>Team right first time<b>${P(s.firstTimeRight)}</b>no revision and no QA fail</div><div>On time<b>${P(s.onTime)}</b>of ${s.delivered} delivered</div><div>Client rating<b>${s.rating == null ? "n/a" : s.rating + " / 5"}</b></div><div>Clients kept<b>${P(s.retained)}</b>ordered again or monthly plan</div></div>
+  <div class="lbl" style="margin:16px 0 8px">Mistakes</div><div class="sc"><div>Revisions<b>${s.revisions}</b></div><div>QA first pass<b>${P(s.qaFirstPass)}</b></div>${Object.entries(s.reasons).map(([k, v]) => `<div>${E(k)}<b>${v}</b></div>`).join("")}</div>
+  <div class="lbl" style="margin:16px 0 8px">Money</div><div class="sc"><div>Orders<b>${s.orders}</b>${money(s.value)} sold</div><div>We kept<b>${money(s.net)}</b>on delivered orders</div><div>Per order<b>${money(s.netPerOrder)}</b>${P(s.margin)} margin</div><div>AI per order<b>${money(s.aiPerOrder)}</b></div><div>AI this month<b>${money(ai.usd)}</b>of $${ai.credit} monthly credit</div></div></div>
+  <div class="og"><div class="card"><h2>Project team</h2>${Object.entries(s.byPm).map(([k, v]) => `<div class="ln"><div class="tx"><b>${E(k)}</b><br>${v.orders} delivered · ${v.revisions} revisions · ${v.qaFails} QA fails · ${v.late} late</div></div>`).join("") || `<p class="note">Fills in as orders are delivered.</p>`}</div>
+  <div class="card"><h2>Sales</h2>${Object.entries(s.bySales).map(([k, v]) => `<div class="ln"><div class="tx"><b>${E(k)}</b><br>${v.orders} orders · ${money(v.value)}${v.under ? ` · <span style="color:var(--bad)">${v.under} undercharged</span>` : ""}</div></div>`).join("") || `<p class="note">Fills in as orders come in.</p>`}</div></div>`;
+}
+
+/* People and settings (Manav only) */
+async function peoplePage(){
+  const j = await api("people");
+  app.innerHTML = tabs("people") + `<div class="og"><div class="card"><h2>Team</h2><p class="note">Each person signs in with their own code. You see the code once, right after you create it. If a code is lost or someone leaves, make a new code or switch them off.</p>
+   ${j.people.map(p => `<div class="ln"><div class="tx"><b>${E(p.name)}</b> <span class="chip n">${E(RNAME[p.role])}</span>${p.off ? ` <span class="chip bad">Off</span>` : ""}</div><div class="ac"><button class="btn sm" data-nc="${p.id}">New code</button><button class="btn sm ${p.off ? "" : "danger"}" data-off="${p.id}">${p.off ? "Switch on" : "Switch off"}</button></div></div>`).join("") || `<p class="note">No one yet.</p>`}
+   <form id="pf" class="fg" style="margin-top:14px"><label class="f w2">Name<input id="pn" placeholder="e.g. Divyanshi"></label><label class="f">Role<select id="pr">${ME.roles.map(r => `<option value="${r}">${RNAME[r]}</option>`).join("")}</select></label><button class="btn pri" style="align-self:end">Add person</button></form><div id="pc"></div></div>
+   <form class="card" id="cf"><h2>Money settings</h2><p class="note">Used for the money view of every order and the price check.</p>
+   <div class="grid" style="gap:10px"><label class="f">Marketplace fee (%)<input id="cfee" type="number" min="0" max="50" value="${ME.cfg.fee}"></label><label class="f">Team cost per hour (USD)<input id="chr" type="number" min="0" step="0.5" value="${ME.cfg.hourly}"></label></div>
+   <button class="btn pri" style="margin-top:12px">Save</button></form></div>`;
+  const showCode = (name, code) => { $("#pc").innerHTML = `<div class="note" style="margin-top:12px;border-color:var(--y)"><b>Sign-in for ${E(name)}</b><br>Send them this page: <b>businesssanta.com/team</b> and this code:<br><span class="code">${E(code)}</span><br>It will not be shown again.</div>`; };
+  $("#pf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("person", { name:$("#pn").value, role:$("#pr").value }); const n = $("#pn").value; await peoplePage(); showCode(n, r.code); const me = await api("me"); ME.people = me.people; }); };
+  document.querySelectorAll("[data-nc]").forEach(b => b.onclick = () => act(async () => { const r = await api("newCode", { uid:b.dataset.nc }); const p = j.people.find(x => x.id === b.dataset.nc); showCode(p.name, r.code); }));
+  document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
+  $("#cf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("cfg", { fee:$("#cfee").value, hourly:$("#chr").value }); ME.cfg = r.cfg; toast("Saved"); }); };
+}
+boot();
+</script>
+</body>
+</html>
