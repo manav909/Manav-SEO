@@ -500,7 +500,7 @@ function drawOrder(){
        : `<p class="note">${ck.at ? "No requirement email was found among the emails seo@indiit.com received. Send the requirements to the project team by email and copy seo@indiit.com, so the scope is clear." : "Shown after the first check."}</p>`);
   // 4. Work check: requirement by requirement
   const dOf = id => o.deliverables.find(d => d.id === id), files = ck.files || [], chat = o.teamChat || [];
-  const s4 = box(4, "Work check", rows.length ? chip(cnt("verified") + " of " + rows.length + " verified", cnt("verified") === rows.length ? "ok" : "warn") + (cnt("contradicted") ? chip(cnt("contradicted") + " contradicted", "bad") : "") : "",
+  const s4 = box(4, "Work check", rows.length ? chip(cnt("done") + " of " + rows.length + " done", cnt("done") === rows.length ? "ok" : "warn") + (cnt("not done") ? chip(cnt("not done") + " not done", "bad") : "") : "",
     `${rows.length ? L(rows, r => { const req = (ck.requirements || []).find(q => q.id === r.r) || {}, st = ST[r.status] || [r.status, "n"], d = r.d && dOf(r.d);
         return `<div class="wrow ${st[1]}"><div class="wrh"><div><b>${E(req.text || "")}</b>${req.type ? ` <span class="ty">${E(TY[req.type] || req.type)}</span>` : ""}</div>${chip(st[0], st[1])}</div>
           ${req.doneWhen ? `<p class="wrule"><span>Done when</span>${E(req.doneWhen)}</p>` : ""}

@@ -7,7 +7,7 @@
 const host = u => { try{ return new URL(/^https?:/i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); }catch(e){ return ""; } };
 const cut = (t, n) => String(t || "").slice(0, n);
 
-export function planPrompt(o, gig, convoText){
+export function planPrompt(o, gig, convoText, fixed){
   const ai = o.ai || {}, pk = (gig && gig.packages && gig.packages[o.pkg]) || {};
   const system = `You plan the check of one order at an SEO, web and ads agency.
 First find the REQUIREMENT EMAIL: the email our sales side sent to the project team listing what to do for this order (not Google or tool notices, not client messages). If there are several, the latest complete one wins; give its index, or -1 if none.
@@ -23,7 +23,8 @@ Then CLAIMS: what the PROJECT TEAM said is done, only from the project group cha
 Then PROBES: live checks on the client's own site for "site change" requirements (at most 12), only on the client's site. A probe reads one URL and looks at: "title", "description", "h1", "robots" (meta robots), "canonical", "status", "robotstxt" (the robots.txt text), or "text:<exact phrase>". Pick the pages named in the work report or chat.
 No dashes. Answer with one JSON object only:
 {"reqMail":{"index":-1,"why":"one line"},"requirements":[{"id":"r1","text":"plain requirement","source":"requirement email | order scope | client chat","type":"site change | google setup | report | file or recording | communication | google result","doneWhen":"one clear checkable sentence","note":""}],"chatNotInMail":["client asked, not in the email"],"outOfScope":["in the email, outside what was paid"],"claims":[{"r":"r1","by":"","at":"","what":"what they said"}],"told":[{"r":"r1","at":"","what":"what we told the client in chat"}],"probes":[{"r":"r1","url":"https://...","look":"title","expect":"what right looks like"}]}`;
-  const user = `ORDER ${o.id} for ${o.client.name || ""}, site ${o.client.website}, deadline ${o.deadline}.
+  const keep = fixed && fixed.length ? `\nFIXED REQUIREMENTS (already set from the requirement email; keep exactly these ids, texts, types and rules, add nothing, only redo claims, told and probes):\n${JSON.stringify(fixed)}\n` : "";
+  const user = `${keep}ORDER ${o.id} for ${o.client.name || ""}, site ${o.client.website}, deadline ${o.deadline}.
 ORDER SCOPE: gig "${(gig || {}).name || ""}", ${o.pkg} package: ${pk.what || ""}. Extras: ${o.extras || "none"}. What was sold: ${ai.summary || ""}
 PROMISES IN CHAT: ${JSON.stringify((ai.promises || []).map(p => ({ what:p.what, by:p.by })))}
 CLIENT CHAT (as laid out):

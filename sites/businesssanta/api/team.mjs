@@ -703,11 +703,14 @@ ${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
 }
 
 /* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data */
-async function buildCheck(o){
+async function buildCheck(o, fresh){
   if(!aiOn()) return null; groupDocs(o);
   const gig = gigOf(o.gig), convoText = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"} ${m.name || ""}: ${m.text}`).join("\n") : o.chat;
-  const p1 = planPrompt(o, gig, convoText), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
+  // Requirements stay fixed once set from the requirement email, until that email changes or "fresh" is asked for
+  const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
+  const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
+  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements;
   const reads = [];
   for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
     try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
@@ -1092,7 +1095,7 @@ async function handle(request){
       const cur = find("docs", p.newer.id); d.proofs = proofsOf(d); delete d.proof;
       Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
       log(o, w, "Proof switched to the newest copy: " + cur.name); }
-    else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildCheck(o); }
+    else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildCheck(o, !!q.fresh); }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
