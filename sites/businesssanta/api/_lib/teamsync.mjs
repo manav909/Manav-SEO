@@ -125,3 +125,66 @@ NEWER VERSION (${after.at}${after.by ? ", " + after.by : ""}):
 ${after.text}`;
   return { system, user };
 }
+
+/* New work found by the team accounts: every new email, group chat message and Drive file since the last sweep, with the client sites it names.
+   Used to open draft orders for sites that have no order yet. */
+const TLD = "com|net|org|io|co|us|uk|ca|au|in|de|biz|info|store|shop|app|ai|me|nz|ie|online|site|tech|agency|law|dental|clinic|realty|homes|health|care|studio|media|design|solutions|services|group|pro|club|life|today|world|space|website";
+const NOISE = /(^|\.)(google|googleapis|googleusercontent|gstatic|gmail|youtube|youtu|indiit|businesssanta|seoseason|manuvishranti|fiverr|facebook|fb|instagram|linkedin|twitter|x|bing|microsoft|outlook|office|live|apple|icloud|w3|schema|gravatar|wordpress|wp|cloudflare|godaddy|zoom|calendly|whatsapp|t|bit|goo|tinyurl|example|amazonaws|amazon|vercel|github|slack|notion|canva|semrush|ahrefs|moz|yoast|hubspot|mailchimp|sendgrid|paypal|stripe|yahoo|hotmail|w3schools|wikipedia|pinterest|tiktok|reddit|medium|shopify|wix|squarespace|elementor|hostinger|bluehost|namecheap|ubersuggest|similarweb|gtmetrix|pagespeed|web)\.[a-z.]+$/i;
+export const sitesIn = t => [...new Set((String(t || "").match(new RegExp("\\b(?:https?:\\/\\/)?(?:www\\.)?[a-z0-9][a-z0-9-]*(?:\\.[a-z0-9-]+)*\\.(?:" + TLD + ")(?:\\.[a-z]{2})?\\b", "gi")) || [])
+  .map(x => host(x.replace(/^.*@/, ""))).filter(h => h && h.includes(".") && !NOISE.test(h)))].slice(0, 8);
+const nameOnly = s => String(s || "").replace(/<[^>]*>/g, "").replace(/"/g, "").trim();
+export async function sweepSignals(since){
+  const accs = (await accounts()).filter(a => !a.primary && (a.gmail || a.chat || a.drive)), items = [], errors = {}, after = Math.floor(Date.parse(since) / 1000);
+  for(const a of accs){
+    if(a.gmail) try{ const l = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&q=" + encodeURIComponent("after:" + after + " -category:promotions -category:social -category:forums"));
+      for(const m of (l.messages || []).slice(0, 30)){ const g = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full");
+        const hd = n => ((g.payload.headers || []).find(h => h.name.toLowerCase() === n) || {}).value || "", text = (clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 1500);
+        items.push({ key:"m:" + m.id, kind:"email", via:a.email, from:nameOnly(hd("from")), subject:hd("subject"), at:new Date(Number(g.internalDate)).toISOString(), text, sites:sitesIn(hd("subject") + " " + text + " " + hd("from") + " " + hd("to") + " " + hd("cc")) }); } }catch(e){ errors.gmail = e.message; }
+    if(a.chat) try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
+      for(const s of (sp.spaces || []).slice(0, 25)){ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=30&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"')).catch(() => ({}));
+        for(const m of (ms.messages || []).reverse()){ const text = String(m.text || m.formattedText || "").slice(0, 1500);
+          items.push({ key:"c:" + m.name, kind:"group chat", via:a.email, space:s.displayName || "Direct chat", from:(m.sender && m.sender.displayName) || "", at:m.createTime, text, sites:sitesIn((s.displayName || "") + " " + text) }); } } }catch(e){ errors.chat = e.message; }
+    if(a.drive) try{ const r = await apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=30&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,modifiedTime,webViewLink,lastModifyingUser(displayName))&q=" + encodeURIComponent("trashed=false and mimeType != 'application/vnd.google-apps.folder' and modifiedTime > '" + since + "' and (sharedWithMe or 'me' in owners)"));
+      for(const f of r.files || []){ const peek = await docPeek({ id:f.id, mime:f.mimeType, via:a.email });
+        items.push({ key:"f:" + f.id + ":" + f.modifiedTime, kind:"Drive file", via:a.email, name:f.name, link:f.webViewLink, from:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", at:f.modifiedTime, text:peek, sites:sitesIn(f.name + " " + peek) }); } }catch(e){ errors.drive = e.message; }
+  }
+  return { items, errors };
+}
+export function signalsPrompt(items, known){
+  const system = `You sort new emails, group chat messages and Drive files seen by the team account of an SEO, web and ads agency. For each item decide if it is client work, and which client website it is about. Client work includes: a client's site or Search Console or Analytics access being shared (for example "you have been added as an owner" for a site), a project chat or email about a client's site, a report or audit for a client site. Not client work: newsletters, tool notices about our own sites, internal admin, spam. Use only sites that appear in the item. A known site means we already have an order for it. "newOrder" is true only when the item shows active or new work for a site that has no open order. No dashes.
+Answer with one JSON object only: {"items":[{"i":0,"work":"client work | internal | noise","site":"domain or empty","client":"client or business name if stated, else empty","country":"if stated","what":"one plain line: what this item shows","newOrder":false}]}`;
+  const user = "Sites with an order already: " + (known.join(", ") || "none") + "\n\nITEMS:\n" + items.map((x, i) => `[${i}] ${x.kind}${x.space ? " in " + x.space : ""}${x.name ? " named " + x.name : ""}${x.subject ? " subject: " + x.subject : ""} from ${x.from || "?"} on ${String(x.at).slice(0, 10)}. Sites named: ${x.sites.join(", ")}\n${String(x.text || "").slice(0, 700)}`).join("\n\n");
+  return { system, user };
+}
+
+/* Everything the team accounts hold about one client site, for clients who reach the order desk on their second or later order */
+export async function siteHistory(site){
+  const h = host(site), root = h.split(".")[0], out = { mails:[], files:[], chat:[] }, accs = await accounts();
+  for(const a of accs){
+    if(a.gmail) try{ const l = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=" + encodeURIComponent('"' + h + '"' + (root.length >= 5 ? ' OR "' + root + '"' : "")));
+      for(const m of (l.messages || []).slice(0, 30)){ const g = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full");
+        const hd = n => ((g.payload.headers || []).find(x => x.name.toLowerCase() === n) || {}).value || "";
+        out.mails.push({ at:new Date(Number(g.internalDate)).toISOString(), from:nameOnly(hd("from")), subject:hd("subject"), text:(clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 700) }); } }catch(e){}
+    if(a.drive) try{ const r = await apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=40&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,createdTime,modifiedTime,webViewLink,lastModifyingUser(displayName))&q=" + encodeURIComponent("trashed=false and (fullText contains '" + h + "'" + (root.length >= 5 ? " or name contains '" + root + "'" : "") + ")"));
+      for(const [i, f] of (r.files || []).entries()) out.files.push({ id:f.id, name:f.name, link:f.webViewLink, created:f.createdTime, modified:f.modifiedTime, by:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", peek:i < 10 ? (await docPeek({ id:f.id, mime:f.mimeType, via:a.email })).slice(0, 500) : "" }); }catch(e){}
+    if(a.chat) try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
+      for(const s of (sp.spaces || []).filter(s => hits(s.displayName, { id:"\u0000", h, root:root.length >= 4 ? root : "" })).slice(0, 3)){
+        const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=100&orderBy=createTime%20desc").catch(() => ({}));
+        for(const m of (ms.messages || []).reverse()) out.chat.push({ at:m.createTime, space:s.displayName, by:(m.sender && m.sender.displayName) || "", text:String(m.text || "").slice(0, 400) }); } }catch(e){}
+  }
+  const seen = new Set(); out.files = out.files.filter(f => !seen.has(f.id) && seen.add(f.id));
+  return out;
+}
+export function historyPrompt(site, h, known){
+  const system = `You rebuild the history of the work an SEO, web and ads agency has done for one client website, from the team's emails, group chats and Drive files. The agency may be starting to use its order desk from this client's second or later order, so find the past orders and work already done, what is still open, and what the next order should keep in mind. Only state what the material shows; say "unclear" when it is. Never include email addresses, phone numbers, passwords or prices. No dashes.
+Answer with one JSON object only: {"summary":"two or three lines","since":"YYYY-MM when work with this client started, or empty","pastOrders":[{"when":"YYYY-MM","what":"","status":"delivered | ongoing | unclear","evidence":["email subject, chat or file name that shows it"]}],"workDone":["each piece of work done, with month"],"openItems":["promised or started but not finished"],"forNextOrder":["what the team must keep in mind, and good next work to offer"],"files":["names of the most useful files"]}`;
+  const user = `Client site: ${site}
+Orders already on the order desk: ${known.join(", ") || "none"}
+EMAILS (${h.mails.length}):
+${h.mails.map(m => `${m.at.slice(0, 10)} from ${m.from}: ${m.subject}\n${m.text}`).join("\n---\n")}
+DRIVE FILES (${h.files.length}):
+${h.files.map(f => `${String(f.created || "").slice(0, 10)} to ${String(f.modified || "").slice(0, 10)} ${f.name}${f.by ? " (last by " + f.by + ")" : ""}${f.peek ? "\n" + f.peek : ""}`).join("\n---\n")}
+GROUP CHAT (${h.chat.length}):
+${h.chat.map(m => `${String(m.at).slice(0, 10)} ${m.space} ${m.by}: ${m.text}`).join("\n")}`.slice(0, 120000);
+  return { system, user };
+}

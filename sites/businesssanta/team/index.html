@@ -217,7 +217,22 @@ const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;
 const num2 = v => { const x = Number(v); return isFinite(x) ? x : 0; };
 const money = v => v == null ? "n/a" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits:Number(v) % 1 ? 2 : 0, maximumFractionDigits:2 });
 const STAGES = [["access","Waiting for access"],["work","In work"],["qa","QA check"],["ready","Ready to deliver"],["delivered","Delivered"],["done","Closed"]];
-const SN = Object.fromEntries(STAGES.concat([["cancelled","Cancelled"]]));
+const SN = Object.fromEntries(STAGES.concat([["cancelled","Cancelled"],["details","Needs details"]]));
+/* The client's work history, rebuilt from the team's emails, group chats and Drive files (for clients who reach the desk on a later order) */
+function histSec(h, site, canRun){
+  if(!h) return site ? sec("Work history with this client", "Built from the team's emails, group chats and Drive files on " + E(site) + ".", `<p class="note">Not read yet. It builds by itself within the hour.</p>${canRun ? `<button class="btn sm" data-hist="1">Build it now</button>` : ""}`) : "";
+  if(h.empty) return sec("Work history with this client", "", `<p class="note">Nothing about ${E(site)} in the team's emails, chats or files yet (read ${ago(h.at)}).</p>${canRun ? `<button class="btn sm" data-hist="1">Read again</button>` : ""}`);
+  const c = h.counts || {};
+  return sec("Work history with this client", `From ${c.mails || 0} emails, ${c.files || 0} Drive files and ${c.chat || 0} chat messages${h.since ? ", working together since " + E(h.since) : ""}. Read ${ago(h.at)}.`,
+    `<p class="lead">${E(h.summary || "")}</p>
+    ${(h.pastOrders || []).length ? `<div class="lbl" style="margin:10px 0 6px">Past orders found</div><table class="t2"><tbody>${h.pastOrders.map(x => `<tr><td class="nw">${E(x.when || "")}</td><td>${E(x.what)}${(x.evidence || []).length ? `<div class="sub">${x.evidence.slice(0, 3).map(E).join(" · ")}</div>` : ""}</td><td><span class="chip ${x.status === "delivered" ? "ok" : x.status === "ongoing" ? "warn" : "n"}">${E(x.status || "")}</span></td></tr>`).join("")}</tbody></table>` : ""}
+    ${(h.openItems || []).length ? `<div class="ckl warn" style="margin-top:8px"><span>Still open</span><ul>${h.openItems.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+    ${(h.forNextOrder || []).length ? `<div class="ckl ok" style="margin-top:8px"><span>Keep in mind</span><ul>${h.forNextOrder.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+    ${(h.workDone || []).length ? `<details class="mx" style="margin-top:8px"><summary>All work done (${h.workDone.length})</summary><ul class="clean">${h.workDone.map(x => `<li>${E(x)}</li>`).join("")}</ul></details>` : ""}
+    ${(h.links || []).length ? `<details class="mx" style="margin-top:6px"><summary>Files (${h.links.length})</summary>${h.links.map(f => `<div class="sub"><a href="${E(f.link || "#")}" target="_blank" rel="noopener">${E(f.name)}</a> · ${ago(f.modified)}</div>`).join("")}</details>` : ""}
+    ${canRun ? `<button class="btn sm ghost" data-hist="1" style="margin-top:8px">Read again</button>` : ""}`);
+}
+let DRAFT = null;
 const RNAME = { admin:"Owner", sales:"Sales", comms:"Client messages", pm:"Project team", qa:"QA", manager:"Manager" };
 let ME = null, ORD = [], QUEUE = [];
 async function api(a, body, params){
@@ -302,11 +317,14 @@ async function board(){
     if((ME.role === "admin" || ME.role === "manager") && !o.pm) go(o.id + ": pick the project team", o.client.name || o.gigName);
   });
   if(QUEUE.length && ["comms", "sales", "admin", "manager"].includes(ME.role)) next.unshift({ link:"#msgs", t:QUEUE.length + " client message" + (QUEUE.length > 1 ? "s" : ""), d:"To send or to read", hot:true });
-  const cols = STAGES.map(([k, n]) => { const l = ORD.filter(o => o.stage === k && mine(o)); return `<div class="col"><h3><span>${n}</span><span>${l.length}</span></h3>${l.map(card).join("") || `<div class="empty-col">Nothing here</div>`}</div>`; }).join("");
+  const drafts = ORD.filter(o => o.stage === "details");
+  if(drafts.length && can("sales")) next.unshift({ id:drafts[0].id, t:drafts.length + " order" + (drafts.length > 1 ? "s" : "") + " found by the team account", d:"Add the client chat, calls, package, price and deadline", hot:true });
+  const cols = (drafts.length ? `<div class="col"><h3><span>Found, needs details</span><span>${drafts.length}</span></h3>${drafts.map(card).join("")}</div>` : "") + STAGES.map(([k, n]) => { const l = ORD.filter(o => o.stage === k && mine(o)); return `<div class="col"><h3><span>${n}</span><span>${l.length}</span></h3>${l.map(card).join("") || `<div class="empty-col">Nothing here</div>`}</div>`; }).join("");
   app.innerHTML = tabs("board") + (next.length ? `<div><div class="lbl" style="margin-bottom:8px">Your next steps</div><div class="next">${next.slice(0, 12).map(n => `<a href="${n.link || "#o=" + n.id}" class="${n.hot ? "hot" : ""}"><b>${E(n.t)}</b>${E(n.d)}</a>`).join("")}</div></div>` : "")
     + (ORD.length ? `<div class="board">${cols}</div>` : `<div class="card"><h2>No orders yet</h2><p class="note">${can("sales") ? `When a client hires us, open <a href="#new">New order</a> and paste the whole chat.` : "Orders appear here as soon as sales adds them."}</p></div>`);
 }
 function card(o){
+  if(o.stage === "details") return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.client.website || o.id)}</b>${E(o.id)} · ${E(o.client.website || "")}<br>Found by the team account<div class="fl"><span class="chip y">Needs order details</span></div></a>`;
   const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5);
   return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.id)}</b>${E(o.id)} · ${E(o.gigName)}<br>${money(o.price)} · ${left >= 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "late"}${o.revisions ? " · " + o.revisions + " revision" + (o.revisions > 1 ? "s" : "") : ""}
   <div class="fl">${o.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.verdict ? `<span class="chip n">${E(o.verdict)}</span>` : ""}</div></a>`;
@@ -315,8 +333,8 @@ function card(o){
 /* New order */
 function newOrder(){
   if(!can("sales")) return board();
-  const g0 = ME.gigs[0], d = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
-  app.innerHTML = tabs("new") + `<form class="card" id="nf"><h2>New hired order</h2><p class="note">Paste everything: the whole chat, call notes, anything you promised. The order desk reads it and prepares the brief, access list, client profile and price check, so the project team never has to read the chat.</p>
+  const g0 = ME.gigs[0], d = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10), DR = DRAFT && DRAFT.stage === "details" ? DRAFT : null; DRAFT = null;
+  app.innerHTML = tabs("new") + `<form class="card" id="nf"><h2>${DR ? "Order details for " + E(DR.id) + " · " + E(DR.client.website) : "New hired order"}</h2>${DR ? `<p class="note" style="border-color:var(--warn)">The team account found work for this site. Add what only sales has, and the order desk takes it from there.</p>` : ""}<p class="note">Paste everything: the whole chat, call notes, anything you promised. The order desk reads it and prepares the brief, access list, client profile and price check, so the project team never has to read the chat.</p>
   <div class="fg">
    <label class="f w2">Gig<select id="gig">${ME.gigs.map(g => `<option value="${g.id}">${E(g.name)}</option>`).join("")}</select></label>
    <label class="f">Price the client paid (USD)<input id="price" type="number" min="1" step="1"></label>
@@ -327,7 +345,7 @@ function newOrder(){
    <label class="f w2">Client website<input id="website" placeholder="https://"></label>
    <label class="f w4">Extras added to the order<input id="extras" placeholder="e.g. 2 extra pages, fast delivery"></label>
    <label class="f w4">The whole chat with the client<textarea class="big" id="chat" placeholder="Paste the full conversation, from the first message to the order"></textarea></label>
-   <label class="f w2">Call notes<textarea id="calls" placeholder="What was said on calls: goals, worries, promises"></textarea></label>
+   <label class="f w2">Call notes<textarea id="calls" placeholder="What was said on every call: goals, worries, promises. Put each call under its date."></textarea></label>
    <label class="f w2">Special remarks for the team<textarea id="remarks" placeholder="Anything the chat does not show: client mood, what we promised, what to avoid"></textarea></label>
   </div><div class="row" style="margin-top:14px;gap:10px"><button class="btn pri">Create order</button><span class="note" id="nfh"></span></div></form>`;
   const drawPk = () => { const g = ME.gigs.find(x => x.id === $("#gig").value), cur = (document.querySelector("#pk input:checked") || {}).value || "standard";
@@ -336,7 +354,10 @@ function newOrder(){
     $("#website").placeholder = g.cat === "ecom" ? "https://yourstore.com" : g.cat === "ads" ? "https://landing-page.com" : "https://clientsite.com";
     document.querySelectorAll("#pk input").forEach(i => i.onchange = drawPk); };
   $("#gig").onchange = drawPk; drawPk();
+  if(DR){ $("#client").value = DR.client.name || ""; $("#country").value = DR.client.country || ""; $("#website").value = DR.client.website || ""; $("#nf .btn.pri").textContent = "Complete the order"; }
   $("#nf").onsubmit = e => { e.preventDefault(); const v = id => $("#" + id).value;
+    if(DR) return act(async () => { const r = await api("do", { id:DR.id, op:"complete", gig:v("gig"), pkg:(document.querySelector("#pk input:checked") || {}).value, price:v("price"), deadline:v("deadline"), client:v("client"), country:v("country"), website:v("website"), extras:v("extras"), chat:v("chat"), calls:v("calls"), remarks:v("remarks") });
+      if(r.ai && !r.ai.ok) toast(r.ai.why, 1); location.hash = "#o=" + DR.id; }, "The order desk is reading the chat and checking the website. About 30 to 60 seconds.");
     act(async () => { const r = await api("create", { gig:v("gig"), pkg:(document.querySelector("#pk input:checked") || {}).value, price:v("price"), deadline:v("deadline"), client:v("client"), country:v("country"), website:v("website"), extras:v("extras"), chat:v("chat"), calls:v("calls"), remarks:v("remarks") });
       if(r.ai && !r.ai.ok) toast(r.ai.why, 1); location.hash = "#o=" + r.id; }, ME.ai ? "The order desk is reading the chat and checking the website. About 30 to 60 seconds." : "Creating the order…"); };
 }
@@ -366,7 +387,21 @@ function health(o, x){
   return { k:"ok", t:"On track", left, over };
 }
 function sec(title, why, body, extra){ return `<section class="card os"><div class="osh"><div><h2>${title}</h2>${why ? `<p class="why">${why}</p>` : ""}</div>${extra || ""}</div>${body}</section>`; }
+function drawDraft(){
+  const o = CUR.order, d = o.draft || {}, site = o.client.website;
+  app.innerHTML = tabs("board") + `<section class="card ohero"><div><div class="lbl">${E(o.id)} · found by the team account ${ago(d.found)}</div><h1>${E(o.client.name || site)} <span class="hp warn">Needs order details</span></h1>
+    <div class="ometa"><a href="https://${E(site)}" target="_blank" rel="noopener">${E(site)}</a>${(d.past || []).length ? `<span>Returning client: ${d.past.map(E).join(", ")}</span>` : `<span>No earlier order on the desk</span>`}</div></div></section>
+   <div class="og"><div>
+    ${sec("What the team account found", "Emails, group chat messages and Drive files that show work for this site. The order desk opened this order so nothing starts without a brief.", (d.evidence || []).map(e => `<div class="rk"><b>${E(e.what)}</b><div class="sub">${E(e.kind)}${e.title ? " · " + (e.link ? `<a href="${E(e.link)}" target="_blank" rel="noopener">${E(e.title)}</a>` : E(e.title)) : ""}${e.from ? " · " + E(e.from) : ""} · ${ago(e.at)}</div>${e.text ? `<div class="sub ev">${E(e.text)}</div>` : ""}</div>`).join(""))}
+    ${can("sales") ? sec("Complete this order", "The order desk needs what only sales has: the whole client chat, call notes (one or many), the gig and package, the price and the deadline. Then it prepares the brief, access list and checks like any order.",
+      `<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn pri" id="dfill">Add the order details</button><button class="btn ghost" id="dnot">Not an order</button></div>`) : `<p class="note">Sales will add the order details.</p>`}
+   </div><div>${histSec(CUR.history, site, can("sales") || can("pm"))}</div></div>`;
+  if($("#dfill")) $("#dfill").onclick = () => { DRAFT = o; location.hash = "#new"; };
+  if($("#dnot")) $("#dnot").onclick = () => { const why = prompt("Why is this not an order? (for example: our own test, an old client with no new work)"); if(why == null) return; const ig = confirm("Stop opening drafts for " + site + "?"); doOp("notOrder", { why, ignoreSite:ig }, "Saving…").then(() => { location.hash = "#board"; }); };
+  document.querySelectorAll("[data-hist]").forEach(b => b.onclick = () => doOp("history", {}, "Reading every email, chat and file about " + site + " (about a minute)…"));
+}
 function drawOrder(){
+  if(CUR.order.stage === "details") return drawDraft();
   const o = CUR.order, x = CUR.econ, ai = o.ai || {}, gig = ME.gigs.find(g => g.id === o.gig) || {};
   const L = (arr, f) => (arr || []).map(f).join("");
   const pr = ai.price || {}, pf = ai.profile || {}, st = ai.site || {}, rt = ai.retainer || {};
@@ -449,6 +484,7 @@ function drawOrder(){
    </div></div>`;
   const projOverview = `<div class="og"><div>
     ${sec("What to deliver", "The work for this order. Sales handles the client; ask them below when you need anything from the client.", (ai.kt ? `<div class="kt">${E(ai.kt)}</div>` : "") + (ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : "") + `<ol class="clean num" style="margin-top:12px">${L(o.deliverables, d => `<li>${d.done ? "✓ " : ""}${E(d.text)}</li>`)}</ol>`)}
+    ${CUR.history && !CUR.history.empty ? histSec(CUR.history, o.client.website, true) : ""}
     ${(o.shared || []).length ? sec("Client messages shared with you", "Only the messages sales chose to share.", (o.shared || []).slice().reverse().map(m => `<div class="mcard"><div class="mh"><b>${E(m.name || "Client")}</b><span class="sub">${E(m.time || "")} · shared ${ago(m.at)} by ${E(m.by)}</span></div><div class="msg">${E(m.text)}</div>${m.note ? `<div class="sub ev" style="margin-top:6px">Sales note: ${E(m.note)}</div>` : ""}</div>`).join("")) : ""}
    </div><div>
     ${sec("Need something from the client?", "Write it here. Sales checks the wording and sends it on the marketplace, then pastes the answer back.", `<select id="paK"><option value="info">Information</option><option value="access">Access</option><option value="approval">Approval</option><option value="files">Files or content</option></select><textarea id="paT" style="margin-top:8px" placeholder="e.g. We need Editor access in WordPress to change the theme files"></textarea><label class="f" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="paU" style="width:auto;min-height:0"> Urgent</label><button class="btn sm pri" id="paB" style="margin-top:8px">Send to sales</button>`)}
@@ -467,6 +503,7 @@ function drawOrder(){
   const overview = `<div class="og"><div>
     ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
     ${intelSecH}
+    ${histSec(CUR.history, o.client.website, can("sales") || can("pm"))}
     ${topActs.length ? sec("Top actions", acts.filter(x => x.status !== "done").length + " open of " + acts.length + ". All steps, team questions and replies are in the Actions tab.", topActs.map(x => `<div class="arow"><span class="dot ${x.status === "blocked" ? "bad" : x.severity === "high" ? "bad" : "warn"}"></span><div class="tx"><b>${E(x.title)}</b><br><span class="sub">${E(ACT[x.status][0])} · ${E(OWN[x.owner] || x.owner)}${x.type === "internal" && x.needBy ? " · reply by " + E(x.needBy) : ""}</span></div></div>`).join("") + `<button class="btn sm" data-tab="actions" style="margin-top:10px">Open all actions</button>`) : ""}
     ${proms.length ? `<div id="prom"></div>` + sec("Promises to the client", openP + " open, " + proms.filter(kept).length + " kept. Broken promises are the fastest way to lose a client.",
       `<table class="t2"><thead><tr><th>Promise</th><th>By</th><th>Status</th></tr></thead><tbody>${L(proms.filter(p => !kept(p)), p => { const od = p.by && !kept(p) && p.by < TODAY(), td = p.by && !kept(p) && p.by === TODAY();
@@ -623,6 +660,7 @@ function wireOrder(o){
     const r = await doOp("actReply", { aid:b.dataset.rsend, text:t, files:fs }, "Reading the reply" + (fs.length ? " and " + fs.length + " screenshot" + (fs.length > 1 ? "s" : "") : "") + ", then updating the order (about 30 seconds)…"); if(r) delete FILES[k]; });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => { if(a.status === "open"){ doOp("action", { aid:a.id, status:"sent", note:"" }, "Copied. Marking it as sent…"); } else toast("Copied"); }); });
   on("#intel", () => doOp("intel", {}, "Reading Search Console and Analytics and writing the analysis (about 40 seconds)…"));
+  document.querySelectorAll("[data-hist]").forEach(b => b.onclick = () => doOp("history", {}, "Reading every email, chat and file about this site (about a minute)…"));
   document.querySelectorAll("[data-pnew]").forEach(b => b.onclick = () => { const [did, pid] = b.dataset.pnew.split("|"); doOp("proofNewest", { did, pid }, "Switching to the newest copy…"); });
   document.querySelectorAll("[data-ddiff]").forEach(b => b.onclick = () => doOp("docDiff", { did:b.dataset.ddiff }, "Comparing the two newest versions…"));
   document.querySelectorAll("[data-doc]").forEach(b => b.onclick = () => { const [did, y] = b.dataset.doc.split("|"); doOp("doc", { did, ours:y === "1" }); });
@@ -687,6 +725,7 @@ async function clientPage(id){
     ${sec("Orders", "Every order from this client, newest first.", `<table class="t2"><thead><tr><th>Order</th><th>Stage</th><th>Due</th>${A ? "<th>Payment</th>" : ""}</tr></thead><tbody>${j.orders.sort((a, b) => b.at.localeCompare(a.at)).map(o => `<tr><td><a href="#o=${E(o.id)}"><b>${E(o.id)}</b></a><div class="sub">${E(o.gigName)} · ${E(o.pkg)} · ${fmtD(o.at)}</div>${o.flags.filter(f => f.k === "bad").slice(0, 2).map(f => `<div class="sub" style="color:var(--bad)">${E(f.t)}</div>`).join("")}</td><td><span class="chip n">${E(SN[o.stage] || o.stage)}</span></td><td>${fmtD(o.deadline)}</td>${A ? `<td>${money(o.pay.gross)} <span class="chip ${PST[o.pay.status][1]}">${PST[o.pay.status][0]}</span></td>` : ""}</tr>`).join("")}</tbody></table>`)}
     ${j.actions.length ? sec("Open actions across orders", "", j.actions.map(a => `<div class="arow"><span class="dot ${a.status === "blocked" ? "bad" : "warn"}"></span><div class="tx"><b>${E(a.title)}</b><br><span class="sub">${E(a.order)} · ${E(a.status)}</span></div><a class="btn sm" href="#o=${E(a.order)}">Open</a></div>`).join("")) : ""}
    </div><div>
+    ${Object.entries(j.history || {}).map(([d, h]) => histSec(h, d, false)).join("")}
     ${c.intel && (c.intel.numbers || []).length ? sec("Their business in numbers", "From Google data on " + E(c.intel.order) + ", " + ago(c.intel.at) + ".", `<ul class="clean">${c.intel.numbers.map(x => `<li>${E(x)}</li>`).join("")}</ul>${c.intel.ai && c.intel.ai.retention ? `<div class="plan" style="margin-top:12px"><div><span class="lbl">Keep this client</span><p style="margin:6px 0 0">${E(c.intel.ai.retention.offer || "")}</p></div><div class="pp">${E(c.intel.ai.retention.price || "")}</div></div>` : ""}`) : ""}
     ${pf.goal ? sec("Who they are", "From their latest order.", `<dl class="dl"><dt>Who</dt><dd>${E(pf.type)}</dd><dt>Really wants</dt><dd>${E(pf.goal)}</dd><dt>How they talk</dt><dd>${E(pf.style)}</dd><dt>Watch out</dt><dd>${E(pf.watch)}</dd><dt>Budget</dt><dd>${E(pf.budget)}</dd></dl>`) : ""}
     ${sec("Notes about this client", "For everyone who works with them. Never passwords.", `<textarea id="cN" placeholder="e.g. prefers messages to calls, always asks for a recording">${E(c.notes || "")}</textarea>${can("assign") ? `<button class="btn sm" id="cNb" style="margin-top:8px">Save notes</button>` : ""}`)}
@@ -766,6 +805,15 @@ async function hodPage(refresh){
     ${(ins.people || []).length ? sec("People notes", "Fair and specific, from the timings.", ins.people.map(x => `<div class="rk"><b>${E(x.name)}</b><div class="sub ev">${E(x.note)}</div></div>`).join("")) : ""}
    </div></div>`;
   $("#hodR").onclick = () => act(() => hodPage(true), "Analysing every order (about 30 seconds)…");
+  const R = j.reports || {}, rc = document.createElement("div");
+  rc.innerHTML = sec("Reports and records in your Google Drive", R.ready ? "The order desk writes these to your Drive (" + E(R.account) + ") every hour, and only rewrites a file when something changed. Only you can see them." : "One step: reconnect your Google account once, so the order desk can create its own reports folder in your Drive. It can only touch files it creates.",
+    R.ready ? `${R.folder ? `<p><a class="btn sm pri" href="${E(R.folder.link)}" target="_blank" rel="noopener">Open the reports folder</a></p>` : `<p class="note">The folder is made on the first run.</p>`}
+      <ul class="clean">${(R.files || []).map(f => `<li><a href="${E(f.link || "#")}" target="_blank" rel="noopener">${E(f.name)}</a> <span class="sub">updated ${ago(f.at)}</span></li>`).join("")}</ul>
+      <p class="sub">${R.days || 0} daily HoD reports and ${R.records || 0} order records kept.${R.at ? " Last run " + ago(R.at) + "." : ""}</p>${R.error ? `<div class="ckl bad"><span>Last error</span><ul><li>${E(R.error)}</li></ul></div>` : ""}
+      <button class="btn sm" id="repRun">Update Drive now</button>`
+    : `<a class="btn pri" href="${E(R.connect || "/api/portal?a=g-start")}">Reconnect Google (${E(R.account || "your account")})</a><p class="sub" style="margin-top:6px">Pick ${E(R.account || "your account")} and allow everything on the list. This also turns on Drive proof reading for that account.</p>`);
+  app.appendChild(rc.firstElementChild);
+  if($("#repRun")) $("#repRun").onclick = () => act(async () => { const r = await api("reportsRun", {}); toast(r.info || "Done"); hodPage(); }, "Writing the reports to your Drive…");
 }
 
 /* Client messages queue */

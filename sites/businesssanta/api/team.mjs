@@ -10,7 +10,8 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt } from "./_lib/teamsync.mjs";
+import { accessTokenAs } from "./_lib/google.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -60,6 +61,7 @@ function econ(o, cfg){
 }
 function flags(o){
   const f = [], left = Date.parse(o.deadline + "T23:59:00") - Date.now(), open = !["delivered", "done", "cancelled"].includes(o.stage);
+  if(o.stage === "details") return [{ k:"y", t:"Needs order details" }];
   if(open && left < 0) f.push({ k:"bad", t:"Late" });
   else if(open && left < 864e5 && ["access", "work"].includes(o.stage)) f.push({ k:"bad", t:"Due within 24 hours" });
   else if(open && left < 2 * 864e5 && o.stage === "access") f.push({ k:"warn", t:"Due soon, access still missing" });
@@ -81,7 +83,8 @@ const summary = (o, cfg) => ({ id:o.id, at:o.at, client:o.client, gig:o.gig, gig
   flags:flags(o), econ:econ(o, cfg), verdict:o.ai && o.ai.price ? o.ai.price.verdict : "" });
 const log = (o, w, what) => { (o.timeline = o.timeline || []).unshift({ at:now(), who:w.name, what }); o.timeline = o.timeline.slice(0, 300); };
 const saveO = o => setJ(T.ord(o.id), o);
-async function loadAll(n){ const ids = await cmd("ZREVRANGE", T.ords, 0, (n || 300) - 1); return (await mgetJ(ids.map(T.ord))).filter(Boolean); }
+/* Draft orders (stage "details": found by the team account, waiting for sales to add the details) stay out of every count, report and score */
+async function loadAll(n, drafts){ const ids = await cmd("ZREVRANGE", T.ords, 0, (n || 300) - 1); return (await mgetJ(ids.map(T.ord))).filter(o => o && (drafts || o.stage !== "details")); }
 
 async function analyse(o, cfg){
   const gig = gigOf(o.gig);
@@ -380,10 +383,16 @@ async function syncTeam(o){
 }
 export async function hourlySync(){
   const done = [];
-  const open = (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
+  try{ done.push("new work: " + await discover()); }catch(e){ done.push("new work: " + e.message); }
+  const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
   for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
   try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
   for(const o of open) await saveO(o);
+  // Work history for every client site that has none yet (or older than 30 days), two a run
+  { let n = 0; const all = await loadAll(1000, true);
+    for(const site of [...new Set(open.map(o => domOf(o.client.website)).filter(Boolean))]){ if(n >= 2) break; const hv = await getJ(HK(site)); if(hv && Date.now() - Date.parse(hv.at) < 30 * 864e5) continue;
+      try{ await buildHistory(site, all.filter(o => domOf(o.client.website) === site).map(o => o.id)); n++; done.push("history:" + site); }catch(e){ done.push("history " + site + ": " + e.message); } } }
+  try{ done.push("reports: " + await driveReports()); }catch(e){ done.push("reports: " + e.message); }
   return done;
 }
 
@@ -422,6 +431,177 @@ function groupDocs(o){
     if(cur && cur.id !== d.id) p.newer = { id:cur.id, name:cur.name, link:cur.link, modified:cur.modified, by:cur.by }; else delete p.newer; }
 }
 const staleProofs = o => (o.deliverables || []).flatMap(d => proofsOf(d).filter(p => p.newer).map(p => p.name || "a file"));
+
+/* The fields sales types for an order, checked the same way for a new order and for completing a draft */
+function orderFields(q){
+  const gig = gigOf(str(q.gig, 8)); if(!gig) return { error:"Pick the gig" };
+  const pkg = ["basic", "standard", "premium", "custom"].includes(q.pkg) ? q.pkg : "standard";
+  const price = num(q.price, 0); if(price <= 0) return { error:"Type the price the client paid" };
+  const deadline = str(q.deadline, 10); if(!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return { error:"Pick the deadline" };
+  const chat = redact(str(q.chat, 80000)); if(chat.length < 40) return { error:"Paste the whole client chat. The order desk works from it." };
+  return { fields:{ gig:gig.id, pkg, price, extras:str(q.extras, 500), deadline, chat, calls:redact(str(q.calls, 20000)), remarks:redact(str(q.remarks, 4000)),
+    client:{ name:str(q.client, 80), country:str(q.country, 40), website:str(q.website, 200) }, stage:"access",
+    access:(ACCESS[gig.cat] || []).map(x => Object.assign({ id:nid("a"), status:"needed" }, x)),
+    deliverables:[{ id:nid("d"), text:(gig.packages[pkg] || {}).what || gig.name, done:false, proof:"", qa:"" }] } };
+}
+async function launch(o, w, cfg){
+  const gig = gigOf(o.gig); log(o, w, "Order created: " + gig.name + " (" + o.pkg + ") for $" + o.price);
+  const reg0 = await regOf(o.client.website); if(reg0.length){ applyRegister(o, reg0); log(o, { name:"Order desk" }, "Access already on file for " + domOf(o.client.website) + " was linked to this order"); }
+  let ai = null;
+  const [an, fm] = await Promise.allSettled([analyse(o, cfg), formatConvo(o)]);
+  if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
+  if(!ai.ok && ai.why) log(o, { name:"Order desk" }, "Brief not made: " + ai.why);
+  if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
+  autoAssign(o, await people());
+  o.cid = cidOf(o.client.name || domOf(o.client.website)); await touchClient(o);
+  await pipe([["SET", T.ord(o.id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), o.id]]);
+  return ai;
+}
+
+/* New work the team account sees (emails, group chats, Drive files) for a site with no open order becomes a draft order,
+   and sales is asked for the client chat, calls, package, price and deadline. */
+const DS = P + "disc:since", DSEEN = P + "disc:seen", DIGN = P + "disc:ign", HK = d => P + "hist:" + d;
+const evOf = (it, r) => ({ kind:it.kind, at:it.at, from:it.from || "", title:it.subject || it.name || it.space || "", link:it.link || "", what:str(r.what, 240), text:redact(str(it.text, 400)) });
+export async function discover(){
+  if(!aiOn()) return "ai off";
+  const since = (await cmd("GET", DS)) || new Date(Date.now() - 3 * 864e5).toISOString(), started = now(), cfg = await cfgOf();
+  const { items, errors } = await sweepSignals(since), fresh = [];
+  for(const it of items) if(!(await cmd("SISMEMBER", DSEEN, it.key))) fresh.push(it);
+  const all = await loadAll(1000, true), bySite = {}; all.forEach(o => { const d = domOf(o.client.website); if(d) (bySite[d] = bySite[d] || []).push(o); });
+  const ign = new Set((await cmd("SMEMBERS", DIGN)) || []), cand = fresh.filter(it => it.sites.length).slice(0, 40); let made = 0, added = 0;
+  if(cand.length){
+    const p = signalsPrompt(cand, Object.keys(bySite)), r = await askAI("signals", "claude-haiku-5-5", p.system, p.user, 6000);
+    for(const x of (r.data && r.data.items) || []){
+      const it = cand[x.i], site = domOf(str(x.site, 200)); if(!it || x.work !== "client work" || !site || ign.has(site) || !it.sites.includes(site)) continue;
+      const list = bySite[site] || [], open = list.find(o => !["delivered", "done", "cancelled"].includes(o.stage));
+      if(open && open.stage !== "details") continue;   // the hourly sync already attaches it to that order
+      if(open){ open.draft.evidence = [evOf(it, x)].concat(open.draft.evidence || []).slice(0, 20); log(open, { name:"Order desk" }, "More found in the team's " + it.kind + ": " + str(x.what, 160)); await saveO(open); added++; continue; }
+      if(!x.newOrder) continue;
+      const n = await cmd("INCR", T.seq), id = "O-" + (1000 + Number(n)), past = list.filter(o => o.stage !== "cancelled").map(o => o.id);
+      const o = { id, at:now(), by:"desk", byName:"Order desk", gig:"", pkg:"", price:0, deadline:"", chat:"", calls:"", remarks:"", fee:cfg.fee,
+        client:{ name:str(x.client, 80), country:str(x.country, 40), website:site }, stage:"details", draft:{ found:now(), via:it.via, evidence:[evOf(it, x)], past },
+        access:[], deliverables:[], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
+      log(o, { name:"Order desk" }, "Found in the team's " + it.kind + ": " + str(x.what, 160) + ". Waiting for sales to add the order details.");
+      const known = list.find(o2 => o2.cid); if(known) o.cid = known.cid;
+      await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]); (bySite[site] = list).push(o); made++;
+    }
+  }
+  if(fresh.length) await pipe(fresh.map(it => ["SADD", DSEEN, it.key]));
+  await cmd("SET", DS, started);
+  return "seen " + items.length + ", new " + fresh.length + ", drafts " + made + ", added " + added + (Object.keys(errors).length ? ", errors " + JSON.stringify(errors).slice(0, 200) : "");
+}
+/* Everything the team accounts hold about a site, turned into the client's work history (past orders, work done, open items) */
+async function buildHistory(site, ids){
+  if(!aiOn()) return null; const h = await siteHistory(site);
+  if(!h.mails.length && !h.files.length && !h.chat.length){ const v = { at:now(), empty:true, counts:{ mails:0, files:0, chat:0 } }; await setJ(HK(site), v); return v; }
+  const p = historyPrompt(site, h, ids || []), r = await askAI("history", "claude-sonnet-5-5", p.system, p.user, 8000);
+  const v = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4), counts:{ mails:h.mails.length, files:h.files.length, chat:h.chat.length },
+    links:h.files.slice(0, 12).map(f => ({ name:f.name, link:f.link, modified:f.modified })) });
+  await setJ(HK(site), v); return v;
+}
+
+/* The HoD report: where time is lost on open orders, by side and person, with the analyst's reading (once a day) */
+async function hodData(refresh){ const day = now().slice(0, 10), key = P + "hod:" + day;
+    const all = (await loadAll(500)).filter(o => o.stage !== "cancelled"), open = all.filter(o => !["done"].includes(o.stage)), ds = open.map(delays);
+    const sum = k => +ds.reduce((a2, x) => a2 + x.hours[k], 0).toFixed(1);
+    const by = (f, side) => { const m = {}; ds.forEach(x => { const k = f(x) || "Not assigned"; const r = m[k] = m[k] || { orders:0, hours:0, open:0 }; r.orders++; r.hours += x.hours[side]; r.open += x.items[side].filter(i => i.open).length; }); return Object.entries(m).map(([name, r]) => ({ name, orders:r.orders, hours:+r.hours.toFixed(1), open:r.open })).sort((a2, b) => b.hours - a2.hours); };
+    let insight = await getJ(key);
+    if((!insight || refresh) && aiOn() && ds.length){
+      try{ const r = await askAI("hod", "claude-sonnet-5-5", `You are the delivery analyst for the HoD of an SEO, web and ads agency. From the order timings below, find where time is lost and why: client side (access, replies), sales side (messages not sent, updates not pasted), project team (slow answers, slow work, rework), QA. Name orders and people. Be specific, fair and short. No dashes.
+Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"side":"client | sales | project team | QA","finding":""}],"missed":["what was missed or broken, with the order"],"people":[{"name":"","note":"fair, specific"}],"improve":[{"what":"concrete change","impact":"expected effect, e.g. saves about 1 day per order"}],"todayForHod":["at most 3 things only the HoD should do today"]}`,
+        JSON.stringify(ds.map(x => ({ order:x.id, site:x.site, stage:x.stage, deadline:x.deadline, pm:x.pm, sales:x.sales, late:x.late, qaFails:x.fails, revisions:x.revisions, broken:x.broken.slice(0, 4), hours:x.hours, worst:Object.fromEntries(Object.entries(x.items).map(([k, v]) => [k, v.sort((a2, b) => b.h - a2.h).slice(0, 3)])) }))), 6000);
+        insight = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) }); await setJ(key, insight, 60 * 60 * 24 * 40); }catch(e){ insight = { error:e.message }; } }
+    return ({ day, totals:{ open:open.length, late:ds.filter(x => x.late).length, client:sum("client"), sales:sum("sales"), team:sum("team"), qa:sum("qa"), fails:ds.reduce((a2, x) => a2 + x.fails, 0), revisions:ds.reduce((a2, x) => a2 + x.revisions, 0) },
+      orders:ds.sort((a2, b) => (b.late - a2.late) || (Object.values(b.hours).reduce((p, q) => p + q, 0) - Object.values(a2.hours).reduce((p, q) => p + q, 0))), team:by(x => x.pm, "team"), sales:by(x => x.sales, "sales"), insight }); }
+
+/* HoD reports and records in Manav's own Google Drive: one folder the portal creates (it can only touch files it made), with
+   the HoD report (latest and one per day), registers for orders, clients, payments, team, delays and drafts, and one record per order.
+   Written hourly; a file is only rewritten when its content changed. */
+const REPK = P + "rep:state";
+const SNAME = { details:"Needs details", access:"Waiting for access", work:"In work", qa:"QA check", ready:"Ready to deliver", delivered:"Delivered", done:"Closed", cancelled:"Cancelled" };
+const csvOf = rows => rows.map(r => r.map(v => { const t = String(v == null ? "" : v); return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; }).join(",")).join("\n");
+const hE = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const hTable = (head, rows) => `<table border="1" cellpadding="5" style="border-collapse:collapse"><tr>${head.map(h => `<th style="background:#eef2f7">${hE(h)}</th>`).join("")}</tr>${rows.map(r => `<tr>${r.map(c => `<td>${hE(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+async function gdrive(email, method, u, body, ctype){
+  const tok = await accessTokenAs(email), r = await fetch(u, { method, headers:Object.assign({ authorization:"Bearer " + tok }, ctype ? { "content-type":ctype } : {}), body });
+  const t = await r.text(); if(!r.ok) throw new Error("Drive " + r.status + ": " + t.slice(0, 180)); return t ? JSON.parse(t) : {};
+}
+async function gFolder(email, name, parent){
+  const j = await gdrive(email, "POST", "https://www.googleapis.com/drive/v3/files?fields=id,webViewLink", JSON.stringify(Object.assign({ name, mimeType:"application/vnd.google-apps.folder" }, parent ? { parents:[parent] } : {})), "application/json");
+  return { id:j.id, link:j.webViewLink };
+}
+async function gPut(email, st, key, name, parent, type, content){
+  const f = st.files[key] = st.files[key] || {}, h = sha(content).slice(0, 16); if(f.id && f.h === h) return false;
+  const target = type === "doc" ? "application/vnd.google-apps.document" : "application/vnd.google-apps.spreadsheet", media = (type === "doc" ? "text/html" : "text/csv") + "; charset=UTF-8";
+  if(f.id){ try{ await gdrive(email, "PATCH", "https://www.googleapis.com/upload/drive/v3/files/" + f.id + "?uploadType=media", content, media); f.h = h; f.at = now(); return true; }catch(e){ if(!/ 404| 403/.test(e.message)) throw e; } }
+  const b = "bsx" + Date.now(), body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, mimeType:target, parents:[parent] })}\r\n--${b}\r\nContent-Type: ${media}\r\n\r\n${content}\r\n--${b}--`;
+  const j = await gdrive(email, "POST", "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", body, "multipart/related; boundary=" + b);
+  Object.assign(f, { id:j.id, link:j.webViewLink, name, h, at:now() }); return true;
+}
+async function reportsState(){
+  const st = (await getJ(REPK)) || {}, acc = (await gAccounts()).find(x => x.primary);
+  const ready = !!(acc && acc.write);
+  return { ready, account:acc ? acc.email : "", connect:ready ? "" : "/api/portal?a=g-start", folder:st.folder || null, at:st.at || "", error:st.error || "",
+    files:Object.entries(st.files || {}).filter(([k]) => !k.startsWith("ord:") && !k.startsWith("day:")).map(([k, f]) => ({ key:k, name:f.name, link:f.link, at:f.at })),
+    records:Object.keys(st.files || {}).filter(k => k.startsWith("ord:")).length, days:Object.keys(st.files || {}).filter(k => k.startsWith("day:")).length };
+}
+export async function driveReports(force){
+  const acc = (await gAccounts()).find(x => x.primary); if(!acc || !acc.write) return "Drive reports wait for Manav to reconnect his Google account once";
+  const st = Object.assign({ files:{} }, (await getJ(REPK)) || {}), email = acc.email, cfg = await cfgOf(), day = now().slice(0, 10); let wrote = 0;
+  try{
+    if(!st.folder || st.email !== email){ st.folder = await gFolder(email, "Business Santa order desk: HoD reports and records"); st.email = email; st.files = {};
+      st.daily = await gFolder(email, "Daily HoD reports", st.folder.id); st.records = await gFolder(email, "Order records", st.folder.id); }
+    const all = await loadAll(1000, true), live = all.filter(o => o.stage !== "details"), ps = await people(), nm = id => (ps.find(p => p.id === id) || {}).name || "";
+    const dl = o => ((o.stageLog || []).find(z => z.stage === "delivered") || {}).at || "";
+    const lateDays = o => { const end = dl(o) || now(); return o.deadline ? Math.max(0, Math.ceil((Date.parse(end) - Date.parse(o.deadline + "T23:59:00")) / 864e5)) : 0; };
+    // Orders register
+    wrote += await gPut(email, st, "orders", "Orders register", st.folder.id, "sheet", csvOf([["Order", "Client", "Site", "Gig", "Package", "Price USD", "Net after fee USD", "Margin %", "Stage", "Created", "Deadline", "Delivered", "Days late", "Sales", "PM", "QA", "QA rounds failed", "Client revisions", "Team hours", "Payment", "Rating"]]
+      .concat(live.map(o => { const e = econ(o, cfg), pn = payNums(o, cfg); return [o.id, o.client.name, domOf(o.client.website), (gigOf(o.gig) || {}).name || "", o.pkg, o.price, pn.net, e.margin, SNAME[o.stage] || o.stage, o.at.slice(0, 10), o.deadline, dl(o).slice(0, 10), lateDays(o), o.byName || "", o.pmName || nm(o.pm), o.qaName || nm(o.qa),
+        (o.qaRounds || []).filter(r => r.result !== "pass").length, (o.revisions || []).length, e.hours, pn.status, o.rating || ""]; })))) ? 1 : 0;
+    // Clients register, with the work history found for each site
+    const cids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(cids.map(CK))).filter(Boolean), rows = [];
+    for(const c of cs){ const sm = clientSummary(c, live, cfg, true), hs = []; for(const d of c.sites || []){ const hv = await getJ(HK(d)); if(hv && hv.summary) hs.push(d + ": " + hv.summary); }
+      rows.push([c.name, (c.sites || []).join(" "), sm.orders, sm.open, String(c.first || "").slice(0, 10), String(c.last || "").slice(0, 10), sm.repeat ? "yes" : "no", sm.retainer ? "yes" : "no", sm.rating || "", sm.gross, sm.net, sm.pending, hs.join(" | ")]); }
+    wrote += await gPut(email, st, "clients", "Clients register", st.folder.id, "sheet", csvOf([["Client", "Sites", "Orders", "Open", "First order", "Last order", "Repeat", "Retainer", "Rating", "Gross USD", "Net USD", "Pending USD", "Work history found"]].concat(rows))) ? 1 : 0;
+    // Payments register
+    wrote += await gPut(email, st, "payments", "Payments register", st.folder.id, "sheet", csvOf([["Order", "Client", "Created", "Status", "Gross USD", "Net USD", "Extras", "Tip", "Refund", "Clears on", "Cleared"]]
+      .concat(live.filter(o => o.stage !== "cancelled").map(o => { const pn = payNums(o, cfg); return [o.id, o.client.name, o.at.slice(0, 10), pn.status, pn.gross, pn.net, pn.extras, pn.tip, pn.refund, pn.clearsOn, String(pn.clearedAt || "").slice(0, 10)]; })))) ? 1 : 0;
+    // HoD data: team, delays, the report itself
+    const hd = await hodData(false), ins = hd.insight || {};
+    wrote += await gPut(email, st, "team", "Team performance", st.folder.id, "sheet", csvOf([["Name", "Side", "Open orders", "Hours lost on their side", "Open items"]]
+      .concat(hd.team.map(r => [r.name, "Project team", r.orders, r.hours, r.open]), hd.sales.map(r => [r.name, "Sales", r.orders, r.hours, r.open]), (ins.people || []).map(p => [p.name, "Analyst note", "", "", p.note])))) ? 1 : 0;
+    wrote += await gPut(email, st, "delays", "Delays and misses", st.folder.id, "sheet", csvOf([["Order", "Site", "Stage", "Deadline", "Late", "Sales", "PM", "Client hours", "Sales hours", "Team hours", "QA hours", "QA fails", "Revisions", "Broken or missed"]]
+      .concat(hd.orders.map(x => [x.id, x.site, SNAME[x.stage] || x.stage, x.deadline, x.late ? "yes" : "", x.sales || "", x.pm || "", x.hours.client, x.hours.sales, x.hours.team, x.hours.qa, x.fails, x.revisions, (x.broken || []).join("; ")])))) ? 1 : 0;
+    const drafts = all.filter(o => o.stage === "details");
+    wrote += await gPut(email, st, "drafts", "Found by the team account (waiting for details)", st.folder.id, "sheet", csvOf([["Order", "Site", "Client", "Found", "What was found", "Past orders"]]
+      .concat(drafts.map(o => [o.id, domOf(o.client.website), o.client.name, String(o.draft.found).slice(0, 10), ((o.draft.evidence || [])[0] || {}).what || "", (o.draft.past || []).join(" ")])))) ? 1 : 0;
+    const T0 = hd.totals, hod = `<h1>HoD report, ${day}</h1><p><b>${hE(ins.headline || "No analyst reading yet today.")}</b></p>
+      <p>Open orders: ${T0.open} · Late: ${T0.late} · Hours lost: client ${T0.client}, sales ${T0.sales}, project team ${T0.team}, QA ${T0.qa} · QA fails: ${T0.fails} · Client revisions: ${T0.revisions} · Drafts waiting for details: ${drafts.length}</p>
+      ${(ins.todayForHod || []).length ? `<h2>For you today</h2><ol>${ins.todayForHod.map(x => `<li>${hE(x)}</li>`).join("")}</ol>` : ""}
+      ${(ins.sides || []).length ? `<h2>Where time is lost</h2>${hTable(["Side", "Finding"], ins.sides.map(x => [x.side, x.finding]))}` : ""}
+      ${(ins.missed || []).length ? `<h2>Missed or broken</h2><ul>${ins.missed.map(x => `<li>${hE(x)}</li>`).join("")}</ul>` : ""}
+      ${(ins.improve || []).length ? `<h2>What would improve</h2>${hTable(["Change", "Expected effect"], ins.improve.map(x => [x.what, x.impact]))}` : ""}
+      ${(ins.people || []).length ? `<h2>People</h2>${hTable(["Name", "Note"], ins.people.map(x => [x.name, x.note]))}` : ""}
+      <h2>Open orders</h2>${hTable(["Order", "Site", "Stage", "Deadline", "Late", "PM", "Hours lost (client / sales / team / QA)"], hd.orders.map(x => [x.id, x.site, SNAME[x.stage] || x.stage, x.deadline, x.late ? "yes" : "", x.pm || "", [x.hours.client, x.hours.sales, x.hours.team, x.hours.qa].join(" / ")]))}
+      ${drafts.length ? `<h2>Found by the team account, waiting for sales</h2>${hTable(["Order", "Site", "What was found"], drafts.map(o => [o.id, domOf(o.client.website), ((o.draft.evidence || [])[0] || {}).what || ""]))}` : ""}
+      <p style="color:#777">Written by the order desk at ${hE(now().slice(0, 16).replace("T", " "))} UTC. Registers in this folder hold the full records.</p>`;
+    wrote += await gPut(email, st, "hod", "HoD report (latest)", st.folder.id, "doc", hod) ? 1 : 0;
+    wrote += await gPut(email, st, "day:" + day, "HoD report " + day, st.daily.id, "doc", hod) ? 1 : 0;
+    // One record per order, rewritten when the order changed
+    let n = 0;
+    for(const o of live){ if(n >= (force ? 40 : 15)) break; const k = "ord:" + o.id, last = ((o.timeline || [])[0] || {}).at || o.at; if(st.files[k] && st.files[k].seen === last) continue;
+      const ai = o.ai || {}, rec = `<h1>${hE(o.id)} · ${hE(domOf(o.client.website))}</h1>
+        <p>${hE(o.client.name)} · ${hE((gigOf(o.gig) || {}).name || "")} (${hE(o.pkg)}) · $${hE(o.price)} · created ${hE(o.at.slice(0, 10))} · deadline ${hE(o.deadline)} · stage: <b>${hE(SNAME[o.stage] || o.stage)}</b></p>
+        <p>Sales: ${hE(o.byName || "")} · PM: ${hE(o.pmName || nm(o.pm))} · QA: ${hE(o.qaName || nm(o.qa))}</p>
+        ${ai.summary ? `<h2>Brief</h2><p>${hE(ai.summary)}</p>` : ""}
+        <h2>Deliverables and proof</h2>${hTable(["Deliverable", "Done", "QA", "Proof"], (o.deliverables || []).map(d => [d.text, d.done ? "yes" : "", d.qa || "", proofsOf(d).map(p => (p.name || p.url) + (p.url ? " " + p.url : "")).join("; ")]))}
+        <h2>Access</h2>${hTable(["Item", "Level", "Status"], (o.access || []).map(a => [a.item, a.level || "", a.status]))}
+        <h2>Team questions</h2>${hTable(["Question set", "Status", "Answered"], (o.actions || []).filter(a => a.type === "internal").map(a => [a.title || "", a.status, (a.questions || []).filter(q => q.status === "answered").length + " of " + (a.questions || []).length]))}
+        <h2>Timeline</h2><ul>${(o.timeline || []).slice(0, 80).map(t => `<li>${hE(String(t.at).slice(0, 16).replace("T", " "))} · ${hE(t.who)}: ${hE(t.what)}</li>`).join("")}</ul>`;
+      if(await gPut(email, st, k, o.id + " · " + domOf(o.client.website), st.records.id, "doc", rec)){ wrote++; n++; } st.files[k].seen = last; }
+    st.at = now(); st.error = ""; await setJ(REPK, st); return "wrote " + wrote + " files";
+  }catch(e){ st.error = e.message; await setJ(REPK, st); throw e; }
+}
 
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
@@ -477,19 +657,10 @@ async function handle(request){
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
-  if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
-  if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); const day = now().slice(0, 10), key = P + "hod:" + day;
-    const all = (await loadAll(500)).filter(o => o.stage !== "cancelled"), open = all.filter(o => !["done"].includes(o.stage)), ds = open.map(delays);
-    const sum = k => +ds.reduce((a2, x) => a2 + x.hours[k], 0).toFixed(1);
-    const by = (f, side) => { const m = {}; ds.forEach(x => { const k = f(x) || "Not assigned"; const r = m[k] = m[k] || { orders:0, hours:0, open:0 }; r.orders++; r.hours += x.hours[side]; r.open += x.items[side].filter(i => i.open).length; }); return Object.entries(m).map(([name, r]) => ({ name, orders:r.orders, hours:+r.hours.toFixed(1), open:r.open })).sort((a2, b) => b.hours - a2.hours); };
-    let insight = await getJ(key);
-    if((!insight || url.searchParams.get("refresh")) && aiOn() && ds.length){
-      try{ const r = await askAI("hod", "claude-sonnet-5-5", `You are the delivery analyst for the HoD of an SEO, web and ads agency. From the order timings below, find where time is lost and why: client side (access, replies), sales side (messages not sent, updates not pasted), project team (slow answers, slow work, rework), QA. Name orders and people. Be specific, fair and short. No dashes.
-Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"side":"client | sales | project team | QA","finding":""}],"missed":["what was missed or broken, with the order"],"people":[{"name":"","note":"fair, specific"}],"improve":[{"what":"concrete change","impact":"expected effect, e.g. saves about 1 day per order"}],"todayForHod":["at most 3 things only the HoD should do today"]}`,
-        JSON.stringify(ds.map(x => ({ order:x.id, site:x.site, stage:x.stage, deadline:x.deadline, pm:x.pm, sales:x.sales, late:x.late, qaFails:x.fails, revisions:x.revisions, broken:x.broken.slice(0, 4), hours:x.hours, worst:Object.fromEntries(Object.entries(x.items).map(([k, v]) => [k, v.sort((a2, b) => b.h - a2.h).slice(0, 3)])) }))), 6000);
-        insight = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) }); await setJ(key, insight, 60 * 60 * 24 * 40); }catch(e){ insight = { error:e.message }; } }
-    return out({ ok:true, day, totals:{ open:open.length, late:ds.filter(x => x.late).length, client:sum("client"), sales:sum("sales"), team:sum("team"), qa:sum("qa"), fails:ds.reduce((a2, x) => a2 + x.fails, 0), revisions:ds.reduce((a2, x) => a2 + x.revisions, 0) },
-      orders:ds.sort((a2, b) => (b.late - a2.late) || (Object.values(b.hours).reduce((p, q) => p + q, 0) - Object.values(a2.hours).reduce((p, q) => p + q, 0))), team:by(x => x.pm, "team"), sales:by(x => x.sales, "sales"), insight }); }
+  if(a === "list"){ const all = await loadAll(300, !isProj(w)); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
+  if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); return out(Object.assign({ ok:true }, await hodData(!!url.searchParams.get("refresh")), { reports:await reportsState() })); }
+  if(a === "reports"){ if(!isA) return bad("Reports are for Manav only", 403); return out({ ok:true, reports:await reportsState() }); }
+  if(a === "reportsRun"){ if(!isA) return bad("Reports are for Manav only", 403); try{ const r = await driveReports(true); return out({ ok:true, info:r, reports:await reportsState() }); }catch(e){ return bad(e.message, 503); } }
   if(a === "inbox"){ const all = (await loadAll(400)).filter(o => !["done", "cancelled"].includes(o.stage)), items = [], mine = [];
     for(const o of all){
       const assigned = o.pm === w.uid || o.qa === w.uid || !isProj(w) || (!o.pm && (w.roles || []).includes("pm"));
@@ -504,16 +675,17 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
     if((o.docs || []).length) groupDocs(o);
-    { const n0 = (o.access || []).length; dedupeAccess(o); const ch = !["done", "cancelled"].includes(o.stage) && autoAssign(o, await people()); if(o.access.length !== n0 || ch) await saveO(o); }
+    { const n0 = (o.access || []).length; dedupeAccess(o); const ch = !["done", "cancelled", "details"].includes(o.stage) && autoAssign(o, await people()); if(o.access.length !== n0 || ch) await saveO(o); }
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null, history:await getJ(HK(domOf(o.client.website))) }); }
   if(a === "clients"){ const all = await loadAll(1000);
     for(const o of all) if(!o.cid){ o.cid = cidOf(o.client.name); await touchClient(o); await saveO(o); }
     const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
     return out({ ok:true, clients:cs.map(c => clientSummary(c, all, cfg, isA)).sort((x, y) => (y.last || "").localeCompare(x.last || "")) }); }
   if(a === "client"){ const c = await getJ(CK(str(url.searchParams.get("id"), 80))); if(!c) return bad("Client not found", 404); const all = await loadAll(1000), os = all.filter(o => o.cid === c.id);
     const regs = {}; for(const d of c.sites || []) regs[d] = await regOf(d);
-    return out({ ok:true, client:c, summary:clientSummary(c, all, cfg, isA), orders:os.map(o => Object.assign(summary(o, cfg), isA ? { pay:payNums(o, cfg) } : { econ:undefined })), register:regs,
+    const hist = {}; for(const d of c.sites || []) hist[d] = await getJ(HK(d));
+    return out({ ok:true, client:c, history:hist, summary:clientSummary(c, all, cfg, isA), orders:os.map(o => Object.assign(summary(o, cfg), isA ? { pay:payNums(o, cfg) } : { econ:undefined })), register:regs,
       actions:os.flatMap(o => (o.actions || []).filter(x => x.status !== "done").map(x => Object.assign({ order:o.id }, x))).slice(0, 40) }); }
   if(a === "clientSave"){ if(!can(w, "assign")) return bad("Only Manav and managers", 403); const c = await getJ(CK(str(q.id, 80))); if(!c) return bad("Client not found", 404);
     if(q.notes != null) c.notes = redact(str(q.notes, 4000)); if(Array.isArray(q.tags)) c.tags = q.tags.slice(0, 10).map(t => str(t, 30)); await setJ(CK(c.id), c); return out({ ok:true, client:c }); }
@@ -546,27 +718,10 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     return out({ ok:true, lead:item }); }
 
   if(a === "create"){ if(!can(w, "create")) return bad("Only sales can create orders", 403);
-    const gig = gigOf(str(q.gig, 8)); if(!gig) return bad("Pick the gig");
-    const pkg = ["basic", "standard", "premium", "custom"].includes(q.pkg) ? q.pkg : "standard";
-    const price = num(q.price, 0); if(price <= 0) return bad("Type the price the client paid");
-    const deadline = str(q.deadline, 10); if(!/^\d{4}-\d{2}-\d{2}$/.test(deadline)) return bad("Pick the deadline");
-    const chat = redact(str(q.chat, 80000)); if(chat.length < 40) return bad("Paste the whole client chat. The order desk works from it.");
+    const f = orderFields(q); if(f.error) return bad(f.error);
     const n = await cmd("INCR", T.seq), id = "O-" + (1000 + Number(n));
-    const o = { id, at:now(), by:w.uid, byName:w.name, gig:gig.id, pkg, price, extras:str(q.extras, 500), deadline, chat, calls:redact(str(q.calls, 20000)), remarks:redact(str(q.remarks, 4000)),
-      client:{ name:str(q.client, 80), country:str(q.country, 40), website:str(q.website, 200) }, stage:"access", fee:cfg.fee,
-      access:(ACCESS[gig.cat] || []).map(x => Object.assign({ id:nid("a"), status:"needed" }, x)),
-      deliverables:[{ id:nid("d"), text:(gig.packages[pkg] || {}).what || gig.name, done:false, proof:"", qa:"" }], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
-    log(o, w, "Order created: " + gig.name + " (" + pkg + ") for $" + price);
-    const reg0 = await regOf(o.client.website); if(reg0.length){ applyRegister(o, reg0); log(o, { name:"Order desk" }, "Access already on file for " + domOf(o.client.website) + " was linked to this order"); }
-    let ai = null;
-    const [an, fm] = await Promise.allSettled([analyse(o, cfg), formatConvo(o)]);
-    if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
-    if(!ai.ok && ai.why) log(o, { name:"Order desk" }, "Brief not made: " + ai.why);
-    if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
-    autoAssign(o, await people());
-    o.cid = cidOf(o.client.name); await touchClient(o);
-    await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
-    return out({ ok:true, id, ai }); }
+    const o = Object.assign({ id, at:now(), by:w.uid, byName:w.name, fee:cfg.fee, queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] }, f.fields);
+    const ai = await launch(o, w, cfg); return out({ ok:true, id, ai }); }
 
   if(a === "person" || a === "personOff" || a === "newCode" || a === "cfg" || a === "personRoles"){
     if(w.role !== "admin") return bad("Only Manav can change people and settings", 403);
@@ -592,7 +747,18 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
     if(isProj(w) && ["update", "reply", "sent", "share", "pay", "edit", "deliver", "revision", "close", "actEdit", "regOff"].includes(op)) return bad("This step is for the sales and client messages team", 403);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
-    if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
+    if(o.stage === "details" && !["complete", "notOrder", "history", "note"].includes(op)) return bad("Add the order details first (client chat, package, price and deadline)");
+    if(op === "complete"){ need("create"); if(o.stage !== "details") return bad("This order already has its details");
+      const f = orderFields(Object.assign({ website:o.client.website, client:o.client.name, country:o.client.country }, q, { website:q.website || o.client.website })); if(f.error) return bad(f.error);
+      Object.assign(o, f.fields, { by:w.uid, byName:w.name, completedAt:now() }); log(o, w, "Order details added");
+      const ai = await launch(o, w, cfg); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), ai, history:await getJ(HK(domOf(o.client.website))) }); }
+    else if(op === "notOrder"){ need("create"); if(o.stage !== "details") return bad("Only a draft can be marked as not an order");
+      setStage(o, "cancelled"); o.cancelWhy = "Not an order: " + str(q.why, 200); log(o, w, o.cancelWhy);
+      if(q.ignoreSite){ await cmd("SADD", DIGN, domOf(o.client.website)); log(o, w, "The order desk will not open drafts for " + domOf(o.client.website) + " again"); } }
+    else if(op === "history"){ if(isProj(w) && !can(w, "pm")) return bad("Not for this role", 403); const site = domOf(o.client.website); if(!site) return bad("This order has no site");
+      const all = await loadAll(1000, true); const hv = await buildHistory(site, all.filter(x => domOf(x.client.website) === site).map(x => x.id)); if(!hv) return bad("The AI helpers are off", 503);
+      log(o, w, "Work history for " + site + " rebuilt from the team's emails, chats and files"); }
+    else if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
@@ -788,7 +954,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     else if(op === "cancel"){ need("assign"); setStage(o, "cancelled"); log(o, w, "Cancelled: " + str(q.why, 300)); }
     else return bad("Unknown step");
     await saveO(o); if(o.cid) touchClient(o).catch(() => {});
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o) });
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), history:await getJ(HK(domOf(o.client.website))) });
   }
   return bad("Unknown request", 404);
 }
