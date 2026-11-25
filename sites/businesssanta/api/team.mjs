@@ -840,28 +840,23 @@ async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a 
 const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
 async function writeGroupMsg(o){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
-  const steps = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || "")).map(p => ({ who:p.who, do:p.do, where:p.where }));
-  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || "")).map(r => ({ who:r.who, do:r.toPass, where:r.where }));
-  if(!steps.length && !open.length) return "";
+  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !/sales/i.test(r.who || "")).map(r => { const q = reqs.find(x => x.id === r.r) || {};
+    return { asked:q.text, askedIn:q.askedIn ? q.askedIn.where : "", status:r.status, found:r.found, missing:r.toPass, who:r.who }; });
+  if(!open.length) return "";
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You turn work steps into a list of very short tasks for a team chat. A 4th grade child must understand each task at first reading.
-Rules for every task:
-1. One task per RESULT the person must deliver (a tab written, a line fixed, titles updated), not one per click. Split only when two results are different. At most 6 tasks. Never repeat the same task twice.
-2. Start with the person's first name and a colon, then a simple verb (add, fix, change, check, send, update).
-3. At most two short sentences, each at most 12 words.
-4. If the place matters, say it once and naturally, for example: "In Rank Math, edit robots.txt." Never write "Where:". Do not repeat the same place in every task.
-4b. Use only names that are in the steps; do not invent tab names or titles.
-5. Give exact values when needed (the exact line to add, the exact tab name in quotes).
-6. No reasons, no explanations, no dashes, no emojis, plain words.
-Answer with one JSON object only: {"tasks":["Amit: add a tab named \\"GSC review\\" to the Onpage Report sheet."]}`;
-  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `STEPS: ${JSON.stringify(steps.length ? steps : open)}`, 1500);
+  const system = `You write a short team chat message to professionals about what is still open before QA. They already have the requirement email and the group chat, so do not teach them how to do the work and give no click steps.
+For each open item write one point:
+1. Start with the item's short name as it was asked (two to five words, for example "Search Console review"), then a colon.
+2. Then say plainly what is missing compared to what was asked, in one or two short sentences of at most 14 words each. Mention a key fact when it helps (for example "the sheet still says Not Updated").
+3. Very simple, respectful English. No reasons for the client, no dashes, no emojis.
+At most 6 points; join items that are really the same gap. If every item belongs to one person, name that person once at the start instead of in each point.
+Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":["Search Console review: the report has no review of the current setup yet."]}`;
+  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `OPEN ITEMS: ${JSON.stringify(open)}`, 1500);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const tasks = ((r.data || {}).tasks || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/\s+([.,])/g, "$1").trim()).filter(Boolean).slice(0, 12);
-  if(!tasks.length) return "";
-  // every task starts with a name (the most common one if missing); no full stop glued to a link
-  const names = tasks.map(t => (t.match(/^([A-Z][a-z]+):/) || [])[1]).filter(Boolean), top = names.sort((a, b) => names.filter(x => x === b).length - names.filter(x => x === a).length)[0];
-  for(let i = 0; i < tasks.length; i++){ if(top && !/^[A-Z][a-z]+:/.test(tasks[i])) tasks[i] = top + ": " + tasks[i].charAt(0).toLowerCase() + tasks[i].slice(1); tasks[i] = tasks[i].replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2"); }
-  return `Hi team. For ${domOf(o.client.website)}, please do these:\n\n${tasks.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", is this plan okay?\n" : ""}Reply "done" when you finish a task.`;
+  const d = r.data || {}, pts = (d.points || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim()).filter(Boolean).slice(0, 6);
+  if(!pts.length) return "";
+  const who = str(d.person, 30), src = [...new Set(open.map(x => x.askedIn).filter(Boolean))].join(" and ") || "the requirement email";
+  return `Hi ${who || "team"}, for ${domOf(o.client.website)} these items from ${src} are still open before QA:\n\n${pts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
   if(o.groupMsg && o.groupMsgAt && o.check && o.groupMsgAt >= o.check.at) return o.groupMsg;
