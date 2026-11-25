@@ -179,6 +179,9 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .astat{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:12px 0 0 22px;padding-top:10px;border-top:1px solid var(--soft);font-size:13px;color:var(--mut)}.astat span{margin-right:auto}
 .lnk{background:none;border:0;padding:4px 0;color:var(--sub);font:600 13px var(--f);cursor:pointer;text-decoration:underline;text-underline-offset:3px}.lnk:hover{color:var(--ink)}.lnk.bad{color:var(--bad)}
 @media(max-width:620px){.astat{margin-left:0}}
+.att{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}.att label{cursor:pointer}
+.thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.th{position:relative;display:inline-flex;align-items:center;gap:6px;background:var(--raise);border-radius:8px;padding:4px;font-size:12.5px;color:var(--sub);text-decoration:none;max-width:220px}
+.th img{width:84px;height:60px;object-fit:cover;border-radius:6px;display:block}.th button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:0;background:var(--bad);color:#fff;font-size:12px;cursor:pointer;line-height:1}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -366,7 +369,7 @@ function drawOrder(){
      <span class="chip ${sinceH > 24 ? "bad" : sinceH > 8 ? "warn" : "ok"}">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago${o.lastUpdateBy ? " · " + E(o.lastUpdateBy) : ""}</span></div>
      ${(ai.askNext || []).length ? `<div class="asknext"><span class="lbl">Paste or ask next</span><ul class="clean">${ai.askNext.slice(0, 4).map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
      ${ai.changed ? `<p class="note" style="margin:10px 0"><b>Last change:</b> ${E(ai.changed)}</p>` : ""}
-     <textarea id="updT" placeholder="Paste new messages, the whole chat again, call notes, a team reply, or what files were shared"></textarea>
+     <textarea id="updT" placeholder="Paste new messages, the whole chat again, call notes, a team reply, or screenshots"></textarea>${attUI("upd1")}
      <div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB">Update order</button><span class="sub" style="margin:0">Logins and email addresses are hidden automatically.</span></div></section>` : "";
   const ACT = { open:["Open","warn"], sent:["Sent","y"], waiting:["Waiting reply","y"], done:["Done","ok"], blocked:["Blocked","bad"] }, OWN = { comms:"Client messages", pm:"Project team", qa:"QA", manager:"Manager" };
   const TYP = { client:"Send to the client", internal:"Ask the team", task:"Task" };
@@ -379,8 +382,8 @@ function drawOrder(){
       ${isI && qs.length ? `<ol class="qlist">${qs.map(q => `<li><span>${E(q.q)}</span>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${q.status === "answered" ? "Answered" : q.status === "partial" ? "Partly" : "No answer"}</span>` : ""}${q.answer ? `<div class="qa2">${E(q.answer)}</div>` : ""}</li>`).join("")}</ol>` : ""}
       ${a.status !== "done" && a.message ? (isI ? `<div class="row" style="gap:8px;margin:10px 0 0 22px"><button class="btn sm pri" data-acopy="${a.id}">Copy ${ans ? "follow-up" : "message"} for the team</button><details class="mx" style="margin:0"><summary>Preview</summary><div class="msg">${E(a.message)}</div></details></div>`
         : `<div class="msg" style="margin:10px 0 0 22px">${E(a.message)}</div><button class="btn sm" data-acopy="${a.id}" style="margin:8px 0 0 22px">Copy message for the client</button>`) : ""}
-      ${isI && a.status !== "done" && (can("comms") || can("pm")) ? `<div class="rbox"><textarea data-rtxt="${a.id}" placeholder="Paste the team's reply here (from Google Chat or email). The order desk matches it to the questions."></textarea><button class="btn sm ${a.status === "sent" || a.status === "waiting" ? "pri" : ""}" data-rsend="${a.id}">Add their reply</button></div>` : ""}
-      ${(a.replies || []).length ? `<details class="mx"><summary>${a.replies.length} repl${a.replies.length > 1 ? "ies" : "y"} from the team</summary>${a.replies.map(r => `<div class="sub" style="margin-top:6px">${ago(r.at)} · added by ${E(r.by)}${r.summary ? ": " + E(r.summary) : ""}</div><div class="msg" style="margin-top:4px">${E(r.text)}</div>`).join("")}</details>` : ""}
+      ${isI && a.status !== "done" && (can("comms") || can("pm")) ? `<div class="rbox"><textarea data-rtxt="${a.id}" placeholder="Paste the team's reply here (from Google Chat or email), with any screenshots. The order desk matches it to the questions."></textarea>${attUI("r" + a.id)}<button class="btn sm ${a.status === "sent" || a.status === "waiting" ? "pri" : ""}" data-rsend="${a.id}">Add their reply</button></div>` : ""}
+      ${(a.replies || []).length ? `<details class="mx"><summary>${a.replies.length} repl${a.replies.length > 1 ? "ies" : "y"} from the team</summary>${a.replies.map(r => `<div class="sub" style="margin-top:6px">${ago(r.at)} · added by ${E(r.by)}${r.summary ? ": " + E(r.summary) : ""}</div><div class="msg" style="margin-top:4px">${E(r.text)}</div>${fileChips(r.files)}${(r.evidence || []).length ? `<ul class="clean" style="margin-top:6px">${r.evidence.map(e => `<li><b>${E(e.file)}</b>: ${E(e.shows)}</li>`).join("")}</ul>` : ""}`).join("")}</details>` : ""}
       <div class="astat"><span>${a.status === "done" ? "Closed" : a.status === "sent" || a.status === "waiting" ? "Sent " + ago(a.at) + (a.by ? " by " + E(a.by) : "") : "Not sent yet"}</span>${a.status !== "done" ? `<button class="lnk" data-ast="${a.id}|done" title="Close this step when no reply needs pasting">Mark done</button><button class="lnk bad" data-ast="${a.id}|blocked" title="Something stops this step; it shows red on the order">Report a blocker</button>` : `<button class="lnk" data-ast="${a.id}|open">Reopen</button>`}</div></div>`; };
   const AF = window.AFILT || "open", afl = acts.filter(x => AF === "all" ? true : AF === "done" ? x.status === "done" : AF === "open" ? x.status !== "done" : x.type === AF && x.status !== "done");
   const topActs = acts.filter(x => x.status !== "done").slice(0, 3);
@@ -482,14 +485,14 @@ function drawOrder(){
   const newN = ((o.convo || {}).messages || []).filter(m => m.added && Date.now() - Date.parse(m.added) < 864e5).length;
   const client = `<div class="og"><div>
     ${(can("comms") || can("pm")) && openO ? sec("Add the latest from the client", "Paste the whole marketplace chat again, or only the new messages. Only messages we do not have yet are added, in the right order, and the order is re-checked.",
-      `<textarea id="updT2" placeholder="Paste the full chat again or just the new messages (call notes and team replies also work)"></textarea><div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB2">Add new messages</button><span class="sub" style="margin:0">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago</span></div>`) : ""}
+      `<textarea id="updT2" placeholder="Paste the full chat again or just the new messages (call notes, team replies and screenshots also work)"></textarea>${attUI("upd2")}<div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB2">Add new messages</button><span class="sub" style="margin:0">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago</span></div>`) : ""}
     ${sec("Client conversation", o.convo ? `${o.convo.messages.length} messages. <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.` : "The original paste is below.",
       (o.convo ? `<div class="cv" id="cv">${L(o.convo.messages, (m, i) => { const prev = o.convo.messages[i - 1], day = (m.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, ""), pday = prev ? (prev.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, "") : "";
         return (day && day !== pday ? `<div class="dsep"><span>${E(day)}</span></div>` : "") + `<div class="bu ${m.who === "us" ? "u" : "c"}">${m.added ? `<span class="newb">Added ${ago(m.added)}</span>` : ""}<span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E((m.time.match(/\d{1,2}:\d{2}\s*[AP]M/i) || [m.time])[0]) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`; })}</div>` : "")
       + `<div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>`,
       `<div class="row" style="gap:6px">${newN ? `<span class="chip y">${newN} new today</span>` : ""}${o.convo ? `<button class="btn sm" id="rawT">Original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out"}</button>` : ""}</div>`)}
     ${o.calls ? sec("Call notes from the order", "", `<div class="kt">${E(o.calls)}</div>`) : ""}
-    ${(o.notes || []).length ? sec("Calls, team updates and files", "Everything pasted after the order was created, newest first.", (o.notes || []).slice().reverse().map(n => `<div class="mcard"><div class="mh"><b>${E(n.title)}</b><span class="chip ${n.kind === "call" ? "y" : n.kind === "team" ? "ok" : "n"}">${E({ call:"Call", team:"Team", media:"Files", note:"Note" }[n.kind] || n.kind)}</span><span class="sub">${n.from ? E(n.from) + " · " : ""}${ago(n.at)} · added by ${E(n.by)}</span></div><div class="kt">${E(n.text)}</div>${(n.files || []).length ? `<div class="sub" style="margin-top:6px">Files: ${n.files.map(E).join(", ")}</div>` : ""}</div>`).join("")) : ""}
+    ${(o.notes || []).length ? sec("Calls, team updates and files", "Everything pasted after the order was created, newest first.", (o.notes || []).slice().reverse().map(n => `<div class="mcard"><div class="mh"><b>${E(n.title)}</b><span class="chip ${n.kind === "call" ? "y" : n.kind === "team" ? "ok" : "n"}">${E({ call:"Call", team:"Team", media:"Files", note:"Note" }[n.kind] || n.kind)}</span><span class="sub">${n.from ? E(n.from) + " · " : ""}${ago(n.at)} · added by ${E(n.by)}</span></div><div class="kt">${E(n.text)}</div>${(n.files || []).some(f => f && f.id) ? fileChips(n.files.filter(f => f && f.id)) : (n.files || []).length ? `<div class="sub" style="margin-top:6px">Files: ${n.files.map(f => E(f.name || f)).join(", ")}</div>` : ""}</div>`).join("")) : ""}
    </div><div>
     ${sec("Messages to and from the client", "Only the client messages person sends these on the marketplace. Paste every client reply here so the team sees it at once.",
       (msgs || `<p class="note">No messages yet.</p>`) + "")}
@@ -524,13 +527,16 @@ function wireOrder(o){
   on("#ask", () => { const t = prompt("What should we ask the client? Write it as the message to send."); if(t) doOp("ask", { text:t, kind:"question" }, "Sending to the client messages person…"); });
   on("#toqa", () => doOp("toQA"));
   on("#pyB", () => { const ex = num2($("#pyEa").value); doOp("pay", { status:$("#pyS").value, clearsOn:$("#pyC").value, tip:$("#pyT").value, refund:$("#pyR").value, extra:ex > 0 ? { what:$("#pyEw").value, amount:ex } : null }); });
-  const runUpd = id => { const t = $(id).value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }, "Finding the new messages and re-checking the order (about 20 to 40 seconds)…"); };
-  on("#updB2", () => runUpd("#updT2"));
+  const runUpd = (id, k) => { const t = $(id).value.trim(), fs = FILES[k] || []; if(!t && !fs.length) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t, files:fs }); delete FILES[k]; CUR = r; drawOrder(); toast(r.info || "Updated"); const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }, "Reading what you pasted" + (fs.length ? " and the screenshots" : "") + ", then re-checking the order (about 20 to 40 seconds)…"); };
+  if($("#updT")) wireAtt("upd1", $("#updT")); if($("#updT2")) wireAtt("upd2", $("#updT2"));
+  on("#updB2", () => runUpd("#updT2", "upd2"));
   { const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }
-  on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order (about 20 to 40 seconds)…"); });
+  on("#updB", () => runUpd("#updT", "upd1"));
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
   document.querySelectorAll("[data-af]").forEach(b => b.onclick = () => { window.AFILT = b.dataset.af; drawOrder(); });
-  document.querySelectorAll("[data-rsend]").forEach(b => b.onclick = () => { const t = document.querySelector(`[data-rtxt="${b.dataset.rsend}"]`).value.trim(); if(!t) return toast("Paste their reply first", 1); doOp("actReply", { aid:b.dataset.rsend, text:t }, "Matching the reply to the questions and updating the order (about 30 seconds)…"); });
+  document.querySelectorAll("[data-rtxt]").forEach(t => wireAtt("r" + t.dataset.rtxt, t));
+  document.querySelectorAll("[data-rsend]").forEach(b => b.onclick = async () => { const k = "r" + b.dataset.rsend, t = document.querySelector(`[data-rtxt="${b.dataset.rsend}"]`).value.trim(), fs = FILES[k] || []; if(!t && !fs.length) return toast("Paste their reply or a screenshot first", 1);
+    const r = await doOp("actReply", { aid:b.dataset.rsend, text:t, files:fs }, "Reading the reply" + (fs.length ? " and " + fs.length + " screenshot" + (fs.length > 1 ? "s" : "") : "") + ", then updating the order (about 30 seconds)…"); if(r) delete FILES[k]; });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => { if(a.status === "open"){ doOp("action", { aid:a.id, status:"sent", note:"" }, "Copied. Marking it as sent…"); } else toast("Copied"); }); });
   on("#verify", () => doOp("verify", {}, "Checking the live site and Search Console…"));
   on("#qafin", () => doOp("qa", {}, "Finishing QA…"));
@@ -604,6 +610,30 @@ async function payPage(){
    <div class="og"><div>${sec("By order", "Click an order to update its payment.", `<table class="t2"><thead><tr><th>Order</th><th>Client</th><th>Paid</th><th>We receive</th><th>Status</th></tr></thead><tbody>${j.rows.map(r => `<tr><td><a href="#o=${E(r.id)}"><b>${E(r.id)}</b></a><div class="sub">${fmtD(r.at)}</div></td><td><a href="#c=${E(r.cid)}">${E(r.client)}</a></td><td>${money(r.gross)}</td><td>${money(r.net)}</td><td><span class="chip ${PST[r.status][1]}">${PST[r.status][0]}</span>${r.clearsOn && r.status !== "cleared" ? `<div class="sub">Clears ${fmtD(r.clearsOn)}</div>` : ""}</td></tr>`).join("") || `<tr><td colspan="5">No orders yet</td></tr>`}</tbody></table>`)}</div>
    <div>${sec("By client", "Lifetime value of each client.", `<table class="t2"><thead><tr><th>Client</th><th>Orders</th><th>We received</th><th>Pending</th></tr></thead><tbody>${j.clients.map(c => `<tr><td><a href="#c=${E(c.cid)}"><b>${E(c.client)}</b></a></td><td>${c.orders}</td><td>${money(c.net)}</td><td>${c.pending ? money(c.pending) : "0"}</td></tr>`).join("")}</tbody></table>`)}</div></div>`;
 }
+
+/* Screenshots and files: paste into a box (Ctrl+V) or attach. Images are shrunk in the browser before upload. */
+const FILES = {};
+const attUI = k => `<div class="att"><label class="btn sm ghost">📎 Attach screenshots or PDF<input type="file" accept="image/*,application/pdf" multiple hidden data-att="${k}"></label><span class="sub" style="margin:0">or paste a screenshot straight into the box</span></div><div class="thumbs" data-th="${k}"></div>`;
+function shrink(file){ return new Promise((res, rej) => {
+  if(file.type === "application/pdf"){ if(file.size > 2.3e6) return rej(new Error(file.name + " is over 2 MB")); const r = new FileReader(); r.onload = () => res({ name:file.name, type:file.type, data:String(r.result).split(",")[1] }); r.readAsDataURL(file); return; }
+  const img = new Image(), u = URL.createObjectURL(file);
+  img.onload = () => { const m = 1600, sc = Math.min(1, m / Math.max(img.width, img.height)), c = document.createElement("canvas"); c.width = Math.round(img.width * sc); c.height = Math.round(img.height * sc);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(u); res({ name:(file.name || "screenshot").replace(/\.\w+$/, "") + ".jpg", type:"image/jpeg", data:c.toDataURL("image/jpeg", 0.82).split(",")[1] }); };
+  img.onerror = () => rej(new Error("Could not read " + (file.name || "the image"))); img.src = u; }); }
+async function addFiles(k, list){
+  FILES[k] = FILES[k] || [];
+  for(const f of list){ if(FILES[k].length >= 6){ toast("Up to 6 files at a time", 1); break; } try{ FILES[k].push(await shrink(f)); }catch(e){ toast(e.message, 1); } }
+  drawThumbs(k);
+}
+function drawThumbs(k){ const el = document.querySelector(`[data-th="${k}"]`); if(!el) return;
+  el.innerHTML = (FILES[k] || []).map((f, i) => `<span class="th">${f.type === "application/pdf" ? "📄 " + E(f.name) : `<img src="data:${f.type};base64,${f.data}" alt="">`}<button type="button" data-thx="${k}|${i}" title="Remove">×</button></span>`).join("");
+  el.querySelectorAll("[data-thx]").forEach(b => b.onclick = () => { const [kk, i] = b.dataset.thx.split("|"); FILES[kk].splice(+i, 1); drawThumbs(kk); }); }
+function wireAtt(k, textarea){
+  const inp = document.querySelector(`[data-att="${k}"]`); if(inp) inp.onchange = () => { addFiles(k, [...inp.files]); inp.value = ""; };
+  if(textarea) textarea.addEventListener("paste", e => { const fs = [...(e.clipboardData || {}).items || []].filter(i => i.kind === "file").map(i => i.getAsFile()).filter(Boolean); if(fs.length){ e.preventDefault(); addFiles(k, fs); toast(fs.length + " screenshot" + (fs.length > 1 ? "s" : "") + " added"); } });
+  drawThumbs(k);
+}
+const fileChips = fs => (fs || []).length ? `<div class="thumbs">${fs.map(f => `<a class="th" href="/api/team?a=file&id=${E(f.id)}" target="_blank" rel="noopener">${/^image/.test(f.type) ? `<img src="/api/team?a=file&id=${E(f.id)}" alt="${E(f.name)}" loading="lazy">` : "📄 " + E(f.name)}</a>`).join("")}</div>` : "";
 
 /* Client messages queue */
 async function msgs(){

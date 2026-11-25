@@ -311,7 +311,8 @@ ${fresh}`;
 export function teamReplyPrompt(o, a, reply){
   const system = `You read a reply from our project team to questions from the client messages person, on one order. Judge each question: answered, partly answered or not answered.
 Write plainly, no dashes. Answer with one JSON object only:
-{"answers":[{"n":1,"answer":"the answer in one short line, or empty","status":"answered | partial | missing"}],"summary":"one line: what we now know","facts":["new facts the order should know, e.g. plugin removed on 25 Nov"],"followUp":["only for questions still partial or missing: the short follow-up question"]}`;
+{"answers":[{"n":1,"answer":"the answer in one short line, or empty","status":"answered | partial | missing"}],"summary":"one line: what we now know","facts":["new facts the order should know, e.g. plugin removed on 25 Nov"],"evidence":[{"file":"file name","shows":"what this screenshot or file really shows, and whether it backs up the answer"}],"followUp":["only for questions still partial or missing: the short follow-up question"]}
+Screenshots, files and Drive files attached are part of the reply: read them, use what they show to judge the answers, and say in evidence what each one proves. If a screenshot does not show what the text claims, mark that answer partial and say so.`;
   const user = `Order ${o.id} (${o.client.name}, ${o.client.website || ""}).
 Questions we asked:
 ${(a.questions || []).map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n")}

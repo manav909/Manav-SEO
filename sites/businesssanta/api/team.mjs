@@ -237,6 +237,33 @@ function clientSummary(c, list, cfg, admin){
   return r;
 }
 
+/* Screenshots and files pasted with a team reply or an update: kept one per key (never inside the order), read by the AI */
+const IK = id => P + "img:" + id;
+async function saveFiles(list){
+  const out = [], ops = [];
+  for(const f of (Array.isArray(list) ? list : []).slice(0, 6)){
+    const type = str(f.type, 60), data = String(f.data || "");
+    if(!/^(image\/(png|jpeg|webp|gif)|application\/pdf)$/.test(type) || !data || data.length > 3.2e6) continue;
+    const id = nid("f"); ops.push(["SET", IK(id), JSON.stringify({ type, name:str(f.name, 120) || "screenshot", data })]); out.push({ id, name:str(f.name, 120) || "screenshot", type, kb:Math.round(data.length * 0.75 / 1024) });
+  }
+  if(ops.length) await pipe(ops);
+  return out;
+}
+async function fileBlocks(files, text){
+  const blocks = [];
+  for(const f of files){ const v = await getJ(IK(f.id)); if(!v) continue;
+    blocks.push({ type:"text", text:"ATTACHED FILE: " + f.name });
+    blocks.push(v.type === "application/pdf" ? { type:"document", source:{ type:"base64", media_type:"application/pdf", data:v.data } } : { type:"image", source:{ type:"base64", media_type:v.type, data:v.data } }); }
+  // Drive links written in the reply are opened and read too
+  for(const u of (String(text || "").match(/https?:\/\/(?:drive|docs)\.google\.com\/\S+/g) || []).slice(0, 3)){
+    try{ const m = await driveMeta(u); if(!m.ok){ blocks.push({ type:"text", text:"DRIVE LINK " + u + ": cannot be opened (" + m.error + ")" }); continue; }
+      for(const it of await driveRead(m)){ blocks.push({ type:"text", text:"DRIVE FILE " + it.name + (it.text ? ":\n" + it.text.slice(0, 15000) : it.note ? ": " + it.note : "") });
+        if(it.image) blocks.push({ type:"image", source:{ type:"base64", media_type:it.type, data:it.b64 } }); if(it.pdf) blocks.push({ type:"document", source:{ type:"base64", media_type:"application/pdf", data:it.b64 } }); }
+    }catch(e){ blocks.push({ type:"text", text:"DRIVE LINK " + u + ": " + e.message }); }
+  }
+  return blocks;
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -288,6 +315,8 @@ async function handle(request){
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   const isA = w.role === "admin";
   const strip = o => { if(isA) return o; const c = Object.assign({}, o); delete c.pay; return c; };
+  if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
+    return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
   if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; return x; }) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
@@ -393,24 +422,33 @@ async function handle(request){
       log(o, w, "Proof added to \"" + x.text.slice(0, 60) + "\": " + p.name); }
     else if(op === "proofDel"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found"); x.proofs = proofsOf(x).filter(p => p.id !== q.pid); delete x.proof; x.done = x.done && x.proofs.length > 0; x.check = null; log(o, w, "Proof removed from \"" + x.text.slice(0, 60) + "\""); }
     else if(op === "update"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503);
-      const raw = redact(str(q.text, 90000)); if(raw.length < 3) return bad("Paste something first");
-      const k = await intake(o, raw, w); o.lastUpdateAt = now(); o.lastUpdateBy = w.name;
+      const raw = redact(str(q.text, 90000)), ufiles = await saveFiles(q.files); if(raw.length < 3 && !ufiles.length) return bad("Paste something first");
+      let k;
+      if(raw.length >= 3) k = await intake(o, raw, w); else k = { kind:"media", added:0, fresh:"" };
+      if(ufiles.length){
+        const blocks = await fileBlocks(ufiles, raw), rr = await askAI("intake", "claude-sonnet-5-5", "You read screenshots or files shared on an order of an SEO, web and ads agency (from the client or our team). Say plainly what each shows, no dashes. Answer with one JSON object only: {\"items\":[{\"file\":\"\",\"shows\":\"\",\"from\":\"client | team | unclear\"}]}", [{ type:"text", text:"Order " + o.id + ". Note pasted with them: " + (raw || "none") }].concat(blocks), 2500);
+        o.aiUsd = +(num(o.aiUsd, 0) + rr.usd).toFixed(4); const its = (rr.data && rr.data.items) || [];
+        (o.notes = o.notes || []).push({ id:nid("n"), kind:"media", title:ufiles.length + " screenshot" + (ufiles.length > 1 ? "s or files" : " or file") + " shared", text:its.map(i => i.file + ": " + i.shows).join("\n"), files:ufiles, from:(its[0] || {}).from || "", at:now(), by:w.name });
+        k.added = (k.added || 0) + 1; k.fresh = (k.fresh || "") + "\nFILES SHARED: " + its.map(i => i.file + " (" + i.from + "): " + i.shows).join("; ");
+      }
+      o.lastUpdateAt = now(); o.lastUpdateBy = w.name;
       if(!k.added){ log(o, w, "Pasted the conversation again: nothing new found"); await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:"Nothing new in that paste. The thread is already up to date." }); }
       const d = await rethink(o, k.fresh);
       log(o, w, (k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") + " added" : { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[k.kind] + " added") + (d.changed ? ". " + str(d.changed, 300) : ""));
       await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
     else if(op === "actReply"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
-      const text = redact(str(q.text, 12000)); if(text.length < 2) return bad("Paste their reply first"); if(!aiOn()) return bad("The AI helpers are off", 503);
+      const text = redact(str(q.text, 12000)); if(text.length < 2 && !(q.files || []).length) return bad("Paste their reply or a screenshot first"); if(!aiOn()) return bad("The AI helpers are off", 503);
       if(!(x.questions || []).length) x.questions = [{ q:x.title, status:"" }];
-      const p = teamReplyPrompt(o, x, text), r = await askAI("teamreply", "claude-sonnet-5-5", p.system, p.user, 4000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+      const files = await saveFiles(q.files), p = teamReplyPrompt(o, x, text || "(see the attached screenshots)"), extra = await fileBlocks(files, text);
+      const r = await askAI("teamreply", "claude-sonnet-5-5", p.system, extra.length ? [{ type:"text", text:p.user }].concat(extra) : p.user, 5000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
       const d = r.data || {}; (d.answers || []).forEach(an => { const qq = x.questions[(an.n || 0) - 1]; if(qq){ qq.answer = str(an.answer, 400) || qq.answer; qq.status = an.status || qq.status; } });
-      (x.replies = x.replies || []).push({ text, at:now(), by:w.name, summary:str(d.summary, 300) });
+      (x.replies = x.replies || []).push({ text, files, evidence:(d.evidence || []).slice(0, 6).map(e => ({ file:str(e.file, 120), shows:str(e.shows, 400) })), at:now(), by:w.name, summary:str(d.summary, 300) });
       const left = x.questions.filter(qq => qq.status !== "answered");
       x.status = left.length ? "waiting" : "done"; x.statusWhy = left.length ? left.length + " of " + x.questions.length + " still open: follow-up ready" : "All answered"; x.at = now(); x.by = w.name;
       if(left.length){ (d.followUp || []).forEach((f, i) => { if(left[i]) left[i].q = str(f, 300) || left[i].q; }); x.message = internalText(o, x); }
-      (o.notes = o.notes || []).push({ id:nid("n"), kind:"team", title:"Team reply: " + x.title.slice(0, 80), text, from:x.to || "Project team", at:now(), by:w.name });
+      (o.notes = o.notes || []).push({ id:nid("n"), kind:"team", title:"Team reply: " + x.title.slice(0, 80), text, files, from:x.to || "Project team", at:now(), by:w.name });
       log(o, w, "Team replied to \"" + x.title.slice(0, 60) + "\": " + (d.summary || "") + (left.length ? " (" + left.length + " still open)" : " (all answered)"));
-      try{ await rethink(o, "TEAM REPLY to \"" + x.title + "\": " + text + "\nFacts: " + (d.facts || []).join("; ")); }catch(e){}
+      try{ await rethink(o, "TEAM REPLY to \"" + x.title + "\": " + text + "\nFacts: " + (d.facts || []).join("; ") + ((d.evidence || []).length ? "\nScreenshots show: " + d.evidence.map(e => e.file + ": " + e.shows).join("; ") : "")); }catch(e){}
       o.lastUpdateAt = now(); o.lastUpdateBy = w.name; }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
       x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
