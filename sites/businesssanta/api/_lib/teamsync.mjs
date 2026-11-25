@@ -65,6 +65,7 @@ export async function syncOrder(o){
       try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
         for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
           const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=50&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
+          for(const m of ms.messages || []){ const old = (o.teamChat || []).find(x => x.id === m.name); if(old && !old.spaceId){ old.spaceId = s.name; old.thread = m.thread ? m.thread.name : ""; old.sender = m.sender ? m.sender.name : ""; } }   // fill the group for messages read before groups were recorded
           for(const m of (ms.messages || []).reverse()) if(!(o.teamChat || []).some(x => x.id === m.name))
             out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean),
               links:(m.attachment || []).filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId })) });
