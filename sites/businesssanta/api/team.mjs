@@ -422,7 +422,8 @@ const DK = id => P + "doc:" + id;
 async function matchDocs(orders){
   const cands = await docCandidates(orders), fresh = [];
   const ownIds = new Set(Object.values(((await getJ(REPK)) || {}).files || {}).map(f => f.id).filter(Boolean));
-  for(const c of cands){ if(ownIds.has(c.id) || /^Business Santa order desk/i.test(c.name || "")) continue; if(await cmd("GET", DK(c.id))) continue; c.peek = await docPeek(c); fresh.push(c); if(fresh.length >= 40) break; }
+  for(const c of cands){ if(ownIds.has(c.id) || /^Business Santa order desk/i.test(c.name || "")) continue; if(!c.posted && await cmd("GET", DK(c.id))) continue;
+    if(c.posted && orders.some(o2 => (o2.docs || []).some(x => x.id === c.id && x.status !== "rejected"))) continue; c.peek = await docPeek(c); fresh.push(c); if(fresh.length >= 40) break; }
   if(!fresh.length || !aiOn()) return 0;
   const p = docPrompt(orders, fresh), r = await askAI("docs", "claude-haiku-5-5", p.system, p.user, 6000), byId = new Map(orders.map(o => [o.id, o]));
   let n = 0; const ops = [];
@@ -430,8 +431,8 @@ async function matchDocs(orders){
     const c = fresh.find(x => x.id === d.id); if(!c) continue; ops.push(["SET", DK(c.id), JSON.stringify({ order:d.order || "", confidence:d.confidence || 0, at:now() }), "EX", 60 * 60 * 24 * 120]);
     const o = byId.get(d.order); if(!o || (d.confidence || 0) < 0.5) continue;
     o.docs = o.docs || []; if(o.docs.some(x => x.id === c.id)) continue;
-    const inTime = !c.modified || c.modified >= new Date(Date.parse(o.at) - 3 * 864e5).toISOString(), sure = (d.confidence || 0) >= 0.85 && inTime && /\S/.test(c.peek || "");
-    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:str(d.why, 200) + (inTime ? "" : " (older than the order)"), confidence:+(d.confidence || 0).toFixed(2), status:sure ? "linked" : "suggested", at:now() });
+    const inTime = !c.modified || c.modified >= new Date(Date.parse(o.at) - 3 * 864e5).toISOString(), posted = c.posted && c.order === o.id, sure = posted || ((d.confidence || 0) >= 0.85 && inTime && /\S/.test(c.peek || ""));
+    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:posted ? str("Posted " + c.posted.replace(/^posted /, "") + ". " + (d.why || ""), 240) : str(d.why, 200) + (inTime ? "" : " (older than the order)"), confidence:+(d.confidence || 0).toFixed(2), status:sure ? "linked" : "suggested", at:now() });
     o._docsNew = (o._docsNew || 0) + 1; n++;
   }
   if(ops.length) await pipe(ops);
@@ -442,7 +443,7 @@ async function matchDocs(orders){
 
 /* Copies of the same document form one group; the newest is current (read for QA, proof and analysis), the rest are versions */
 function groupDocs(o){
-  o.docs = (o.docs || []).filter(d => !(d.owner && /manavs909/i.test(d.owner || "") && /^O-\d+ · /.test(d.name || "")) && !/^HoD report|register$|^Team performance$|^Delays and misses$/i.test(d.name || ""));
+  o.docs = (o.docs || []).filter(d => !/^O-\d+ · \S+$/.test(d.name || "") && !/^HoD report|register$|^Team performance$|^Delays and misses$|^Found by the team account/i.test(d.name || ""));
   const g = new Map();
   for(const d of (o.docs || []).filter(x => x.status !== "rejected")){ const k = docGroup(d) + (d.split ? "#" + d.id : ""); d.group = k; (g.get(k) || g.set(k, []).get(k)).push(d); }
   for(const l of g.values()){ l.sort((a, b) => String(b.modified || "").localeCompare(String(a.modified || ""))); l.forEach((d, i) => { d.current = i === 0; d.versions = l.length; }); }
@@ -637,7 +638,7 @@ async function autoProof(o){
   for(const f of o.folderFiles || []) add(f.link, f.name, "file in the project folder" + (f.by ? ", by " + f.by : ""), f.modified);
   const links = (t, title, at) => (String(t || "").match(/https?:\/\/[^\s)>"']+/g) || []).slice(0, 4).forEach(u => add(u.replace(/[.,]+$/, ""), title, String(t).slice(0, 300), at));
   for(const m of (o.mails || []).slice(-20)) links(m.text, "Email: " + (m.subject || ""), m.date);
-  for(const m of (o.teamChat || []).slice(-60)) links(m.text, "Team chat, " + (m.by || ""), m.at);
+  for(const m of (o.teamChat || []).slice(-60)){ links(m.text, "Project group, " + (m.by || ""), m.at); (m.links || []).forEach(l => add(l.url, l.name + " (attached in the project group by " + (m.by || "") + ")", String(m.text || "").slice(0, 200), m.at)); }
   const used = new Set((o.deliverables || []).flatMap(d => proofsOf(d).map(p => p.url)));
   const cand = ev.filter(e => !used.has(e.url) && !/accounts\.google|\/signin|login/i.test(e.url)).slice(0, 30);
   const key = sha(cand.map(e => e.url).join("|") + "|" + o.deliverables.map(d => d.id + (d.done ? 1 : 0)).join(",")).slice(0, 16);
@@ -682,6 +683,8 @@ DELIVERABLES WITH PROOF AND THE DESK'S CHECK:
 ${JSON.stringify(dl)}
 OUR DOCUMENTS FOR THIS ORDER:
 ${JSON.stringify(docs)}
+SHARED BY THE TEAM IN THE PROJECT GROUP AND EMAILS (newest last):
+${JSON.stringify([].concat((o.teamChat || []).slice(-40).map(m => ({ at:m.at, by:m.by, where:m.space, text:String(m.text || "").slice(0, 400), files:(m.links || []).map(l => ({ name:l.name, url:l.url })).concat((m.files || []).filter(n => !(m.links || []).some(l => l.name === n)).map(n => ({ name:n }))) })), (o.mails || []).slice(-15).map(m => ({ at:m.date, by:m.from, where:"email: " + (m.subject || ""), text:String(m.text || "").slice(0, 300), files:(m.files || []).map(n => ({ name:n })) }))).sort((a, b) => String(a.at).localeCompare(String(b.at))))}
 LIVE CHECK AT THE SOURCE:
 ${o.verify ? verifyText(o.verify) : "not run yet"}`.slice(0, 90000);
   const r = await askAI("pack", "claude-sonnet-5-5", system, user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);

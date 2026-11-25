@@ -60,7 +60,8 @@ export async function syncOrder(o){
         for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
           const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=50&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
           for(const m of (ms.messages || []).reverse()) if(!(o.teamChat || []).some(x => x.id === m.name))
-            out.chat.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) });
+            out.chat.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean),
+              links:(m.attachment || []).filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId })) });
         } }catch(e){ out.errors.chat = e.message; }
     }
   }
@@ -100,8 +101,15 @@ export async function docCandidates(orders){
       (await list("trashed=false and (" + terms.map(t => "fullText contains '" + t.replace(/'/g, "") + "'").join(" or ") + ")")).forEach(f => add(f, a.email, "its text contains this client's site")); }
   }
   // Drive links the team wrote in emails and chats
-  for(const o of orders) for(const t of [].concat((o.mails || []).map(m => m.text), (o.teamChat || []).map(m => m.text))){
-    for(const m of String(t || "").matchAll(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s)>"]+/g)){ const id = (m[0].match(/\/d\/([\w-]{15,})|[?&]id=([\w-]{15,})/) || []).slice(1).find(Boolean); if(id && !out.has(id)) out.set(id, { id, name:"(linked in a team message)", link:m[0], via:"", why:["linked in " + o.id] }); } }
+  const F1 = "id,name,mimeType,modifiedTime,createdTime,webViewLink,owners(displayName,emailAddress),lastModifyingUser(displayName)";
+  for(const o of orders){
+    const msgs = [].concat((o.mails || []).map(m => ({ t:m.text, via:m.via, where:"an email (" + (m.subject || "") + ")", by:m.from, links:[] })), (o.teamChat || []).map(m => ({ t:m.text, via:m.via, where:"the project group " + (m.space || ""), by:m.by, links:m.links || [] })));
+    for(const g of msgs){ const ids = new Set(g.links.map(l => l.id));
+      for(const m of String(g.t || "").matchAll(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s)>"]+/g)){ const id = (m[0].match(/\/d\/([\w-]{15,})|[?&]id=([\w-]{15,})/) || []).slice(1).find(Boolean); if(id) ids.add(id); }
+      for(const id of ids){ if(out.has(id)){ out.get(id).posted = "posted in " + g.where + " by " + g.by; continue; }
+        let f = null; if(g.via) try{ f = await apiAs(g.via, "https://www.googleapis.com/drive/v3/files/" + id + "?supportsAllDrives=true&fields=" + encodeURIComponent(F1)); }catch(e){}
+        out.set(id, f && f.id ? { id, name:f.name, mime:f.mimeType, modified:f.modifiedTime, created:f.createdTime, link:f.webViewLink, by:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", owner:(f.owners || [])[0] ? f.owners[0].displayName || f.owners[0].emailAddress : "", via:g.via, why:["posted in " + g.where + " by " + g.by], posted:"posted in " + g.where + " by " + g.by, order:o.id }
+          : { id, name:"(linked in a team message)", link:"https://drive.google.com/file/d/" + id + "/view", via:g.via || "", why:["posted in " + g.where + " by " + g.by], posted:"posted in " + g.where + " by " + g.by, order:o.id }); } } }
   return [...out.values()];
 }
 export async function docPeek(c){
