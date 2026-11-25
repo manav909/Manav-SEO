@@ -767,6 +767,11 @@ async function buildCheck(o, fresh){
   o.readLog = { at:now(), docs:readLog, messages:(o.teamChat || []).length, groups:Object.values(o.chatFull || {}).map(g => g) };
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
+  // Pages the team's files say were changed are read live by the desk itself, so nobody is asked to "confirm" what the desk can see
+  { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), urls = [];
+    for(const x of reads) for(const ln of String(x.content).split("\n")) if(/updated|done|fixed|changed|new title|rewritten/i.test(ln))
+      for(const m of ln.matchAll(/https?:\/\/[^\s"'<>|,\t]+/g)){ const u = m[0].replace(/[.)]+$/, ""); if(domOf(u) === h && !seen.has(u) && !/\.(xml|txt|jpg|png|pdf)$/i.test(u)){ seen.add(u); urls.push(u); } }
+    for(const u of urls.slice(0, 10)) try{ probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, await probe(o.client.website, { url:u, look:"title" }))); }catch(e){} }
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
@@ -801,7 +806,13 @@ async function buildCheck(o, fresh){
   for(const row of o.check.rows || []){ const ov = (o.overrides || {})[row.r]; if(!ov) continue;
     if(ov.decision === "accepted" && row.status !== "done"){ row.status = "done"; row.found = "Accepted by " + ov.by + " (manager) in the project group" + (ov.note ? ": " + ov.note : ""); row.toPass = ""; row.where = ""; row.check = ""; row.proofUrl = ""; }
     if(ov.decision === "reopened" && row.status === "done"){ row.status = "partly"; row.toPass = "Reopened by " + ov.by + " (manager): " + (ov.note || "see the project group"); } }
-  if((o.check.rows || []).length && (o.check.rows || []).every(r => r.status === "done" || ((o.check.requirements || []).find(q => q.id === r.r) || {}).phase !== "project")) o.check.readyForQA = true;
+  // The group message decides what the team is asked for. An open item nobody asked for (no email, KT note, group message or client chat
+  // asks for it) is not asked from the team, so it does not block QA either: the portal and the group always say the same thing.
+  try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){}
+  const notAsked = new Set((o.groupMsgLeftOut || []).map(x => x.id));
+  for(const row of o.check.rows || []){ if(notAsked.has(row.r) && row.status !== "done") row.notAsked = true; else delete row.notAsked; }
+  for(const d of o.deliverables || []){ if(d.req && notAsked.has(d.req) && !d.done) d.notAsked = true; else delete d.notAsked; }
+  if((o.check.rows || []).length && (o.check.rows || []).every(r => r.status === "done" || r.notAsked || ((o.check.requirements || []).find(q => q.id === r.r) || {}).phase !== "project")) o.check.readyForQA = true;
   // A requirement the check finds done is ticked, with what proved it; when every one is done the order moves to QA
   let ticked = 0;
   for(const row of o.check.rows || []){ const d = (o.deliverables || []).find(x => x.req === row.r); if(!d) continue; row.d = d.id; d.status = row.status;
@@ -811,9 +822,8 @@ async function buildCheck(o, fresh){
       else if(!u){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"check", url:"", name:"Order check: " + str(row.found, 120), at:now(), by:"Order check", auto:str(row.found, 200) }); delete d.proof; } }
     if(["not done", "partly"].includes(row.status) && d.done && proofsOf(d).every(p => p.by === "Order check")){ d.done = false; } }
   if(ticked) log(o, { name:"Order desk" }, ticked + " requirement" + (ticked > 1 ? "s" : "") + " confirmed done by the order check");
-  if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && !staleProofs(o).length){
+  if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done || d.notAsked) && o.deliverables.some(d => d.done) && !staleProofs(o).length){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
-  try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){}
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
@@ -925,7 +935,7 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const norm = t => String(t || "").toLowerCase().replace(/[\u2018\u2019\u201c\u201d'"]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
   const prove = p2 => { const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
     const order = ["requirement email", "follow up email", "KT note", "project group", "client chat"], want = String(p2.source || "").toLowerCase();
-    const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => (x.key.toLowerCase() === want ? -1 : 0) - (y.key.toLowerCase() === want ? -1 : 0) || order.indexOf(x.key) - order.indexOf(y.key))[0];
+    const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key))[0];
     return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
   const seen = new Set(), pts = [], left = [];
   for(const p2 of d.points || []){ const it = open.find(x => x.id === p2.id); if(!it) continue;

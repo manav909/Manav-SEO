@@ -521,6 +521,7 @@ function drawOrder(){
           ${dr && dr.html ? `<details class="mx" style="width:100%"><summary>Read the draft here</summary><div class="repv">${dr.html.replace(/<(?!\/?(h1|h2|p|ul|ol|li|b|table|tr|th|td)\b)[^>]*>/g, "")}</div></details>` : ""}</div>`; })()}
      ${rows.length ? L(rows, r => { const req = (ck.requirements || []).find(q => q.id === r.r) || {}, st = ST[r.status] || [r.status, "n"], d = r.d && dOf(r.d);
         return `<div class="wrow ${st[1]}"><div class="wrh"><div><b>${E(req.text || "")}</b>${req.type ? ` <span class="ty">${E(TY[req.type] || req.type)}</span>` : ""}</div>${chip(st[0], st[1])}</div>
+          ${r.notAsked ? `<p class="wrule"><span>Not asked</span>No email, KT note, group message or client chat asks for this, so the team is not asked for it and it does not stop QA. Keep it as a suggestion, ask for it in the group yourself, or discard it.</p>` : ""}
           ${req.askedIn && req.askedIn.where ? `<p class="wrule"><span>Asked in</span>${E(req.askedIn.where)}${req.askedIn.when ? ", " + E(req.askedIn.when) : ""}${req.askedIn.quote && !(PJ && /client chat|call/i.test(req.askedIn.where)) ? `: <i>“${E(req.askedIn.quote)}”</i>` : ""}</p>` : ""}
           ${req.why ? `<p class="wrule"><span>Why</span>${E(req.why)}</p>` : ""}
           ${req.doneWhen ? `<p class="wrule"><span>Done when</span>${E(req.doneWhen)}</p>` : ""}
