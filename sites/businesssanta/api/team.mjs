@@ -298,7 +298,7 @@ function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     check:o.check ? Object.assign({}, o.check, { chatNotInMail:undefined }) : null,
-    draftReport:o.draftReport, deskPosts:o.deskPosts,
+    draftReport:o.draftReport, deskPosts:o.deskPosts, stepLog:o.stepLog, overrides:o.overrides,
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
@@ -748,6 +748,11 @@ async function buildCheck(o, fresh){
   // Only project work goes through QA: delivery and client items leave the deliverables (kept with their proof if any)
   if((o.deliverables || []).every(d => d.req)){ const proj = new Set(reqs.filter(r => r.phase === "project").map(r => r.id)), out = o.deliverables.filter(d => !proj.has(d.req));
     if(out.length){ o.deliverables = o.deliverables.filter(d => proj.has(d.req)); log(o, { name:"Order desk" }, "Moved out of the QA gate (delivery or client items): " + out.map(d => str(d.text, 60)).join("; ")); } }
+  // A manager's word in the project group settles a requirement either way
+  for(const row of o.check.rows || []){ const ov = (o.overrides || {})[row.r]; if(!ov) continue;
+    if(ov.decision === "accepted" && row.status !== "done"){ row.status = "done"; row.found = "Accepted by " + ov.by + " (manager) in the project group" + (ov.note ? ": " + ov.note : ""); row.toPass = ""; row.where = ""; row.check = ""; row.proofUrl = ""; }
+    if(ov.decision === "reopened" && row.status === "done"){ row.status = "partly"; row.toPass = "Reopened by " + ov.by + " (manager): " + (ov.note || "see the project group"); } }
+  if((o.check.rows || []).every(r => r.status === "done" || ((o.check.requirements || []).find(q => q.id === r.r) || {}).phase !== "project")) o.check.readyForQA = true;
   // A requirement the check finds done is ticked, with what proved it; when every one is done the order moves to QA
   let ticked = 0;
   for(const row of o.check.rows || []){ const d = (o.deliverables || []).find(x => x.req === row.r); if(!d) continue; row.d = d.id; d.status = row.status;
@@ -812,7 +817,7 @@ function stepsText(o){
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || ""));
   if(!path.length && !open.length) return "";
   const lines = path.length ? path.map((p, i) => `${i + 1}. ${p.who}: ${p.do}${p.where ? "\n   Where: " + p.where : ""}${p.check ? "\n   Then: " + p.check : ""}`) : open.map((r, i) => `${i + 1}. ${r.who || "Team"}: ${r.toPass}${r.where ? "\n   Where: " + r.where : ""}${r.check ? "\n   Then: " + r.check : ""}`);
-  return `*${domOf(o.client.website)}: what to do next*\n\n${lines.join("\n\n")}\n\nWhen you finish a step, write "done" here. Have a question? Reply in this thread.`;
+  return `*${domOf(o.client.website)}: what to do next*\n\n${lines.join("\n\n")}\n\nPM, please approve these steps or suggest another way here.\nWhen you finish a step, write "done" here. Have a question? Reply in this thread.`;
 }
 async function postSteps(o, cfg, by){
   const as = await poster(cfg); if(!as) throw new Error("Choose the account to post as in Team and settings, and connect it with Google Chat permission");
@@ -926,12 +931,22 @@ export async function chatAnswers(){
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
       if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
       if(!mine.has(m.sender) && (threads.has(m.thread) || /^\s*done\b/i.test(m.text))){ const lp = (o.deskPosts || []).filter(p => p.at <= m.at).slice(-1)[0]; if(lp && !(o.replied || {})[lp.name + m.by]){ (o.replied = o.replied || {})[lp.name + m.by] = 1; await perfEv({ type:"reply", who:m.by, order:o.id, minutes:Math.round((Date.parse(m.at) - Date.parse(lp.at)) / 6e4) }); } }
-      if(!asked || mine.has(m.sender) && cfg.deskTag !== false) continue;
+      const sRole = ((await people()).find(p2 => p2.name && String(m.by || "").toLowerCase().startsWith(p2.name.toLowerCase().split(" ")[0])) || {}), sRoles = sRole.id ? rolesOf(sRole) : [];
+      const isMgr = sRoles.includes("manager"), isPM = sRoles.includes("pm");
+      if(!asked && !((isMgr || isPM) && threads.has(m.thread))) continue;
+      if(mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
       const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Answer in two to five short lines, plainly, from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
-Answer with one JSON object only: {"genuine":true,"topic":"two to four words","qtype":"work | technical | access | client | other","answer":"","needsHuman":false,"who":"Sales | PM | manager"}`;
-      const user = `QUESTION from ${m.by}: ${m.text}
+Every step you give is a proposal open to the PM's approval. The SENDER ROLE tells you who wrote:
+If the PM approves, thank them in one line and record it. If the PM disagrees or suggests another way, judge it fairly against the requirement and what the client needs: if their way still gets the work done right, accept it warmly and say what changes; if not, politely give ONE clear reason and a helpful option. If you already argued this point before (see EARLIER), accept the PM's decision, say you have noted the risk, and do not argue again.
+A MANAGER has the final word on any situation, because they know how to handle the client: if the manager says something is fine, accepted, or to go ahead, accept it, thank them and record it; if they reopen something, accept that too. For each requirement they settle, add it to "settled".
+Always be polite, kind and respectful to everyone.
+Answer with one JSON object only: {"genuine":true,"intent":"question | approval | counter | manager decision | done | other","topic":"two to four words","qtype":"work | technical | access | client | other","answer":"","argued":false,"accepted":false,"settled":[{"r":"requirement id","decision":"accepted | reopened","note":""}],"record":"one line for the order history","needsHuman":false,"who":"Sales | PM | manager"}`;
+      const user = `SENDER ROLE: ${isMgr ? "manager" : isPM ? "PM" : sRoles.join(", ") || "team member"}
+EARLIER ON THIS ORDER (PM and manager responses): ${JSON.stringify((o.stepLog || []).slice(-8))}
+REQUIREMENT IDS: ${JSON.stringify((ck.requirements || []).map(q => ({ id:q.id, text:q.text })))}
+MESSAGE from ${m.by}: ${m.text}
 ORDER FACTS: site ${o.client.website}, stage ${o.stage}.
 REQUIREMENTS AND STATUS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, phase:((ck.requirements || []).find(q => q.id === r.r) || {}).phase, doneWhen:((ck.requirements || []).find(q => q.id === r.r) || {}).doneWhen, status:r.status, found:r.found, toPass:r.toPass, where:r.where, check:r.check })))}
 ACCESS: ${JSON.stringify((pv.access || []).map(a => ({ item:a.item, level:a.level, status:a.status })))}
@@ -947,6 +962,11 @@ SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
         await postChat(as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), m.thread);
         log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
         if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
+        if(["approval", "counter", "manager decision"].includes(d.intent)) (o.stepLog = o.stepLog || []).push({ at:now(), by:m.by, role:isMgr ? "manager" : isPM ? "PM" : "team", intent:d.intent, said:str(m.text, 300), argued:!!d.argued, accepted:!!d.accepted, record:str(d.record, 240) });
+        if(isMgr) for(const st2 of (d.settled || []).slice(0, 10)){ if(!(ck.requirements || []).some(q => q.id === st2.r)) continue; (o.overrides = o.overrides || {})[st2.r] = { decision:st2.decision === "reopened" ? "reopened" : "accepted", by:m.by, at:now(), note:str(st2.note, 240) };
+          log(o, { name:"Order desk" }, "Manager " + m.by + " " + (st2.decision === "reopened" ? "reopened" : "accepted") + ": " + str(((ck.requirements || []).find(q => q.id === st2.r) || {}).text, 100) + (st2.note ? " (" + str(st2.note, 120) + ")" : "")); }
+        if(d.record) log(o, { name:"Order desk" }, m.by + ": " + str(d.record, 200));
+        if(isMgr && (d.settled || []).length) o.checkAt = "";
         changed = true; done.push(o.id + " answered"); }catch(e){ done.push(o.id + " answer: " + e.message); }
     }
     await saveO(o);
