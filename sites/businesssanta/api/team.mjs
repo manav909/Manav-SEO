@@ -593,6 +593,22 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
       x.edited = now(); x.editedBy = w.name; log(o, w, "Edited \"" + x.title.slice(0, 70) + "\" before sending"); }
     else if(op === "actSkip"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); const why = str(q.why, 300); if(!why) return bad("Say why this step is not needed");
       x.status = "skipped"; x.note = why; x.at = now(); x.by = w.name; log(o, w, "Skipped \"" + x.title.slice(0, 70) + "\": " + why); }
+    else if(op === "pmAnswer"){ if(!can(w, "pm") && !can(w, "comms")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
+      const list = Array.isArray(q.answers) ? q.answers : [], files = await saveFiles(q.files); let n = 0;
+      for(const an of list){ const qq = (x.questions || [])[num(an.n, 0)]; if(!qq) continue;
+        if(an.disagree){ const why = redact(str(an.reason, 400)); if(!why) return bad("Say why you disagree with question " + (num(an.n, 0) + 1)); qq.status = "disagree"; qq.reason = why; qq.by = w.name; n++; }
+        else if(str(an.answer, 10)){ qq.status = "answered"; qq.answer = redact(str(an.answer, 600)); qq.by = w.name; n++; } }
+      if(!n && !files.length) return bad("Answer at least one question, or say which ones you disagree with");
+      const text = (x.questions || []).map((qq, i) => (i + 1) + ". " + (qq.status === "disagree" ? "Disagree: " + qq.reason : qq.answer || "(no answer yet)")).join("\n") + (str(q.note, 10) ? "\n\n" + redact(str(q.note, 1500)) : "");
+      (x.replies = x.replies || []).push({ text, files, at:now(), by:w.name, summary:n + " of " + x.questions.length + " answered or disputed" });
+      const dis = x.questions.filter(qq => qq.status === "disagree"), left = x.questions.filter(qq => !["answered", "disagree"].includes(qq.status));
+      x.status = dis.length ? "decide" : left.length ? "waiting" : "done";
+      x.statusWhy = dis.length ? w.name + " disagrees on " + dis.length + ": " + dis.map(qq => qq.reason).join("; ").slice(0, 300) : left.length ? left.length + " of " + x.questions.length + " still open" : "All answered by " + w.name; x.at = now(); x.by = w.name;
+      if(left.length && !dis.length) x.message = internalText(o, x);
+      (o.notes = o.notes || []).push({ id:nid("n"), kind:"team", title:"Team reply: " + x.title.slice(0, 80), text, files, from:w.name, at:now(), by:w.name });
+      log(o, w, "Answered \"" + x.title.slice(0, 60) + "\": " + x.statusWhy);
+      if(aiOn()) try{ await rethink(o, "TEAM ANSWERS to \"" + x.title + "\":\n" + text); }catch(e){}
+      o.lastUpdateAt = now(); o.lastUpdateBy = w.name; }
     else if(op === "actObject"){ need("pm"); const x = find("actions", q.aid); if(!x) return bad("Not found"); const qq = (x.questions || [])[num(q.qn, 0)]; if(!qq) return bad("Not found");
       const why = str(q.why, 400); if(!why) return bad("Say why you do not agree"); qq.status = "disagree"; qq.reason = why; qq.by = w.name;
       x.status = "decide"; x.statusWhy = w.name + " disagrees: " + why; x.at = now(); x.by = w.name; log(o, w, "Disagrees with \"" + qq.q.slice(0, 80) + "\": " + why); }

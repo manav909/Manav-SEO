@@ -194,6 +194,10 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .swot{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}.swot>div{border-radius:10px;padding:10px 12px;background:var(--raise);font-size:13.5px}.swot span{font-size:11.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
 .swot ul{margin:6px 0 0;padding-left:16px;color:var(--sub)}.swot .s span{color:var(--ok)}.swot .w span{color:var(--bad)}.swot .o span{color:var(--y)}.swot .t span{color:var(--warn)}
 @media(max-width:620px){.swot{grid-template-columns:1fr}}
+.pq{display:flex;flex-direction:column;gap:10px;margin:12px 0 0 22px}.pqi{background:var(--raise);border-radius:10px;padding:10px 12px}.pqi.answered{opacity:.8}.pqi.disagree{border-left:3px solid var(--bad)}
+.pqh{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.pqh b{color:var(--ink);font-size:14px;line-height:1.45}.pqi textarea{min-height:54px;margin-top:8px;font-size:14px}.pqi input[data-pr]{margin-top:8px;min-height:38px;font-size:14px}
+.pqd{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:12.5px;color:var(--mut);cursor:pointer}.pqd input{width:auto;min-height:0}
+@media(max-width:620px){.pq{margin-left:0}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -697,16 +701,20 @@ async function myWork(accessOnly){
    + `<div class="og"><div>${accessOnly ? "" : sec("Questions for you", "Sales needs these answers to reply to clients. Answer in your own words; screenshots help.", items.map(x => `<div class="inb ${x.urgency}"><div class="ach"><span class="dot ${U[x.urgency][1] === "n" ? "y" : U[x.urgency][1]}"></span><div class="tx"><b>${E(x.site)} · ${E(x.title)}</b>
        <div class="dvs"><span class="chip ${U[x.urgency][1]}">${U[x.urgency][0]}</span>${x.needBy ? `<span class="chip n">Reply by ${E(x.needBy)}</span>` : ""}<span class="chip n">Order due ${fmtD(x.deadline)}</span><a class="sub" style="margin:0" href="#o=${E(x.order)}">Open order</a></div></div></div>
        ${x.shared ? `<div class="msg" style="margin:10px 0 0 22px"><span class="sub">Client wrote${x.shared.time ? " (" + E(x.shared.time) + ")" : ""}:</span>\n${E(x.shared.text)}</div>` : ""}
-       <ol class="qlist">${x.questions.map(q => `<li><span>${E(q.q)}</span>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${{ answered:"Answered", partial:"Partly", missing:"No answer", disagree:"You disagreed" }[q.status] || q.status}</span>` : ""}</li>`).join("")}</ol>
-       <div class="rbox"><textarea data-irt="${x.order}|${x.id}" placeholder="Your answer, with the numbers (paste screenshots here too)"></textarea>${attUI("i" + x.id)}<div class="row" style="gap:8px"><button class="btn sm pri" data-isend="${x.order}|${x.id}">Send answer</button><button class="lnk" data-idis="${x.order}|${x.id}">I disagree with these questions</button></div></div></div>`).join("") || `<p class="note">Nothing waiting for you. Well done.</p>`)}</div>
+       <div class="pq">${x.questions.map((q, i) => `<div class="pqi ${q.status || ""}"><div class="pqh"><b>${i + 1}. ${E(q.q)}</b>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${{ answered:"Answered", partial:"Partly", missing:"No answer", disagree:"You disagreed" }[q.status] || q.status}</span>` : ""}</div>
+         ${q.status === "answered" ? `<div class="qa2">${E(q.answer || "")}</div>` : q.status === "disagree" ? `<div class="qa2" style="color:var(--bad)">${E(q.reason || "")}</div>` : `<textarea data-pa="${x.id}|${i}" placeholder="Your answer"></textarea>
+         <label class="pqd"><input type="checkbox" data-pd="${x.id}|${i}"> I disagree with this question</label><input class="hide" data-pr="${x.id}|${i}" placeholder="Why, and what should we do instead?">`}</div>`).join("")}</div>
+       <div class="rbox"><textarea data-irt="${x.order}|${x.id}" placeholder="Anything else for sales (optional). Paste screenshots here too." style="min-height:60px"></textarea>${attUI("i" + x.id)}<button class="btn sm pri" data-isend="${x.order}|${x.id}">Send answers</button></div></div>`).join("") || `<p class="note">Nothing waiting for you. Well done.</p>`)}</div>
    <div>${sec(accessOnly ? "Access on your orders" : "Your orders", accessOnly ? "Mark each access item in the order once you have checked the level." : "Newest due first. Red means it needs you now.", orders.map(o => `<a class="oc ${o.flags.some(f => f.k === "bad") ? "blink" : ""}" href="#o=${E(o.id)}"${accessOnly ? "" : ""}><b>${E(o.site || o.id)}</b>${E(o.id)} · ${E(SN[o.stage] || o.stage)} · due ${fmtD(o.deadline)}<br>${o.accessLeft ? `<span style="color:var(--warn)">${o.accessLeft} access missing</span> · ` : ""}${o.done} of ${o.total} deliverables done
       <div class="fl">${o.flags.slice(0, 3).map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}</div></a>`).filter((h, i) => !accessOnly || orders[i].accessLeft).join("") || `<p class="note">${accessOnly ? "All access is in on your orders." : "No open orders."}</p>`)}</div></div>`;
   document.querySelectorAll("[data-irt]").forEach(t => wireAtt("i" + t.dataset.irt.split("|")[1], t));
-  document.querySelectorAll("[data-isend]").forEach(b => b.onclick = async () => { const [oid, aid] = b.dataset.isend.split("|"), t = document.querySelector(`[data-irt="${b.dataset.isend}"]`).value.trim(), fs = FILES["i" + aid] || [];
-    if(!t && !fs.length) return toast("Write your answer first", 1);
-    const r = await act(() => api("do", { id:oid, op:"actReply", aid, text:t, files:fs }), "Sending your answer to sales…"); if(r){ delete FILES["i" + aid]; toast("Sent. Thank you."); myWork(); } });
-  document.querySelectorAll("[data-idis]").forEach(b => b.onclick = async () => { const [oid, aid] = b.dataset.idis.split("|"), w = prompt("What do you disagree with, and what should we do instead?"); if(!w) return;
-    const r = await act(() => api("do", { id:oid, op:"actObject", aid, qn:0, why:w }), "Sending to sales…"); if(r){ toast("Sales will decide and come back to you."); myWork(); } });
+  document.querySelectorAll("[data-pd]").forEach(c => c.onchange = () => { const k = c.dataset.pd, r = document.querySelector(`[data-pr="${k}"]`), t = document.querySelector(`[data-pa="${k}"]`); r.classList.toggle("hide", !c.checked); t.classList.toggle("hide", c.checked); if(c.checked) r.focus(); });
+  document.querySelectorAll("[data-isend]").forEach(b => b.onclick = async () => { const [oid, aid] = b.dataset.isend.split("|"), it = items.find(i => i.id === aid), fs = FILES["i" + aid] || [];
+    const answers = it.questions.map((q, i) => { const k = aid + "|" + i, d = document.querySelector(`[data-pd="${k}"]`); if(!d) return null; return d.checked ? { n:i, disagree:true, reason:document.querySelector(`[data-pr="${k}"]`).value.trim() } : { n:i, answer:document.querySelector(`[data-pa="${k}"]`).value.trim() }; }).filter(a => a && (a.disagree || a.answer));
+    if(answers.some(a => a.disagree && !a.reason)) return toast("Say why you disagree", 1);
+    if(!answers.length && !fs.length) return toast("Answer at least one question", 1);
+    const r = await act(() => api("do", { id:oid, op:"pmAnswer", aid, answers, note:document.querySelector(`[data-irt="${b.dataset.isend}"]`).value.trim(), files:fs }), "Sending your answers to sales…");
+    if(r){ delete FILES["i" + aid]; toast(answers.some(a => a.disagree) ? "Sent. Sales will decide on the ones you disagreed with." : "Sent. Thank you."); myWork(); } });
 }
 
 async function hodPage(refresh){
