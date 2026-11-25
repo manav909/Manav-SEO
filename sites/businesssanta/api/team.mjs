@@ -770,6 +770,7 @@ async function buildCheck(o, fresh){
   if(ticked) log(o, { name:"Order desk" }, ticked + " requirement" + (ticked > 1 ? "s" : "") + " confirmed done by the order check");
   if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && !staleProofs(o).length){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
+  try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){}
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
@@ -837,7 +838,19 @@ async function readCommon(){
 const groupOf = o => { const n = {}; (o.teamChat || []).filter(m => m.spaceId && !/access/i.test(m.space || "")).forEach(m => n[m.spaceId] = (n[m.spaceId] || 0) + 1); const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0]; return id ? { id, name:((o.teamChat || []).find(m => m.spaceId === id) || {}).space || "" } : null; };
 async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a = (await gAccounts()).find(x => x.email === as); return a && a.post ? a.email : null; }
 const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
+async function writeGroupMsg(o){
+  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
+  const steps = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || "")).map(p => ({ who:p.who, do:p.do, where:p.where }));
+  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || "")).map(r => ({ who:r.who, do:r.toPass, where:r.where }));
+  if(!steps.length && !open.length) return "";
+  const pm = (o.pmName || "").split(" ")[0];
+  const system = `You write one short message for a project team's group chat, like a friendly senior colleague. Very simple English a 4th grade child can follow. Start with "Hi team, for <site> we still need:" then a numbered list: one line per job, starting with the person's first name and a colon, then the job with exact values, then where to do it only if it helps (in a few words, with exact names like WordPress, Rank Math, Search Console, written with their normal capitals). Split jobs that are different. End with ${pm ? `"${pm}, does this plan work for you?" and ` : ""}"Write done here when a step is finished." No reasons, no explanations of checks, no dashes, no emojis. Answer with one JSON object only: {"message":""}`;
+  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `Site: ${domOf(o.client.website)}\nSTEPS: ${JSON.stringify(steps.length ? steps : open)}`, 1200);
+  o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  return str((r.data || {}).message, 3000);
+}
 function stepsText(o){
+  if(o.groupMsg && o.groupMsgAt && o.check && o.groupMsgAt >= o.check.at) return o.groupMsg;
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
   const path = (ck.pathToQA || []).filter(p => !/sales/i.test(p.who || ""));
   const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && r.toPass && !/sales/i.test(r.who || ""));
