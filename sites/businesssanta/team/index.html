@@ -71,6 +71,77 @@ ul.p{margin:0;padding-left:18px;color:var(--sub);font-size:14px}ul.p li{margin:3
 .bu .mt b{color:var(--sub)}
 .bu .fi{display:block;margin-top:6px;font-size:12.5px;color:var(--sub)}
 @media(max-width:620px){.bu{max-width:94%}}
+/* Order page */
+.ohero{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;align-items:flex-end;padding:22px 24px}
+.ohero h1{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0 6px}
+.hp{font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;letter-spacing:.02em}
+.hp.ok{background:rgba(52,211,153,.14);color:var(--ok)}.hp.warn{background:rgba(251,191,36,.14);color:var(--warn)}.hp.bad{background:rgba(248,113,113,.16);color:var(--bad)}
+.ometa{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:14px;color:var(--sub)}
+.oacts{display:flex;gap:8px;flex-wrap:wrap}
+.steps{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.steps span{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--mut);font-weight:600}
+.steps span i{font-style:normal;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:var(--raise);font-size:12px;flex:none}
+.steps span.on{border-color:var(--y);color:var(--ink)}.steps span.on i{background:var(--y);color:#0b0d14}
+.steps span.done{color:var(--sub)}.steps span.done i{background:rgba(52,211,153,.18);color:var(--ok)}
+@media(max-width:900px){.steps{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
+.kpis div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.kpis span{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mut)}
+.kpis b{font-size:22px;color:var(--ink);line-height:1.25}.kpis small{font-size:12.5px;color:var(--mut)}
+.kpis b.g,.money .g,.facts b.g{color:var(--ok)}.kpis b.r,.money .r,.facts b.r{color:var(--bad)}.kpis b.w{color:var(--warn)}
+@media(max-width:1100px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.attn{border-color:rgba(248,113,113,.45);background:linear-gradient(180deg,rgba(248,113,113,.07),var(--panel) 70%)}
+.attn h2{color:var(--bad);margin-bottom:6px}
+.arow{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--soft);font-size:14px;color:var(--sub)}.arow:last-child{border-bottom:0}
+.arow .tx{flex:1;min-width:0}.arow b{color:var(--ink)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.dot.y{background:var(--y)}
+.otabs{display:flex;gap:4px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;padding-top:6px}
+.otabs a{padding:12px 18px;text-decoration:none;color:var(--mut);font-weight:700;font-size:14.5px;border-bottom:3px solid transparent;margin-bottom:-1px}
+.otabs a.on{color:var(--ink);border-bottom-color:var(--y)}
+.otabs em{font-style:normal;background:var(--bad);color:#fff;border-radius:999px;padding:0 7px;font-size:12px;margin-left:4px}
+.os{padding:20px 22px}
+.osh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:14px}
+.osh h2{font-size:17px;margin:0}.why{font-size:13px;color:var(--mut);margin:4px 0 0;line-height:1.45}
+.lead{font-size:15.5px;line-height:1.6;color:var(--ink);margin:0}
+.nextbox{margin-top:14px;padding:12px 14px;border-radius:10px;background:rgba(253,185,19,.08);border:1px solid rgba(253,185,19,.3)}
+.nextbox p{margin:4px 0 0;color:var(--ink);font-weight:600}
+table.t2{width:100%;border-collapse:collapse;font-size:14px}
+table.t2 th{text-align:left;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mut);padding:0 10px 8px;border-bottom:1px solid var(--line)}
+table.t2 td{padding:11px 10px;border-bottom:1px solid var(--soft);vertical-align:top;color:var(--sub);line-height:1.45}
+table.t2 tr:last-child td{border-bottom:0}table.t2 td b{color:var(--ink)}
+table.t2 td.nw{white-space:nowrap}table.t2 td.num{color:var(--mut);font-weight:700}table.t2 tr.dn td{color:var(--mut)}
+table.t2 td.acts{white-space:nowrap;text-align:right}table.t2 td.acts .btn{margin-left:4px}
+.sub{font-size:12.5px;color:var(--mut);margin-top:3px}.sub.ev{color:var(--sub)}
+@media(max-width:700px){table.t2 thead{display:none}table.t2 tr{display:block;padding:10px 0;border-bottom:1px solid var(--soft)}table.t2 td{display:block;border:0;padding:3px 0}table.t2 td.acts{text-align:left}}
+ul.clean,ol.clean{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+ul.clean li,ol.clean li{position:relative;padding-left:18px;font-size:14px;color:var(--sub);line-height:1.5}
+ul.clean li:before{content:"";position:absolute;left:2px;top:9px;width:6px;height:6px;border-radius:50%;background:var(--y)}
+ol.clean{counter-reset:n}ol.clean li{padding-left:28px;counter-increment:n}ol.clean li:before{content:counter(n);position:absolute;left:0;top:1px;width:20px;height:20px;border-radius:50%;background:var(--raise);font-size:11.5px;font-weight:700;color:var(--sub);display:flex;align-items:center;justify-content:center}
+.tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;background:var(--raise);color:var(--y);border-radius:6px;padding:1px 6px;margin-right:6px}
+.plan{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:14px 16px;border-radius:12px;background:var(--raise)}
+.plan h3{margin:4px 0}.pp{font-size:18px;font-weight:800;color:var(--y);white-space:nowrap}
+.quote{display:flex;gap:10px;align-items:flex-start;margin-top:10px;padding:12px 14px;border-left:3px solid var(--y);background:rgba(253,185,19,.05);border-radius:0 10px 10px 0;font-size:14px;color:var(--ink);font-style:italic}
+.quote .btn{font-style:normal;flex:none;margin-left:auto}
+table.money{width:100%;border-collapse:collapse;font-size:14.5px}
+table.money td{padding:8px 0;border-bottom:1px solid var(--soft);color:var(--sub)}table.money td:last-child{text-align:right;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+table.money tr.tot td{border-bottom:0;border-top:2px solid var(--line);padding-top:12px;font-weight:800;font-size:17px;color:var(--ink)}
+table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
+.verdict{display:inline-block;font-size:18px;font-weight:800;text-transform:capitalize;padding:6px 14px;border-radius:10px;margin-bottom:10px}
+.verdict.bad{background:rgba(248,113,113,.14);color:var(--bad)}.verdict.ok{background:rgba(52,211,153,.13);color:var(--ok)}.verdict.y{background:rgba(253,185,19,.13);color:var(--y)}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.facts div{background:var(--raise);border-radius:10px;padding:10px 12px}.facts span{display:block;font-size:12px;color:var(--mut)}.facts b{font-size:15px;color:var(--ink)}
+.kt{white-space:pre-wrap;font-size:14px;line-height:1.6;color:var(--ink);background:var(--raise);border-radius:10px;padding:14px 16px}
+.dl{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px 14px;margin:0;font-size:14px}
+.dl dt{color:var(--mut);font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;padding-top:2px}.dl dd{margin:0;color:var(--ink);line-height:1.5}
+@media(max-width:520px){.dl{grid-template-columns:1fr}.dl dd{margin-bottom:6px}}
+.mcard{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.mcard.pend{border-color:rgba(251,191,36,.45)}.mcard.rep{border-color:rgba(253,185,19,.45)}
+.mh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}.mh .sub{margin:0}
+.digest{margin-top:10px;font-size:14px;color:var(--sub);background:var(--raise);border-radius:10px;padding:10px 12px}
+.dsep{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:12px;font-weight:700;margin:6px 0}.dsep:before,.dsep:after{content:"";flex:1;height:1px;background:var(--line)}
+.tl div{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--soft);font-size:14px;color:var(--sub)}.tl div .sub{flex:none;width:120px;margin:0}.tl b{color:var(--ink);margin-right:4px}
+.tl{max-height:none}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -198,22 +269,34 @@ function newOrder(){
 /* One order */
 let CUR = null;
 async function order(id){
+  if(!CUR || CUR.order.id !== id) OTAB = "overview";
   const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j; drawOrder();
 }
 async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…"); if(r){ CUR = r; drawOrder(); } return r; }
+let OTAB = "overview";
+const TODAY = () => new Date().toISOString().slice(0, 10);
+const fmtD = d => { if(!d) return ""; const x = new Date(d.length === 10 ? d + "T12:00:00" : d); return isNaN(x) ? E(d) : x.toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
+const kept = p => /kept/i.test(p.status || "");
+function health(o, x){
+  const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5), open = !["delivered","done","cancelled"].includes(o.stage);
+  const over = ((o.ai || {}).promises || []).filter(p => p.by && !kept(p) && p.by < TODAY()).length;
+  if(!open) return { k:"ok", t:o.stage === "cancelled" ? "Cancelled" : "Delivered", left, over };
+  if(left < 0) return { k:"bad", t:"Late", left, over };
+  if(over || left <= 1 || o.alert) return { k:"bad", t:"At risk", left, over };
+  if(left <= 2 || o.stage === "access") return { k:"warn", t:"Watch", left, over };
+  return { k:"ok", t:"On track", left, over };
+}
+function sec(title, why, body, extra){ return `<section class="card os"><div class="osh"><div><h2>${title}</h2>${why ? `<p class="why">${why}</p>` : ""}</div>${extra || ""}</div>${body}</section>`; }
 function drawOrder(){
   const o = CUR.order, x = CUR.econ, ai = o.ai || {}, gig = ME.gigs.find(g => g.id === o.gig) || {};
-  const si = STAGES.findIndex(s => s[0] === o.stage);
   const L = (arr, f) => (arr || []).map(f).join("");
   const pr = ai.price || {}, pf = ai.profile || {}, st = ai.site || {}, rt = ai.retainer || {};
+  const h = health(o, x), si = STAGES.findIndex(s => s[0] === o.stage);
+  const accOk = o.access.filter(a => ["received","skip"].includes(a.status)).length, delDone = o.deliverables.filter(d => d.done).length;
+  const proms = ai.promises || [], openP = proms.filter(p => !kept(p)).length;
+  const toSend = (o.queue || []).filter(m => !m.sent).length, newRep = (o.queue || []).filter(m => m.reply && !m.seen).length;
+  const vcol = /under/i.test(pr.verdict || "") ? "bad" : /bargain/i.test(pr.verdict || "") ? "ok" : "y";
   const pmOpt = r => `<option value="">Not set</option>` + ME.people.filter(p => p.role === r || p.role === "manager").map(p => `<option value="${p.id}" ${o[r] === p.id ? "selected" : ""}>${E(p.name)}</option>`).join("");
-  const acc = L(o.access, a => `<div class="ln"><div class="tx"><b>${E(a.item)}</b> <span class="chip ${a.status === "received" || a.status === "skip" ? "ok" : a.status === "wrong" ? "bad" : a.status === "asked" ? "warn" : "n"}">${{ needed:"Not asked yet", asked:"Asked", received:"Received, level checked", wrong:"Wrong level", skip:"Not needed" }[a.status]}</span><br>Level: ${E(a.level)}<br><span style="color:var(--mut)">${E(a.why)}${a.note ? " · " + E(a.note) : ""}</span></div>
-    ${can("pm") ? `<div class="ac"><button class="btn sm" data-acc="${a.id}" data-s="received">Received, level right</button><button class="btn sm danger" data-acc="${a.id}" data-s="wrong">Wrong level</button>${a.status !== "skip" ? `<button class="btn sm ghost" data-acc="${a.id}" data-s="skip">Not needed</button>` : ""}</div>` : ""}</div>`);
-  const del = L(o.deliverables, d => `<div class="ln"><div class="tx"><b>${d.done ? "✓ " : ""}${E(d.text)}</b>${d.proof ? `<br>Proof: <a href="${E(/^https?:/.test(d.proof) ? d.proof : "#")}" target="_blank" rel="noopener">${E(d.proof)}</a>` : `<br><span style="color:var(--mut)">No proof yet</span>`}${d.qa ? ` <span class="chip ${d.qa === "pass" ? "ok" : "bad"}">QA ${d.qa}</span>${d.qaNote ? " " + E(d.qaNote) : ""}` : ""}</div>
-    ${can("pm") && ["work"].includes(o.stage) ? `<div class="ac"><button class="btn sm" data-proof="${d.id}">${d.proof ? "Change proof" : "Add proof"}</button>${d.proof && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}</div>` : ""}</div>`);
-  const q = L((o.queue || []).slice().reverse(), m => `<div class="ln"><div class="tx"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions", delivery:"Delivery" }[m.kind] || "Message"}</b> <span class="chip ${m.kind === "reply" ? (m.seen ? "n" : "y") : m.sent ? "ok" : "warn"}">${m.kind === "reply" ? (m.seen ? "Read" : "New") : m.sent ? "Sent" : "To send"}</span> <span style="color:var(--mut)">${E(m.by)}, ${new Date(m.at).toLocaleString()}</span>
-    <div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div>${m.digest ? `<p style="margin:8px 0 0"><b>What it means:</b> ${E(m.digest.summary)}${m.digest.scopeChange ? `<br><b style="color:var(--bad)">New request:</b> ${E(m.digest.scopeChange)}` : ""}${(m.digest.actions || []).length ? "<br><b>Do now:</b> " + m.digest.actions.map(E).join("; ") : ""}</p>` : ""}</div>
-    <div class="ac">${!m.sent && can("comms") ? `<button class="btn sm" data-copy="${m.id}">Copy</button><button class="btn sm pri" data-sent="${m.id}">Mark sent</button>` : ""}${!m.sent && can("pm") ? `<button class="btn sm ghost" data-drop="${m.id}">Not needed</button>` : ""}${m.kind === "reply" && !m.seen ? `<button class="btn sm" data-seen="${m.id}">Got it</button>` : ""}</div></div>`);
   const nextBtn = {
     access: can("assign") ? `<button class="btn" id="anyway">Start before all access is in</button>` : "",
     work: can("pm") ? `<button class="btn pri" id="toqa">Send to QA</button>` : "",
@@ -221,45 +304,101 @@ function drawOrder(){
     ready: can("comms") ? `<button class="btn pri" id="deliver">Delivered to the client</button>` : "",
     delivered: can("comms") ? `<button class="btn danger" id="rev">Client asked for a revision</button><button class="btn pri" id="close">Client accepted: close</button>` : ""
   }[o.stage] || "";
-  app.innerHTML = tabs("board") + `<div class="card"><div class="ohead"><div><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)}</div><h1>${E(o.client.name || "Client")}</h1>
-   <div class="note">${o.client.country ? E(o.client.country) + " · " : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website)}</a> · ` : ""}Due ${E(o.deadline)} · Sold by ${E(o.byName)}</div>
-   <div class="fl" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${CUR.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.alert ? `<button class="btn sm" id="clr">Checked, clear alert</button>` : ""}</div></div>
-   <div class="row" style="gap:8px;flex-wrap:wrap">${nextBtn}</div></div>
-   <div class="steps" style="margin-top:14px">${STAGES.map((s, i) => `<span class="${i === si ? "on" : i < si ? "done" : ""}">${i < si ? "✓ " : ""}${s[1]}</span>`).join("")}${o.stage === "cancelled" ? `<span class="on">Cancelled</span>` : ""}</div></div>
-  <div class="og"><div>
-   <div class="card"><h2>What we sold, in plain words</h2>${ai.summary ? `<p>${E(ai.summary)}</p>` : `<p class="note">${ME.ai ? "Not ready yet." : "Turns on with the AI helpers."}</p>`}
-    ${ai.next ? `<div class="note" style="border-color:var(--y);margin:10px 0"><b>Next:</b> ${E(ai.next)}</div>` : ""}
-    ${(ai.promises || []).length ? `<div class="lbl" style="margin:12px 0 6px">What we promised the client</div><ul class="p">${L(ai.promises, p => `<li>${/kept/i.test(p.status || "") ? "✓ " : ""}${E(p.what)}${p.by ? ` <span class="chip ${/kept/i.test(p.status || "") ? "ok" : p.by <= new Date().toISOString().slice(0, 10) ? "bad" : "n"}">${E(p.by)}</span>` : ""}</li>`)}</ul>` : ""}
-    ${(ai.done || []).length ? `<div class="lbl" style="margin:12px 0 6px">Already done (from the chat)</div><ul class="p">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>` : ""}
-    ${ai.kt ? `<div class="lbl" style="margin:10px 0 6px">Handover note for the project team</div><div class="msg">${E(ai.kt)}</div>` : ""}
-    ${(ai.remarks || []).length || o.remarks ? `<div class="lbl" style="margin:12px 0 6px">Special remarks</div><ul class="p">${o.remarks ? `<li><b>From sales:</b> ${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>` : ""}
-    ${(ai.risks || []).length ? `<div class="lbl" style="margin:12px 0 6px">Where this order could go wrong</div><ul class="p">${L(ai.risks, r => `<li><b>${E(r.risk)}</b>: ${E(r.prevent)}</li>`)}</ul>` : ""}
-    ${(ai.questions || []).length ? `<div class="lbl" style="margin:12px 0 6px">Confirm with the client before starting</div><ul class="p">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>
-   <div class="card"><div class="ohead"><h2>Client conversation</h2><div class="row" style="gap:6px">${o.convo ? `<button class="btn sm" id="rawT">Show the original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out the conversation"}</button>` : ""}</div></div>
-    ${o.convo ? `<p class="note" style="margin:0 0 10px">${o.convo.messages.length} messages · <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.</p>
-    <div class="cv" id="cv">${L(o.convo.messages, m => `<div class="bu ${m.who === "us" ? "u" : "c"}"><span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E(m.time) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">Attachment: ${m.files.map(E).join(", ")}</span>` : ""}</div>`)}</div>` : `<p class="note">${ME.ai ? "Not laid out yet." : "Turns on with the AI helpers."} The original paste is below.</p>`}
-    <div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>
-    ${o.calls ? `<div class="lbl" style="margin:12px 0 6px">Call notes</div><div class="msg">${E(o.calls)}</div>` : ""}</div>
-   <div class="card"><h2>1. Access <span class="chip ${o.access.every(a => ["received", "skip"].includes(a.status)) ? "ok" : "warn"}">${o.access.filter(a => ["received", "skip"].includes(a.status)).length} of ${o.access.length}</span></h2><p class="note">Work starts only when every item is received and the level is checked. Wrong level is the most common reason for lost days.</p>${acc}
-    ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:8px">Add an access item</button>` : ""}</div>
-   <div class="card"><h2>2. Work and proof</h2><p class="note">Every deliverable needs proof: a live link, a report link or a screenshot link. QA only gets work that has proof for everything.</p>${del}
-    ${can("pm") && o.stage === "work" ? `<div class="row" style="gap:8px;margin-top:8px"><button class="btn sm" id="adddel">Add a deliverable</button><button class="btn sm" id="hrs">Log hours</button><button class="btn sm" id="ask">Ask the client something</button></div>` : ""}
-    ${(ai.qa || []).length ? `<div class="lbl" style="margin:12px 0 6px">What QA will check</div><ul class="p">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>
-   <div class="card"><h2>Client messages</h2><p class="note">Only the client messages person sends these on the marketplace. Paste every client reply here so the team sees it at once.</p>${q || `<p class="note">No messages yet.</p>`}
-    ${can("comms") ? `<label class="f" style="margin-top:10px">Client's new message<textarea id="rep" placeholder="Paste the client's reply here"></textarea></label><button class="btn sm" id="repb" style="margin-top:8px">Add the reply</button>` : ""}</div>
-  </div><div>
-   <div class="card"><h2>Money on this order</h2><div class="kv"><div>Price<b>${money(x.price)}</b></div><div>Marketplace fee<b>${money(x.fee)}</b></div><div>Team cost<b>${money(x.team)}</b>${x.hours} h</div><div>AI cost<b>${money(x.ai)}</b></div></div>
-    <div class="kv" style="margin-top:10px"><div style="grid-column:span 2">We keep<b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)} (${x.margin}%)</b></div><div style="grid-column:span 2">Planned<b>${money(x.planNet)} (${x.planMargin}%)</b>${x.planHours} h planned</div></div>
-    ${pr.verdict ? `<div style="margin-top:14px"><div class="lbl">Price check</div><div class="verdict" style="color:${/under/i.test(pr.verdict) ? "var(--bad)" : /bargain/i.test(pr.verdict) ? "var(--ok)" : "var(--y)"}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note">Fair price for this scope: ${E(pr.fair)}</p></div>` : ""}</div>
-   ${can("assign") ? `<div class="card"><h2>Team on this order</h2><div class="grid" style="gap:10px"><label class="f">Project team<select id="pmS">${pmOpt("pm")}</select></label><label class="f">QA<select id="qaS">${pmOpt("qa")}</select></label></div></div>` : `<div class="card"><h2>Team</h2><p>Project team: ${E(o.pmName || "not set")}<br>QA: ${E(o.qaName || "not set")}</p></div>`}
-   ${pf.goal ? `<div class="card"><h2>Client profile</h2><ul class="p"><li><b>Type:</b> ${E(pf.type)}</li><li><b>Really wants:</b> ${E(pf.goal)}</li><li><b>Talks like:</b> ${E(pf.style)}</li><li><b>Watch out:</b> ${E(pf.watch)}</li><li><b>Budget signal:</b> ${E(pf.budget)}</li></ul></div>` : ""}
-   ${o.site ? `<div class="card"><h2>Website check</h2>${o.site.error ? `<p class="err">${E(o.site.error)}</p>` : `<p class="note">${E(o.site.cms)} · ${o.site.https ? "HTTPS" : "No HTTPS"} · opened in ${(o.site.ms / 1000).toFixed(1)} s · ${o.site.h1} H1 · ${o.site.imagesNoAlt} of ${o.site.images} images without alt${o.site.noindex ? " · <b style='color:var(--bad)'>noindex</b>" : ""}</p>`}
-    ${st.verdict ? `<p>${E(st.verdict)}</p>` : ""}${(st.issues || []).length ? `<ul class="p">${L(st.issues, r => `<li>${E(r)}</li>`)}</ul>` : ""}${(st.quickWins || []).length ? `<div class="lbl" style="margin:10px 0 6px">Quick wins that delight</div><ul class="p">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>` : ""}
-   ${(ai.pitch || []).length || rt.offer ? `<div class="card"><h2>Grow this client</h2>${(ai.pitch || []).length ? `<ul class="p">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}${rt.offer ? `<div class="lbl" style="margin:12px 0 6px">Monthly plan to offer</div><p><b>${E(rt.offer)}</b> · ${E(rt.price)}<br>When: ${E(rt.when)}</p><div class="msg">${E(rt.line)}</div>` : ""}</div>` : ""}
-   <div class="card"><h2>What happened</h2><div class="tl">${L(o.timeline, t => `<div><b>${E(t.who)}</b> ${E(t.what)}<br>${new Date(t.at).toLocaleString()}</div>`)}</div>
-    <div class="row" style="gap:8px;margin-top:10px">${can("pm") ? `<button class="btn sm" id="rerun">Run the order desk again</button>` : ""}<button class="btn sm" id="nt">Add a note</button>${can("assign") && !["done","cancelled"].includes(o.stage) ? `<button class="btn sm danger" id="cnl">Cancel order</button>` : ""}</div></div>
-  </div></div>`;
+
+  /* Needs attention: the few things that matter right now */
+  const att = [];
+  proms.filter(p => p.by && !kept(p) && p.by <= TODAY()).forEach(p => att.push({ k:"bad", t:(p.by < TODAY() ? "Overdue promise" : "Due today"), d:p.what }));
+  if(o.alert) att.push({ k:"bad", t:"Scope alert", d:o.alert, btn:`<button class="btn sm" id="clr">Checked, clear</button>` });
+  if(newRep) att.push({ k:"y", t:"New client reply", d:"Read it in the Client tab", go:"client" });
+  if(toSend) att.push({ k:"y", t:toSend + " message" + (toSend > 1 ? "s" : "") + " to send", d:"Ready in the Client tab", go:"client" });
+  if(!o.pm && !["done","cancelled"].includes(o.stage)) att.push({ k:"warn", t:"No project team yet", d:"Pick one on the right" });
+
+  const header = `<section class="card ohero"><div class="oh1"><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)} package</div>
+    <h1>${E(o.client.name || "Client")} <span class="hp ${h.k}">${h.t}</span></h1>
+    <div class="ometa">${o.client.country ? `<span>${E(o.client.country)}</span>` : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}<span>Sold by ${E(o.byName)} on ${fmtD(o.at)}</span></div></div>
+    <div class="oacts">${nextBtn}</div></section>
+   <div class="steps">${STAGES.map((s, i) => `<span class="${i === si ? "on" : i < si ? "done" : ""}"><i>${i < si ? "✓" : i + 1}</i>${s[1]}</span>`).join("")}${o.stage === "cancelled" ? `<span class="on"><i>×</i>Cancelled</span>` : ""}</div>
+   <div class="kpis">
+    <div><span>Due</span><b class="${h.left < 0 ? "r" : h.left <= 2 ? "w" : ""}">${h.left < 0 ? Math.abs(h.left) + " d late" : h.left === 0 ? "Today" : h.left + " days"}</b><small>${fmtD(o.deadline)}</small></div>
+    <div><span>Access</span><b class="${accOk === o.access.length ? "g" : "w"}">${accOk} / ${o.access.length}</b><small>${accOk === o.access.length ? "Complete" : "Missing items"}</small></div>
+    <div><span>Deliverables</span><b>${delDone} / ${o.deliverables.length}</b><small>Done with proof</small></div>
+    <div><span>Promises</span><b class="${h.over ? "r" : ""}">${openP} open</b><small>${h.over ? h.over + " overdue" : "None overdue"}</small></div>
+    <div><span>We keep</span><b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)}</b><small>${x.margin}% of ${money(x.price)}</small></div>
+    <div><span>Price check</span><b class="${vcol === "bad" ? "r" : vcol === "ok" ? "g" : ""}" style="font-size:16px;text-transform:capitalize">${E(pr.verdict || "Pending")}</b><small>${pr.fair ? "Fair: " + E(pr.fair) : ""}</small></div>
+   </div>
+   ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b><br>${E(a.d)}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}">Open</button>` : "")}</div>`)}</section>` : ""}
+   <nav class="otabs">${[["overview","Overview"],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
+
+  const none = ME.ai ? "Not ready yet. Press Run the order desk again under History." : "Turns on with the AI helpers.";
+  const overview = `<div class="og"><div>
+    ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
+    ${proms.length ? sec("Promises to the client", "Everything our side promised in the chat. Broken promises are the fastest way to lose a client.",
+      `<table class="t2"><thead><tr><th>Promise</th><th>By</th><th>Status</th></tr></thead><tbody>${L(proms, p => { const od = p.by && !kept(p) && p.by < TODAY(), td = p.by && !kept(p) && p.by === TODAY();
+        return `<tr><td>${E(p.what)}</td><td class="nw">${p.by ? fmtD(p.by) : "No date"}</td><td><span class="chip ${kept(p) ? "ok" : od ? "bad" : td ? "warn" : "n"}">${kept(p) ? "Kept" : od ? "Overdue" : td ? "Due today" : "Open"}</span></td></tr>`; })}</tbody></table>`) : ""}
+    ${(ai.risks || []).length ? sec("Risks and how we prevent them", "Where this order could go wrong, decided before the work starts.",
+      `<table class="t2"><thead><tr><th style="width:44%">Risk</th><th>How we prevent it</th></tr></thead><tbody>${L(ai.risks, r => `<tr><td><b>${E(r.risk)}</b></td><td>${E(r.prevent)}</td></tr>`)}</tbody></table>`) : ""}
+    ${(ai.remarks || []).length || o.remarks ? sec("Special remarks", "What the chat alone does not make obvious.", `<ul class="clean">${o.remarks ? `<li><span class="tag">Sales</span>${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
+    ${(ai.pitch || []).length || rt.offer ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
+      `${rt.offer ? `<div class="plan"><div><span class="lbl">Monthly plan to offer</span><h3>${E(rt.offer)}</h3><p class="note" style="margin:0">When: ${E(rt.when)}</p></div><div class="pp">${E(rt.price)}</div></div>${rt.line ? `<div class="quote">${E(rt.line)}<button class="btn sm" data-cp="${E(rt.line)}">Copy</button></div>` : ""}` : ""}
+       ${(ai.pitch || []).length ? `<div class="lbl" style="margin:16px 0 8px">Next projects to suggest</div><ul class="clean">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}`) : ""}
+   </div><div>
+    ${sec("Money on this order", "What the order really earns after the fee, team time and AI.",
+      `<table class="money"><tr><td>Client paid</td><td>${money(x.price)}</td></tr><tr><td>Marketplace fee</td><td>− ${money(x.fee)}</td></tr><tr><td>Team time (${x.hours} h logged)</td><td>− ${money(x.team)}</td></tr><tr><td>AI helpers</td><td>− ${money(x.ai)}</td></tr>
+       <tr class="tot"><td>We keep</td><td class="${x.net >= 0 ? "g" : "r"}">${money(x.net)} <small>${x.margin}%</small></td></tr></table>
+       <p class="note" style="margin:10px 0 0">Planned: ${x.planHours} h, keeps ${money(x.planNet)} (${x.planMargin}%).</p>`)}
+    ${pr.verdict ? sec("Price check", "Was this order priced right for the work it needs?", `<div class="verdict ${vcol}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note" style="margin:0">Fair price for this scope: <b>${E(pr.fair)}</b></p>`) : ""}
+    ${sec("Team on this order", "Who does the work and who checks it.", can("assign") ? `<div class="grid" style="gap:10px"><label class="f">Project team<select id="pmS">${pmOpt("pm")}</select></label><label class="f">QA<select id="qaS">${pmOpt("qa")}</select></label></div>` : `<table class="money"><tr><td>Project team</td><td>${E(o.pmName || "Not set")}</td></tr><tr><td>QA</td><td>${E(o.qaName || "Not set")}</td></tr></table>`)}
+    ${o.site ? sec("Website check", "A first look at the client's home page.", o.site.error ? `<p class="note">${E(o.site.error)}</p>` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
+      + (st.verdict ? `<p style="margin:12px 0 0">${E(st.verdict)}</p>` : "") + ((st.quickWins || []).length ? `<div class="lbl" style="margin:14px 0 8px">Quick wins that delight</div><ul class="clean">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : "")) : ""}
+   </div></div>`;
+
+  const acc = `<table class="t2"><thead><tr><th>Access</th><th>Level needed</th><th>Status</th>${can("pm") ? "<th></th>" : ""}</tr></thead><tbody>${L(o.access, a => `<tr><td><b>${E(a.item)}</b><div class="sub">${E(a.why)}</div>${a.note ? `<div class="sub ev">${E(a.note)}</div>` : ""}</td><td>${E(a.level)}</td>
+    <td><span class="chip ${["received","skip"].includes(a.status) ? "ok" : a.status === "wrong" ? "bad" : a.status === "asked" ? "warn" : "n"}">${{ needed:"Not asked", asked:"Asked", received:"Received", wrong:"Wrong level", skip:"Not needed" }[a.status]}</span></td>
+    ${can("pm") ? `<td class="acts">${a.status !== "received" ? `<button class="btn sm" data-acc="${a.id}" data-s="received">Received</button>` : ""}${a.status !== "wrong" ? `<button class="btn sm danger" data-acc="${a.id}" data-s="wrong">Wrong level</button>` : ""}${a.status !== "skip" ? `<button class="btn sm ghost" data-acc="${a.id}" data-s="skip">Not needed</button>` : ""}</td>` : ""}</tr>`)}</tbody></table>
+    ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:12px">Add an access item</button>` : ""}`;
+  const del = `<table class="t2"><thead><tr><th style="width:34px">#</th><th>Deliverable</th><th>Proof</th><th>QA</th>${can("pm") && o.stage === "work" ? "<th></th>" : ""}</tr></thead><tbody>${L(o.deliverables, (d, i) => `<tr class="${d.done ? "dn" : ""}"><td class="num">${d.done ? "✓" : i + 1}</td><td>${E(d.text)}${d.qaNote ? `<div class="sub" style="color:var(--bad)">QA: ${E(d.qaNote)}</div>` : ""}</td>
+    <td>${d.proof ? `<a href="${E(/^https?:/.test(d.proof) ? d.proof : "#")}" target="_blank" rel="noopener">Open proof</a>` : `<span class="sub">None yet</span>`}</td><td>${d.qa ? `<span class="chip ${d.qa === "pass" ? "ok" : "bad"}">${d.qa === "pass" ? "Passed" : "Failed"}</span>` : `<span class="sub">Not checked</span>`}</td>
+    ${can("pm") && o.stage === "work" ? `<td class="acts"><button class="btn sm" data-proof="${d.id}">${d.proof ? "Change proof" : "Add proof"}</button>${d.proof && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Done</button>` : ""}</td>` : ""}</tr>`)}</tbody></table>
+    ${can("pm") && o.stage === "work" ? `<div class="row" style="gap:8px;margin-top:12px"><button class="btn sm" id="adddel">Add a deliverable</button><button class="btn sm" id="hrs">Log hours</button><button class="btn sm" id="ask">Ask the client something</button></div>` : ""}`;
+  const work = `<div class="og"><div>
+    ${sec("Step 1 · Access", "Work starts only when every item is in at the right level. Wrong level is the most common reason for lost days.", acc, `<span class="chip ${accOk === o.access.length ? "ok" : "warn"}">${accOk} of ${o.access.length}</span>`)}
+    ${sec("Step 2 · Deliverables and proof", "Every deliverable needs proof: a live link, a report link or a screenshot link. QA only gets work with proof for everything.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
+    ${(ai.qa || []).length ? sec("Step 3 · What QA will check", "Know the test before you start the work.", `<ol class="clean num">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ol>`) : ""}
+   </div><div>
+    ${ai.kt ? sec("Handover note", "Everything the project team needs, without reading the chat.", `<div class="kt">${E(ai.kt)}</div>`) : ""}
+    ${(ai.done || []).length ? sec("Already done", "From the chat, before this order reached the desk.", `<ul class="clean">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
+    ${(ai.questions || []).length ? sec("Confirm with the client", "Real gaps only. Ask once, together, through the client messages person.", `<ul class="clean">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
+    ${(o.hours || []).length ? sec("Hours logged", "", `<table class="money">${L(o.hours, t => `<tr><td>${E(t.who)} · ${fmtD(t.at)}${t.note ? `<div class="sub">${E(t.note)}</div>` : ""}</td><td>${t.h} h</td></tr>`)}</table>`) : ""}
+   </div></div>`;
+
+  const msgs = L((o.queue || []).slice().reverse(), m => `<div class="mcard ${m.kind === "reply" ? "rep" : m.sent ? "" : "pend"}"><div class="mh"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions for the client", delivery:"Delivery" }[m.kind] || "Message"}</b>
+    <span class="chip ${m.kind === "reply" ? (m.seen ? "n" : "y") : m.sent ? "ok" : "warn"}">${m.kind === "reply" ? (m.seen ? "Read" : "New") : m.sent ? "Sent " + fmtD(m.sentAt) : "To send"}</span><span class="sub">${E(m.by)} · ${fmtD(m.at)}</span></div>
+    <div class="msg">${E(m.reply || m.text)}</div>
+    ${m.digest ? `<div class="digest"><b>What it means:</b> ${E(m.digest.summary)}${m.digest.scopeChange ? `<br><b style="color:var(--bad)">New request:</b> ${E(m.digest.scopeChange)}` : ""}${(m.digest.actions || []).length ? "<br><b>Do now:</b> " + m.digest.actions.map(E).join("; ") : ""}</div>` : ""}
+    <div class="row" style="gap:6px;margin-top:10px">${!m.sent && can("comms") ? `<button class="btn sm" data-copy="${m.id}">Copy</button><button class="btn sm pri" data-sent="${m.id}">Mark sent</button>` : ""}${!m.sent && can("pm") ? `<button class="btn sm ghost" data-drop="${m.id}">Not needed</button>` : ""}${m.kind === "reply" && !m.seen ? `<button class="btn sm" data-seen="${m.id}">Got it</button>` : ""}</div></div>`);
+  const client = `<div class="og"><div>
+    ${sec("Client conversation", o.convo ? `${o.convo.messages.length} messages. <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.` : "The original paste is below.",
+      (o.convo ? `<div class="cv" id="cv">${L(o.convo.messages, (m, i) => { const prev = o.convo.messages[i - 1], day = (m.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, ""), pday = prev ? (prev.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, "") : "";
+        return (day && day !== pday ? `<div class="dsep"><span>${E(day)}</span></div>` : "") + `<div class="bu ${m.who === "us" ? "u" : "c"}"><span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E((m.time.match(/\d{1,2}:\d{2}\s*[AP]M/i) || [m.time])[0]) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`; })}</div>` : "")
+      + `<div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>`,
+      `<div class="row" style="gap:6px">${o.convo ? `<button class="btn sm" id="rawT">Original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out"}</button>` : ""}</div>`)}
+    ${o.calls ? sec("Call notes", "", `<div class="kt">${E(o.calls)}</div>`) : ""}
+   </div><div>
+    ${sec("Messages to and from the client", "Only the client messages person sends these on the marketplace. Paste every client reply here so the team sees it at once.",
+      (msgs || `<p class="note">No messages yet.</p>`) + (can("comms") ? `<label class="f" style="margin-top:14px">Client's new message<textarea id="rep" placeholder="Paste the client's reply here"></textarea></label><button class="btn sm pri" id="repb" style="margin-top:8px">Add the reply</button>` : ""))}
+    ${pf.goal ? sec("Client profile", "How to work with this client.", `<dl class="dl"><dt>Who</dt><dd>${E(pf.type)}</dd><dt>Really wants</dt><dd>${E(pf.goal)}</dd><dt>How they talk</dt><dd>${E(pf.style)}</dd><dt>Watch out</dt><dd>${E(pf.watch)}</dd><dt>Budget</dt><dd>${E(pf.budget)}</dd></dl>`) : ""}
+   </div></div>`;
+
+  const history = sec("What happened", "Every step on this order, newest first.", `<div class="tl">${L(o.timeline, t => `<div><span class="sub">${new Date(t.at).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })}</span><b>${E(t.who)}</b> ${E(t.what)}</div>`)}</div>
+    <div class="row" style="gap:8px;margin-top:14px">${can("pm") ? `<button class="btn sm" id="rerun">Run the order desk again</button>` : ""}<button class="btn sm" id="nt">Add a note</button>${can("assign") && !["done","cancelled"].includes(o.stage) ? `<button class="btn sm danger" id="cnl">Cancel order</button>` : ""}</div>`);
+
+  app.innerHTML = tabs("board") + header + ({ overview, work, client, history }[OTAB] || overview);
+  wireOrder(o);
+}
+function wireOrder(o){
   const on = (s, f) => { const el = $(s); if(el) el.onclick = f; };
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { OTAB = b.dataset.tab; drawOrder(); window.scrollTo({ top:document.querySelector(".otabs").offsetTop - 70, behavior:"smooth" }); });
+  document.querySelectorAll("[data-cp]").forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.cp).then(() => toast("Copied")));
   document.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { const note = b.dataset.s === "wrong" ? prompt("What is wrong with the level? (the client message will ask again)") : b.dataset.s === "skip" ? prompt("Why is it not needed for this order?") : ""; if(note === null) return; doOp("access", { aid:b.dataset.acc, status:b.dataset.s, note }); });
   document.querySelectorAll("[data-proof]").forEach(b => b.onclick = () => { const p = prompt("Proof link: live page, report or screenshot link"); if(p) doOp("deliv", { did:b.dataset.proof, proof:p }); });
   document.querySelectorAll("[data-done]").forEach(b => b.onclick = () => doOp("deliv", { did:b.dataset.done, done:true }));
@@ -279,9 +418,9 @@ function drawOrder(){
   on("#rev", () => { const r = prompt("Why? Type 1, 2, 3, 4 or 5\n1 Wrong work\n2 Missed something we promised\n3 Not live or not showing\n4 Report wrong\n5 Client changed what they want"); const map = { 1:"Wrong work", 2:"Missed requirement", 3:"Not live", 4:"Report wrong", 5:"Client changed scope" }; if(!map[r]) return; doOp("revision", { reason:map[r], note:prompt("What exactly did the client say?") || "" }); });
   on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
   on("#anyway", () => { const w = prompt("Why should work start before all access is in?"); if(w) doOp("startAnyway", { why:w }); });
-  on("#fmt", () => doOp("format", {}, "Laying out the conversation…"));
-  on("#rawT", () => { const r = $("#raw"), h = r.classList.toggle("hide"); $("#rawT").textContent = h ? "Show the original paste" : "Hide the original paste"; });
   on("#rerun", () => doOp("analyse", {}, "The order desk is reading everything again…"));
+  on("#fmt", () => doOp("format", {}, "Laying out the conversation…"));
+  on("#rawT", () => { const r = $("#raw"), hd = r.classList.toggle("hide"); $("#rawT").textContent = hd ? "Original paste" : "Hide original"; });
   on("#nt", () => { const t = prompt("Note for the team"); if(t) doOp("note", { text:t }); });
   on("#cnl", () => { const w = prompt("Why cancel?"); if(w) doOp("cancel", { why:w }); });
   on("#clr", () => doOp("seen", { clearAlert:true }));
