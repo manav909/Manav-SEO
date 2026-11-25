@@ -831,7 +831,7 @@ async function buildCheck(o, fresh){
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
   o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
-  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && !unsure && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
+  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && !o._quiet && !unsure && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
   return o.check;
 }
 
@@ -1515,7 +1515,7 @@ async function handle(request){
       const cur = find("docs", p.newer.id); d.proofs = proofsOf(d); delete d.proof;
       Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
       log(o, w, "Proof switched to the newest copy: " + cur.name); }
-    else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildCheck(o, !!q.fresh); }
+    else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); o._quiet = !!q.quiet; try{ await buildCheck(o, !!q.fresh); }finally{ delete o._quiet; } }
     else if(op === "draftReport"){ if(!(can(w, "pm") || can(w, "assign"))) return bad("Your role cannot do this step"); try{ await draftReport(o); }catch(e){ return bad(e.message); } }
     else if(op === "approveReport"){ if(!(can(w, "pm") || can(w, "assign"))) return bad("Your role cannot do this step"); const dr = o.draftReport; if(!dr) return bad("No draft yet");
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
