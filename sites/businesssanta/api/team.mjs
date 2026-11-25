@@ -98,7 +98,7 @@ async function analyse(o, cfg){
     if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
     if(d.msgs.questions) o.queue.push({ id:nid("q"), auto:true, kind:"question", text:str(d.msgs.questions, 4000), at:now(), by:"Order desk", sent:false });
   }
-  if(o.stage === "access" && o.access.length && o.access.every(y => ["received", "skip"].includes(y.status))){ o.stage = "work"; log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
+  if(o.stage === "access" && o.access.length && o.access.every(y => ["received", "skip"].includes(y.status))){ setStage(o, "work"); log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
   return { ok:true, usd:r.usd };
 }
 
@@ -163,7 +163,7 @@ function mergeActions(o, list, fresh){
       if(x.type === "internal" && Array.isArray(x.questions)){ const gone = (o.dropped || []).map(norm); x.questions = x.questions.filter(q => !gone.includes(norm(typeof q === "string" ? q : q.q))); if(!x.questions.length) continue; }
       o.actions.push({ id:nid("x"), title:str(x.title, 200), why:str(x.why, 300), owner:["comms", "pm", "qa", "manager"].includes(x.owner) ? x.owner : "comms", type:["client", "internal", "task"].includes(x.type) ? x.type : "task",
         to:str(x.to, 60), severity:["high", "medium", "low"].includes(x.severity) ? x.severity : "medium", message:String(x.message || "").slice(0, 4000), questions:toQs(x.questions), needBy:str(x.needBy, 60),
-        status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), by:"Order desk" });
+        status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), created:now(), by:"Order desk" });
       const nw = o.actions[o.actions.length - 1]; if(nw.type === "internal"){ if(!nw.questions.length && nw.message) nw.questions = toQs(nw.message.split(/\n|(?<=\?)\s+/).filter(l => /\?\s*$/.test(l.trim()))); nw.message = internalText(o, nw); }
     }
   }
@@ -266,6 +266,46 @@ async function fileBlocks(files, text){
   return blocks;
 }
 
+/* What the project team (PM and QA) may see: the work, never the client chat, money or sales notes, except messages sales shared */
+const isProj = w => w.role === "pm" || w.role === "qa";
+function projView(o){
+  const ai = o.ai || {};
+  return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
+    access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
+    ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
+    actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
+    timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
+}
+function urgency(o, a){
+  const due = Date.parse(o.deadline + "T23:59:00") - Date.now(), late = due < 0, soon = due < 864e5;
+  const by = /today/i.test(a.needBy || "") || /\d{1,2}\s*(am|pm)/i.test(a.needBy || "") && !/tomorrow/i.test(a.needBy || "");
+  return late || a.severity === "high" && (soon || by) ? "urgent" : a.severity === "high" || soon || by ? "important" : "normal";
+}
+
+/* Timing of every step, for the HoD report: stages, sends, replies, access */
+function setStage(o, st){ if(o.stage !== st){ (o.stageLog = o.stageLog || [{ stage:o.stage || "access", at:o.at }]).push({ stage:st, at:now() }); } o.stage = st; }
+const hrs = (a, b) => a && b ? Math.max(0, (Date.parse(b) - Date.parse(a)) / 36e5) : null;
+function delays(o){
+  const nowI = now(), d = { client:[], sales:[], team:[], qa:[] }, add = (side, what, h, open) => { if(h != null && h >= 0.5) d[side].push({ what, h:+h.toFixed(1), open:!!open }); };
+  for(const a of o.access || []){ const rec = a.receivedAt || (a.status === "received" ? a.atS : null); if(a.by === "Order desk" && /on file/i.test(a.note || "")) continue;
+    if(rec) add("client", "Access: " + a.item, hrs(o.at, rec)); else if(!["skip"].includes(a.status)) add("client", "Access still missing: " + a.item, hrs(o.at, nowI), true); }
+  for(const x of o.actions || []){
+    const made = x.created || o.at;
+    if(x.type !== "task"){ if(x.sentAt) add("sales", "Sending: " + x.title, hrs(made, x.sentAt)); else if(!["done", "skipped"].includes(x.status)) add("sales", "Not sent yet: " + x.title, hrs(made, nowI), true); }
+    if(x.type === "internal" && x.sentAt){ const rep = (x.replies || [])[0]; add("team", "Answer: " + x.title, hrs(x.sentAt, rep ? rep.at : (["done", "skipped"].includes(x.status) ? null : nowI)), !rep && !["done", "skipped"].includes(x.status)); }
+    if(x.type === "client" && x.sentAt){ const back = ((o.convo || {}).messages || []).find(m => m.who === "client" && m.added && m.added > x.sentAt); if(back) add("client", "Reply to: " + x.title, hrs(x.sentAt, back.added)); }
+  }
+  const sl = o.stageLog || [], at = st => (sl.find(z => z.stage === st) || {}).at, lastAt = st => ((sl.filter(z => z.stage === st).pop()) || {}).at;
+  if(at("work")) add("team", "Work until sent to QA", hrs(at("work"), at("qa") || (o.stage === "work" ? nowI : null)), o.stage === "work");
+  if(at("qa")) add("qa", "QA check", hrs(lastAt("qa"), at("ready") || (o.stage === "qa" ? nowI : null)), o.stage === "qa");
+  const fails = (o.qaRounds || []).filter(r => r.result === "fail").length, revs = (o.revisions || []).filter(r => r.ours).length;
+  const tot = k => +d[k].reduce((a2, x) => a2 + x.h, 0).toFixed(1);
+  const late = !["done", "cancelled", "delivered"].includes(o.stage) && Date.parse(o.deadline + "T23:59:00") < Date.now();
+  const broken = ((o.ai || {}).promises || []).filter(p => /broken/i.test(p.status || "") || (p.by && p.by < nowI.slice(0, 10) && !/kept/i.test(p.status || ""))).map(p => p.what);
+  return { id:o.id, site:domOf(o.client.website), client:o.client.name, stage:o.stage, deadline:o.deadline, pm:o.pmName || "", sales:o.byName, late, fails, revisions:revs, broken,
+    hours:{ client:tot("client"), sales:tot("sales"), team:tot("team"), qa:tot("qa") }, items:d };
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -316,14 +356,37 @@ async function handle(request){
     try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   const isA = w.role === "admin";
-  const strip = o => { if(isA) return o; const c = Object.assign({}, o); delete c.pay; return c; };
+  const strip = o => { if(isA) return o; if(isProj(w)) return projView(o); const c = Object.assign({}, o); delete c.pay; return c; };
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
-  if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; return x; }) }); }
+  if(a === "list"){ const all = await loadAll(); return out({ ok:true, orders:all.map(o => { const x = summary(o, cfg); if(!isA) delete x.econ; if(isProj(w)){ delete x.price; delete x.verdict; x.flags = x.flags.filter(f => !/message|reply/i.test(f.t)); } return x; }) }); }
+  if(a === "hod"){ if(!isA) return bad("This report is for Manav only", 403); const day = now().slice(0, 10), key = P + "hod:" + day;
+    const all = (await loadAll(500)).filter(o => o.stage !== "cancelled"), open = all.filter(o => !["done"].includes(o.stage)), ds = open.map(delays);
+    const sum = k => +ds.reduce((a2, x) => a2 + x.hours[k], 0).toFixed(1);
+    const by = (f, side) => { const m = {}; ds.forEach(x => { const k = f(x) || "Not assigned"; const r = m[k] = m[k] || { orders:0, hours:0, open:0 }; r.orders++; r.hours += x.hours[side]; r.open += x.items[side].filter(i => i.open).length; }); return Object.entries(m).map(([name, r]) => ({ name, orders:r.orders, hours:+r.hours.toFixed(1), open:r.open })).sort((a2, b) => b.hours - a2.hours); };
+    let insight = await getJ(key);
+    if((!insight || url.searchParams.get("refresh")) && aiOn() && ds.length){
+      try{ const r = await askAI("hod", "claude-sonnet-5-5", `You are the delivery analyst for the HoD of an SEO, web and ads agency. From the order timings below, find where time is lost and why: client side (access, replies), sales side (messages not sent, updates not pasted), project team (slow answers, slow work, rework), QA. Name orders and people. Be specific, fair and short. No dashes.
+Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"side":"client | sales | project team | QA","finding":""}],"missed":["what was missed or broken, with the order"],"people":[{"name":"","note":"fair, specific"}],"improve":[{"what":"concrete change","impact":"expected effect, e.g. saves about 1 day per order"}],"todayForHod":["at most 3 things only the HoD should do today"]}`,
+        JSON.stringify(ds.map(x => ({ order:x.id, site:x.site, stage:x.stage, deadline:x.deadline, pm:x.pm, sales:x.sales, late:x.late, qaFails:x.fails, revisions:x.revisions, broken:x.broken.slice(0, 4), hours:x.hours, worst:Object.fromEntries(Object.entries(x.items).map(([k, v]) => [k, v.sort((a2, b) => b.h - a2.h).slice(0, 3)])) }))), 6000);
+        insight = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) }); await setJ(key, insight, 60 * 60 * 24 * 40); }catch(e){ insight = { error:e.message }; } }
+    return out({ ok:true, day, totals:{ open:open.length, late:ds.filter(x => x.late).length, client:sum("client"), sales:sum("sales"), team:sum("team"), qa:sum("qa"), fails:ds.reduce((a2, x) => a2 + x.fails, 0), revisions:ds.reduce((a2, x) => a2 + x.revisions, 0) },
+      orders:ds.sort((a2, b) => (b.late - a2.late) || (Object.values(b.hours).reduce((p, q) => p + q, 0) - Object.values(a2.hours).reduce((p, q) => p + q, 0))), team:by(x => x.pm, "team"), sales:by(x => x.sales, "sales"), insight }); }
+  if(a === "inbox"){ const all = (await loadAll(400)).filter(o => !["done", "cancelled"].includes(o.stage)), items = [], mine = [];
+    for(const o of all){
+      const assigned = o.pm === w.uid || o.qa === w.uid || !isProj(w) || (!o.pm && w.role === "pm");
+      if(!assigned) continue;
+      mine.push({ id:o.id, site:domOf(o.client.website), deadline:o.deadline, stage:o.stage, pmName:o.pmName || "", accessLeft:(o.access || []).filter(x => !["received", "skip"].includes(x.status)).length,
+        done:(o.deliverables || []).filter(d => d.done).length, total:(o.deliverables || []).length, flags:flags(o).filter(f => !/message|reply|update/i.test(f.t)) });
+      for(const x of (o.actions || []).filter(x => x.type === "internal" && !["done", "skipped"].includes(x.status)))
+        items.push({ order:o.id, site:domOf(o.client.website), deadline:o.deadline, stage:o.stage, id:x.id, title:x.title, needBy:x.needBy, status:x.status, severity:x.severity, questions:x.questions || [], shared:x.shared || null, urgency:urgency(o, x), sentAt:x.at });
+    }
+    const rank = { urgent:0, important:1, normal:2 };
+    return out({ ok:true, items:items.sort((a, b) => rank[a.urgency] - rank[b.urgency] || a.deadline.localeCompare(b.deadline)), orders:mine.sort((a, b) => a.deadline.localeCompare(b.deadline)) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), client:c ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
   if(a === "clients"){ const all = await loadAll(1000);
     for(const o of all) if(!o.cid){ o.cid = cidOf(o.client.name); await touchClient(o); await saveO(o); }
     const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
@@ -401,16 +464,19 @@ async function handle(request){
   if(a === "do"){
     const o = await getJ(T.ord(str(q.id, 20))); if(!o) return bad("Order not found", 404);
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
+    if(isProj(w) && ["update", "reply", "sent", "share", "pay", "edit", "deliver", "revision", "close", "actEdit", "regOff"].includes(op)) return bad("This step is for the sales and client messages team", 403);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
     if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
-      x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();
+      x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; if(x.status === "received" && !x.receivedAt) x.receivedAt = now(); x.note = str(q.note, 300); x.by = w.name; x.atS = now();
       log(o, w, "Access " + x.item + ": " + x.status + (x.note ? " (" + x.note + ")" : ""));
-      if(o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))){ o.stage = "work"; log(o, { name:"Order desk" }, "All access received at the right level. Work can start."); } }
+      if(x.status === "wrong" && !(o.actions || []).some(y => y.accessFix === x.id && !["done", "skipped"].includes(y.status))) (o.actions = o.actions || []).push({ id:nid("x"), accessFix:x.id, title:"Fix access: " + x.item, why:"The project team found the wrong level" + (x.note ? ": " + x.note : ""), owner:"comms", type:"client", to:"client", severity:"high",
+        message:"Hi! Thank you for the access. One small thing: for " + x.item + " we need the level \"" + x.level + "\" so we can finish the work." + (x.note ? " (" + x.note + ")" : "") + " Could you update it when you have a moment? Thank you!", questions:[], status:"open", at:now(), created:now(), by:w.name, byTeam:true });
+      if(o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))){ setStage(o, "work"); log(o, { name:"Order desk" }, "All access received at the right level. Work can start."); } }
     else if(op === "addAccess"){ need("pm"); o.access.push({ id:nid("a"), item:str(q.item, 120), level:str(q.level, 200), why:str(q.why, 200), status:"needed" }); log(o, w, "Added access item " + str(q.item, 120)); }
-    else if(op === "startAnyway"){ need("assign"); const why = str(q.why, 300); if(!why) return bad("Write why work starts before all access is in"); o.stage = "work"; log(o, w, "Started before all access was in: " + why); }
+    else if(op === "startAnyway"){ need("assign"); const why = str(q.why, 300); if(!why) return bad("Write why work starts before all access is in"); setStage(o, "work"); log(o, w, "Started before all access was in: " + why); }
     else if(op === "deliv"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found");
       if(q.text != null) x.text = str(q.text, 300);
       if(q.done != null){ if(q.done && !proofsOf(x).length) return bad("Add the proof first: a Google Drive link or a live link"); x.done = !!q.done;
@@ -453,6 +519,16 @@ async function handle(request){
       log(o, w, "Team replied to \"" + x.title.slice(0, 60) + "\": " + (d.summary || "") + (left.length ? " (" + left.length + " still open)" : " (all answered)"));
       try{ await rethink(o, "TEAM REPLY to \"" + x.title + "\": " + text + "\nFacts: " + (d.facts || []).join("; ") + ((d.evidence || []).length ? "\nScreenshots show: " + d.evidence.map(e => e.file + ": " + e.shows).join("; ") : "")); }catch(e){}
       o.lastUpdateAt = now(); o.lastUpdateBy = w.name; }
+    else if(op === "share"){ if(!can(w, "comms") && !can(w, "create")) return bad("Your role cannot do this step"); const m = ((o.convo || {}).messages || [])[num(q.mi, -1)]; if(!m) return bad("Message not found");
+      const item = { who:m.who, name:m.name, time:m.time, text:m.text, files:m.files || [], note:redact(str(q.note, 600)), at:now(), by:w.name }; (o.shared = o.shared || []).push(item);
+      const qs = toQs((Array.isArray(q.questions) ? q.questions : [q.question]).filter(Boolean)); if(!qs.length) qs.push({ q:"Please read this client message and tell us how we should answer.", status:"" });
+      const x = { id:nid("x"), title:"Client message for the team: " + String(m.text).replace(/\s+/g, " ").slice(0, 60), why:item.note || "Shared by sales", owner:"pm", type:"internal", to:"project team", severity:q.urgent ? "high" : "medium", message:"", questions:qs, needBy:str(q.needBy, 60) || "today", status:"open", at:now(), created:now(), by:w.name, shared:item };
+      x.message = internalText(o, x) + "\n\nClient wrote" + (m.time ? " (" + m.time + ")" : "") + ":\n\"" + String(m.text).slice(0, 1500) + "\""; (o.actions = o.actions || []).push(x);
+      log(o, w, "Shared a client message with the project team"); }
+    else if(op === "pmAsk"){ if(!isProj(w) && !can(w, "assign")) return bad("This is for the project team"); const t = redact(str(q.text, 3000)); if(!t) return bad("Write what you need from the client");
+      (o.actions = o.actions || []).push({ id:nid("x"), title:"Project team needs from the client", why:"Asked by " + w.name + " (" + (q.kind || "info") + ")", owner:"comms", type:"client", to:"client", severity:q.urgent ? "high" : "medium",
+        message:t, questions:[], status:"open", at:now(), created:now(), by:w.name, byTeam:true, statusWhy:"Sales checks the wording and sends it on the marketplace" });
+      log(o, w, "Asked sales to get something from the client: " + t.slice(0, 120)); }
     else if(op === "actEdit"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
       if(x.type === "internal"){ if(Array.isArray(q.questions)){ const before = (x.questions || []).map(qq => qq.q), keep = q.questions.map(t => str(t, 300)).filter(Boolean).slice(0, 5);
           before.filter(b => !keep.includes(b)).forEach(b => (o.dropped = o.dropped || []).push(b));
@@ -473,7 +549,7 @@ async function handle(request){
         x.decision = "Kept" + (note ? ": " + note : ""); x.owner = can(w, "assign") ? x.owner : "manager"; x.status = "open"; x.statusWhy = can(w, "assign") ? "Decided to keep it" : "Passed to the manager to decide"; x.message = internalText(o, x); }
       x.at = now(); x.by = w.name; log(o, w, "Decision on \"" + x.title.slice(0, 70) + "\": " + x.decision); }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
-      x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
+      x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; if(q.status === "sent" && !x.sentAt){ x.sentAt = now(); x.sentBy = w.name; } log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
     else if(op === "pay"){ if(w.role !== "admin") return bad("Payments are for Manav only", 403); const p = payOf(o);
       if(q.status && ["paid", "pending clearance", "cleared", "refunded", "cancelled"].includes(q.status)){ p.status = q.status; if(q.status === "cleared") p.clearedAt = now().slice(0, 10); }
       if(q.clearsOn && /^\d{4}-\d{2}-\d{2}$/.test(q.clearsOn)) p.clearsOn = q.clearsOn;
@@ -510,7 +586,7 @@ async function handle(request){
     else if(op === "seen"){ const x = find("queue", q.qid); if(x){ x.seen = true; x.seenBy = w.name; } if(q.clearAlert) o.alert = ""; }
     else if(op === "toQA"){ need("pm"); const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
-      o.stage = "qa"; log(o, w, "Sent to QA"); }
+      setStage(o, "qa"); log(o, w, "Sent to QA"); }
     else if(op === "qa"){ need("qa"); if(o.stage !== "qa") return bad("This order is not waiting for QA");
       const unmarked = o.deliverables.filter(d => !d.qa); if(unmarked.length) return bad("Mark every deliverable Pass or Fail first (" + unmarked.length + " left)");
       const fails = o.deliverables.filter(d => d.qa === "fail"), res = fails.length ? "fail" : "pass", note = fails.map(d => d.text.slice(0, 60) + ": " + d.qaNote).join(" | ");
@@ -520,13 +596,13 @@ async function handle(request){
     else if(op === "deliver"){ need("comms"); if(o.stage !== "ready") return bad("Deliver only after QA passes");
       const passAt = ((o.qaRounds || []).filter(r => r.result === "pass").pop() || {}).at || "", changed = [];
       for(const d of o.deliverables) for(const p of proofsOf(d)) if(p.kind === "drive"){ const m = await driveMeta(p.url); if(m.ok && passAt && m.modified > passAt) changed.push(m.name); }
-      if(changed.length){ o.stage = "qa"; o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "Changed after QA passed: " + changed.join(", ") + ". Sent back to QA."); await saveO(o); return bad("These were changed after QA passed: " + changed.join(", ") + ". The order went back to QA."); }
-      o.stage = "delivered"; o.deliveredAt = now(); o.rechecks = [3, 7, 14].map(n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10));
+      if(changed.length){ setStage(o, "qa"); o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "Changed after QA passed: " + changed.join(", ") + ". Sent back to QA."); await saveO(o); return bad("These were changed after QA passed: " + changed.join(", ") + ". The order went back to QA."); }
+      setStage(o, "delivered"); o.deliveredAt = now(); o.rechecks = [3, 7, 14].map(n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10));
       log(o, w, "Delivered to the client. The order desk will recheck Google on " + o.rechecks.join(", ") + " and draft an update for the client."); }
     else if(op === "revision"){ need("comms"); const reason = str(q.reason, 40), ours = !/client changed/i.test(reason);
-      o.revisions.push({ at:now(), by:w.name, reason, note:str(q.note, 2000), ours }); o.stage = "work"; o.deliverables.forEach(d => { d.qa = ""; });
+      o.revisions.push({ at:now(), by:w.name, reason, note:str(q.note, 2000), ours }); setStage(o, "work"); o.deliverables.forEach(d => { d.qa = ""; });
       log(o, w, "Revision: " + reason + (q.note ? ". " + str(q.note, 300) : "")); }
-    else if(op === "close"){ need("comms"); o.rating = Math.min(5, Math.max(0, num(q.rating, 0))) || null; o.repeat = !!q.repeat; o.retainer = !!q.retainer; o.stage = "done"; o.closedAt = now();
+    else if(op === "close"){ need("comms"); o.rating = Math.min(5, Math.max(0, num(q.rating, 0))) || null; o.repeat = !!q.repeat; o.retainer = !!q.retainer; setStage(o, "done"); o.closedAt = now();
       log(o, w, "Closed" + (o.rating ? ", rating " + o.rating : "") + (o.retainer ? ", retainer agreed" : o.repeat ? ", ordered again" : "")); }
     else if(op === "assign"){ need("assign"); const ps = await people();
       if(q.pm != null){ const p = ps.find(x => x.id === q.pm); o.pm = p ? p.id : ""; o.pmName = p ? p.name : ""; }
@@ -535,10 +611,10 @@ async function handle(request){
     else if(op === "note"){ const t = str(q.text, 2000); if(!t) return bad("Write the note"); log(o, w, "Note: " + t); }
     else if(op === "edit"){ need("create"); ["extras", "remarks"].forEach(k => { if(q[k] != null) o[k] = str(q[k], 4000); }); if(q.deadline && /^\d{4}-\d{2}-\d{2}$/.test(q.deadline)){ log(o, w, "Deadline " + o.deadline + " to " + q.deadline); o.deadline = q.deadline; }
       if(q.price != null && num(q.price, 0) > 0){ o.price = num(q.price, 0); } log(o, w, "Order details edited"); }
-    else if(op === "cancel"){ need("assign"); o.stage = "cancelled"; log(o, w, "Cancelled: " + str(q.why, 300)); }
+    else if(op === "cancel"){ need("assign"); setStage(o, "cancelled"); log(o, w, "Cancelled: " + str(q.why, 300)); }
     else return bad("Unknown step");
     await saveO(o); if(o.cid) touchClient(o).catch(() => {});
-    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o) });
+    return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o) });
   }
   return bad("Unknown request", 404);
 }

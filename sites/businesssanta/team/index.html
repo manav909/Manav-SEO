@@ -186,6 +186,11 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .eq{display:flex;gap:6px;margin-bottom:6px}.eq input{min-height:36px;font-size:14px}
 .decide{margin:10px 0 0 22px;padding:12px;border-radius:10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.35);font-size:14px;color:var(--sub)}.decide b{color:var(--bad)}
 @media(max-width:620px){.edit,.decide{margin-left:0}}
+.inb{border:1px solid var(--line);border-left-width:4px;border-radius:12px;padding:12px 14px;margin-bottom:12px}.inb.urgent{border-left-color:var(--bad);animation:pulse 1.6s ease-in-out infinite}.inb.important{border-left-color:var(--warn)}.inb.normal{border-left-color:var(--line)}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,0)}50%{box-shadow:0 0 0 4px rgba(248,113,113,.25)}}
+.oc.blink{border-color:rgba(248,113,113,.6);animation:pulse 1.6s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.inb.urgent,.oc.blink{animation:none}}
+.bu{position:relative}.shr{position:absolute;top:6px;right:10px;font-size:11.5px;opacity:0;transition:opacity .15s}.bu:hover .shr{opacity:1}@media(hover:none){.shr{opacity:1}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -232,18 +237,19 @@ async function boot(){
 $("#out").onclick = () => act(async () => { await api("logout", {}); location.hash = ""; signin(); });
 window.onhashchange = route;
 function tabs(on){
-  const t = [["board","Orders"],["clients","Clients"]];
+  const P_ = ME.role === "pm" || ME.role === "qa";
+  const t = P_ ? [["my","My work"],["board","Orders"]] : [["board","Orders"],["clients","Clients"]];
   if(can("sales")) t.push(["new","New order"], ["lead","Lead help"]);
-  t.push(["msgs","Client messages"]);
+  if(!P_) t.push(["msgs","Client messages"]); else t.push(["access","Access"]);
   if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
-  if(ME.role === "admin") t.push(["pay","Payments"], ["people","Team and settings"]);
+  if(ME.role === "admin") t.push(["hod","HoD report"], ["pay","Payments"], ["people","Team and settings"]);
   const qn = QUEUE.length;
   return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}</nav>
   ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
 }
 async function route(){
   if(!ME) return;
-  const h = location.hash.slice(1) || "board";
+  const h = location.hash.slice(1) || ((ME.role === "pm" || ME.role === "qa") ? "my" : "board");
   try{
     if(h.startsWith("o=")) return order(decodeURIComponent(h.slice(2)));
     if(h === "new") return newOrder();
@@ -254,6 +260,9 @@ async function route(){
     if(h === "clients") return clientsPage();
     if(h.startsWith("c=")) return clientPage(decodeURIComponent(h.slice(2)));
     if(h === "pay") return payPage();
+    if(h === "my") return myWork();
+    if(h === "hod") return hodPage();
+    if(h === "access") return myWork(true);
     return board();
   }catch(e){ if(e.message !== "signin") app.innerHTML = `<div class="card err">${E(e.message)}</div>`; }
 }
@@ -367,8 +376,8 @@ function drawOrder(){
   if(toSend) att.push({ k:"y", t:toSend + " message" + (toSend > 1 ? "s" : "") + " to send", d:"Ready in the Client tab", go:"client" });
   if(!o.pm && !["done","cancelled"].includes(o.stage)) att.push({ k:"warn", t:"No project team yet", d:"Pick one on the right" });
 
-  const sinceH = (Date.now() - Date.parse(o.lastUpdateAt || o.at)) / 36e5, openO = !["done","cancelled"].includes(o.stage);
-  const upd = openO && (can("comms") || can("pm")) ? `<section class="card upd ${sinceH > 24 ? "bad" : sinceH > 8 ? "warn" : "ok"}"><div class="osh"><div><h2>Keep this order up to date</h2>
+  const sinceH = (Date.now() - Date.parse(o.lastUpdateAt || o.at)) / 36e5, openO = !["done","cancelled"].includes(o.stage), PJ = ME.role === "pm" || ME.role === "qa";
+  const upd = openO && !PJ && (can("comms") || can("pm")) ? `<section class="card upd ${sinceH > 24 ? "bad" : sinceH > 8 ? "warn" : "ok"}"><div class="osh"><div><h2>Keep this order up to date</h2>
      <p class="why">Paste anything new: client messages (the whole chat again is fine, only new ones are added), call notes, a reply from the project team, or files shared. The order desk adds what is new and re-checks promises, risks and actions.</p></div>
      <span class="chip ${sinceH > 24 ? "bad" : sinceH > 8 ? "warn" : "ok"}">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago${o.lastUpdateBy ? " · " + E(o.lastUpdateBy) : ""}</span></div>
      ${(ai.askNext || []).length ? `<div class="asknext"><span class="lbl">Paste or ask next</span><ul class="clean">${ai.askNext.slice(0, 4).map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
@@ -411,7 +420,7 @@ function drawOrder(){
    </div>
    ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b>${a.d ? `<br>${E(a.d)}` : ""}${a.list ? `<div class="alist">${a.list.slice(0, 4).map(t => `<span>${E(String(t).replace(/\s*\((said|asked|agreed)[^)]*\)\s*$/i, ""))}</span>`).join("")}${a.list.length > 4 ? `<span class="more">and ${a.list.length - 4} more</span>` : ""}</div>` : ""}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}" data-jump="${a.go === "overview" ? "prom" : ""}">${a.goT || "Open"}</button>` : "")}</div>`)}</section>` : ""}
    ${upd}
-   <nav class="otabs">${[["overview","Overview"],["actions","Actions" + (acts.filter(x => x.status !== "done").length ? ` <em class="n">${acts.filter(x => x.status !== "done").length}</em>` : "")],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
+   <nav class="otabs">${[["overview","Overview"],["actions",(PJ ? "Questions for us" : "Actions") + (acts.filter(x => x.status !== "done").length ? ` <em class="n">${acts.filter(x => x.status !== "done").length}</em>` : "")],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].filter(t => !(PJ && t[0] === "client")).map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
 
   const none = ME.ai ? "Not ready yet. Press Run the order desk again under History." : "Turns on with the AI helpers.";
   const actionsTab = `<nav class="afil">${[["open","Open"],["internal","Team questions"],["client","Client messages"],["task","Tasks"],["done","Done"],["all","All"]].map(f => `<a href="javascript:void 0" data-af="${f[0]}" class="${AF === f[0] ? "on" : ""}">${f[1]} <em>${f[0] === "all" ? acts.length : f[0] === "done" ? acts.filter(shut).length : f[0] === "open" ? acts.filter(x => !shut(x)).length : acts.filter(x => x.type === f[0] && !shut(x)).length}</em></a>`).join("")}</nav>
@@ -419,6 +428,13 @@ function drawOrder(){
     ${(ai.risks || []).length ? sec("Risks", "Each prevention is an action on the left. Status changes as updates come in.",
       L(ai.risks, r => `<div class="rk"><div class="dvs" style="margin:0 0 6px"><span class="chip ${r.level === "high" ? "bad" : r.level === "low" ? "n" : "warn"}">${E((r.level || "medium").replace(/^./, c => c.toUpperCase()))} risk</span><span class="chip ${/handled/.test(r.status || "") ? "ok" : /happened/.test(r.status || "") ? "bad" : /watch/.test(r.status || "") ? "y" : "warn"}">${E({ open:"Open", watch:"Watching", handled:"Handled", happened:"Happened" }[r.status] || "Open")}</span></div><b>${E(r.risk)}</b><div class="sub ev">Prevent: ${E(r.prevent)}</div></div>`)) : ""}
     ${(ai.remarks || []).length || o.remarks ? sec("Special remarks", "What the chat alone does not make obvious.", `<ul class="clean">${o.remarks ? `<li><span class="tag">Sales</span>${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
+   </div></div>`;
+  const projOverview = `<div class="og"><div>
+    ${sec("What to deliver", "The work for this order. Sales handles the client; ask them below when you need anything from the client.", (ai.kt ? `<div class="kt">${E(ai.kt)}</div>` : "") + (ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : "") + `<ol class="clean num" style="margin-top:12px">${L(o.deliverables, d => `<li>${d.done ? "✓ " : ""}${E(d.text)}</li>`)}</ol>`)}
+    ${(o.shared || []).length ? sec("Client messages shared with you", "Only the messages sales chose to share.", (o.shared || []).slice().reverse().map(m => `<div class="mcard"><div class="mh"><b>${E(m.name || "Client")}</b><span class="sub">${E(m.time || "")} · shared ${ago(m.at)} by ${E(m.by)}</span></div><div class="msg">${E(m.text)}</div>${m.note ? `<div class="sub ev" style="margin-top:6px">Sales note: ${E(m.note)}</div>` : ""}</div>`).join("")) : ""}
+   </div><div>
+    ${sec("Need something from the client?", "Write it here. Sales checks the wording and sends it on the marketplace, then pastes the answer back.", `<select id="paK"><option value="info">Information</option><option value="access">Access</option><option value="approval">Approval</option><option value="files">Files or content</option></select><textarea id="paT" style="margin-top:8px" placeholder="e.g. We need Editor access in WordPress to change the theme files"></textarea><label class="f" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="paU" style="width:auto;min-height:0"> Urgent</label><button class="btn sm pri" id="paB" style="margin-top:8px">Send to sales</button>`)}
+    ${sec("Team on this order", "", `<table class="money"><tr><td>Project team</td><td>${E(o.pmName || "Not set")}</td></tr><tr><td>QA</td><td>${E(o.qaName || "Not set")}</td></tr><tr><td>Due</td><td>${fmtD(o.deadline)}</td></tr></table>`)}
    </div></div>`;
   const overview = `<div class="og"><div>
     ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
@@ -497,7 +513,7 @@ function drawOrder(){
       `<textarea id="updT2" placeholder="Paste the full chat again or just the new messages (call notes, team replies and screenshots also work)"></textarea>${attUI("upd2")}<div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB2">Add new messages</button><span class="sub" style="margin:0">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago</span></div>`) : ""}
     ${sec("Client conversation", o.convo ? `${o.convo.messages.length} messages. <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.` : "The original paste is below.",
       (o.convo ? `<div class="cv" id="cv">${L(o.convo.messages, (m, i) => { const prev = o.convo.messages[i - 1], day = (m.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, ""), pday = prev ? (prev.time || "").replace(/,?\s*\d{1,2}:\d{2}.*$/, "") : "";
-        return (day && day !== pday ? `<div class="dsep"><span>${E(day)}</span></div>` : "") + `<div class="bu ${m.who === "us" ? "u" : "c"}">${m.added ? `<span class="newb">Added ${ago(m.added)}</span>` : ""}<span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E((m.time.match(/\d{1,2}:\d{2}\s*[AP]M/i) || [m.time])[0]) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`; })}</div>` : "")
+        return (day && day !== pday ? `<div class="dsep"><span>${E(day)}</span></div>` : "") + `<div class="bu ${m.who === "us" ? "u" : "c"}">${m.who !== "us" && (can("comms") || can("sales")) ? `<button class="lnk shr" data-share="${i}" title="Send this client message to the project team with a question">Share with team</button>` : ""}${m.added ? `<span class="newb">Added ${ago(m.added)}</span>` : ""}<span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E((m.time.match(/\d{1,2}:\d{2}\s*[AP]M/i) || [m.time])[0]) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`; })}</div>` : "")
       + `<div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>`,
       `<div class="row" style="gap:6px">${newN ? `<span class="chip y">${newN} new today</span>` : ""}${o.convo ? `<button class="btn sm" id="rawT">Original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out"}</button>` : ""}</div>`)}
     ${o.calls ? sec("Call notes from the order", "", `<div class="kt">${E(o.calls)}</div>`) : ""}
@@ -511,7 +527,7 @@ function drawOrder(){
   const history = sec("What happened", "Every step on this order, newest first.", `<div class="tl">${L(o.timeline, t => `<div><span class="sub">${new Date(t.at).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })}</span><b>${E(t.who)}</b> ${E(t.what)}</div>`)}</div>
     <div class="row" style="gap:8px;margin-top:14px">${can("pm") ? `<button class="btn sm" id="rerun">Run the order desk again</button>` : ""}<button class="btn sm" id="nt">Add a note</button>${can("assign") && !["done","cancelled"].includes(o.stage) ? `<button class="btn sm danger" id="cnl">Cancel order</button>` : ""}</div>`);
 
-  app.innerHTML = tabs("board") + header + ({ overview, actions:actionsTab, work, client, history }[OTAB] || overview);
+  app.innerHTML = tabs("board") + header + ({ overview:PJ ? projOverview : overview, actions:actionsTab, work, client, history }[OTAB] || (PJ ? projOverview : overview));
   wireOrder(o);
   if(OTAB === "work") accFile(o);
 }
@@ -542,6 +558,8 @@ function wireOrder(o){
   { const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }
   on("#updB", () => runUpd("#updT", "upd1"));
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
+  document.querySelectorAll("[data-share]").forEach(b => b.onclick = () => { const qn = prompt("What should the project team answer about this message? (one short question)"); if(qn === null) return; const note = prompt("Any note for the team? (optional)") || ""; doOp("share", { mi:+b.dataset.share, questions:qn ? [qn] : [], note, urgent:confirm("Is it urgent?") }, "Sharing with the project team…"); });
+  on("#paB", () => { const t = $("#paT").value.trim(); if(!t) return toast("Write what you need", 1); doOp("pmAsk", { text:t, kind:$("#paK").value, urgent:$("#paU").checked }, "Sending to sales…"); });
   document.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => { window.EDIT = b.dataset.edit; drawOrder(); });
   document.querySelectorAll("[data-ecancel]").forEach(b => b.onclick = () => { window.EDIT = null; drawOrder(); });
   document.querySelectorAll("[data-eqx]").forEach(b => b.onclick = () => b.closest(".eq").remove());
@@ -653,6 +671,44 @@ function wireAtt(k, textarea){
   drawThumbs(k);
 }
 const fileChips = fs => (fs || []).length ? `<div class="thumbs">${fs.map(f => `<a class="th" href="/api/team?a=file&id=${E(f.id)}" target="_blank" rel="noopener">${/^image/.test(f.type) ? `<img src="/api/team?a=file&id=${E(f.id)}" alt="${E(f.name)}" loading="lazy">` : "📄 " + E(f.name)}</a>`).join("")}</div>` : "";
+
+async function myWork(accessOnly){
+  const j = await api("inbox"), U = { urgent:["Urgent","bad"], important:["Important","warn"], normal:["Normal","n"] };
+  const items = j.items, orders = j.orders;
+  app.innerHTML = tabs(accessOnly ? "access" : "my") + (accessOnly ? "" : `<div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))"><div><span>Questions for you</span><b class="${items.some(i => i.urgency === "urgent") ? "r" : ""}">${items.length}</b><small>${items.filter(i => i.urgency === "urgent").length} urgent</small></div><div><span>Your orders</span><b>${orders.length}</b><small>open</small></div><div><span>Waiting for access</span><b class="${orders.some(o => o.accessLeft) ? "w" : "g"}">${orders.filter(o => o.accessLeft).length}</b><small>orders</small></div><div><span>Due in 2 days</span><b class="${orders.some(o => Date.parse(o.deadline) - Date.now() < 2 * 864e5) ? "r" : ""}">${orders.filter(o => Date.parse(o.deadline + "T23:59:00") - Date.now() < 2 * 864e5).length}</b><small>orders</small></div></div>`)
+   + `<div class="og"><div>${accessOnly ? "" : sec("Questions for you", "Sales needs these answers to reply to clients. Answer in your own words; screenshots help.", items.map(x => `<div class="inb ${x.urgency}"><div class="ach"><span class="dot ${U[x.urgency][1] === "n" ? "y" : U[x.urgency][1]}"></span><div class="tx"><b>${E(x.site)} · ${E(x.title)}</b>
+       <div class="dvs"><span class="chip ${U[x.urgency][1]}">${U[x.urgency][0]}</span>${x.needBy ? `<span class="chip n">Reply by ${E(x.needBy)}</span>` : ""}<span class="chip n">Order due ${fmtD(x.deadline)}</span><a class="sub" style="margin:0" href="#o=${E(x.order)}">Open order</a></div></div></div>
+       ${x.shared ? `<div class="msg" style="margin:10px 0 0 22px"><span class="sub">Client wrote${x.shared.time ? " (" + E(x.shared.time) + ")" : ""}:</span>\n${E(x.shared.text)}</div>` : ""}
+       <ol class="qlist">${x.questions.map(q => `<li><span>${E(q.q)}</span>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${{ answered:"Answered", partial:"Partly", missing:"No answer", disagree:"You disagreed" }[q.status] || q.status}</span>` : ""}</li>`).join("")}</ol>
+       <div class="rbox"><textarea data-irt="${x.order}|${x.id}" placeholder="Your answer, with the numbers (paste screenshots here too)"></textarea>${attUI("i" + x.id)}<div class="row" style="gap:8px"><button class="btn sm pri" data-isend="${x.order}|${x.id}">Send answer</button><button class="lnk" data-idis="${x.order}|${x.id}">I disagree with these questions</button></div></div></div>`).join("") || `<p class="note">Nothing waiting for you. Well done.</p>`)}</div>
+   <div>${sec(accessOnly ? "Access on your orders" : "Your orders", accessOnly ? "Mark each access item in the order once you have checked the level." : "Newest due first. Red means it needs you now.", orders.map(o => `<a class="oc ${o.flags.some(f => f.k === "bad") ? "blink" : ""}" href="#o=${E(o.id)}"${accessOnly ? "" : ""}><b>${E(o.site || o.id)}</b>${E(o.id)} · ${E(SN[o.stage] || o.stage)} · due ${fmtD(o.deadline)}<br>${o.accessLeft ? `<span style="color:var(--warn)">${o.accessLeft} access missing</span> · ` : ""}${o.done} of ${o.total} deliverables done
+      <div class="fl">${o.flags.slice(0, 3).map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}</div></a>`).filter((h, i) => !accessOnly || orders[i].accessLeft).join("") || `<p class="note">${accessOnly ? "All access is in on your orders." : "No open orders."}</p>`)}</div></div>`;
+  document.querySelectorAll("[data-irt]").forEach(t => wireAtt("i" + t.dataset.irt.split("|")[1], t));
+  document.querySelectorAll("[data-isend]").forEach(b => b.onclick = async () => { const [oid, aid] = b.dataset.isend.split("|"), t = document.querySelector(`[data-irt="${b.dataset.isend}"]`).value.trim(), fs = FILES["i" + aid] || [];
+    if(!t && !fs.length) return toast("Write your answer first", 1);
+    const r = await act(() => api("do", { id:oid, op:"actReply", aid, text:t, files:fs }), "Sending your answer to sales…"); if(r){ delete FILES["i" + aid]; toast("Sent. Thank you."); myWork(); } });
+  document.querySelectorAll("[data-idis]").forEach(b => b.onclick = async () => { const [oid, aid] = b.dataset.idis.split("|"), w = prompt("What do you disagree with, and what should we do instead?"); if(!w) return;
+    const r = await act(() => api("do", { id:oid, op:"actObject", aid, qn:0, why:w }), "Sending to sales…"); if(r){ toast("Sales will decide and come back to you."); myWork(); } });
+}
+
+async function hodPage(refresh){
+  const j = await api("hod", null, refresh ? "&refresh=1" : ""), t = j.totals, ins = j.insight || {}, H = h => h >= 48 ? Math.round(h / 24) + " d" : Math.round(h) + " h";
+  const side = (k, n) => `<div><span>${n}</span><b class="${t[k] > 48 ? "r" : t[k] > 12 ? "w" : "g"}">${H(t[k])}</b><small>waiting on ${n.toLowerCase()}</small></div>`;
+  app.innerHTML = tabs("hod") + `<section class="card ohero"><div><div class="lbl">HoD report · ${fmtD(j.day)}</div><h1 style="font-size:24px">${E(ins.headline || "How the orders are moving")}</h1><div class="ometa"><span>${t.open} open orders</span><span>${t.late} late</span><span>${t.fails} QA fails</span><span>${t.revisions} revisions our fault</span>${ins.at ? `<span>Analysed ${ago(ins.at)}</span>` : ""}</div></div><div class="oacts"><button class="btn" id="hodR">Analyse again</button></div></section>
+   <div class="kpis" style="grid-template-columns:repeat(4,minmax(0,1fr))">${side("client", "Client")}${side("sales", "Sales")}${side("team", "Project team")}${side("qa", "QA")}</div>
+   ${(ins.todayForHod || []).length ? `<section class="card attn"><h2>Only you, today</h2>${ins.todayForHod.map(x => `<div class="arow"><span class="dot bad"></span><div class="tx">${E(x)}</div></div>`).join("")}</section>` : ""}
+   <div class="og"><div>
+    ${(ins.sides || []).length ? sec("Where time is lost", "Read from the real timing of every step: access, messages, answers, work and QA.", ins.sides.map(x => `<div class="rk"><span class="chip n" style="margin-bottom:6px">${E(x.side)}</span><div>${E(x.finding)}</div></div>`).join("")) : ""}
+    ${(ins.improve || []).length ? sec("What would improve productivity", "", ins.improve.map(x => `<div class="rk"><b>${E(x.what)}</b><div class="sub ev">${E(x.impact)}</div></div>`).join("")) : ""}
+    ${sec("Orders, slowest first", "Hours each side has held the order up. Open items are still waiting now.", `<table class="t2"><thead><tr><th>Order</th><th>Client</th><th>Sales</th><th>Team</th><th>QA</th></tr></thead><tbody>${j.orders.map(x => `<tr><td><a href="#o=${E(x.id)}"><b>${E(x.site || x.id)}</b></a><div class="sub">${E(x.id)} · ${E(SN[x.stage] || x.stage)} · due ${fmtD(x.deadline)}${x.late ? ` · <span style="color:var(--bad)">late</span>` : ""}</div>${x.broken.length ? `<div class="sub" style="color:var(--bad)">${x.broken.length} promise${x.broken.length > 1 ? "s" : ""} broken or overdue</div>` : ""}</td>${["client", "sales", "team", "qa"].map(k => `<td title="${E(x.items[k].map(i => i.what + ": " + H(i.h) + (i.open ? " (still open)" : "")).join("\n"))}"><b class="${x.hours[k] > 24 ? "r" : ""}" style="color:${x.hours[k] > 24 ? "var(--bad)" : "inherit"}">${x.hours[k] ? H(x.hours[k]) : "0"}</b>${x.items[k].some(i => i.open) ? `<div class="sub">open</div>` : ""}</td>`).join("")}</tr>`).join("") || `<tr><td colspan="5">No open orders</td></tr>`}</tbody></table>`)}
+   </div><div>
+    ${(ins.missed || []).length ? sec("Missed or broken", "", `<ul class="clean">${ins.missed.map(x => `<li>${E(x)}</li>`).join("")}</ul>`) : ""}
+    ${sec("Project team", "Time to answer and to finish work, per person.", `<table class="t2"><tbody>${j.team.map(x => `<tr><td><b>${E(x.name)}</b><div class="sub">${x.orders} order${x.orders > 1 ? "s" : ""}${x.open ? " · " + x.open + " waiting now" : ""}</div></td><td>${H(x.hours)}</td></tr>`).join("")}</tbody></table>`)}
+    ${sec("Sales and client messages", "Time to send what the order desk prepared.", `<table class="t2"><tbody>${j.sales.map(x => `<tr><td><b>${E(x.name)}</b><div class="sub">${x.orders} order${x.orders > 1 ? "s" : ""}${x.open ? " · " + x.open + " not sent" : ""}</div></td><td>${H(x.hours)}</td></tr>`).join("")}</tbody></table>`)}
+    ${(ins.people || []).length ? sec("People notes", "Fair and specific, from the timings.", ins.people.map(x => `<div class="rk"><b>${E(x.name)}</b><div class="sub ev">${E(x.note)}</div></div>`).join("")) : ""}
+   </div></div>`;
+  $("#hodR").onclick = () => act(() => hodPage(true), "Analysing every order (about 30 seconds)…");
+}
 
 /* Client messages queue */
 async function msgs(){
