@@ -846,10 +846,11 @@ async function writeGroupMsg(o){
   const pm = (o.pmName || "").split(" ")[0];
   const system = `You turn work steps into a list of very short tasks for a team chat. A 4th grade child must understand each task at first reading.
 Rules for every task:
-1. One action only. If a step has several actions, split it into several tasks.
+1. One task per RESULT the person must deliver (a tab written, a line fixed, titles updated), not one per click. Split only when two results are different. At most 6 tasks. Never repeat the same task twice.
 2. Start with the person's first name and a colon, then a simple verb (add, fix, change, check, send, update).
 3. At most two short sentences, each at most 12 words.
-4. If the place matters, say it first and naturally, for example: "In Rank Math, open Edit robots.txt." Never write "Where:".
+4. If the place matters, say it once and naturally, for example: "In Rank Math, edit robots.txt." Never write "Where:". Do not repeat the same place in every task.
+4b. Use only names that are in the steps; do not invent tab names or titles.
 5. Give exact values when needed (the exact line to add, the exact tab name in quotes).
 6. No reasons, no explanations, no dashes, no emojis, plain words.
 Answer with one JSON object only: {"tasks":["Amit: add a tab named \\"GSC review\\" to the Onpage Report sheet."]}`;
