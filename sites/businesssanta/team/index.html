@@ -95,7 +95,8 @@ ul.p{margin:0;padding-left:18px;color:var(--sub);font-size:14px}ul.p li{margin:3
 .attn h2{color:var(--bad);margin-bottom:6px}
 .arow{display:flex;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--soft);font-size:14px;color:var(--sub)}.arow:last-child{border-bottom:0}
 .arow .tx{flex:1;min-width:0}.arow b{color:var(--ink)}
-.dot{width:10px;height:10px;border-radius:50%;flex:none}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.dot.y{background:var(--y)}
+.alist{display:flex;flex-direction:column;gap:3px;margin-top:4px}.alist span{font-size:13.5px;color:var(--sub);padding-left:12px;position:relative}.alist span:before{content:"·";position:absolute;left:2px;color:var(--mut)}.alist .more{color:var(--mut)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;align-self:flex-start;margin-top:5px}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.dot.y{background:var(--y)}
 .otabs{display:flex;gap:4px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5;padding-top:6px}
 .otabs a{padding:12px 18px;text-decoration:none;color:var(--mut);font-weight:700;font-size:14.5px;border-bottom:3px solid transparent;margin-bottom:-1px}
 .otabs a.on{color:var(--ink);border-bottom-color:var(--y)}
@@ -299,7 +300,7 @@ function drawOrder(){
   const pmOpt = r => `<option value="">Not set</option>` + ME.people.filter(p => p.role === r || p.role === "manager").map(p => `<option value="${p.id}" ${o[r] === p.id ? "selected" : ""}>${E(p.name)}</option>`).join("");
   const nextBtn = {
     access: can("assign") ? `<button class="btn" id="anyway">Start before all access is in</button>` : "",
-    work: can("pm") ? `<button class="btn pri" id="toqa">Send to QA</button>` : "",
+    work: can("pm") ? (o.deliverables.every(d => d.done && d.proof) ? `<button class="btn pri" id="toqa">Send to QA</button>` : `<button class="btn" disabled title="Every deliverable needs proof and Done first">Send to QA · ${o.deliverables.filter(d => d.done).length} of ${o.deliverables.length} done</button>`) : "",
     qa: can("qa") ? `<button class="btn pri" id="qapass">QA pass</button><button class="btn danger" id="qafail">Send back with notes</button>` : "",
     ready: can("comms") ? `<button class="btn pri" id="deliver">Delivered to the client</button>` : "",
     delivered: can("comms") ? `<button class="btn danger" id="rev">Client asked for a revision</button><button class="btn pri" id="close">Client accepted: close</button>` : ""
@@ -307,7 +308,9 @@ function drawOrder(){
 
   /* Needs attention: the few things that matter right now */
   const att = [];
-  proms.filter(p => p.by && !kept(p) && p.by <= TODAY()).forEach(p => att.push({ k:"bad", t:(p.by < TODAY() ? "Overdue promise" : "Due today"), d:p.what }));
+  const odP = proms.filter(p => p.by && !kept(p) && p.by < TODAY()), tdP = proms.filter(p => p.by && !kept(p) && p.by === TODAY());
+  if(odP.length) att.push({ k:"bad", t:odP.length + " promise" + (odP.length > 1 ? "s" : "") + " overdue", list:odP.map(p => p.what), go:"overview", goT:"See promises" });
+  if(tdP.length) att.push({ k:"warn", t:tdP.length + " promise" + (tdP.length > 1 ? "s" : "") + " due today", list:tdP.map(p => p.what), go:"overview", goT:"See promises" });
   if(o.alert) att.push({ k:"bad", t:"Scope alert", d:o.alert, btn:`<button class="btn sm" id="clr">Checked, clear</button>` });
   if(newRep) att.push({ k:"y", t:"New client reply", d:"Read it in the Client tab", go:"client" });
   if(toSend) att.push({ k:"y", t:toSend + " message" + (toSend > 1 ? "s" : "") + " to send", d:"Ready in the Client tab", go:"client" });
@@ -326,21 +329,18 @@ function drawOrder(){
     <div><span>We keep</span><b class="${x.net >= 0 ? "g" : "r"}">${money(x.net)}</b><small>${x.margin}% of ${money(x.price)}</small></div>
     <div><span>Price check</span><b class="${vcol === "bad" ? "r" : vcol === "ok" ? "g" : ""}" style="font-size:16px;text-transform:capitalize">${E(pr.verdict || "Pending")}</b><small>${pr.fair ? "Fair: " + E(pr.fair) : ""}</small></div>
    </div>
-   ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b><br>${E(a.d)}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}">Open</button>` : "")}</div>`)}</section>` : ""}
+   ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b>${a.d ? `<br>${E(a.d)}` : ""}${a.list ? `<div class="alist">${a.list.slice(0, 4).map(t => `<span>${E(String(t).replace(/\s*\((said|asked|agreed)[^)]*\)\s*$/i, ""))}</span>`).join("")}${a.list.length > 4 ? `<span class="more">and ${a.list.length - 4} more</span>` : ""}</div>` : ""}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}" data-jump="${a.go === "overview" ? "prom" : ""}">${a.goT || "Open"}</button>` : "")}</div>`)}</section>` : ""}
    <nav class="otabs">${[["overview","Overview"],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
 
   const none = ME.ai ? "Not ready yet. Press Run the order desk again under History." : "Turns on with the AI helpers.";
   const overview = `<div class="og"><div>
     ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
-    ${proms.length ? sec("Promises to the client", "Everything our side promised in the chat. Broken promises are the fastest way to lose a client.",
+    ${proms.length ? `<div id="prom"></div>` + sec("Promises to the client", "Everything our side promised in the chat. Broken promises are the fastest way to lose a client.",
       `<table class="t2"><thead><tr><th>Promise</th><th>By</th><th>Status</th></tr></thead><tbody>${L(proms, p => { const od = p.by && !kept(p) && p.by < TODAY(), td = p.by && !kept(p) && p.by === TODAY();
         return `<tr><td>${E(p.what)}</td><td class="nw">${p.by ? fmtD(p.by) : "No date"}</td><td><span class="chip ${kept(p) ? "ok" : od ? "bad" : td ? "warn" : "n"}">${kept(p) ? "Kept" : od ? "Overdue" : td ? "Due today" : "Open"}</span></td></tr>`; })}</tbody></table>`) : ""}
     ${(ai.risks || []).length ? sec("Risks and how we prevent them", "Where this order could go wrong, decided before the work starts.",
       `<table class="t2"><thead><tr><th style="width:44%">Risk</th><th>How we prevent it</th></tr></thead><tbody>${L(ai.risks, r => `<tr><td><b>${E(r.risk)}</b></td><td>${E(r.prevent)}</td></tr>`)}</tbody></table>`) : ""}
     ${(ai.remarks || []).length || o.remarks ? sec("Special remarks", "What the chat alone does not make obvious.", `<ul class="clean">${o.remarks ? `<li><span class="tag">Sales</span>${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
-    ${(ai.pitch || []).length || rt.offer ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
-      `${rt.offer ? `<div class="plan"><div><span class="lbl">Monthly plan to offer</span><h3>${E(rt.offer)}</h3><p class="note" style="margin:0">When: ${E(rt.when)}</p></div><div class="pp">${E(rt.price)}</div></div>${rt.line ? `<div class="quote">${E(rt.line)}<button class="btn sm" data-cp="${E(rt.line)}">Copy</button></div>` : ""}` : ""}
-       ${(ai.pitch || []).length ? `<div class="lbl" style="margin:16px 0 8px">Next projects to suggest</div><ul class="clean">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}`) : ""}
    </div><div>
     ${sec("Money on this order", "What the order really earns after the fee, team time and AI.",
       `<table class="money"><tr><td>Client paid</td><td>${money(x.price)}</td></tr><tr><td>Marketplace fee</td><td>− ${money(x.fee)}</td></tr><tr><td>Team time (${x.hours} h logged)</td><td>− ${money(x.team)}</td></tr><tr><td>AI helpers</td><td>− ${money(x.ai)}</td></tr>
@@ -348,7 +348,10 @@ function drawOrder(){
        <p class="note" style="margin:10px 0 0">Planned: ${x.planHours} h, keeps ${money(x.planNet)} (${x.planMargin}%).</p>`)}
     ${pr.verdict ? sec("Price check", "Was this order priced right for the work it needs?", `<div class="verdict ${vcol}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note" style="margin:0">Fair price for this scope: <b>${E(pr.fair)}</b></p>`) : ""}
     ${sec("Team on this order", "Who does the work and who checks it.", can("assign") ? `<div class="grid" style="gap:10px"><label class="f">Project team<select id="pmS">${pmOpt("pm")}</select></label><label class="f">QA<select id="qaS">${pmOpt("qa")}</select></label></div>` : `<table class="money"><tr><td>Project team</td><td>${E(o.pmName || "Not set")}</td></tr><tr><td>QA</td><td>${E(o.qaName || "Not set")}</td></tr></table>`)}
-    ${o.site ? sec("Website check", "A first look at the client's home page.", o.site.error ? `<p class="note">${E(o.site.error)}</p>` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
+    ${(ai.pitch || []).length || rt.offer ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
+      `${rt.offer ? `<div class="plan"><div><span class="lbl">Monthly plan to offer</span><h3>${E(rt.offer)}</h3><p class="note" style="margin:0">When: ${E(rt.when)}</p></div><div class="pp">${E(rt.price)}</div></div>${rt.line ? `<div class="quote">${E(rt.line)}<button class="btn sm" data-cp="${E(rt.line)}">Copy</button></div>` : ""}` : ""}
+       ${(ai.pitch || []).length ? `<div class="lbl" style="margin:16px 0 8px">Next projects to suggest</div><ul class="clean">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}`) : ""}
+    ${o.site ? sec("Website check", "A first look at the client's home page." + (o.site.at ? " Checked " + fmtD(o.site.at) + "." : ""), o.site.error ? `<p class="note">${E(o.site.error)}</p>${can("pm") ? `<button class="btn sm" id="site">Check again</button>` : ""}` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
       + (st.verdict ? `<p style="margin:12px 0 0">${E(st.verdict)}</p>` : "") + ((st.quickWins || []).length ? `<div class="lbl" style="margin:14px 0 8px">Quick wins that delight</div><ul class="clean">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : "")) : ""}
    </div></div>`;
 
@@ -397,7 +400,7 @@ function drawOrder(){
 }
 function wireOrder(o){
   const on = (s, f) => { const el = $(s); if(el) el.onclick = f; };
-  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { OTAB = b.dataset.tab; drawOrder(); window.scrollTo({ top:document.querySelector(".otabs").offsetTop - 70, behavior:"smooth" }); });
+  document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { OTAB = b.dataset.tab; const j = b.dataset.jump; drawOrder(); const t = (j && document.getElementById(j)) || document.querySelector(".otabs"); window.scrollTo({ top:t.getBoundingClientRect().top + window.scrollY - 70, behavior:"smooth" }); });
   document.querySelectorAll("[data-cp]").forEach(b => b.onclick = () => navigator.clipboard.writeText(b.dataset.cp).then(() => toast("Copied")));
   document.querySelectorAll("[data-acc]").forEach(b => b.onclick = () => { const note = b.dataset.s === "wrong" ? prompt("What is wrong with the level? (the client message will ask again)") : b.dataset.s === "skip" ? prompt("Why is it not needed for this order?") : ""; if(note === null) return; doOp("access", { aid:b.dataset.acc, status:b.dataset.s, note }); });
   document.querySelectorAll("[data-proof]").forEach(b => b.onclick = () => { const p = prompt("Proof link: live page, report or screenshot link"); if(p) doOp("deliv", { did:b.dataset.proof, proof:p }); });
@@ -419,6 +422,7 @@ function wireOrder(o){
   on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
   on("#anyway", () => { const w = prompt("Why should work start before all access is in?"); if(w) doOp("startAnyway", { why:w }); });
   on("#rerun", () => doOp("analyse", {}, "The order desk is reading everything again…"));
+  on("#site", () => doOp("site", {}, "Checking the website…"));
   on("#fmt", () => doOp("format", {}, "Laying out the conversation…"));
   on("#rawT", () => { const r = $("#raw"), hd = r.classList.toggle("hide"); $("#rawT").textContent = hd ? "Original paste" : "Hide original"; });
   on("#nt", () => { const t = prompt("Note for the team"); if(t) doOp("note", { text:t }); });

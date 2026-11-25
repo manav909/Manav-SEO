@@ -209,6 +209,7 @@ async function handle(request){
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
     if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
+    else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
       x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();
