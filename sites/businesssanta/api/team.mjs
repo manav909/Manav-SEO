@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
@@ -377,6 +377,21 @@ async function syncTeam(o){
   if(changedAfterQA.length) o.alert = "Changed after QA passed: " + changedAfterQA.map(f => f.name).join(", ").slice(0, 140);
   if(r.mails.length){ o.mails = (o.mails || []).concat(r.mails).sort((a, b) => a.date.localeCompare(b.date)).slice(-80); r.mails.forEach(m => fresh.push("TEAM EMAIL " + m.date + " from " + m.from + ", subject \"" + m.subject + "\":\n" + m.text.slice(0, 2500) + (m.files.length ? "\nAttachments: " + m.files.join(", ") : ""))); }
   if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).slice(-300); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 8000)); }
+  // Project access group: keep the (masked) messages, and update the access checklist from what they show
+  if(r.access.length){ o.accessChat = (o.accessChat || []).concat(r.access).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-200);
+    if(aiOn() && (o.access || []).length) try{ const p = accessPrompt(o, o.access, r.access), x = await askAI("accesschat", "claude-haiku-5-5", p.system, p.user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + x.usd).toFixed(4);
+      const d = x.data || {}, ch = [];
+      for(const u of d.updates || []){ const a = o.access.find(y => y.id === u.id); if(!a || !["received", "wrong", "asked"].includes(u.status) || a.status === u.status || (a.status === "skip")) continue;
+        if(u.status === "asked" && ["received", "wrong"].includes(a.status)) continue;
+        a.status = u.status; a.note = "From the access group: " + str(u.note, 200); if(u.status === "received"){ a.receivedAt = now(); a.atS = now(); } ch.push(a.item + ": " + u.status); }
+      for(const n2 of (d.newItems || []).slice(0, 3)){ if(o.access.some(y => y.item.toLowerCase() === String(n2.item || "").toLowerCase())) continue;
+        o.access.push({ id:nid("a"), item:str(n2.item, 120), level:"", why:"Seen in the access group", status:n2.status === "received" ? "received" : "asked", note:"From the access group: " + str(n2.note, 200) }); ch.push(n2.item + ": added"); }
+      o.accessIssues = (d.issues || []).slice(0, 6).map(x2 => str(x2, 240));
+      if(ch.length) log(o, { name:"Order desk" }, "Access group: " + ch.join("; "));
+      if(o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))){ setStage(o, "work"); log(o, { name:"Order desk" }, "Every access item is in. Work can start."); }
+      if((d.issues || []).length) fresh.push("ACCESS GROUP, open problems: " + d.issues.join("; "));
+    }catch(e){} }
+  o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
@@ -707,6 +722,20 @@ async function handle(request){
     return out({ ok:true, score:score(all, cfg, m), ai:{ calls:aiu.calls || 0, usd:+((aiu.micro || 0) / 1e6).toFixed(3), order:+((aiu["micro:order"] || 0) / 1e6).toFixed(3),
       lead:+((aiu["micro:lead"] || 0) / 1e6).toFixed(3), format:+((aiu["micro:format"] || 0) / 1e6).toFixed(3), reply:+((aiu["micro:reply"] || 0) / 1e6).toFixed(3), credit:200 } }); }
 
+  /* One search over orders, clients and leads: name, username, site, order number, gig, notes and (for sales) what was said in the chat */
+  if(a === "search"){ const t = str(url.searchParams.get("q"), 80).toLowerCase(); if(t.length < 2) return out({ ok:true, orders:[], clients:[], leads:[] });
+    const PJ = isProj(w), hit = (...xs) => xs.some(x => String(x || "").toLowerCase().includes(t));
+    const snip = x => { const s0 = String(x || ""), i = s0.toLowerCase().indexOf(t); return i < 0 ? "" : (i > 40 ? "…" : "") + s0.slice(Math.max(0, i - 40), i + t.length + 60).replace(/\s+/g, " ") + "…"; };
+    const all = await loadAll(1000, !PJ), orders = [];
+    for(const o of all){ const g = (gigOf(o.gig) || {}).name || "", base = hit(o.id, o.client.name, o.client.website, g, o.client.country);
+      const inChat = !base && !PJ && (hit(o.chat, o.calls, o.remarks) ? snip(o.chat) || snip(o.calls) || snip(o.remarks) : "");
+      if(base || inChat) orders.push({ id:o.id, client:o.client.name, site:domOf(o.client.website), gig:g, stage:o.stage, deadline:o.deadline, at:o.at, match:inChat ? "In the chat: " + inChat : "" }); }
+    let clients = [], leads = [];
+    if(!PJ){ const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
+      clients = cs.filter(c => hit(c.name, (c.sites || []).join(" "), c.notes, (c.tags || []).join(" "), c.country)).map(c => ({ id:c.id, name:c.name, sites:c.sites || [], orders:(c.orders || []).length, last:c.last, match:hit(c.notes) ? snip(c.notes) : "" }));
+      if(can(w, "lead")){ const l = (await cmd("LRANGE", T.leads, 0, 299)).map(x => JSON.parse(x)).filter(x => can(w, "assign") || x.by === w.uid);
+        leads = l.filter(x => hit(x.title, x.note, x.chat, x.byName)).map(x => ({ id:x.id, title:x.title, at:x.at, by:x.byName, stage:(x.result || {}).stage || "", match:hit(x.title) ? "" : snip(x.note) || snip(x.chat) })); } }
+    return out({ ok:true, q:t, orders:orders.slice(0, 30), clients:clients.slice(0, 20), leads:leads.slice(0, 20) }); }
   if(a === "leads"){ const l = (await cmd("LRANGE", T.leads, 0, 99)).map(x => JSON.parse(x)); return out({ ok:true, leads:can(w, "assign") ? l : l.filter(x => x.by === w.uid) }); }
   if(a === "lead"){ if(!can(w, "lead")) return bad("Lead help is for sales", 403);
     if(!aiOn()) return bad("AI helpers are off until the API key is added in Vercel", 503);
@@ -880,12 +909,16 @@ async function handle(request){
       if(q.ours && q.deliv){ const d = find("deliverables", q.deliv); if(d){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"drive", url:x.link, name:x.name, meta:{ ok:true, id:x.id, name:x.name, kind:x.kind, modified:x.modified, lastBy:x.by, via:x.via }, at:now(), by:w.name }); delete d.proof; } }
       groupDocs(o); log(o, w, (q.ours ? "Confirmed our document: " : "Not this order: ") + x.name + (q.deliv ? " (used as proof)" : "")); }
     else if(op === "docDiff"){ const x = find("docs", q.did); if(!x) return bad("Not found"); if(!aiOn()) return bad("The AI helpers are off", 503); groupDocs(o);
-      const same = (o.docs || []).filter(d => d.group === x.group && d.status !== "rejected").sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+      const gk = x.group; let splits = 0;
+      /* Keep comparing the newest two copies; each copy that turns out to be a different report is split off, until the rest really are versions of one document */
+      for(let round = 0; round < 6; round++){
+      const same = (o.docs || []).filter(d => d.group === gk && d.status !== "rejected").sort((a, b) => String(b.modified).localeCompare(String(a.modified)));
+      if(round && same.length < 2) break;
       let pair = null, how = "";
       if(same.length >= 2){ pair = { after:{ at:same[0].modified, by:same[0].by, text:await docText(same[0]) }, before:{ at:same[1].modified, by:same[1].by, text:await docText(same[1]) } }; how = "newest copy against the one before"; }
       if((!pair || (!pair.after.text && !pair.before.text)) && /document$/.test(x.mime || "")){ const rv = await revisionTexts(same[0] || x); if(rv){ pair = rv; how = "the last two saved versions of the document (" + rv.count + " in all)"; } }
-      if(!pair || (!pair.after.text && !pair.before.text)) return bad("There is only one version to read so far, or this file type cannot be compared as text");
-      if(pair.after.text === pair.before.text){ o.docGroups = o.docGroups || {}; o.docGroups[x.group] = { at:now(), how, summary:"No change in the text between the two versions.", changes:[], numbers:[], useNewer:true, flags:[] }; }
+      if(!pair || (!pair.after.text && !pair.before.text)){ if(round) break; return bad("There is only one version to read so far, or this file type cannot be compared as text"); }
+      if(pair.after.text === pair.before.text){ o.docGroups = o.docGroups || {}; o.docGroups[gk] = { at:now(), how, summary:"No change in the text between the two versions.", changes:[], numbers:[], useNewer:true, flags:[] }; }
       else { /* Long files: send only the lines that differ (plus the header), so the comparison is cheap, complete and exact */
         const big = (pair.before.text.length + pair.after.text.length) > 9000;
         if(big){ const A = pair.before.text.split(/\r?\n/), B = pair.after.text.split(/\r?\n/), sa = new Set(A), sb = new Set(B), head = B[0] || A[0] || "";
@@ -894,11 +927,12 @@ async function handle(request){
           pair.before = Object.assign({}, pair.before, { text:"First line: " + head + "\nLines only in this older version (" + gone.length + " of " + A.length + "):\n" + cut(gone, 120) });
           pair.after = Object.assign({}, pair.after, { text:"Lines only in this newer version (" + added.length + " of " + B.length + "):\n" + cut(added, 120) }); how += " (only the changed lines were read)"; }
         const p = diffPrompt(o, x.name, pair.before, pair.after), r = await askAI("diff", "claude-haiku-5-5", p.system, p.user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-        o.docGroups = o.docGroups || {}; o.docGroups[x.group] = Object.assign(r.data || {}, { at:now(), how });
+        o.docGroups = o.docGroups || {}; o.docGroups[gk] = Object.assign(r.data || {}, { at:now(), how });
         /* Same name, different report: split the newer one off so both are read */
-        if(r.data && r.data.sameDoc === false && same.length >= 2){ const g0 = x.group; same[0].split = true; same[0].splitWhy = str(r.data.whatEach || "Different report with the same name", 240); groupDocs(o);
-          o.docGroups[same[0].group] = Object.assign({}, o.docGroups[g0], { summary:"Kept as its own report: " + same[0].splitWhy }); } }
-      log(o, w, "Compared versions of " + x.name + ": " + str(o.docGroups[x.group].summary, 200)); }
+        if(r.data && r.data.sameDoc === false && same.length >= 2){ same[0].split = true; same[0].splitWhy = str(r.data.whatEach || "Different report with the same name", 240); groupDocs(o); splits++;
+          o.docGroups[same[0].group] = Object.assign({}, o.docGroups[gk], { summary:"Kept as its own report: " + same[0].splitWhy }); delete o.docGroups[gk]; continue; } }
+      break; }
+      log(o, w, "Compared versions of " + x.name + (splits ? ": " + splits + " cop" + (splits > 1 ? "ies were" : "y was") + " a different report and now " + (splits > 1 ? "are" : "is") + " read on " + (splits > 1 ? "their" : "its") + " own" : "") + (o.docGroups[gk] ? ": " + str(o.docGroups[gk].summary, 200) : "")); }
     else if(op === "intel"){ const r = await buildIntel(o); log(o, w, r.found ? "Read Google data and updated the business analysis" + (r.access ? "; access found for " + r.access + " item(s)" : "") : "No connected Google account can see this site's Search Console or Analytics yet"); }
     else if(op === "verify"){ if(!can(w, "pm") && !can(w, "qa")) return bad("Your role cannot do this step"); const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; (o.verifyLog = o.verifyLog || []).unshift(v); o.verifyLog = o.verifyLog.slice(0, 12);
       const bad1 = v.live.filter(x => !x.ok).length, idx = v.pages.filter(p => /^Submitted and indexed|PASS/i.test(p.state || p.verdict || "")).length;

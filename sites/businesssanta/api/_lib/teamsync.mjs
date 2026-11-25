@@ -15,8 +15,24 @@ function bodyOf(p){
 }
 const clean = t => String(t).split(/\r?\n/).filter(l => !/^\s*>/.test(l)).join("\n").split(/\nOn .{5,80}wrote:\n/)[0].replace(/\n{3,}/g, "\n\n").trim().slice(0, 4000);
 
+/* Passwords, keys, tokens and logins never leave the chat: masked before the order desk keeps or reads a message */
+export const maskCreds = (t, files) => { const x = String(t || "")
+  .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email hidden]")
+  .replace(/\b(pass(word)?|pwd|passcode|pin|otp|user ?name|username|login|user|id|api ?key|key|token|secret|app(lication)? password)\s*[:=-]\s*\S+/gi, "$1: [hidden]")
+  .replace(/(^|\n)(\s*(password|pass|pwd|key|token)\s*:?\s*\n)([^\n]+)/gi, "$1$2[hidden]")
+; return files ? x : x.replace(/(^|\s)(?!https?:)(?=\S*\d)(?=\S*[A-Za-z])(?=\S*[^A-Za-z0-9\s.,/])\S{8,64}(?=\s|$)/g, "$1[hidden]"); };
+export function accessPrompt(o, items, msgs){
+  const system = `You read messages from an agency's internal project access group, where sales and the project team share and fix client access (Search Console, Analytics, CMS logins, hosting). Credentials are already hidden; never repeat any. For the order below, decide what the messages show for each access item: "received" (access is shared and works at the right level), "wrong" (shared but the wrong level, or it does not work), "asked" (requested, not given yet). Only items the messages clearly speak about. Also list access problems still open. No dashes.
+Answer with one JSON object only: {"updates":[{"id":"access item id","status":"received | wrong | asked","note":"one plain line: who, when, what"}],"newItems":[{"item":"access the messages show that is not on the list","status":"received | asked","note":""}],"issues":["open access problem, with who must act"],"summary":"one line"}`;
+  const user = `Order ${o.id}, site ${o.client.website}, client ${o.client.name || ""}.
+ACCESS ITEMS:
+${items.map(a => `${a.id}: ${a.item} (level needed: ${a.level || "?"}) now ${a.status}`).join("\n")}
+MESSAGES:
+${msgs.map(m => `${m.at} ${m.by}: ${m.text}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n")}`.slice(0, 60000);
+  return { system, user };
+}
 export async function syncOrder(o){
-  const k = keysOf(o), out = { at:new Date().toISOString(), folder:o.folder || null, files:[], mails:[], chat:[], errors:{} }, since = o.syncAt || o.at;
+  const k = keysOf(o), out = { at:new Date().toISOString(), folder:o.folder || null, files:[], mails:[], chat:[], access:[], errors:{} }, since = o.syncAt || o.at;
   const accs = (await accounts()).filter(a => !a.primary || a.drive);
   for(const a of accs){
     // Drive: the project folder, named with the order number or the site
@@ -34,7 +50,7 @@ export async function syncOrder(o){
           if((o.mails || []).some(x => x.id === m.id)) continue;
           const g = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full");
           const hd = n => ((g.payload.headers || []).find(h => h.name.toLowerCase() === n) || {}).value || "";
-          out.mails.push({ id:m.id, via:a.email, from:hd("from"), to:hd("to"), cc:hd("cc"), subject:hd("subject"), date:new Date(Number(g.internalDate)).toISOString(), text:clean(bodyOf(g.payload)) || g.snippet || "",
+          out.mails.push({ id:m.id, via:a.email, from:hd("from"), to:hd("to"), cc:hd("cc"), subject:hd("subject"), date:new Date(Number(g.internalDate)).toISOString(), text:maskCreds(clean(bodyOf(g.payload)) || g.snippet || ""),
             files:(function walk(p, acc){ (p.parts || []).forEach(x => { if(x.filename) acc.push(x.filename); walk(x, acc); }); return acc; })(g.payload, []).slice(0, 10) });
         } }catch(e){ out.errors.gmail = e.message; }
     }
@@ -44,9 +60,23 @@ export async function syncOrder(o){
         for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
           const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=50&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
           for(const m of (ms.messages || []).reverse()) if(!(o.teamChat || []).some(x => x.id === m.name))
-            out.chat.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:String(m.text || m.formattedText || "").slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) });
+            out.chat.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) });
         } }catch(e){ out.errors.chat = e.message; }
     }
+  }
+  // The project access group (a Google Chat space with "access" in its name, where sales and the project team share and fix access):
+  // messages naming this order's site, client or number, plus the rest of their threads. Credentials are masked before anything is kept.
+  for(const a of accs.filter(x => x.chat)){
+    try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
+      for(const s of (sp.spaces || []).filter(s => /access/i.test(s.displayName || "")).slice(0, 3)){
+        const from = o.accessSyncAt || new Date(Date.parse(o.at) - 30 * 864e5).toISOString();
+        const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=200&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + from + '"'));
+        const list = (ms.messages || []).reverse(), cname = String(o.client.name || "").toLowerCase();
+        const hit = m => hits(m.text, k) || (cname.length >= 4 && String(m.text || "").toLowerCase().includes(cname));
+        const threads = new Set(list.filter(hit).map(m => m.thread && m.thread.name).filter(Boolean));
+        for(const m of list) if((hit(m) || (m.thread && threads.has(m.thread.name))) && !(o.accessChat || []).some(x => x.id === m.name))
+          out.access.push({ id:m.name, space:s.displayName, via:a.email, by:(m.sender && m.sender.displayName) || "", at:m.createTime, text:maskCreds(String(m.text || "")).slice(0, 2000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) });
+      } }catch(e){ out.errors.access = e.message; }
   }
   if(out.folder){
     const a = out.folder.via;
@@ -82,7 +112,7 @@ export async function docPeek(c){
     const tok = await (await import("./google.mjs")).accessTokenAs(c.via);
     const url = /document$|presentation$/.test(c.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(c.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(c.mime || "") ? D + "?alt=media" : "";
     if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) return "";
-    return (await r.text()).replace(/\s+/g, " ").slice(0, 1500);
+    return maskCreds((await r.text()).replace(/\s+/g, " "), true).slice(0, 1500);
   }catch(e){ return ""; }
 }
 export function docPrompt(orders, cands){
@@ -102,7 +132,7 @@ export async function docText(d, max){
   if(!d.via) return "";
   const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
   const url = /document$|presentation$/.test(d.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(d.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(d.mime || "") ? D + "?alt=media" : "";
-  if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); return r.ok ? (await r.text()).slice(0, max || 20000) : "";
+  if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); return r.ok ? maskCreds(await r.text(), true).slice(0, max || 20000) : "";
 }
 /* The two newest saved versions of one Google Doc, as text */
 export async function revisionTexts(d){
@@ -110,7 +140,7 @@ export async function revisionTexts(d){
   const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
   const l = await fetch(D + "/revisions?pageSize=200&fields=revisions(id,modifiedTime,lastModifyingUser(displayName),exportLinks)", { headers:{ authorization:"Bearer " + tok } }).then(r => r.json()).catch(() => ({}));
   const rv = (l.revisions || []).filter(x => x.exportLinks && x.exportLinks["text/plain"]); if(rv.length < 2) return null;
-  const [a, b] = rv.slice(-2), get = u => fetch(u, { headers:{ authorization:"Bearer " + tok } }).then(r => r.ok ? r.text() : "");
+  const [a, b] = rv.slice(-2), get = u => fetch(u, { headers:{ authorization:"Bearer " + tok } }).then(r => r.ok ? r.text() : "").then(t => maskCreds(t, true));
   return { before:{ at:a.modifiedTime, by:(a.lastModifyingUser || {}).displayName || "", text:(await get(a.exportLinks["text/plain"])).slice(0, 20000) },
     after:{ at:b.modifiedTime, by:(b.lastModifyingUser || {}).displayName || "", text:(await get(b.exportLinks["text/plain"])).slice(0, 20000) }, count:(l.revisions || []).length };
 }
@@ -138,11 +168,11 @@ export async function sweepSignals(since){
   for(const a of accs){
     if(a.gmail) try{ const l = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=30&q=" + encodeURIComponent("after:" + after + " -category:promotions -category:social -category:forums"));
       for(const m of (l.messages || []).slice(0, 30)){ const g = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full");
-        const hd = n => ((g.payload.headers || []).find(h => h.name.toLowerCase() === n) || {}).value || "", text = (clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 1500);
+        const hd = n => ((g.payload.headers || []).find(h => h.name.toLowerCase() === n) || {}).value || "", text = maskCreds(clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 1500);
         items.push({ key:"m:" + m.id, kind:"email", via:a.email, from:nameOnly(hd("from")), subject:hd("subject"), at:new Date(Number(g.internalDate)).toISOString(), text, sites:sitesIn(hd("subject") + " " + text + " " + hd("from") + " " + hd("to") + " " + hd("cc")) }); } }catch(e){ errors.gmail = e.message; }
     if(a.chat) try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
       for(const s of (sp.spaces || []).slice(0, 25)){ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=30&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"')).catch(() => ({}));
-        for(const m of (ms.messages || []).reverse()){ const text = String(m.text || m.formattedText || "").slice(0, 1500);
+        for(const m of (ms.messages || []).reverse()){ const text = maskCreds(String(m.text || m.formattedText || "")).slice(0, 1500);
           items.push({ key:"c:" + m.name, kind:"group chat", via:a.email, space:s.displayName || "Direct chat", from:(m.sender && m.sender.displayName) || "", at:m.createTime, text, sites:sitesIn((s.displayName || "") + " " + text) }); } } }catch(e){ errors.chat = e.message; }
     if(a.drive) try{ const r = await apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=30&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,modifiedTime,webViewLink,lastModifyingUser(displayName))&q=" + encodeURIComponent("trashed=false and mimeType != 'application/vnd.google-apps.folder' and modifiedTime > '" + since + "' and (sharedWithMe or 'me' in owners)"));
       for(const f of r.files || []){ const peek = await docPeek({ id:f.id, mime:f.mimeType, via:a.email });
@@ -164,13 +194,13 @@ export async function siteHistory(site){
     if(a.gmail) try{ const l = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=40&q=" + encodeURIComponent('"' + h + '"' + (root.length >= 5 ? ' OR "' + root + '"' : "")));
       for(const m of (l.messages || []).slice(0, 30)){ const g = await apiAs(a.email, "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + m.id + "?format=full");
         const hd = n => ((g.payload.headers || []).find(x => x.name.toLowerCase() === n) || {}).value || "";
-        out.mails.push({ at:new Date(Number(g.internalDate)).toISOString(), from:nameOnly(hd("from")), subject:hd("subject"), text:(clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 700) }); } }catch(e){}
+        out.mails.push({ at:new Date(Number(g.internalDate)).toISOString(), from:nameOnly(hd("from")), subject:hd("subject"), text:maskCreds(clean(bodyOf(g.payload)) || g.snippet || "").slice(0, 700) }); } }catch(e){}
     if(a.drive) try{ const r = await apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=40&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=files(id,name,mimeType,createdTime,modifiedTime,webViewLink,lastModifyingUser(displayName))&q=" + encodeURIComponent("trashed=false and (fullText contains '" + h + "'" + (root.length >= 5 ? " or name contains '" + root + "'" : "") + ")"));
       for(const [i, f] of (r.files || []).entries()) out.files.push({ id:f.id, name:f.name, link:f.webViewLink, created:f.createdTime, modified:f.modifiedTime, by:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", peek:i < 10 ? (await docPeek({ id:f.id, mime:f.mimeType, via:a.email })).slice(0, 500) : "" }); }catch(e){}
     if(a.chat) try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
       for(const s of (sp.spaces || []).filter(s => hits(s.displayName, { id:"\u0000", h, root:root.length >= 4 ? root : "" })).slice(0, 3)){
         const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=100&orderBy=createTime%20desc").catch(() => ({}));
-        for(const m of (ms.messages || []).reverse()) out.chat.push({ at:m.createTime, space:s.displayName, by:(m.sender && m.sender.displayName) || "", text:String(m.text || "").slice(0, 400) }); } }catch(e){}
+        for(const m of (ms.messages || []).reverse()) out.chat.push({ at:m.createTime, space:s.displayName, by:(m.sender && m.sender.displayName) || "", text:maskCreds(String(m.text || "")).slice(0, 400) }); } }catch(e){}
   }
   const seen = new Set(); out.files = out.files.filter(f => !seen.has(f.id) && seen.add(f.id));
   return out;

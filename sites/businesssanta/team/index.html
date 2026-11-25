@@ -199,6 +199,8 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .pqd{display:flex;gap:6px;align-items:center;margin-top:6px;font-size:12.5px;color:var(--mut);cursor:pointer}.pqd input{width:auto;min-height:0}
 @media(max-width:620px){.pq{margin-left:0}}
 .rolepick{display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px;color:var(--sub)}.rolepick label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}.rolepick input{width:auto;min-height:0}
+.srch{margin-left:auto;display:flex}.srch input{min-height:36px;width:260px;max-width:52vw;border-radius:999px;padding:0 14px;font-size:13.5px}@media(max-width:700px){.srch{margin-left:0;width:100%}.srch input{width:100%;max-width:none}}
+.sr{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;text-decoration:none;color:inherit}.sr:hover{background:var(--raise)}.sr div{display:flex;flex-direction:column;gap:2px;min-width:0}.sr b{color:var(--ink);font-size:14.5px}.sr span{font-size:12.5px;color:var(--mut)}.sr em{font-style:normal;font-size:12.5px;color:var(--sub);overflow-wrap:anywhere}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -282,7 +284,7 @@ function tabs(on){
   if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
   if(ME.role === "admin") t.push(["hod","HoD report"], ["pay","Payments"], ["people","Team and settings"]);
   const qn = QUEUE.length;
-  return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}</nav>
+  return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}<form class="srch" onsubmit="event.preventDefault();location.hash='#s='+encodeURIComponent(this.q.value.trim())"><input name="q" type="search" placeholder="${ME.role === "pm" || ME.role === "qa" ? "Search orders" : "Search clients, leads, orders"}" value="${on === "search" ? E(SQ) : ""}" aria-label="Search"></form></nav>
   ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
 }
 async function route(){
@@ -292,6 +294,8 @@ async function route(){
     if(h.startsWith("o=")) return await order(decodeURIComponent(h.slice(2)));
     if(h === "new") return await newOrder();
     if(h === "lead") return await lead();
+    if(h.startsWith("lead=")) return await lead(decodeURIComponent(h.slice(5)));
+    if(h.startsWith("s=")) return await searchPage(decodeURIComponent(h.slice(2)));
     if(h === "msgs") return await msgs();
     if(h === "score") return await scorecard();
     if(h === "people") return await peoplePage();
@@ -520,10 +524,10 @@ function drawOrder(){
       `<table class="money"><tr><td>Client paid</td><td>${money(x.price)}</td></tr><tr><td>Marketplace fee</td><td>− ${money(x.fee)}</td></tr><tr><td>Team time (${x.hours} h logged)</td><td>− ${money(x.team)}</td></tr><tr><td>AI helpers</td><td>− ${money(x.ai)}</td></tr>
        <tr class="tot"><td>We keep</td><td class="${x.net >= 0 ? "g" : "r"}">${money(x.net)} <small>${x.margin}%</small></td></tr></table>
        <p class="note" style="margin:10px 0 0">Planned: ${x.planHours} h, keeps ${money(x.planNet)} (${x.planMargin}%).</p>`)}
-    ${pr.verdict ? sec("Price check", "Was this order priced right for the work it needs?", `<div class="verdict ${vcol}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note" style="margin:0">Fair price for this scope: <b>${E(pr.fair)}</b></p>`) : ""}
+    ${pr.verdict && can("assign") ? sec("Price check", "Was this order priced right for the work it needs?", `<div class="verdict ${vcol}">${E(pr.verdict)}</div><p>${E(pr.why)}</p><p class="note" style="margin:0">Fair price for this scope: <b>${E(pr.fair)}</b></p>`) : ""}
     ${sec("Team on this order", "Who does the work and who checks it.", can("assign") ? `<div class="grid" style="gap:10px"><label class="f">Project team<select id="pmS">${pmOpt("pm")}</select></label><label class="f">QA<select id="qaS">${pmOpt("qa")}</select></label></div>` : `<table class="money"><tr><td>Project team</td><td>${E(o.pmName || "Not set")}</td></tr><tr><td>QA</td><td>${E(o.qaName || "Not set")}</td></tr></table>`)}
-    ${pitchSec}
-    ${(ai.pitch || []).length || rt.offer ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
+    ${pitchSec ? pitchSec.replace("Retention plan and pitches", "Grow this client") : ""}
+    ${!pitchSec && ((ai.pitch || []).length || rt.offer) ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
       `${rt.offer ? `<div class="plan"><div><span class="lbl">Monthly plan to offer</span><h3>${E(rt.offer)}</h3><p class="note" style="margin:0">When: ${E(rt.when)}</p></div><div class="pp">${E(rt.price)}</div></div>${rt.line ? `<div class="quote">${E(rt.line)}<button class="btn sm" data-cp="${E(rt.line)}">Copy</button></div>` : ""}` : ""}
        ${(ai.pitch || []).length ? `<div class="lbl" style="margin:16px 0 8px">Next projects to suggest</div><ul class="clean">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}`) : ""}
    </div></div>`;
@@ -531,7 +535,10 @@ function drawOrder(){
   const acc = `<table class="t2"><thead><tr><th>Access</th><th>Level needed</th><th>Status</th>${can("pm") ? "<th></th>" : ""}</tr></thead><tbody>${L(o.access, a => `<tr><td><b>${E(a.item)}</b><div class="sub">${E(a.why)}</div>${a.note ? `<div class="sub ev">${E(a.note)}</div>` : ""}</td><td>${E(a.level)}</td>
     <td><span class="chip ${["received","skip"].includes(a.status) ? "ok" : a.status === "wrong" ? "bad" : a.status === "asked" ? "warn" : "n"}">${{ needed:"Not asked", asked:"Asked", received:"Received", wrong:"Wrong level", skip:"Not needed" }[a.status]}</span></td>
     ${can("pm") ? `<td class="acts">${a.status !== "received" ? `<button class="btn sm" data-acc="${a.id}" data-s="received">Received</button>` : ""}${a.status !== "wrong" ? `<button class="btn sm danger" data-acc="${a.id}" data-s="wrong">Wrong level</button>` : ""}${a.status !== "skip" ? `<button class="btn sm ghost" data-acc="${a.id}" data-s="skip">Not needed</button>` : ""}</td>` : ""}</tr>`)}</tbody></table>
-    ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:12px">Add an access item</button>` : ""}`;
+    ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:12px">Add an access item</button>` : ""}
+    ${(o.accessIssues || []).length ? `<div class="ckl warn" style="margin-top:14px"><span>Open in the access group</span><ul>${o.accessIssues.map(x => `<li>${E(x)}</li>`).join("")}</ul></div>` : ""}
+    ${(o.accessChat || []).length ? `<details class="mx" style="margin:14px 0 0"><summary>From the project access group (${o.accessChat.length} message${o.accessChat.length === 1 ? "" : "s"}, last ${ago(o.accessChat[o.accessChat.length - 1].at)})</summary><div class="cv tchat" style="margin-top:8px">${o.accessChat.slice(-30).map(m => `<div class="bu c"><span class="mt"><b>${E(m.by || "Team")}</b> · ${ago(m.at)}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">📎 ${m.files.map(E).join(", ")}</span>` : ""}</div>`).join("")}</div><p class="sub" style="margin-top:6px">Passwords, keys and logins are hidden before anything is kept.</p></details>` : ""}
+    <details class="mx" style="margin:16px 0 0" ${o.stage === "access" ? "open" : ""}><summary>Accounts and logins on file for this site</summary><p class="sub" style="margin:6px 0 8px">Which Google account, login and level we use for this site, kept for every order on it. Never type passwords here.</p><div id="accfile"><p class="note">Loading…</p></div></details>`;
   const pOf = d => d.proofs || (d.proof ? [{ id:"p0", kind:"link", url:d.proof, name:d.proof }] : []);
   const proofChip = (d, p) => { const m = p.meta || {}, h = m.history || {}, v = (h.versions || []).length;
     return `<div class="pf"><div class="pfi">${p.kind === "drive" ? (m.kind === "Folder" ? "📁" : m.kind === "Recording" ? "🎬" : /Sheet|Excel/.test(m.kind) ? "📊" : /Image/.test(m.kind) ? "🖼" : "📄") : "🔗"}</div>
@@ -575,7 +582,7 @@ function drawOrder(){
       ${old.length ? `<details class="mx" style="margin:6px 0 0"><summary>${old.length} older cop${old.length > 1 ? "ies" : "y"} (not read)</summary>${old.map(x => `<div class="sub" style="margin-top:4px"><a href="${E(x.link || "#")}" target="_blank" rel="noopener">${ago(x.modified)}</a>${x.by ? " · " + E(x.by) : ""}</div>`).join("")}</details>` : ""}
       <div class="dact">${(can("pm") || can("comms")) && d.status === "suggested" ? `<button class="btn sm pri" data-doc="${d.id}|1">Yes, ours</button><button class="btn sm ghost" data-doc="${d.id}|0">Not this order</button>` : ""}${(l.length > 1 || /document$/.test(d.mime || "")) && (can("pm") || can("comms") || can("qa")) ? `<button class="btn sm" data-ddiff="${d.id}">${df ? "Compare again" : "Compare versions"}</button>` : ""}${can("pm") && o.stage === "work" && o.deliverables.length ? `<select data-dprf="${d.id}"><option value="">Use as proof for…</option>${o.deliverables.map((x, i) => `<option value="${x.id}">${i + 1}. ${E(x.text.slice(0, 50))}</option>`).join("")}</select>` : ""}</div></div>`; };
   const TS = sec("What the team is sharing", "Read every hour through seo@indiit.com" + (o.syncAt ? ", last " + ago(o.syncAt) : "") + ". Files are recognised by what is in them, whatever their name.",
-    `<div class="tsum"><span><b>${o.folder ? "1" : "0"}</b> project folder</span><span><b>${DG.length}</b> document${DG.length === 1 ? "" : "s"}${toConfirm ? ` <em class="warn">${toConfirm} to confirm</em>` : ""}</span><span><b>${mails.length}</b> email${mails.length === 1 ? "" : "s"}</span><span><b>${chat.length}</b> chat message${chat.length === 1 ? "" : "s"}</span></div>
+    `<div class="tsum"><span>${o.folder ? "<b>Project folder</b> found" : "No project folder"}</span><span><b>${DG.length}</b> document${DG.length === 1 ? "" : "s"}${toConfirm ? ` <em class="warn">${toConfirm} to confirm</em>` : ""}</span><span><b>${mails.length}</b> email${mails.length === 1 ? "" : "s"}</span><span><b>${chat.length}</b> chat message${chat.length === 1 ? "" : "s"}</span>${(o.accessChat || []).length ? `<span><b>${o.accessChat.length}</b> in the access group</span>` : ""}</div>
      ${o.syncErrors && Object.keys(o.syncErrors).length ? `<div class="ckl warn"><span>Could not read</span><ul>${Object.entries(o.syncErrors).map(([k, v]) => `<li>${E(k)}: ${E(String(v).slice(0, 90))}</li>`).join("")}</ul></div>` : ""}
      <div class="tsg"><div>
       <div class="lbl">Documents</div>
@@ -591,14 +598,11 @@ function drawOrder(){
     `<button class="btn sm" id="tsync">Check now</button>`);
   const work = `<div class="og"><div>
     ${sec("Step 1 · Access", "Work starts only when every item is in at the right level. Wrong level is the most common reason for lost days.", acc, `<span class="chip ${accOk === o.access.length ? "ok" : "warn"}">${accOk} of ${o.access.length}</span>`)}
-    ${sec("Accounts and access on file", "Which Google account, login and level we use for this client's site, kept for every order on the same site. Never type passwords here.", `<div id="accfile"><p class="note">Loading…</p></div>`)}
     ${sec("Step 2 · Deliverables and proof", "Keep proof in Google Drive: share the file or folder as Viewer with any of our connected Google accounts (Team and settings), or set it to Anyone with the link. A live page link works too. The order desk reads every file, and its full history when an account can see it, then checks it against the deliverable before QA.", del, `<span class="chip ${delDone === o.deliverables.length ? "ok" : "n"}">${delDone} of ${o.deliverables.length}</span>`)}
     ${(ai.qa || []).length ? sec("Step 3 · What QA will check", "Know the test before you start the work.", `<ol class="clean num">${L(ai.qa, r => `<li>${E(r)}</li>`)}</ol>`) : ""}
    </div><div>
     ${sec("Live check at the source", "Proof that the work is really live, checked by the order desk itself" + (V ? ", last on " + ago(V.at) : "") + ".", vbody, (can("pm") || can("qa")) ? `<button class="btn sm" id="verify">${V ? "Check again" : "Check now"}</button>` : "")}
-    ${ai.kt ? sec("Handover note", "Everything the project team needs, without reading the chat.", `<div class="kt">${E(ai.kt)}</div>`) : ""}
     ${(ai.done || []).length ? sec("Already done", "From the chat, before this order reached the desk.", `<ul class="clean">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
-    ${(ai.questions || []).length ? sec("Confirm with the client", "Real gaps only. Ask once, together, through the client messages person.", `<ul class="clean">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(o.hours || []).length ? sec("Hours logged", "", `<table class="money">${L(o.hours, t => `<tr><td>${E(t.who)} · ${fmtD(t.at)}${t.note ? `<div class="sub">${E(t.note)}</div>` : ""}</td><td>${t.h} h</td></tr>`)}</table>`) : ""}
     ${o.site ? sec("Website check", "A first look at the client's home page." + (o.site.at ? " Checked " + fmtD(o.site.at) + "." : ""), o.site.error ? `<p class="note">${E(o.site.error)}</p>${can("pm") ? `<button class="btn sm" id="site">Check again</button>` : ""}` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
       + (st.verdict ? `<p style="margin:12px 0 0">${E(st.verdict)}</p>` : "") + ((st.quickWins || []).length ? `<div class="lbl" style="margin:14px 0 8px">Quick wins that delight</div><ul class="clean">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : "")) : ""}
@@ -611,6 +615,7 @@ function drawOrder(){
     <div class="row" style="gap:6px;margin-top:10px">${!m.sent && can("comms") ? `<button class="btn sm" data-copy="${m.id}">Copy</button><button class="btn sm pri" data-sent="${m.id}">Mark sent</button>` : ""}${!m.sent && can("pm") ? `<button class="btn sm ghost" data-drop="${m.id}">Not needed</button>` : ""}${m.kind === "reply" && !m.seen ? `<button class="btn sm" data-seen="${m.id}">Got it</button>` : ""}</div></div>`);
   const newN = ((o.convo || {}).messages || []).filter(m => m.added && Date.now() - Date.parse(m.added) < 864e5).length;
   const client = `<div class="og"><div>
+    ${(ai.questions || []).length && !PJ ? sec("Confirm with the client", "Real gaps only. Ask once, together, through the client messages person.", `<ul class="clean">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(can("comms") || can("pm")) && openO ? sec("Add the latest from the client", "Paste the whole marketplace chat again, or only the new messages. Only messages we do not have yet are added, in the right order, and the order is re-checked.",
       `<textarea id="updT2" placeholder="Paste the full chat again or just the new messages (call notes, team replies and screenshots also work)"></textarea>${attUI("upd2")}<div class="row" style="gap:8px;margin-top:8px"><button class="btn pri" id="updB2">Add new messages</button><span class="sub" style="margin:0">Last update ${sinceH < 1 ? "under an hour" : Math.round(sinceH) + " h"} ago</span></div>`) : ""}
     ${sec("Client conversation", o.convo ? `${o.convo.messages.length} messages. <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.` : "The original paste is below.",
@@ -843,7 +848,7 @@ async function msgs(){
 }
 
 /* Lead help */
-async function lead(){
+async function lead(openId){
   const l = await api("leads");
   app.innerHTML = tabs("lead") + `<div class="og"><div><form class="card" id="lf"><h2>Lead help</h2><p class="note">Stuck with a lead? Paste the whole chat. You get what they really want, how to answer their doubts, the right offer and the exact next message.</p>
    <label class="f">Name for this lead<input id="lt" placeholder="Client name or username"></label>
@@ -861,7 +866,21 @@ async function lead(){
      <p style="margin-top:10px"><b>Follow up:</b> ${E(r.followup)}</p>${(r.redFlags || []).length ? `<p style="color:var(--bad)"><b>Watch:</b> ${r.redFlags.map(E).join("; ")}</p>` : ""}</div>`;
     $("#cp").onclick = () => navigator.clipboard.writeText(r.reply || "").then(() => toast("Copied")); };
   document.querySelectorAll("[data-l]").forEach(b => b.onclick = () => show(l.leads.find(x => x.id === b.dataset.l)));
+  if(openId){ const x = (l.leads || []).find(y => y.id === openId); if(x){ show(x); $("#lr").scrollIntoView({ block:"start" }); } }
   $("#lf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("lead", { title:$("#lt").value, chat:$("#lc").value, note:$("#ln").value }); await lead(); show(r.lead); }, "Reading the chat…"); };
+}
+
+/* Search */
+let SQ = "";
+async function searchPage(q){
+  SQ = q; const j = q.length >= 2 ? await api("search", null, "&q=" + encodeURIComponent(q)) : { orders:[], clients:[], leads:[] };
+  const none = !j.orders.length && !j.clients.length && !j.leads.length;
+  const row = (href, title, sub, chip, match) => `<a class="sr" href="${href}"><div><b>${title}</b><span>${sub}</span>${match ? `<em>${E(match)}</em>` : ""}</div>${chip || ""}</a>`;
+  app.innerHTML = tabs("search") + `<div class="card"><h2>${q.length < 2 ? "Search" : none ? "Nothing found for “" + E(q) + "”" : "Results for “" + E(q) + "”"}</h2><p class="note">Search by client name or username, website, order number, gig${ME.role === "pm" || ME.role === "qa" ? "" : ", or anything said in a chat, call note or lead"}.</p>
+    ${j.clients.length ? `<div class="lbl" style="margin:14px 0 6px">Clients (${j.clients.length})</div>${j.clients.map(c => row("#c=" + encodeURIComponent(c.id), E(c.name), c.sites.map(E).join(", ") + " · " + c.orders + " order" + (c.orders === 1 ? "" : "s") + (c.last ? " · last " + fmtD(c.last) : ""), c.orders > 1 ? `<span class="chip ok">Repeat</span>` : "", c.match)).join("")}` : ""}
+    ${j.orders.length ? `<div class="lbl" style="margin:14px 0 6px">Orders (${j.orders.length})</div>${j.orders.map(o => row("#o=" + encodeURIComponent(o.id), E(o.id) + " · " + E(o.client || o.site), [o.site, o.gig, o.deadline ? "due " + fmtD(o.deadline) : ""].filter(Boolean).map(E).join(" · "), `<span class="chip ${o.stage === "details" ? "y" : ["done", "delivered"].includes(o.stage) ? "ok" : o.stage === "cancelled" ? "n" : "warn"}">${E(SN[o.stage] || o.stage)}</span>`, o.match)).join("")}` : ""}
+    ${j.leads.length ? `<div class="lbl" style="margin:14px 0 6px">Leads (${j.leads.length})</div>${j.leads.map(x => row("#lead=" + encodeURIComponent(x.id), E(x.title), fmtD(x.at) + (x.by ? " · " + E(x.by) : ""), x.stage ? `<span class="chip ${x.stage === "hot" ? "ok" : x.stage === "warm" ? "warn" : "n"}">${E(x.stage)}</span>` : "", x.match)).join("")}` : ""}</div>`;
+  const inp = document.querySelector(".srch input"); if(inp){ inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); let tm; inp.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { history.replaceState(null, "", "#s=" + encodeURIComponent(inp.value.trim())); searchPage(inp.value.trim()); }, 300); }; }
 }
 
 /* Scorecard */
