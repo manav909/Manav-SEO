@@ -757,7 +757,7 @@ async function buildCheck(o, fresh){
     const cap = d.kind === "data" ? Math.max(2500, Math.min(12000, Math.floor(budget / Math.max(1, dataLeft)))) : Math.max(4000, Math.min(40000, budget - 3000 * dataLeft));
     try{ const full = await docText(d, 200000), t = full.slice(0, cap); budget -= t.length;
       readLog.push({ id:d.id, name:d.name, chars:full.length, used:t.length, whole:t.length >= full.length, ok:!!full, kind:d.kind });
-      if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t + (t.length < full.length ? "\n[file continues: " + (full.length - t.length) + " more characters not shown]" : "") }); }
+      if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, kind:d.kind, full, content:t + (t.length < full.length ? "\n[file continues: " + (full.length - t.length) + " more characters not shown]" : "") }); }
     catch(e){ readLog.push({ id:d.id, name:d.name, chars:0, used:0, whole:false, ok:false, err:str(e.message, 80) }); } }
   for(const d of cur.filter(isPic).slice(0, 8)){
     try{ const b = await fileBytes(d); if(b && b.length < 4.5e6){ const mt = /^image\//.test(d.mime || "") ? d.mime : "image/" + (String(d.name).split(".").pop().toLowerCase().replace("jpg", "jpeg"));
@@ -769,10 +769,11 @@ async function buildCheck(o, fresh){
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
   // Pages the team's files say were changed are read live by the desk itself, so nobody is asked to "confirm" what the desk can see
   { const h = domOf(o.client.website), seen = new Set(probes.map(p => p.url)), urls = [];
-    for(const x of reads) for(const ln of String(x.content).split("\n")) if(/updated|done|fixed|changed|new title|rewritten/i.test(ln))
+    for(const x of reads.filter(x2 => x2.kind !== "data")) for(const ln of String(x.full || x.content).split("\n")) if(/updated|done|fixed|changed|new title|rewritten|duplicate/i.test(ln))
       for(const m of ln.matchAll(/https?:\/\/[^\s"'<>|,\t]+/g)){ const u = m[0].replace(/[.)]+$/, ""); if(domOf(u) === h && !seen.has(u) && !/\.(xml|txt|jpg|png|pdf)$/i.test(u)){ seen.add(u); urls.push(u); } }
-    for(const u of urls.slice(0, 10)) try{ probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, await probe(o.client.website, { url:u, look:"title" }))); }catch(e){} }
+    for(const u of urls.slice(0, 16)) try{ probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, await probe(o.client.website, { url:u, look:"title" }))); }catch(e){} }
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
+  reads.forEach(x => delete x.full);
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
   const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
@@ -827,7 +828,7 @@ async function buildCheck(o, fresh){
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
-  const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "")) || ((o.readLog || {}).docs || []).some(d => !d.ok);
+  const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
   o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
   try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && !unsure && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
   return o.check;
@@ -914,7 +915,7 @@ async function writeGroupMsg(o){
   if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
   const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
-Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm".
+Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm". State only what the findings VERIFIED: when the findings say something was not read, not checked, or will be read later, make NO point about it (the desk checks it itself) and never write it as not done.
 Each point: "title" (two to five words), "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
 Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
 Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
