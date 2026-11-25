@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt } from "./_lib/orderai.mjs";
 
 const T = { people:P + "tm:people", code:h => P + "tm:code:" + h, cfg:P + "tm:cfg", ord:id => P + "ord:" + id, ords:P + "ords", seq:P + "ordseq", leads:P + "tm:leads", sess:t => P + "sess:" + t };
 const TTL = 60 * 60 * 24 * 14;
@@ -87,6 +87,17 @@ async function analyse(o, cfg){
   return { ok:true, usd:r.usd };
 }
 
+async function formatConvo(o){
+  if(!aiOn() || !o.chat) return { ok:false };
+  const p = formatPrompt(o.chat), r = await askAI("format", "claude-haiku-5-5", p.system, p.user, 32000);
+  const m = Array.isArray(r.data.messages) ? r.data.messages : [];
+  if(!m.length) throw new Error("The conversation could not be laid out, the original paste is still there");
+  o.convo = { at:now(), client:str(r.data.client, 80), us:str(r.data.us, 80), usd:+r.usd.toFixed(4),
+    messages:m.slice(0, 2000).map(x => ({ who:x.who === "us" ? "us" : "client", name:str(x.name, 80), time:str(x.time, 60), text:String(x.text || "").slice(0, 20000), files:(Array.isArray(x.files) ? x.files : []).slice(0, 10).map(f => str(f, 120)) })) };
+  o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  return { ok:true };
+}
+
 function score(orders, cfg, month){
   const inM = orders.filter(o => o.at.slice(0, 7) === month && o.stage !== "cancelled");
   const deliv = orders.filter(o => o.deliveredAt && o.deliveredAt.slice(0, 7) === month);
@@ -142,7 +153,7 @@ async function handle(request){
     const m = str(url.searchParams.get("m"), 7) || now().slice(0, 7), all = await loadAll(1000);
     const ai = await cmd("HGETALL", "bsp:ai:" + m); const aiu = {}; for(let i = 0; i < ai.length; i += 2) aiu[ai[i]] = Number(ai[i + 1]);
     return out({ ok:true, score:score(all, cfg, m), ai:{ calls:aiu.calls || 0, usd:+((aiu.micro || 0) / 1e6).toFixed(3), order:+((aiu["micro:order"] || 0) / 1e6).toFixed(3),
-      lead:+((aiu["micro:lead"] || 0) / 1e6).toFixed(3), reply:+((aiu["micro:reply"] || 0) / 1e6).toFixed(3), credit:200 } }); }
+      lead:+((aiu["micro:lead"] || 0) / 1e6).toFixed(3), format:+((aiu["micro:format"] || 0) / 1e6).toFixed(3), reply:+((aiu["micro:reply"] || 0) / 1e6).toFixed(3), credit:200 } }); }
 
   if(a === "leads"){ const l = (await cmd("LRANGE", T.leads, 0, 99)).map(x => JSON.parse(x)); return out({ ok:true, leads:w.role === "admin" || w.role === "manager" ? l : l.filter(x => x.by === w.uid) }); }
   if(a === "lead"){ if(!can(w, "lead")) return bad("Lead help is for sales", 403);
@@ -166,7 +177,10 @@ async function handle(request){
       access:(ACCESS[gig.cat] || []).map(x => Object.assign({ id:nid("a"), status:"needed" }, x)),
       deliverables:[{ id:nid("d"), text:(gig.packages[pkg] || {}).what || gig.name, done:false, proof:"", qa:"" }], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
     log(o, w, "Order created: " + gig.name + " (" + pkg + ") for $" + price);
-    let ai = null; try{ ai = await analyse(o, cfg); if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); }catch(e){ ai = { ok:false, why:e.message }; }
+    let ai = null;
+    const [an, fm] = await Promise.allSettled([analyse(o, cfg), formatConvo(o)]);
+    if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
+    if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
     await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
     return out({ ok:true, id, ai }); }
 
@@ -189,6 +203,7 @@ async function handle(request){
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
     if(op === "analyse"){ need("pm"); o.site = null; const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
+    else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
       x.status = ["needed", "asked", "received", "wrong"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();
       log(o, w, "Access " + x.item + ": " + x.status + (x.note ? " (" + x.note + ")" : ""));

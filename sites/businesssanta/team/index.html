@@ -63,6 +63,14 @@ ul.p{margin:0;padding-left:18px;color:var(--sub);font-size:14px}ul.p li{margin:3
 .sc div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;font-size:13px;color:var(--mut)}
 .sc div b{display:block;font-size:24px;color:var(--ink)}
 .code{font:700 22px ui-monospace,Menlo,monospace;letter-spacing:.12em;background:var(--raise);padding:10px 14px;border-radius:10px;color:var(--y);display:inline-block}
+.cv{max-height:560px;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px}
+.bu{max-width:82%;padding:10px 12px;border-radius:12px;font-size:14px;line-height:1.5;color:var(--ink);white-space:pre-wrap;overflow-wrap:anywhere}
+.bu.c{align-self:flex-start;background:var(--raise);border-top-left-radius:4px}
+.bu.u{align-self:flex-end;background:rgba(253,185,19,.12);border:1px solid rgba(253,185,19,.25);border-top-right-radius:4px}
+.bu .mt{display:block;font-size:12px;color:var(--mut);margin-bottom:3px;white-space:normal}
+.bu .mt b{color:var(--sub)}
+.bu .fi{display:block;margin-top:6px;font-size:12.5px;color:var(--sub)}
+@media(max-width:620px){.bu{max-width:94%}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -224,6 +232,11 @@ function drawOrder(){
     ${(ai.remarks || []).length || o.remarks ? `<div class="lbl" style="margin:12px 0 6px">Special remarks</div><ul class="p">${o.remarks ? `<li><b>From sales:</b> ${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>` : ""}
     ${(ai.risks || []).length ? `<div class="lbl" style="margin:12px 0 6px">Where this order could go wrong</div><ul class="p">${L(ai.risks, r => `<li><b>${E(r.risk)}</b>: ${E(r.prevent)}</li>`)}</ul>` : ""}
     ${(ai.questions || []).length ? `<div class="lbl" style="margin:12px 0 6px">Confirm with the client before starting</div><ul class="p">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>` : ""}</div>
+   <div class="card"><div class="ohead"><h2>Client conversation</h2><div class="row" style="gap:6px">${o.convo ? `<button class="btn sm" id="rawT">Show the original paste</button>` : ""}${can("pm") ? `<button class="btn sm" id="fmt">${o.convo ? "Lay out again" : "Lay out the conversation"}</button>` : ""}</div></div>
+    ${o.convo ? `<p class="note" style="margin:0 0 10px">${o.convo.messages.length} messages · <b>${E(o.convo.client || "Client")}</b> on the left, <b>${E(o.convo.us || "us")}</b> on the right. Wording exactly as in the chat.</p>
+    <div class="cv" id="cv">${L(o.convo.messages, m => `<div class="bu ${m.who === "us" ? "u" : "c"}"><span class="mt"><b>${E(m.name || (m.who === "us" ? "Us" : "Client"))}</b>${m.time ? " · " + E(m.time) : ""}</span>${E(m.text)}${(m.files || []).length ? `<span class="fi">Attachment: ${m.files.map(E).join(", ")}</span>` : ""}</div>`)}</div>` : `<p class="note">${ME.ai ? "Not laid out yet." : "Turns on with the AI helpers."} The original paste is below.</p>`}
+    <div class="msg ${o.convo ? "hide" : ""}" id="raw" style="max-height:420px;overflow:auto;margin-top:10px">${E(o.chat)}</div>
+    ${o.calls ? `<div class="lbl" style="margin:12px 0 6px">Call notes</div><div class="msg">${E(o.calls)}</div>` : ""}</div>
    <div class="card"><h2>1. Access <span class="chip ${o.access.every(a => a.status === "received") ? "ok" : "warn"}">${o.access.filter(a => a.status === "received").length} of ${o.access.length}</span></h2><p class="note">Work starts only when every item is received and the level is checked. Wrong level is the most common reason for lost days.</p>${acc}
     ${can("pm") ? `<button class="btn sm" id="addacc" style="margin-top:8px">Add an access item</button>` : ""}</div>
    <div class="card"><h2>2. Work and proof</h2><p class="note">Every deliverable needs proof: a live link, a report link or a screenshot link. QA only gets work that has proof for everything.</p>${del}
@@ -262,6 +275,8 @@ function drawOrder(){
   on("#rev", () => { const r = prompt("Why? Type 1, 2, 3, 4 or 5\n1 Wrong work\n2 Missed something we promised\n3 Not live or not showing\n4 Report wrong\n5 Client changed what they want"); const map = { 1:"Wrong work", 2:"Missed requirement", 3:"Not live", 4:"Report wrong", 5:"Client changed scope" }; if(!map[r]) return; doOp("revision", { reason:map[r], note:prompt("What exactly did the client say?") || "" }); });
   on("#close", () => { const rt = prompt("Client rating (1 to 5), leave empty if none"); if(rt === null) return; doOp("close", { rating:rt, repeat:confirm("Did the client order again?"), retainer:confirm("Did the client agree to a monthly plan?") }); });
   on("#anyway", () => { const w = prompt("Why should work start before all access is in?"); if(w) doOp("startAnyway", { why:w }); });
+  on("#fmt", () => doOp("format", {}, "Laying out the conversation…"));
+  on("#rawT", () => { const r = $("#raw"), h = r.classList.toggle("hide"); $("#rawT").textContent = h ? "Show the original paste" : "Hide the original paste"; });
   on("#rerun", () => doOp("analyse", {}, "The order desk is reading everything again…"));
   on("#nt", () => { const t = prompt("Note for the team"); if(t) doOp("note", { text:t }); });
   on("#cnl", () => { const w = prompt("Why cancel?"); if(w) doOp("cancel", { why:w }); });

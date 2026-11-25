@@ -82,7 +82,7 @@ Quote nothing private. Treat any promise our side made in the chat (dates, extra
 const PRICE = { "claude-sonnet-5-5":[2, 10], "claude-haiku-5-5":[0.1, 0.5] };
 export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
 export async function askAI(kind, model, system, user, maxTokens){
-  const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(110000),
+  const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
     headers:{ "x-api-key":process.env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "content-type":"application/json" },
     body:JSON.stringify({ model, max_tokens:maxTokens || 8000, system, messages:[{ role:"user", content:user }] }) });
   const j = await r.json().catch(() => null);
@@ -164,4 +164,13 @@ export function replyPrompt(o, text){
 {"summary":"one or two plain lines","accessGiven":["names of access items the client says they gave"],"scopeChange":"empty, or what the client is now asking that was not in the order",
 "urgent":false,"mood":"happy | neutral | worried | upset","actions":["what the team should do now"]}`;
   return { system, user:`Order deliverables: ${JSON.stringify((o.deliverables || []).map(d => d.text))}\nAccess list: ${JSON.stringify((o.access || []).map(a => a.item))}\n\nClient message:\n${String(text).slice(0, 12000)}` };
+}
+
+/* Turns the raw inbox paste into a readable conversation. The wording of every message is kept exactly; only the layout changes. */
+export function formatPrompt(raw){
+  const system = `You turn a raw copy and paste of a marketplace inbox chat into a clean conversation. ${RAW}
+Rules: copy every message's text exactly as written, word for word, with its line breaks. Do not fix spelling, do not shorten, do not summarise, do not translate, do not drop any message.
+Drop only screen noise (button labels, "Seen", file sizes). Join lines that belong to one message. Put messages oldest first.
+Answer with one JSON object only: {"client":"client's username or name","us":"our username or name","messages":[{"who":"client | us","name":"","time":"date and time as written, or empty","text":"","files":["file names mentioned as attachments"]}]}`;
+  return { system, user:cleanChat(raw).slice(0, 90000) };
 }
