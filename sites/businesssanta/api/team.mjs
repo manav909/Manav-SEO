@@ -695,12 +695,21 @@ async function handle(request){
     const t = rid(32); await setJ(T.sess(t), { role:"team", uid, rev:p.rev || 1, at:now() }, TTL);
     return out({ ok:true }, 200, { "set-cookie":setCookie(t, TTL) });
   }
-  const w = await who(request);
+  let w = await who(request);
+  /* Owner "view as": Manav sees exactly what a role or a person sees, read-only, to spot where someone is stuck */
+  { const asV = request.headers.get("x-view-as") || "";
+    if(w && w.role === "admin" && asV && a !== "logout"){
+      const ps = (await people()).filter(p => !p.off), RN = { sales:"Sales", comms:"Client messages", pm:"PM", qa:"QA", manager:"Manager" };
+      const p = asV.startsWith("u:") ? ps.find(x => x.id === asV.slice(2)) : ROLES.includes(asV) ? ps.find(x => rolesOf(x).includes(asV)) : null;
+      if(p){ const rs = asV.startsWith("u:") ? rolesOf(p) : [asV]; w = { role:rs[0], roles:rs, uid:p.id, name:p.name, tok:w.tok, viewAs:true, viewer:"Manav" }; }
+      else if(ROLES.includes(asV)) w = { role:asV, roles:[asV], uid:"view-" + asV, name:RN[asV], tok:w.tok, viewAs:true, viewer:"Manav" };
+      if(w.viewAs && request.method === "POST") return bad("You are viewing as " + w.name + ". Switch back to the Owner view to make changes.", 403);
+    } }
   if(a === "logout"){ if(w) await cmd("DEL", T.sess(w.tok)); return out({ ok:true }, 200, { "set-cookie":clearCookie() }); }
   if(!w) return out({ ok:false, signin:true }, 401);
   const cfg = await cfgOf();
 
-  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, myRoles:w.roles || [w.role], uid:w.uid }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
+  if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, myRoles:w.roles || [w.role], uid:w.uid, viewAs:!!w.viewAs }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
     people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:rolesOf(p)[0], roles:rolesOf(p) })), access:ACCESS });
 
   if(a === "gaccs"){ const ac = await gAccounts(); let pr = { items:[], at:"" }; try{ pr = url.searchParams.get("refresh") && w.role === "admin" ? await refreshProps() : await gProps(); }catch(e){ pr.error = e.message; }

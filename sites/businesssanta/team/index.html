@@ -206,6 +206,7 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .drow{padding:8px 0;border-bottom:1px solid var(--soft)}.drow:last-child{border-bottom:0}.drow.suggested{background:rgba(251,191,36,.06);border-radius:8px;padding:8px}.drm{display:flex;flex-direction:column;gap:2px;min-width:0}.drm>a{font-weight:700;overflow-wrap:anywhere;font-size:14px}
 .tsd{border:1px solid var(--soft);border-radius:12px;padding:10px 14px;margin-top:8px}.tsd>summary{cursor:pointer;font-weight:700;font-size:14.5px;color:var(--ink)}.tsd>summary em{font-style:normal;font-weight:500;color:var(--mut);margin-left:6px;font-size:13px}.tsd[open]>summary{margin-bottom:6px}
 .fold{padding:14px 18px}.fold>summary{cursor:pointer;font-weight:700;font-size:15px}
+.vbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.5);border-radius:12px;padding:10px 14px;margin-bottom:12px;font-size:14px}.vbar .btn{margin-left:auto}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -249,7 +250,9 @@ let DRAFT = null;
 const RNAME = { admin:"Owner", sales:"Sales", comms:"Client messages", pm:"Project team", qa:"QA", manager:"Manager" };
 let ME = null, ORD = [], QUEUE = [];
 async function api(a, body, params){
-  const r = await fetch("/api/team?a=" + a + (params || ""), body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body) } : {});
+  let asV = ""; try{ asV = localStorage.getItem("od-as") || ""; }catch(e){}
+  const hd = asV && a !== "logout" ? { "x-view-as":asV } : {};
+  const r = await fetch("/api/team?a=" + a + (params || ""), body ? { method:"POST", headers:Object.assign({ "content-type":"application/json" }, hd), body:JSON.stringify(body) } : { headers:hd });
   const j = await r.json().catch(() => ({ ok:false, error:"No answer" }));
   if(j.signin){ signin(); throw new Error("signin"); }
   if(!j.ok) throw new Error(j.error || "Something went wrong");
@@ -269,13 +272,20 @@ function signin(){
   $("#sf").onsubmit = e => { e.preventDefault(); act(async () => { await api("login", { code:$("#code").value }); boot(); }, "Signing in…"); };
 }
 async function boot(){
-  try{ const j = await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail, roles:j.roles || ["sales", "comms", "pm", "qa", "manager"] }); }catch(e){ return; }
+  let j0 = null; try{ j0 = await api("me"); }catch(e){ if(e.message === "signin") return; try{ localStorage.removeItem("od-as"); }catch(x){} }
+  try{ const j = j0 || await api("me"); ME = Object.assign(j.me, { ai:j.ai, cfg:j.cfg, gigs:j.gigs, people:j.people, access:j.access, accessEmail:j.accessEmail, roles:j.roles || ["sales", "comms", "pm", "qa", "manager"] }); }catch(e){ return; }
   ME.myRoles = ME.myRoles || [ME.role];
   let v = ""; try{ v = localStorage.getItem("od-view") || ""; }catch(e){}
   ME.role = ME.myRoles.includes(v) ? v : ME.myRoles[0];
   $("#who").textContent = ME.name + " · " + ME.myRoles.map(r => RNAME[r] || r).join(" + "); $("#out").classList.remove("hide");
-  const vs = $("#viewas");
-  if(ME.myRoles.length > 1){ vs.innerHTML = ME.myRoles.map(r => `<option value="${r}" ${r === ME.role ? "selected" : ""}>View as ${RNAME[r] || r}</option>`).join(""); vs.classList.remove("hide");
+  const vs = $("#viewas"); let asNow = ""; try{ asNow = localStorage.getItem("od-as") || ""; }catch(e){}
+  if(ME.myRoles.includes("admin") || ME.viewAs){
+    const RN = { sales:"Sales", comms:"Client messages", pm:"PM", qa:"QA", manager:"Manager" };
+    vs.innerHTML = `<option value="">Owner view</option><optgroup label="View as a person">${(ME.people || []).map(p => `<option value="u:${E(p.id)}" ${asNow === "u:" + p.id ? "selected" : ""}>${E(p.name)} · ${(p.roles || [p.role]).map(r => RN[r] || r).join(" + ")}</option>`).join("")}</optgroup><optgroup label="View as a role">${Object.entries(RN).map(([k, n]) => `<option value="${k}" ${asNow === k ? "selected" : ""}>${n}</option>`).join("")}</optgroup>`;
+    vs.classList.remove("hide");
+    vs.onchange = () => { try{ vs.value ? localStorage.setItem("od-as", vs.value) : localStorage.removeItem("od-as"); localStorage.removeItem("od-view"); }catch(e){} location.hash = ""; CUR = null; ORD = []; boot(); };
+    if(ME.viewAs) $("#who").textContent = "Manav, viewing as " + ME.name;
+  } else if(ME.myRoles.length > 1){ vs.innerHTML = ME.myRoles.map(r => `<option value="${r}" ${r === ME.role ? "selected" : ""}>View as ${RNAME[r] || r}</option>`).join(""); vs.classList.remove("hide");
     vs.onchange = () => { ME.role = vs.value; try{ localStorage.setItem("od-view", vs.value); }catch(e){} location.hash = ""; route(); }; } else vs.classList.add("hide");
   route();
 }
@@ -290,7 +300,7 @@ function tabs(on){
   if(ME.role === "admin") t.push(["hod","HoD report"], ["pay","Payments"], ["people","Team and settings"]);
   t.push(["sop","How we work"]);
   const qn = QUEUE.length;
-  return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}<form class="srch" onsubmit="event.preventDefault();location.hash='#s='+encodeURIComponent(this.q.value.trim())"><input name="q" type="search" placeholder="${ME.role === "pm" || ME.role === "qa" ? "Search orders" : "Search clients, leads, orders"}" value="${on === "search" ? E(SQ) : ""}" aria-label="Search"></form></nav>
+  return (ME.viewAs ? `<div class="vbar">Viewing as <b>${E(ME.name)}</b> (${E((ME.myRoles || [ME.role]).map(r => RNAME[r] || r).join(" + "))}). This is exactly what they see. Read only.<button class="btn sm" onclick="try{localStorage.removeItem('od-as')}catch(e){};location.hash='';boot()">Back to Owner view</button></div>` : "") + `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}<form class="srch" onsubmit="event.preventDefault();location.hash='#s='+encodeURIComponent(this.q.value.trim())"><input name="q" type="search" placeholder="${ME.role === "pm" || ME.role === "qa" ? "Search orders" : "Search clients, leads, orders"}" value="${on === "search" ? E(SQ) : ""}" aria-label="Search"></form></nav>
   ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
 }
 async function route(){
