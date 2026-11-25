@@ -80,7 +80,7 @@ function flags(o){
 }
 const summary = (o, cfg) => ({ id:o.id, at:o.at, client:o.client, gig:o.gig, gigName:(gigOf(o.gig) || {}).name || "", pkg:o.pkg, price:o.price, deadline:o.deadline, stage:o.stage,
   pm:o.pm, qa:o.qa, by:o.by, byName:o.byName, revisions:(o.revisions || []).length, accessLeft:(o.access || []).filter(a => !["received", "skip"].includes(a.status)).length,
-  flags:flags(o), econ:econ(o, cfg), verdict:o.ai && o.ai.price ? o.ai.price.verdict : "" });
+  flags:flags(o), econ:econ(o, cfg), verdict:o.ai && o.ai.price ? o.ai.price.verdict : "", strength:o.draft && o.stage === "details" ? o.draft.strength || "" : "" });
 const log = (o, w, what) => { (o.timeline = o.timeline || []).unshift({ at:now(), who:w.name, what }); o.timeline = o.timeline.slice(0, 300); };
 const saveO = o => setJ(T.ord(o.id), o);
 /* Draft orders (stage "details": found by the team account, waiting for sales to add the details) stay out of every count, report and score */
@@ -495,10 +495,11 @@ export async function discover(){
       const list = bySite[site] || [], open = list.find(o => !["delivered", "done", "cancelled"].includes(o.stage));
       if(open && open.stage !== "details") continue;   // the hourly sync already attaches it to that order
       if(open){ open.draft.evidence = [evOf(it, x)].concat(open.draft.evidence || []).slice(0, 20); log(open, { name:"Order desk" }, "More found in the team's " + it.kind + ": " + str(x.what, 160)); await saveO(open); added++; continue; }
-      if(!x.newOrder) continue;
+      const toolMail = it.kind === "email" && /google|search console|analytics|semrush|bing|ahrefs|moz|ubersuggest|no-?reply|notification|alerts?@|report/i.test((it.from || "") + " " + (it.subject || ""));
+      if(!x.newOrder || x.source === "tool" || toolMail) continue;   // a tool notice proves access, not a running order
       const n = await cmd("INCR", T.seq), id = "O-" + (1000 + Number(n)), past = list.filter(o => o.stage !== "cancelled").map(o => o.id);
       const o = { id, at:now(), by:"desk", byName:"Order desk", gig:"", pkg:"", price:0, deadline:"", chat:"", calls:"", remarks:"", fee:cfg.fee,
-        client:{ name:str(x.client, 80), country:str(x.country, 40), website:site }, stage:"details", draft:{ found:now(), via:it.via, evidence:[evOf(it, x)], past },
+        client:{ name:str(x.client, 80), country:str(x.country, 40), website:site }, stage:"details", draft:{ found:now(), via:it.via, evidence:[evOf(it, x)], past, strength:["strong", "likely", "possible"].includes(x.strength) ? x.strength : "possible", why:str(x.why, 240) },
         access:[], deliverables:[], queue:[], hours:[], revisions:[], qaRounds:[], timeline:[] };
       log(o, { name:"Order desk" }, "Found in the team's " + it.kind + ": " + str(x.what, 160) + ". Waiting for sales to add the order details.");
       const known = list.find(o2 => o2.cid); if(known) o.cid = known.cid;

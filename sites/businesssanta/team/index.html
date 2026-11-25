@@ -351,7 +351,7 @@ async function board(){
     + (ORD.length ? `<div class="board">${cols}</div>` : `<div class="card"><h2>No orders yet</h2><p class="note">${can("sales") ? `When a client hires us, open <a href="#new">New order</a> and paste the whole chat.` : "Orders appear here as soon as sales adds them."}</p></div>`);
 }
 function card(o){
-  if(o.stage === "details") return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.client.website || o.id)}</b>${E(o.id)} · ${E(o.client.website || "")}<br>Found by the team account<div class="fl"><span class="chip y">Needs order details</span></div></a>`;
+  if(o.stage === "details") return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.client.website || o.id)}</b>${E(o.id)} · ${E(o.client.website || "")}<br>Found by the team account<div class="fl"><span class="chip y">Needs order details</span>${o.strength ? `<span class="chip ${o.strength === "strong" ? "ok" : o.strength === "likely" ? "warn" : "n"}">${E(o.strength)}</span>` : ""}</div></a>`;
   const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5);
   return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.id)}</b>${E(o.id)} · ${E(o.gigName)}<br>${money(o.price)} · ${left >= 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "late"}${o.revisions ? " · " + o.revisions + " revision" + (o.revisions > 1 ? "s" : "") : ""}
   <div class="fl">${o.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.verdict ? `<span class="chip n">${E(o.verdict)}</span>` : ""}</div></a>`;
@@ -417,7 +417,7 @@ function health(o, x){
 function sec(title, why, body, extra){ return `<section class="card os"><div class="osh"><div><h2>${title}</h2>${why ? `<p class="why">${why}</p>` : ""}</div>${extra || ""}</div>${body}</section>`; }
 function drawDraft(){
   const o = CUR.order, d = o.draft || {}, site = o.client.website;
-  app.innerHTML = tabs("board") + `<section class="card ohero"><div><div class="lbl">${E(o.id)} · found by the team account ${ago(d.found)}</div><h1>${E(o.client.name || site)} <span class="hp warn">Needs order details</span></h1>
+  app.innerHTML = tabs("board") + `<section class="card ohero"><div><div class="lbl">${E(o.id)} · found by the team account ${ago(d.found)}</div><h1>${E(o.client.name || site)} <span class="hp warn">Needs order details</span></h1>${d.strength ? `<p style="margin:6px 0 0"><span class="chip ${d.strength === "strong" ? "ok" : d.strength === "likely" ? "warn" : "n"}">${{ strong:"Strong sign of a new order", likely:"Likely a running order", possible:"Possible order: confirm first" }[d.strength]}</span> <span class="sub">${E(d.why || "")}</span></p>` : ""}
     <div class="ometa"><a href="https://${E(site)}" target="_blank" rel="noopener">${E(site)}</a>${(d.past || []).length ? `<span>Returning client: ${d.past.map(E).join(", ")}</span>` : `<span>No earlier order on the desk</span>`}</div></div></section>
    <div class="og"><div>
     ${sec("What the team account found", "Emails, group chat messages and Drive files that show work for this site. The order desk opened this order so nothing starts without a brief.", (d.evidence || []).map(e => `<div class="rk"><b>${E(e.what)}</b><div class="sub">${E(e.kind)}${e.title ? " · " + (e.link ? `<a href="${E(e.link)}" target="_blank" rel="noopener">${E(e.title)}</a>` : E(e.title)) : ""}${e.from ? " · " + E(e.from) : ""} · ${ago(e.at)}</div>${e.text ? `<div class="sub ev">${E(e.text)}</div>` : ""}</div>`).join(""))}
