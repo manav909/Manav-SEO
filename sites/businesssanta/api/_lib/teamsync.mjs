@@ -67,7 +67,7 @@ export async function docCandidates(orders){
     const list = q => apiAs(a.email, "https://www.googleapis.com/drive/v3/files?pageSize=50&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=modifiedTime%20desc&fields=" + encodeURIComponent(F) + "&q=" + encodeURIComponent(q)).then(r => r.files || []).catch(() => []);
     (await list("trashed=false and modifiedTime > '" + since + "' and (sharedWithMe or 'me' in owners)")).forEach(f => add(f, a.email, "recent"));
     for(const o of orders){ const k = keysOf(o); const terms = [k.h, k.root, o.id].filter(Boolean);
-      (await list("trashed=false and (" + terms.map(t => "fullText contains '" + t.replace(/'/g, "") + "'").join(" or ") + ")")).forEach(f => add(f, a.email, "mentions " + o.id)); }
+      (await list("trashed=false and (" + terms.map(t => "fullText contains '" + t.replace(/'/g, "") + "'").join(" or ") + ")")).forEach(f => add(f, a.email, "its text contains this client's site")); }
   }
   // Drive links the team wrote in emails and chats
   for(const o of orders) for(const t of [].concat((o.mails || []).map(m => m.text), (o.teamChat || []).map(m => m.text))){
