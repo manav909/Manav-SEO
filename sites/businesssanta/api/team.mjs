@@ -733,7 +733,7 @@ const LSEED = [
 ];
 async function learnList(){ let l = await getJ(LK); if(!Array.isArray(l)){ l = LSEED.map(([k, rule, why], i) => ({ id:"L" + (i + 1), kind:k, rule, why, by:"Manav (review of O-1001)", at:now(), on:true })); await setJ(LK, l); } return l; }
 let LEARN = { at:0, txt:"" };
-const LJOBS = new Set(["check1", "check2", "groupmsg", "deskanswer", "draftreport", "pack", "autoproof", "history"]);
+const LJOBS = new Set(["check1", "check2", "groupmsg", "quickfix", "deskanswer", "draftreport", "pack", "autoproof", "history"]);
 async function learnTxt(){ if(Date.now() - LEARN.at < 60000) return LEARN.txt; let l = []; try{ l = (await learnList()).filter(x => x.on !== false); }catch(e){}
   LEARN = { at:Date.now(), txt:l.length ? "\n\nLESSONS FROM THE OWNER'S REVIEWS (always follow these; they come from real mistakes):\n" + l.map((x, i) => `${i + 1}. ${x.rule}`).join("\n") : "" }; return LEARN.txt; }
 async function askAI(job, model, system, user, max, ...rest){ return rawAsk(job, model, LJOBS.has(job) ? system + await learnTxt() : system, user, max, ...rest); }
@@ -798,6 +798,13 @@ async function buildCheck(o, fresh){
   const d2 = walk(r2.data || {}); d2.verdict = noId(d2.verdict); d2.verdictTeam = noId(d2.verdictTeam); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); x.where = noId(x.where); x.check = noId(x.check); });
   d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
   d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
+  // Quick fixes get their own focused look: small fixes the team's reports found, invited by the client's own words
+  try{ const inv = [((reqMail || {}).text || ""), (o.teamChat || []).map(m => m.text).join("\n"), String(convoText || "")].join("\n").split(/\n|(?<=[.!?])\s+/).filter(l => /quick|straightforward|small fix|easy fix|while you.re (in )?there/i.test(l)).slice(0, 6);
+    if(inv.length){ const old = (o.check || {}).quickFixes || [];
+      const sysQ = `You pick QUICK FIXES for one SEO order: small fixes (minutes each, a handful of pages) that the team's own reports found and that the client's words invite. They are asked from the team in parallel and never stop QA. Big work (dozens of pages, page speed, content rewrites) is NOT a quick fix; it stays a next step. Never pick what the requirements already cover. Name the exact pages when a report lists them. For each fix already asked, keep its id and set status from the live checks: "done" only when the live check shows it fixed. At most 4 fixes. Plain words. Answer with one JSON object only: {"quickFixes":[{"id":"q1 or the id it already has","what":"what to fix and how many pages","pages":["page address or path"],"look":"description | title | h1","status":"open | done","found":"what the live check shows now, or empty","invitedBy":"the inviting words, copied word for word"}]}`;
+      const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + String(x.content).slice(0, 25000)).join("\n\n").slice(0, 80000)}`;
+      const rq = await askAI("quickfix", "claude-sonnet-5-5", sysQ, userQ, 2500); o.aiUsd = +(num(o.aiUsd, 0) + rq.usd).toFixed(4);
+      if(Array.isArray((rq.data || {}).quickFixes)) d2.quickFixes = rq.data.quickFixes; } }catch(e){}
   const prevQF = (o.check || {}).quickFixes || [];
   d2.quickFixes = (d2.quickFixes || []).slice(0, 6).map((q, i) => { const old = prevQF.find(x => x.id === q.id);
     return { id:old ? old.id : "q" + (Math.max(0, ...prevQF.map(x => parseInt(String(x.id).slice(1)) || 0)) + i + 1), what:noId(str(q.what, 300)), pages:(q.pages || []).map(u => str(u, 300)).slice(0, 12), look:["description", "title", "h1"].includes(q.look) ? q.look : "description",
