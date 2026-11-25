@@ -44,10 +44,16 @@ export const ACCESS = {
 /* A plain website check: one fetch of the home page, facts only (the AI explains them). */
 export async function siteCheck(url){
   if(!url) return null;
+  const a = await siteCheck1(url); if(!a.error) return a;
+  await new Promise(r => setTimeout(r, 2500)); const b = await siteCheck1(url, 15000);
+  if(b.error) b.error += " (tried twice; one slow answer from our server is not proof the site is slow for visitors)";
+  return b;
+}
+async function siteCheck1(url, ms){
   let u = String(url).trim(); if(!/^https?:\/\//i.test(u)) u = "https://" + u;
   const t0 = Date.now();
   try{
-    const r = await fetch(u, { redirect:"follow", signal:AbortSignal.timeout(9000), headers:{ "user-agent":"Mozilla/5.0 (compatible; BusinessSantaCheck/1.0)" } });
+    const r = await fetch(u, { redirect:"follow", signal:AbortSignal.timeout(ms || 9000), headers:{ "user-agent":"Mozilla/5.0 (compatible; BusinessSantaCheck/1.0)" } });
     const html = (await r.text()).slice(0, 600000), ms = Date.now() - t0;
     const one = re => { const m = html.match(re); return m ? m[1].replace(/\s+/g, " ").trim().slice(0, 300) : ""; };
     const cms = /wp-content|wordpress/i.test(html) ? "WordPress" : /cdn\.shopify|Shopify\.theme/i.test(html) ? "Shopify" : /wix\.com|wixstatic/i.test(html) ? "Wix"

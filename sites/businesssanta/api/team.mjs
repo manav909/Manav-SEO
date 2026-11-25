@@ -58,7 +58,7 @@ function flags(o){
   return f;
 }
 const summary = (o, cfg) => ({ id:o.id, at:o.at, client:o.client, gig:o.gig, gigName:(gigOf(o.gig) || {}).name || "", pkg:o.pkg, price:o.price, deadline:o.deadline, stage:o.stage,
-  pm:o.pm, qa:o.qa, by:o.by, byName:o.byName, revisions:(o.revisions || []).length, accessLeft:(o.access || []).filter(a => a.status !== "received").length,
+  pm:o.pm, qa:o.qa, by:o.by, byName:o.byName, revisions:(o.revisions || []).length, accessLeft:(o.access || []).filter(a => !["received", "skip"].includes(a.status)).length,
   flags:flags(o), econ:econ(o, cfg), verdict:o.ai && o.ai.price ? o.ai.price.verdict : "" });
 const log = (o, w, what) => { (o.timeline = o.timeline || []).unshift({ at:now(), who:w.name, what }); o.timeline = o.timeline.slice(0, 300); };
 const saveO = o => setJ(T.ord(o.id), o);
@@ -79,7 +79,7 @@ async function analyse(o, cfg){
     o.access = d.access.slice(0, 15).map(a => { const old = have.get(String(a.item).toLowerCase()); return old ? Object.assign(old, { level:str(a.level, 200) || old.level, why:str(a.why, 200) || old.why })
       : { id:nid("a"), item:str(a.item, 120), level:str(a.level, 200), why:str(a.why, 200), status:"needed" }; });
     d.access.forEach((a, i) => { const x = o.access[i]; if(x && /received/i.test(a.status || "") && x.status !== "wrong"){ x.status = "received"; x.note = x.note || ("From the chat: " + str(a.evidence, 200)); x.by = x.by || "Order desk"; } });
-    for(const a of have.values()) if(a.status === "received" && !o.access.includes(a)) o.access.push(a);
+    for(const a of have.values()) if(["received", "skip"].includes(a.status) && !o.access.includes(a)) o.access.push(a);
   }
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
     o.deliverables = d.deliverables.slice(0, 25).map(t => ({ id:nid("d"), text:str(t, 300), done:false, proof:"", qa:"" }));
@@ -88,7 +88,7 @@ async function analyse(o, cfg){
     if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
     if(d.msgs.questions) o.queue.push({ id:nid("q"), auto:true, kind:"question", text:str(d.msgs.questions, 4000), at:now(), by:"Order desk", sent:false });
   }
-  if(o.stage === "access" && o.access.length && o.access.every(y => y.status === "received")){ o.stage = "work"; log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
+  if(o.stage === "access" && o.access.length && o.access.every(y => ["received", "skip"].includes(y.status))){ o.stage = "work"; log(o, { name:"Order desk" }, "The chat shows all access is already in. Work can start."); }
   return { ok:true, usd:r.usd };
 }
 
@@ -208,12 +208,12 @@ async function handle(request){
     const o = await getJ(T.ord(str(q.id, 20))); if(!o) return bad("Order not found", 404);
     const op = str(q.op, 20), find = (list, id) => (o[list] || []).find(x => x.id === id);
     const need = what => { if(!can(w, what)) throw new Error("Your role cannot do this step"); };
-    if(op === "analyse"){ need("pm"); o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
+    if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
-      x.status = ["needed", "asked", "received", "wrong"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();
+      x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; x.note = str(q.note, 300); x.by = w.name; x.atS = now();
       log(o, w, "Access " + x.item + ": " + x.status + (x.note ? " (" + x.note + ")" : ""));
-      if(o.stage === "access" && o.access.every(y => y.status === "received")){ o.stage = "work"; log(o, { name:"Order desk" }, "All access received at the right level. Work can start."); } }
+      if(o.stage === "access" && o.access.every(y => ["received", "skip"].includes(y.status))){ o.stage = "work"; log(o, { name:"Order desk" }, "All access received at the right level. Work can start."); } }
     else if(op === "addAccess"){ need("pm"); o.access.push({ id:nid("a"), item:str(q.item, 120), level:str(q.level, 200), why:str(q.why, 200), status:"needed" }); log(o, w, "Added access item " + str(q.item, 120)); }
     else if(op === "startAnyway"){ need("assign"); const why = str(q.why, 300); if(!why) return bad("Write why work starts before all access is in"); o.stage = "work"; log(o, w, "Started before all access was in: " + why); }
     else if(op === "deliv"){ need("pm"); const x = find("deliverables", q.did); if(!x) return bad("Not found");
@@ -230,6 +230,7 @@ async function handle(request){
       if(aiOn()){ try{ const p = replyPrompt(o, t); const r = await askAI("reply", "claude-haiku-5-5", p.system, p.user, 1500); x.digest = r.data; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
         if(r.data.scopeChange) o.alert = "Client asked for something new: check scope"; }catch(e){} }
       o.queue.push(x); log(o, w, "Client replied" + (x.digest ? ": " + str(x.digest.summary, 200) : "")); }
+    else if(op === "drop"){ need("pm"); const x = find("queue", q.qid); if(!x || x.sent) return bad("Only unsent messages can be dropped"); o.queue = o.queue.filter(y => y !== x); log(o, w, "Dropped a message that is not needed: " + x.kind); }
     else if(op === "seen"){ const x = find("queue", q.qid); if(x){ x.seen = true; x.seenBy = w.name; } if(q.clearAlert) o.alert = ""; }
     else if(op === "toQA"){ need("pm"); const left = o.deliverables.filter(d => !d.done || !d.proof); if(left.length) return bad("Every deliverable needs done plus proof first (" + left.length + " left)");
       o.stage = "qa"; log(o, w, "Sent to QA"); }
