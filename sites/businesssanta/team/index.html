@@ -233,6 +233,8 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .w2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:10px}.w2 p{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--ink)}.w2 .tp p{font-weight:600}.w2 .tp{border-left:3px solid var(--warn,#fbbf24);padding-left:10px}@media(max-width:760px){.w2{grid-template-columns:1fr}}
 .wdet{margin-top:8px}.wdet .w3{margin-top:8px}
 .path{margin-top:14px;border:1px solid rgba(251,191,36,.45);border-radius:12px;padding:12px 16px;background:rgba(251,191,36,.06)}.path ol{margin:6px 0 0;padding-left:20px;display:grid;gap:6px}.path li{font-size:14.5px;line-height:1.5}.pdet{margin-top:12px}
+.rdraft{display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:flex-start;border:1px solid rgba(96,165,250,.45);background:rgba(96,165,250,.06);border-radius:12px;padding:12px 16px;margin-bottom:12px}.rdraft>div:first-child{flex:1;min-width:260px}.rdraft p{margin:4px 0 0}
+.repv{background:#fff;color:#1a1a1a;border-radius:10px;padding:18px 22px;margin-top:8px;max-height:520px;overflow:auto;font-size:14px;line-height:1.6}.repv h1{font-size:20px;color:#111}.repv h2{font-size:16px;color:#111;margin-top:16px}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -463,7 +465,8 @@ function drawOrder(){
   const chip = (t, k) => `<span class="chip ${k}">${E(t)}</span>`;
   const NAV = [], dotOf = st => /chip bad/.test(st) ? "bad" : /chip (warn|y)\b/.test(st) ? "warn" : /chip ok/.test(st) ? "ok" : "n";
   const box = (n, title, status, body, open) => { NAV.push({ n, title, dot:dotOf(status || "") }); return `<details class="card ob" id="sec${n}" ${open ? "open" : ""}><summary><i>${n}</i><b>${title}</b><span class="obs">${status || ""}</span></summary><div class="obb">${body}</div></details>`; };
-  const rows = ck.rows || [], cnt = k => rows.filter(r => (ST[r.status] || [])[0] === (ST[k] || [])[0]).length;
+  const phOf = r => (((ck.requirements || []).find(q => q.id === r.r) || {}).phase) || "project";
+  const allRows = ck.rows || [], rows = allRows.filter(r => phOf(r) === "project"), dRows = allRows.filter(r => phOf(r) === "delivery"), cRows = allRows.filter(r => phOf(r) === "client"), cnt = k => rows.filter(r => (ST[r.status] || [])[0] === (ST[k] || [])[0]).length;
   // 0. Header and the problems that matter
   const probs = (ck.problems || []).filter(p => !PJ || p.who !== "sales");
   const vN = cnt("done"), accN = o.access.filter(a => ["received", "skip"].includes(a.status)).length;
@@ -501,7 +504,13 @@ function drawOrder(){
   // 4. Work check: requirement by requirement
   const dOf = id => o.deliverables.find(d => d.id === id), files = ck.files || [], chat = o.teamChat || [];
   const s4 = box(4, "Work check", rows.length ? chip(cnt("done") + " of " + rows.length + " done", cnt("done") === rows.length ? "ok" : "warn") + (cnt("not done") ? chip(cnt("not done") + " not done", "bad") : "") : "",
-    `${rows.length ? L(rows, r => { const req = (ck.requirements || []).find(q => q.id === r.r) || {}, st = ST[r.status] || [r.status, "n"], d = r.d && dOf(r.d);
+    `${(() => { const dr = o.draftReport, needRep = rows.some(r => (((ck.requirements || []).find(q => q.id === r.r) || {}).type === "report") && r.status !== "done"), canD = can("pm") || can("assign");
+        if(!dr && !(needRep && canD)) return "";
+        return `<div class="rdraft"><div><b>${dr ? (dr.approved ? "Work report approved" : "Work report draft ready") : "Report parts are missing"}</b><p class="sub">${dr ? (dr.approved ? "Approved by " + E(dr.approvedBy) + " " + ago(dr.approvedAt) + ". It counts as our work report." : "Written " + ago(dr.at) + " only from what the desk verified on the live site, in Search Console and in the team's files, each with its source. Read it, then approve it so it counts as our work report.") : "The desk can write them from work it verified itself (live site, Search Console, the team's files), each with its source. Nothing unverified is claimed. A person approves it before it counts."}</p>
+          ${dr && (dr.notVerified || []).length ? `<p class="sub">Left out as not verified: ${dr.notVerified.map(E).join("; ")}</p>` : ""}</div>
+          <div class="row" style="gap:6px;flex-wrap:wrap">${dr ? `<a class="btn sm" href="${E(dr.link)}" target="_blank" rel="noopener">Open in Google Docs</a>` : ""}${dr && !dr.approved && canD ? `<button class="btn sm pri" id="repOk">Approve as our work report</button>` : ""}${canD ? `<button class="btn sm ghost" id="repW">${dr ? "Write again" : "Write them from verified work"}</button>` : ""}</div>
+          ${dr && dr.html ? `<details class="mx" style="width:100%"><summary>Read the draft here</summary><div class="repv">${dr.html.replace(/<(?!\/?(h1|h2|p|ul|ol|li|b)>)[^>]*>/g, "")}</div></details>` : ""}</div>`; })()}
+     ${rows.length ? L(rows, r => { const req = (ck.requirements || []).find(q => q.id === r.r) || {}, st = ST[r.status] || [r.status, "n"], d = r.d && dOf(r.d);
         return `<div class="wrow ${st[1]}"><div class="wrh"><div><b>${E(req.text || "")}</b>${req.type ? ` <span class="ty">${E(TY[req.type] || req.type)}</span>` : ""}</div>${chip(st[0], st[1])}</div>
           ${req.doneWhen ? `<p class="wrule"><span>Done when</span>${E(req.doneWhen)}</p>` : ""}
           <div class="w2"><div><span class="lbl">Found</span><p>${E(r.found || r.report || "Nothing yet")}</p></div>${r.toPass ? `<div class="tp"><span class="lbl">To pass</span><p>${E(r.toPass)}</p></div>` : ""}</div>
@@ -529,12 +538,15 @@ function drawOrder(){
       : lastQA ? `<p>${E(lastQA.by)} · ${ago(lastQA.at)}: <b>${lastQA.result === "pass" ? "Passed" : "Failed"}</b>${lastQA.note ? `<br><span class="sub">${E(lastQA.note)}</span>` : ""}</p>` : `<p class="note">QA starts when every requirement is done with proof.</p>`, o.stage === "qa");
   // 7. Delivery pack
   const pk = o.pack;
-  const s7 = box(7, "Delivery pack", pk ? chip(o.stage === "ready" ? "Ready to send" : "Built " + ago(pk.at), o.stage === "ready" ? "ok" : "n") : "",
-    pk ? `<p>${E(pk.summary || "")}</p><table class="t2"><tbody>${L(pk.final, f => { const d = dOf(f.d) || {}; return `<tr><td><b>${E(d.text || "")}</b>${f.fix ? `<div class="sub ev">${E(f.fix)}</div>` : ""}</td><td>${L(f.use, u => `<a href="${E(u.url || "#")}" target="_blank" rel="noopener">${E(u.name || u.url)}</a><br>`) || `<span class="sub">None yet</span>`}</td><td>${chip({ ready:"Ready", "needs fix":"Needs a fix", missing:"Not found yet" }[f.status] || f.status, f.status === "ready" ? "ok" : f.status === "missing" ? "bad" : "warn")}</td></tr>`; })}</tbody></table>
+  const bd = (ck.beforeDelivery || []), wc = (ck.waitingOnClient || []), openD = dRows.filter(r => r.status !== "done"), openC = cRows.filter(r => r.status !== "done");
+  const dlist = (openD.length || bd.length ? `<div class="lbl" style="margin:0 0 6px">Before delivery</div><ul class="clean">${L(openD, r => `<li><b>${E(((ck.requirements || []).find(q => q.id === r.r) || {}).text || "")}</b>${r.toPass ? `<br><span class="sub">${E(r.toPass)}</span>` : ""}</li>`)}${L(bd.filter(b2 => !openD.some(r => (r.toPass || "") === b2.do)), b2 => `<li><b>${E(b2.who)}</b>: ${E(b2.do)}</li>`)}</ul>` : "")
+    + (openC.length || wc.length ? `<div class="lbl" style="margin:12px 0 6px">Waiting on the client</div><ul class="clean">${L(openC, r => `<li>${E(((ck.requirements || []).find(q => q.id === r.r) || {}).text || "")}</li>`)}${L(wc, t => `<li>${E(t)}</li>`)}</ul><p class="sub">These never stop QA. They are settled before or at delivery.</p>` : "");
+  const s7 = box(7, "Delivery pack", (openD.length || bd.length ? chip((openD.length || bd.length) + " before delivery", "y") : "") + (pk ? chip(o.stage === "ready" ? "Ready to send" : "Built " + ago(pk.at), o.stage === "ready" ? "ok" : "n") : ""),
+    dlist + (pk ? `<p>${E(pk.summary || "")}</p><table class="t2"><tbody>${L(pk.final, f => { const d = dOf(f.d) || {}; return `<tr><td><b>${E(d.text || "")}</b>${f.fix ? `<div class="sub ev">${E(f.fix)}</div>` : ""}</td><td>${L(f.use, u => `<a href="${E(u.url || "#")}" target="_blank" rel="noopener">${E(u.name || u.url)}</a><br>`) || `<span class="sub">None yet</span>`}</td><td>${chip({ ready:"Ready", "needs fix":"Needs a fix", missing:"Not found yet" }[f.status] || f.status, f.status === "ready" ? "ok" : f.status === "missing" ? "bad" : "warn")}</td></tr>`; })}</tbody></table>
        ${(pk.notUse || []).length ? `<details class="mx"><summary>Do not send (${pk.notUse.length})</summary><ul class="clean">${L(pk.notUse, n => `<li><b>${E(n.name)}</b>: ${E(n.why)}</li>`)}</ul></details>` : ""}
        ${!PJ && pk.client && ["ready", "delivered"].includes(o.stage) ? `<div class="lbl" style="margin:12px 0 6px">Delivery message</div><div class="msg">${E(pk.client.message || "")}</div>${(pk.client.attach || []).length ? `<p class="sub">Attach: ${pk.client.attach.map(E).join(", ")}</p>` : ""}<div class="row" style="gap:6px;margin-top:6px"><button class="btn sm pri" data-cp="${E(pk.client.message || "")}">Copy message</button>${o.stage === "ready" && can("comms") ? `<button class="btn sm" id="deliver">Mark delivered</button>` : ""}</div>` : ""}
        ${can("pm") || can("qa") || can("comms") ? `<button class="btn sm ghost" id="packB" style="margin-top:8px">Build again</button>` : ""}`
-     : `<p class="note">Built when the order goes to QA: the final file per requirement, what not to send, QA checks and the delivery message.</p>${can("pm") || can("qa") || can("comms") ? `<button class="btn sm" id="packB">Build now</button>` : ""}`, ["ready"].includes(o.stage) && !PJ);
+     : `<p class="note" style="margin-top:10px">The pack is built when the order goes to QA: the final file per requirement, what not to send, QA checks and the delivery message.</p>${can("pm") || can("qa") || can("comms") ? `<button class="btn sm" id="packB">Build now</button>` : ""}`), ["ready"].includes(o.stage) && !PJ);
   // 8. History
   const s8 = box(8, "History", `<span class="sub">${(o.timeline || []).length} steps</span>`, `<div class="tl">${L((o.timeline || []).slice(0, 80), t => `<div><span class="sub">${ago(t.at)}</span> <b>${E(t.who)}</b>: ${E(t.what)}</div>`)}</div><div class="row" style="gap:8px;margin-top:10px"><button class="btn sm ghost" id="nt">Add a note</button></div>`);
   const secs = s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8;
@@ -544,6 +556,8 @@ function drawOrder(){
   const acc = document.querySelector("#accfile"); if(acc) accFile(o);
   if($("#ckB")) $("#ckB").onclick = () => doOp("check", {}, "Checking every requirement against the group chat, the work report and the live site (about a minute)…");
   if($("#packB")) $("#packB").onclick = () => doOp("pack", {}, "Building the delivery pack (about a minute)…");
+  if($("#repW")) $("#repW").onclick = () => doOp("draftReport", {}, "Writing the report from verified work only (about a minute)…");
+  if($("#repOk")) $("#repOk").onclick = () => { if(confirm("Approve this as our work report? It will count as the work report for this order.")) doOp("approveReport", {}, "Approving and checking the order again (about a minute)…"); };
 }
 
 function wireOrder(o){

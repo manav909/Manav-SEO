@@ -298,6 +298,7 @@ function projView(o){
   const ai = o.ai || {};
   return { id:o.id, at:o.at, cid:o.cid, client:{ name:o.client.name, website:o.client.website, country:o.client.country }, gig:o.gig, pkg:o.pkg, deadline:o.deadline, stage:o.stage, pm:o.pm, pmName:o.pmName, qa:o.qa, qaName:o.qaName,
     check:o.check ? Object.assign({}, o.check, { chatNotInMail:undefined }) : null,
+    draftReport:o.draftReport,
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
@@ -710,7 +711,7 @@ async function buildCheck(o, fresh){
   const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
   const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
-  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements;
+  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => Object.assign({}, r, { phase:r.phase || ((plan.requirements || []).find(x => x.id === r.id) || {}).phase }));
   const reads = [];
   for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
     try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
@@ -719,19 +720,24 @@ async function buildCheck(o, fresh){
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
-  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
+  const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
+  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
   const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
   const d2 = r2.data || {}; d2.verdict = noId(d2.verdict); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); });
   d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), closes:num(p.closes, 0) }));
+  d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
   o.check = Object.assign(d2, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
     probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
   // Scope follows the requirement email: when nothing has been ticked yet, the deliverables become its requirements
   const untouched = !(o.deliverables || []).some(d => d.done || proofsOf(d).length || d.qa);
   if(reqMail && reqs.length && untouched && !(o.deliverables || []).every(d => d.req)){
-    o.deliverables = reqs.map(r => ({ id:nid("d"), text:r.text, done:false, proof:"", qa:"", req:r.id }));
-    log(o, { name:"Order desk" }, "Deliverables set from the requirement email \"" + str(reqMail.subject, 80) + "\": " + reqs.length + " requirements");
+    o.deliverables = reqs.filter(r => r.phase === "project").map(r => ({ id:nid("d"), text:r.text, done:false, proof:"", qa:"", req:r.id }));
+    log(o, { name:"Order desk" }, "Deliverables set from the requirement email \"" + str(reqMail.subject, 80) + "\": " + o.deliverables.length + " project requirements");
   }
+  // Only project work goes through QA: delivery and client items leave the deliverables (kept with their proof if any)
+  if((o.deliverables || []).every(d => d.req)){ const proj = new Set(reqs.filter(r => r.phase === "project").map(r => r.id)), out = o.deliverables.filter(d => !proj.has(d.req));
+    if(out.length){ o.deliverables = o.deliverables.filter(d => proj.has(d.req)); log(o, { name:"Order desk" }, "Moved out of the QA gate (delivery or client items): " + out.map(d => str(d.text, 60)).join("; ")); } }
   // A requirement the check finds done is ticked, with what proved it; when every one is done the order moves to QA
   let ticked = 0;
   for(const row of o.check.rows || []){ const d = (o.deliverables || []).find(x => x.req === row.r); if(!d) continue; row.d = d.id; d.status = row.status;
@@ -745,6 +751,40 @@ async function buildCheck(o, fresh){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   return o.check;
+}
+
+/* Work report draft: when work is visibly done but missing from the team's report, the desk writes those parts from what it verified
+   itself (live site, Search Console, the team's files), each with its source and date. Nothing unverified is claimed. A person approves
+   it before it counts as the work report. */
+async function draftReport(o){
+  if(!aiOn()) throw new Error("The AI helpers are off");
+  const ck = o.check; if(!ck || !(ck.rows || []).length) throw new Error("Run Check the order first");
+  const acc = (await gAccounts()).find(x => x.primary); if(!acc || !acc.write) throw new Error("Reconnect your Google account on the HoD report page so the desk can save the draft in your Drive");
+  const reqs = ck.requirements || [], rows = ck.rows.map(r => Object.assign({ req:(reqs.find(q => q.id === r.r) || {}) }, r)).filter(r => (r.req.phase || "project") === "project");
+  const system = `You write the work report for one order of an SEO, web and ads agency, for the client to read. Write ONLY what the evidence shows was done and found: the live checks on the client's site, Search Console data read with our access, and the team's own files. Every statement of work done carries its source and date in brackets (for example: live check of robots.txt, 25 Nov; Search Console, sitemap read 23 Nov). Where the evidence does not show something, put it under "Not verified yet" instead of claiming it. Never invent numbers. Explain honestly that Google takes time to recrawl and index, so results show over days or weeks. Give prioritised next steps from the open issues. Plain, warm, professional English for a business owner. Never mention tools that write for us. No dashes.
+Answer with one JSON object only: {"title":"","summary":"three lines","sections":[{"heading":"","done":["what was done, with source and date"],"found":["findings, with numbers and source"]}],"notVerified":["claimed or planned, not verified yet"],"nextSteps":[{"step":"","why":"","priority":"high | medium | low"}],"timing":"one honest paragraph about Google's timing"}`;
+  const user = `Order ${o.id}, client ${o.client.name || ""}, site ${o.client.website}, date ${now().slice(0, 10)}.
+REQUIREMENTS AND WHAT THE ORDER CHECK FOUND:
+${JSON.stringify(rows.map(r => ({ requirement:r.req.text, type:r.req.type, status:r.status, found:r.found, live:r.live, report:r.report, team:r.team })))}
+LIVE CHECKS ON THE CLIENT'S SITE: ${JSON.stringify(ck.probes || [])}
+SEARCH CONSOLE AND SITE CHECK: ${o.verify ? verifyText(o.verify) : "not available"}
+TEAM FILES READ: ${JSON.stringify(ck.files || [])}`.slice(0, 90000);
+  const r = await askAI("draftreport", "claude-sonnet-5-5", system, user, 8000), d = r.data || {}; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  const h = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  const html = `<h1>${h(d.title || "Work report: " + domOf(o.client.website))}</h1><p>${h(d.summary || "")}</p>` +
+    (d.sections || []).map(x => `<h2>${h(x.heading)}</h2>${(x.done || []).length ? `<p><b>What was done</b></p><ul>${x.done.map(t => `<li>${h(t)}</li>`).join("")}</ul>` : ""}${(x.found || []).length ? `<p><b>What we found</b></p><ul>${x.found.map(t => `<li>${h(t)}</li>`).join("")}</ul>` : ""}`).join("") +
+    ((d.nextSteps || []).length ? `<h2>Next steps</h2><ol>${d.nextSteps.map(x => `<li><b>${h(x.step)}</b> (${h(x.priority)} priority): ${h(x.why)}</li>`).join("")}</ol>` : "") +
+    (d.timing ? `<h2>About Google's timing</h2><p>${h(d.timing)}</p>` : "") +
+    ((d.notVerified || []).length ? `<h2>Not verified yet</h2><ul>${d.notVerified.map(t => `<li>${h(t)}</li>`).join("")}</ul>` : "");
+  const st = Object.assign({ files:{} }, (await getJ(REPK)) || {});
+  if(!st.folder) await driveReports(true); const st2 = Object.assign({ files:{} }, (await getJ(REPK)) || {});
+  if(!st2.drafts){ st2.drafts = await gFolder(acc.email, "Work report drafts", st2.folder.id); }
+  const key = "rep:" + o.id, name = o.id + " · " + domOf(o.client.website) + " · work report draft";
+  await gPut(acc.email, st2, key, name, st2.drafts.id, "doc", html); await setJ(REPK, st2);
+  const f = st2.files[key];
+  o.draftReport = { at:now(), id:f.id, link:f.link, name, html, approved:false, via:acc.email, notVerified:d.notVerified || [] };
+  log(o, { name:"Order desk" }, "Work report draft written from verified work only: " + name);
+  return o.draftReport;
 }
 
 function score(orders, cfg, month){
@@ -1096,6 +1136,11 @@ async function handle(request){
       Object.assign(p, { url:cur.link, name:cur.name, meta:{ ok:true, id:cur.id, name:cur.name, kind:cur.kind, modified:cur.modified, lastBy:cur.by, via:cur.via }, at:now(), by:w.name }); delete p.newer; delete d.check;
       log(o, w, "Proof switched to the newest copy: " + cur.name); }
     else if(op === "check"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildCheck(o, !!q.fresh); }
+    else if(op === "draftReport"){ if(!(can(w, "pm") || can(w, "assign"))) return bad("Your role cannot do this step"); try{ await draftReport(o); }catch(e){ return bad(e.message); } }
+    else if(op === "approveReport"){ if(!(can(w, "pm") || can(w, "assign"))) return bad("Your role cannot do this step"); const dr = o.draftReport; if(!dr) return bad("No draft yet");
+      dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
+      o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
+      groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
       o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; });
