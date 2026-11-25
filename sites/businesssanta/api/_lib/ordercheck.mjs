@@ -32,9 +32,9 @@ CLIENT CHAT (as laid out):
 ${cut(convoText, 30000)}
 CALL NOTES: ${cut(o.calls, 4000) || "none"}
 EMAILS (index, date, from, to, subject, text):
-${(o.mails || []).map((m, i) => `[${i}] ${m.date} from ${m.from} to ${m.to || ""} | ${m.subject}\n${cut(m.text, 2500)}`).join("\n---\n") || "none"}
-PROJECT GROUP CHAT:
-${(o.teamChat || []).map(m => `${m.at} ${m.by}: ${cut(m.text, 600)}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n") || "none"}
+${(o.mails || []).map((m, i) => `[${i}] ${m.date} from ${m.from} to ${m.to || ""} | ${m.subject}\n${cut(m.text, 6000)}`).join("\n---\n") || "none"}
+PROJECT GROUP CHAT (every message, oldest first):
+${groupChat(o)}
 SENIOR DISCUSSION ABOUT THIS ORDER (managers, PM, head of department; their view carries weight, a manager's word settles):
 ${(o.seniorNotes || []).slice(-20).map(m => `${m.at} ${m.by} in ${m.group}: ${cut(m.text, 500)}`).join("\n") || "none"}
 ACCESS GROUP:
@@ -66,6 +66,7 @@ export async function probe(site, p){
   return out;
 }
 
+const groupChat = o => (o.teamChat || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at))).map(m => `${m.at} ${m.by}: ${cut(m.text, 4000)}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n") || "none";
 export function judgePrompt(o, plan, reqMail, reads, probes, verifyTxt){
   const system = `You are a fair QA lead checking one order of an SEO, web and ads agency. Each requirement has a TYPE and a DONE WHEN rule. Judge each requirement ONLY by its own rule and only from the evidence that rule names:
 site change: the live checks on the client's site. google setup: the Search Console and site check. report: the content of the work report files (a section with real findings counts, a bare status word does not). file or recording: a file or link shared in the group chat, emails or files. communication: the client chat. google result: our action done and the timing explained; never fail it for Google being slow.
@@ -89,6 +90,8 @@ CLIENT ASKED IN CHAT, NOT IN THE EMAIL: ${JSON.stringify(plan.chatNotInMail || [
 IN THE EMAIL, OUTSIDE THE PAID SCOPE: ${JSON.stringify(plan.outOfScope || [])}
 WHAT THE PROJECT TEAM SAYS (group chat and team emails only): ${JSON.stringify(plan.claims || [])}
 WHAT WE TOLD THE CLIENT IN CHAT: ${JSON.stringify(plan.told || [])}
+PROJECT GROUP CHAT (every message, oldest first; read it in full, every instruction, number, file and answer in it matters):
+${groupChat(o)}
 WORK REPORT AND FILES (every tab read):
 ${reads.map(x => "FILE: " + x.name + " (changed " + x.modified + (x.by ? " by " + x.by : "") + ")\n" + x.content).join("\n\n") || "none shared"}
 LIVE CHECKS ON THE CLIENT'S SITE (read now):

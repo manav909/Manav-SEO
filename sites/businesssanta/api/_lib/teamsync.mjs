@@ -3,6 +3,7 @@
    Orders are matched by order number (O-1001) or the client's site (pwmania.com / pwmania). */
 import { apiAs, accounts } from "./google.mjs";
 import { officeText } from "./orderai.mjs";
+import { inflateSync as INFLATE } from "node:zlib";
 /* A Google Sheet as text, every tab (the plain-text export gives only the first tab) */
 async function sheetText(id, tok){
   const r = await fetch("https://www.googleapis.com/drive/v3/files/" + id + "/export?mimeType=" + encodeURIComponent("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"), { headers:{ authorization:"Bearer " + tok } });
@@ -60,15 +61,22 @@ export async function syncOrder(o){
             files:(function walk(p, acc){ (p.parts || []).forEach(x => { if(x.filename) acc.push(x.filename); walk(x, acc); }); return acc; })(g.payload, []).slice(0, 10) });
         } }catch(e){ out.errors.gmail = e.message; }
     }
-    // Google Chat: spaces named after the order or site that this account is in
+    // Google Chat: spaces named after the order or site that this account is in.
+    // The first read of a group takes its WHOLE history (work starts in the group before the order reaches the portal); later reads take every new page.
     if(a.chat){
       try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
         for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
-          const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=50&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + since + '"'));
-          for(const m of ms.messages || []){ const old = (o.teamChat || []).find(x => x.id === m.name); if(old && !old.spaceId){ old.spaceId = s.name; old.thread = m.thread ? m.thread.name : ""; old.sender = m.sender ? m.sender.name : ""; } }   // fill the group for messages read before groups were recorded
-          for(const m of (ms.messages || []).reverse()) if(!(o.teamChat || []).some(x => x.id === m.name))
-            out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 3000), files:(m.attachment || []).map(x => x.contentName).filter(Boolean),
-              links:(m.attachment || []).filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId })) });
+          const full = !((o.chatFull || {})[s.name]), all = [];
+          let tok = "", pages = 0;
+          do{ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=500&orderBy=createTime%20asc" + (full ? "" : "&filter=" + encodeURIComponent('createTime > "' + since + '"')) + (tok ? "&pageToken=" + encodeURIComponent(tok) : ""));
+            all.push(...(ms.messages || [])); tok = ms.nextPageToken || ""; }while(tok && ++pages < 8);
+          for(const m of all){ const old = (o.teamChat || []).find(x => x.id === m.name); if(old && !old.spaceId){ old.spaceId = s.name; old.thread = m.thread ? m.thread.name : ""; old.sender = m.sender ? m.sender.name : ""; } }
+          for(const m of all) if(!(o.teamChat || []).some(x => x.id === m.name)){
+            const att = m.attachment || [];
+            out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 8000), files:att.map(x => x.contentName).filter(Boolean),
+              links:att.filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId }))
+                .concat(att.filter(x => x.attachmentDataRef && x.attachmentDataRef.resourceName).map(x => ({ name:x.contentName || "file", mime:x.contentType || "", media:x.attachmentDataRef.resourceName, id:"chat-" + String(m.name).split("/").pop() + "-" + String(x.name || x.contentName || "").split("/").pop().slice(0, 40).replace(/[^\w.-]/g, "") }))) }); }
+          out.chatFull = Object.assign(out.chatFull || {}, { [s.name]:{ at:new Date().toISOString(), messages:all.length, from:(all[0] || {}).createTime || "" } });
         } }catch(e){ out.errors.chat = e.message; }
     }
   }
@@ -110,10 +118,11 @@ export async function docCandidates(orders){
   // Drive links the team wrote in emails and chats
   const F1 = "id,name,mimeType,modifiedTime,createdTime,webViewLink,owners(displayName,emailAddress),lastModifyingUser(displayName)";
   for(const o of orders){
-    const msgs = [].concat((o.mails || []).map(m => ({ t:m.text, via:m.via, where:"an email (" + (m.subject || "") + ")", by:m.from, links:[] })), (o.teamChat || []).map(m => ({ t:m.text, via:m.via, where:"the project group " + (m.space || ""), by:m.by, links:m.links || [] })));
-    for(const g of msgs){ const ids = new Set(g.links.map(l => l.id));
+    const msgs = [].concat((o.mails || []).map(m => ({ t:m.text, via:m.via, where:"an email (" + (m.subject || "") + ")", by:m.from, links:[] })), (o.teamChat || []).map(m => ({ t:m.text, via:m.via, where:"the project group " + (m.space || ""), by:m.by, at:m.at, links:m.links || [] })));
+    for(const g of msgs){ const ids = new Set(g.links.filter(l => !l.media).map(l => l.id));
+      for(const l of g.links.filter(l => l.media)) if(!out.has(l.id)) out.set(l.id, { id:l.id, name:l.name, mime:l.mime, media:l.media, link:"", modified:g.at || "", by:g.by, owner:g.by, via:g.via || "", why:["uploaded in " + g.where + " by " + g.by], posted:"uploaded in " + g.where + " by " + g.by, order:o.id });
       for(const m of String(g.t || "").matchAll(/https?:\/\/(?:drive|docs)\.google\.com\/[^\s)>"]+/g)){ const id = (m[0].match(/\/d\/([\w-]{15,})|[?&]id=([\w-]{15,})/) || []).slice(1).find(Boolean); if(id) ids.add(id); }
-      for(const id of ids){ if(out.has(id)){ out.get(id).posted = "posted in " + g.where + " by " + g.by; continue; }
+      for(const id of ids){ if(out.has(id)){ Object.assign(out.get(id), { posted:"posted in " + g.where + " by " + g.by, order:o.id }); continue; }
         let f = null; if(g.via) try{ f = await apiAs(g.via, "https://www.googleapis.com/drive/v3/files/" + id + "?supportsAllDrives=true&fields=" + encodeURIComponent(F1)); }catch(e){}
         out.set(id, f && f.id ? { id, name:f.name, mime:f.mimeType, modified:f.modifiedTime, created:f.createdTime, link:f.webViewLink, by:f.lastModifyingUser ? f.lastModifyingUser.displayName : "", owner:(f.owners || [])[0] ? f.owners[0].displayName || f.owners[0].emailAddress : "", via:g.via, why:["posted in " + g.where + " by " + g.by], posted:"posted in " + g.where + " by " + g.by, order:o.id }
           : { id, name:"(linked in a team message)", link:"https://drive.google.com/file/d/" + id + "/view", via:g.via || "", why:["posted in " + g.where + " by " + g.by], posted:"posted in " + g.where + " by " + g.by, order:o.id }); } } }
@@ -121,15 +130,7 @@ export async function docCandidates(orders){
 }
 export async function docPeek(c){
   // First words of the file, so the AI can tell which order it belongs to
-  if(!c.via) return "";
-  const D = "https://www.googleapis.com/drive/v3/files/" + c.id;
-  try{
-    const tok = await (await import("./google.mjs")).accessTokenAs(c.via);
-    if(/spreadsheet$/.test(c.mime || "")){ const t = await sheetText(c.id, tok); if(t) return maskCreds(t.replace(/\s+/g, " "), true).slice(0, 1500); }
-    const url = /document$|presentation$/.test(c.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(c.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(c.mime || "") ? D + "?alt=media" : "";
-    if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) return "";
-    return maskCreds((await r.text()).replace(/\s+/g, " "), true).slice(0, 1500);
-  }catch(e){ return ""; }
+  try{ return (await fileText(c, 1500)).replace(/\s+/g, " ").slice(0, 1500); }catch(e){ return ""; }
 }
 export function docPrompt(orders, cands){
   const system = `You sort documents from an SEO, web and ads agency's Google Drive into the client orders they belong to. File names are often wrong or vague, so judge mainly by the content and the client's site, brand and the work described.
@@ -144,12 +145,43 @@ Answer with one JSON object only: {"files":[{"id":"","order":"order id or empty"
 export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").toLowerCase()
   .replace(/^copy of\s+/, "").replace(/(https?):\/\/(www\.)?/g, "$1 ").replace(/\(\d+\)/g, "").replace(/\d{4}[-_.]\d{1,2}[-_.]\d{1,2}|\d{1,2}[-_.]\d{1,2}[-_.]\d{2,4}/g, "")
   .replace(/\b(v|ver|version|final|draft|new|latest|updated)\s*\d*\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-export async function docText(d, max){
-  if(!d.via) return "";
-  const tok = await (await import("./google.mjs")).accessTokenAs(d.via), D = "https://www.googleapis.com/drive/v3/files/" + d.id;
-  if(/spreadsheet$/.test(d.mime || "")){ const t = await sheetText(d.id, tok); if(t) return maskCreds(t, true).slice(0, max || 20000); }
-  const url = /document$|presentation$/.test(d.mime || "") ? D + "/export?mimeType=text/plain" : /spreadsheet$/.test(d.mime || "") ? D + "/export?mimeType=text/csv" : /^text\/|csv/.test(d.mime || "") ? D + "?alt=media" : "";
-  if(!url) return ""; const r = await fetch(url, { headers:{ authorization:"Bearer " + tok } }); return r.ok ? maskCreds(await r.text(), true).slice(0, max || 20000) : "";
+export async function docText(d, max){ return fileText(d, max || 20000); }
+/* Text of any file the team shares: Google Docs, Sheets (every tab) and Slides; Word, Excel, PowerPoint, PDF, CSV and text files in Drive;
+   and files uploaded straight into a Google Chat group. Returns "" only when the file truly has no readable text. */
+export async function fileText(d, max){
+  if(!d.via) return ""; max = max || 20000;
+  const tok = await (await import("./google.mjs")).accessTokenAs(d.via), mime = d.mime || "", name = d.name || "";
+  const get = async u => { const r = await fetch(u, { headers:{ authorization:"Bearer " + tok } }); if(!r.ok) throw new Error("HTTP " + r.status); return Buffer.from(await r.arrayBuffer()); };
+  const fromBuf = (buf, nm, mt) => { const ext = (String(nm).split(".").pop() || "").toLowerCase();
+    if(/pdf/.test(mt) || ext === "pdf") return pdfText(buf);
+    const e2 = /wordprocessingml/.test(mt) ? "docx" : /spreadsheetml/.test(mt) ? "xlsx" : /presentationml/.test(mt) ? "pptx" : /csv/.test(mt) ? "csv" : /^text\//.test(mt) ? "txt" : ext;
+    return officeText(buf, "f." + e2); };
+  let t = "";
+  if(d.media) t = fromBuf(await get("https://chat.googleapis.com/v1/media/" + d.media + "?alt=media"), name, mime);
+  else { const D = "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true";
+    if(/google-apps\.spreadsheet$/.test(mime)) t = await sheetText(d.id, tok);
+    else if(/google-apps\.(document|presentation)$/.test(mime)) t = (await get("https://www.googleapis.com/drive/v3/files/" + d.id + "/export?mimeType=text/plain")).toString("utf8");
+    else if(!/google-apps/.test(mime)) t = fromBuf(await get(D + "&alt=media"), name, mime); }
+  return maskCreds(String(t || ""), true).slice(0, max);
+}
+function a85(t){ t = t.replace(/\s/g, "").replace(/^<~/, "").replace(/~>.*$/, ""); const out = []; let g = [];
+  for(const ch of t){ if(ch === "z" && !g.length){ out.push(0, 0, 0, 0); continue; } g.push(ch.charCodeAt(0) - 33);
+    if(g.length === 5){ let n = 0; for(const v of g) n = n * 85 + v; out.push(n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255); g = []; } }
+  if(g.length){ const k = g.length; while(g.length < 5) g.push(84); let n = 0; for(const v of g) n = n * 85 + v; out.push(...[n >>> 24 & 255, n >>> 16 & 255, n >>> 8 & 255, n & 255].slice(0, k - 1)); }
+  return Buffer.from(out); }
+/* Plain text from a PDF: inflates its content streams and collects the text drawing operators */
+function pdfText(buf){
+  const s = buf.toString("latin1"), out = [];
+  let i = 0;
+  while((i = s.indexOf("stream", i)) >= 0){ let st = i + 6; if(s[st] === "\r") st++; if(s[st] === "\n") st++; const en = s.indexOf("endstream", st); if(en < 0) break;
+    let body = buf.subarray(st, en), txt = ""; const dict = s.slice(Math.max(0, i - 400), i);
+    if(/ASCII85Decode|\/A85/.test(dict)) body = a85(body.toString("latin1"));
+    try{ txt = INFLATE(body).toString("latin1"); }catch(e){ txt = /FlateDecode|\/Fl\b/.test(dict) ? "" : body.toString("latin1"); }
+    const parts = []; txt.replace(/\((?:\\.|[^\\)])*\)\s*Tj|\[(?:[^\]])*\]\s*TJ|T\*|Td|TD|ET/g, m => {
+      if(/^(T\*|Td|TD|ET)$/.test(m)){ parts.push("\n"); return ""; }
+      (m.match(/\((?:\\.|[^\\)])*\)/g) || []).forEach(x => parts.push(x.slice(1, -1).replace(/\\([nrt()\\])/g, (_, c) => ({ n:"\n", r:"", t:"\t" })[c] ?? c))); return ""; });
+    if(parts.length) out.push(parts.join("")); i = en + 9; }
+  return out.join("\n").replace(/[^\x09\x0a\x20-\x7e\u00a0-\u00ff]/g, "").replace(/\n{3,}/g, "\n\n").trim();
 }
 /* The two newest saved versions of one Google Doc, as text */
 export async function revisionTexts(d){

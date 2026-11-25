@@ -381,7 +381,8 @@ async function syncTeam(o){
   const changedAfterQA = passAt && ["ready", "delivered"].includes(o.stage) ? r.files.filter(f => f.modified > passAt) : [];
   if(changedAfterQA.length) o.alert = "Changed after QA passed: " + changedAfterQA.map(f => f.name).join(", ").slice(0, 140);
   if(r.mails.length){ o.mails = (o.mails || []).concat(r.mails).sort((a, b) => a.date.localeCompare(b.date)).slice(-80); r.mails.forEach(m => fresh.push("TEAM EMAIL " + m.date + " from " + m.from + ", subject \"" + m.subject + "\":\n" + m.text.slice(0, 2500) + (m.files.length ? "\nAttachments: " + m.files.join(", ") : ""))); }
-  if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).slice(-300); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 8000)); }
+  if(r.chatFull) o.chatFull = Object.assign(o.chatFull || {}, r.chatFull);
+  if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-800); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 20000)); }
   // Project access group: keep the (masked) messages, and update the access checklist from what they show
   if(r.access.length){ o.accessChat = (o.accessChat || []).concat(r.access).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-200);
     if(aiOn() && (o.access || []).length) try{ const p = accessPrompt(o, o.access, r.access), x = await askAI("accesschat", "claude-haiku-5-5", p.system, p.user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + x.usd).toFixed(4);
@@ -430,8 +431,11 @@ async function matchDocs(orders){
   const cands = await docCandidates(orders), fresh = [];
   const ownIds = new Set(Object.values(((await getJ(REPK)) || {}).files || {}).map(f => f.id).filter(Boolean));
   for(const c of cands){ if(ownIds.has(c.id) || /^Business Santa order desk/i.test(c.name || "")) continue; if(!c.posted && await cmd("GET", DK(c.id))) continue;
-    if(c.posted && orders.some(o2 => (o2.docs || []).some(x => x.id === c.id && x.status !== "rejected"))) continue; c.peek = await docPeek(c); fresh.push(c); if(fresh.length >= 40) break; }
-  if(!fresh.length || !aiOn()) return 0;
+    if(c.posted && orders.some(o2 => (o2.docs || []).some(x => x.id === c.id && x.status !== "rejected"))) continue;
+    if(c.posted && c.order){ const o2 = orders.find(x => x.id === c.order); if(o2){ o2.docs = o2.docs || [];
+      o2.docs.push({ id:c.id, name:c.name, mime:c.mime, media:c.media, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:/report|audit/i.test(c.name || "") ? "report" : /drilldown|export|\.csv$/i.test(c.name || "") ? "data" : "other", why:str(c.posted.charAt(0).toUpperCase() + c.posted.slice(1), 240), confidence:1, status:"linked", at:now() }); o2._docsNew = (o2._docsNew || 0) + 1; continue; } }
+    if(fresh.length < 40){ c.peek = await docPeek(c); fresh.push(c); } }
+  if(!fresh.length || !aiOn()){ for(const o of orders){ groupDocs(o); if(o._docsNew){ log(o, { name:"Order desk" }, o._docsNew + " document(s) from the project group added"); delete o._docsNew; } } return 0; }
   const p = docPrompt(orders, fresh), r = await askAI("docs", "claude-haiku-5-5", p.system, p.user, 6000), byId = new Map(orders.map(o => [o.id, o]));
   let n = 0; const ops = [];
   for(const d of (r.data && r.data.files) || []){
@@ -439,7 +443,7 @@ async function matchDocs(orders){
     const o = byId.get(d.order); if(!o || (d.confidence || 0) < 0.5) continue;
     o.docs = o.docs || []; if(o.docs.some(x => x.id === c.id)) continue;
     const inTime = !c.modified || c.modified >= new Date(Date.parse(o.at) - 3 * 864e5).toISOString(), posted = c.posted && c.order === o.id, sure = posted || ((d.confidence || 0) >= 0.85 && inTime && /\S/.test(c.peek || ""));
-    o.docs.push({ id:c.id, name:c.name, mime:c.mime, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:posted ? str("Posted " + c.posted.replace(/^posted /, "") + ". " + (d.why || ""), 240) : str(d.why, 200) + (inTime ? "" : " (older than the order)"), confidence:+(d.confidence || 0).toFixed(2), status:sure ? "linked" : "suggested", at:now() });
+    o.docs.push({ id:c.id, name:c.name, mime:c.mime, media:c.media, link:c.link, modified:c.modified, by:c.by, owner:c.owner, via:c.via, kind:d.kind || "other", why:posted ? str("Posted " + c.posted.replace(/^posted /, "") + ". " + (d.why || ""), 240) : str(d.why, 200) + (inTime ? "" : " (older than the order)"), confidence:+(d.confidence || 0).toFixed(2), status:sure ? "linked" : "suggested", at:now() });
     o._docsNew = (o._docsNew || 0) + 1; n++;
   }
   if(ops.length) await pipe(ops);
@@ -720,8 +724,15 @@ async function buildCheck(o, fresh){
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
   if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
   const reads = [];
-  for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified))).slice(0, 5)){
-    try{ const t = await docText(d, d.kind === "data" ? 3000 : 9000); if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t }); }catch(e){} }
+  // Every current document is read (no file is skipped); a shared budget keeps the check affordable: reports first and in full, data files after
+  const cur = (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified)));
+  let budget = 90000; const readLog = [];
+  for(const [i, d] of cur.entries()){ const left = cur.length - i, share = Math.max(2500, Math.floor(budget / left)), cap = d.kind === "data" ? Math.min(share, 8000) : Math.min(share, 30000);
+    try{ const full = await docText(d, 200000), t = full.slice(0, cap); budget -= t.length;
+      readLog.push({ id:d.id, name:d.name, chars:full.length, used:t.length, whole:t.length >= full.length, ok:!!full });
+      if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, content:t + (t.length < full.length ? "\n[file continues: " + (full.length - t.length) + " more characters not shown]" : "") }); }
+    catch(e){ readLog.push({ id:d.id, name:d.name, chars:0, used:0, whole:false, ok:false, err:str(e.message, 80) }); } }
+  o.readLog = { at:now(), docs:readLog, messages:(o.teamChat || []).length, groups:Object.values(o.chatFull || {}).map(g => g) };
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
@@ -840,30 +851,56 @@ async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a 
 const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
 async function writeGroupMsg(o){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
-  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !/sales/i.test(r.who || "")).map(r => { const q = reqs.find(x => x.id === r.r) || {}, a2 = q.askedIn || {};
-    return { id:r.r, asked:q.text, from:a2.where || "requirement email", when:a2.when || "", status:r.status, found:r.found, missing:r.toPass, live:r.live, report:r.report, who:r.who }; });
-  if(!open.length) return "";
+  const proj = (ck.rows || []).filter(r => ph(r) === "project" && !/sales/i.test(r.who || ""));
+  const open = proj.filter(r => r.status !== "done").map(r => { const q = reqs.find(x => x.id === r.r) || {};
+    return { id:r.r, asked:q.text, status:r.status, found:r.found, missing:r.toPass, live:r.live, report:r.report, who:r.who }; });
+  if(!open.length){ o.groupMsgLeftOut = []; return ""; }
+  const done = proj.filter(r => r.status === "done").map(r => ({ asked:((reqs.find(x => x.id === r.r) || {}).text) || "", found:r.found }));
+  // The sources a point may quote from, word for word
+  const rm = ck.reqMail || null, fmtD = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toISOString().slice(0, 10); };
+  const src = [];
+  if(rm) src.push({ key:"requirement email", date:fmtD(rm.date), text:rm.text || "" });
+  (o.mails || []).filter(m => !rm || m.id !== rm.id).forEach(m => src.push({ key:/\bKT\b|knowledge transfer/i.test(m.subject + " " + m.text.slice(0, 300)) ? "KT note" : "follow up email", date:fmtD(m.date), text:"Subject: " + (m.subject || "") + "\n" + (m.text || "") }));
+  (o.teamChat || []).forEach(m => src.push({ key:"project group", date:fmtD(m.at), text:m.by + ": " + (m.text || "") }));
+  const cc = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${m.text}`).join("\n") : (o.chat || "");
+  if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You write short points for a team chat to professionals about work still open before QA. They already have the emails and the group chat: never teach them how to work, no click steps.
-For each item return: "title" (the item's short name, two to five words) and "text": one or two short sentences, at most 16 words each, that say clearly WHAT IS THERE NOW and WHAT IS EXPECTED, with exact values when you have them (for example: "robots.txt lists the sitemap address without the Sitemap: label, so Google ignores it. It should read: Sitemap: https://site/sitemap_index.xml"). Never write vague phrases like "must be exact", "still open", "needs work". If it is a mistake (the work says done but is not), say what is wrong in plain words. Very simple, respectful English. No dashes, no emojis, no asterisks or underscores.
-Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":[{"id":"item id","title":"","text":""}]}`;
-  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `ITEMS: ${JSON.stringify(open)}`, 1800);
+  const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
+Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm".
+Each point: "title" (two to five words), "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be there). Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
+Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
+Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
+  const user = `SITE: ${o.client.website}
+OPEN ITEMS (findings from the check): ${JSON.stringify(open)}
+ALREADY VERIFIED DONE (never mention): ${JSON.stringify(done)}
+SOURCES:
+${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice(0, x.key === "requirement email" ? 8000 : 2500)}`).join("\n\n").slice(0, 70000)}`;
+  const r = await askAI("groupmsg", "claude-sonnet-5-5", system, user, 3000);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const d = r.data || {}, clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s*Where:\s*/gi, " ").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
-  const pts = (d.points || []).map(p2 => ({ it:open.find(x => x.id === p2.id), title:clean(p2.title), text:clean(p2.text) })).filter(p2 => p2.it && p2.text);
+  const d = r.data || {}, clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
+  // A quote counts only if it is really in the source it names (or another source, which then becomes the source)
+  const norm = t => String(t || "").toLowerCase().replace(/[\u2018\u2019\u201c\u201d'"]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const prove = p2 => { const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
+    const order = ["requirement email", "follow up email", "KT note", "project group", "client chat"], want = String(p2.source || "").toLowerCase();
+    const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => (x.key.toLowerCase() === want ? -1 : 0) - (y.key.toLowerCase() === want ? -1 : 0) || order.indexOf(x.key) - order.indexOf(y.key))[0];
+    return hit ? { key:hit.key, date:hit.date, quote:clean(p2.quote) } : null; };
+  const seen = new Set(), pts = [], left = [];
+  for(const p2 of d.points || []){ const it = open.find(x => x.id === p2.id); if(!it) continue;
+    const title = clean(p2.title), text = [clean(p2.now), clean(p2.expected)].filter(Boolean).join(" "), k = norm(title);
+    if(!text || seen.has(k)) continue; seen.add(k);
+    const pr = prove(p2); if(!pr){ left.push({ id:it.id, title, text }); continue; }
+    pts.push({ it, title, text, pr }); }
+  o.groupMsgLeftOut = left;
   if(!pts.length) return "";
-  const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? String(w || "") : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
-  const isReq = it => /^requirement email$/i.test(it.from);
-  const ref = it => { const q = ((reqs.find(x => x.id === it.id) || {}).askedIn || {}).quote || "", client = /client chat|call/i.test(it.from);
-    const label = client ? "Asked by the client, shared by sales" : it.from.charAt(0).toUpperCase() + it.from.slice(1) + (it.when ? ", " + fmtW(it.when) : "");
-    return `_(${label}${q && !client ? ': "' + clean(q).replace(/"/g, "'") + '"' : ""})_`; };
-  const line = p2 => `${p2.title ? "*" + p2.title + ":* " : ""}${p2.text} ${ref(p2.it)}`;
-  const reqPts = pts.filter(p2 => isReq(p2.it)), addPts = pts.filter(p2 => !isReq(p2.it));
-  const reqWhen = reqPts[0] && reqPts[0].it.when ? " (" + fmtW(reqPts[0].it.when) + ")" : "";
+  const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
+  const ref = pr => pr.key === "client chat" ? "_(Asked by the client, shared by sales)_"
+    : `_(${pr.key.charAt(0).toUpperCase() + pr.key.slice(1)}${pr.date ? ", " + fmtW(pr.date) : ""}: "${pr.quote.replace(/"/g, "'")}")_`;
+  const line = p2 => `*${p2.title || "Item"}:* ${p2.text} ${ref(p2.pr)}`;
+  const reqPts = pts.filter(p2 => p2.pr.key === "requirement email"), addPts = pts.filter(p2 => p2.pr.key !== "requirement email");
   let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
-  if(reqPts.length) msg += `\n\n*Still open from the requirement email${reqWhen}*\n` + reqPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
-  if(addPts.length) msg += `\n\n*Also needed (not in the requirement email)*\n` + addPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
+  if(reqPts.length) msg += `\n\n*Still open from the requirement email${rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""}*\n` + reqPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
+  if(addPts.length) msg += `\n\n*Also needed (asked outside the requirement email)*\n` + addPts.map(p2 => `${++n}. ${line(p2)}`).join("\n");
   return msg + `\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
