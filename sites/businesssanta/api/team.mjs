@@ -92,7 +92,7 @@ async function analyse(o, cfg){
   }
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
     o.deliverables = d.deliverables.slice(0, 25).map(t => ({ id:nid("d"), text:str(t, 300), done:false, proof:"", qa:"" }));
-  applyRegister(o, await regOf(o.client.website));
+  dedupeAccess(o); applyRegister(o, await regOf(o.client.website));
   if(Array.isArray(d.actions)){ o.actions = (o.actions || []).filter(a => !(a.by === "Order desk" && a.status === "open")); mergeActions(o, d.actions, true); }
   if(d.msgs && !(o.queue || []).some(q => q.auto)){
     o.queue = o.queue || [];
@@ -208,6 +208,14 @@ const SYS = { "Google Search Console":/search console|gsc/i, "Google Analytics 4
   "Hosting or DNS":/hosting|dns|domain|cpanel/i, "Figma":/figma/i, "Other":/^$/ };
 async function regOf(site){ const d = domOf(site); if(!d) return []; return (await getJ(RK(d))) || []; }
 function sysOfItem(item){ for(const [k, re] of Object.entries(SYS)) if(k !== "Other" && re.test(item)) return k; return ""; }
+/* One access item per system: reruns of the order desk may name the same access differently */
+function dedupeAccess(o){
+  const rank = { received:5, skip:4, wrong:3, asked:2, needed:1 }, keyOf = a => (sysOfItem(a.item) || a.item.toLowerCase().replace(/\(.*?\)/g, "").trim()) + (/https/i.test(a.item) ? " https" : /\bhttp\b/i.test(a.item) ? " http" : "");
+  const m = new Map();
+  for(const a of o.access || []){ const k = keyOf(a), cur = m.get(k);
+    if(!cur) m.set(k, a); else if((rank[a.status] || 0) > (rank[cur.status] || 0)) m.set(k, Object.assign({}, cur, a, { id:cur.id })); }
+  o.access = [...m.values()];
+}
 function applyRegister(o, reg){
   for(const a of o.access || []){ if(a.status === "received" || a.status === "skip") continue;
     const sy = sysOfItem(a.item), hit = reg.find(r => r.active !== false && r.system === sy);
@@ -289,8 +297,8 @@ function setStage(o, st){ if(o.stage !== st){ (o.stageLog = o.stageLog || [{ sta
 const hrs = (a, b) => a && b ? Math.max(0, (Date.parse(b) - Date.parse(a)) / 36e5) : null;
 function delays(o){
   const nowI = now(), d = { client:[], sales:[], team:[], qa:[] }, add = (side, what, h, open) => { if(h != null && h >= 0.5) d[side].push({ what, h:+h.toFixed(1), open:!!open }); };
-  for(const a of o.access || []){ const rec = a.receivedAt || (a.status === "received" ? a.atS : null); if(a.by === "Order desk" && /on file/i.test(a.note || "")) continue;
-    if(rec) add("client", "Access: " + a.item, hrs(o.at, rec)); else if(!["skip"].includes(a.status)) add("client", "Access still missing: " + a.item, hrs(o.at, nowI), true); }
+  for(const a of o.access || []){ if(["received", "skip"].includes(a.status)){ const rec = a.receivedAt || a.atS; if(rec && !/on file|from the chat|found automatically/i.test(a.note || "")) add("client", "Access: " + a.item, hrs(o.at, rec)); continue; }
+    add("client", "Access still missing: " + a.item, hrs(o.at, nowI), true); }
   for(const x of o.actions || []){
     const made = x.created || o.at;
     if(x.type !== "task"){ if(x.sentAt) add("sales", "Sending: " + x.title, hrs(made, x.sentAt)); else if(!["done", "skipped"].includes(x.status)) add("sales", "Not sent yet: " + x.title, hrs(made, nowI), true); }
@@ -420,6 +428,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     return out({ ok:true, items:items.sort((a, b) => rank[a.urgency] - rank[b.urgency] || a.deadline.localeCompare(b.deadline)), orders:mine.sort((a, b) => a.deadline.localeCompare(b.deadline)) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
+    { const n0 = (o.access || []).length; dedupeAccess(o); if(o.access.length !== n0) await saveO(o); }
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
     return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
   if(a === "clients"){ const all = await loadAll(1000);
