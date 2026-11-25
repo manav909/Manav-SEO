@@ -717,7 +717,10 @@ async function buildCheck(o){
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
   const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
-  o.check = Object.assign(r2.data || {}, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
+  const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
+  const d2 = r2.data || {}; d2.verdict = noId(d2.verdict); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); });
+  d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), closes:num(p.closes, 0) }));
+  o.check = Object.assign(d2, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
     probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
   // Scope follows the requirement email: when nothing has been ticked yet, the deliverables become its requirements
