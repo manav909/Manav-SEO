@@ -228,6 +228,10 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .w3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:12px;padding-top:12px;border-top:1px solid var(--soft)}.w3 p{margin:4px 0 0;font-size:13.5px;line-height:1.5;color:var(--sub)}@media(max-width:760px){.w3{grid-template-columns:1fr}}
 .wrow .padd{display:flex;gap:6px;margin-top:10px}.wrow .padd input{flex:1;min-height:34px}
 .wtold{margin:6px 0 0;font-size:13px;color:var(--mut)}
+.ty{font-size:11.5px;font-weight:600;color:var(--mut);background:var(--raise);border-radius:999px;padding:2px 8px;margin-left:4px;white-space:nowrap}
+.wrule{margin:8px 0 0;font-size:13.5px;color:var(--sub)}.wrule span{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin-right:8px}
+.w2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:10px}.w2 p{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--ink)}.w2 .tp p{font-weight:600}.w2 .tp{border-left:3px solid var(--warn,#fbbf24);padding-left:10px}@media(max-width:760px){.w2{grid-template-columns:1fr}}
+.wdet{margin-top:8px}.wdet .w3{margin-top:8px}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -453,19 +457,20 @@ function drawOrder(){
   if(CUR.order.stage === "details") return drawDraft();
   const o = CUR.order, x = CUR.econ, ai = o.ai || {}, gig = ME.gigs.find(g => g.id === o.gig) || {}, ck = o.check || {}, PJ = ME.role === "pm" || ME.role === "qa", L = (a, f) => (a || []).map(f).join("");
   const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5), si = STAGES.findIndex(s => s[0] === o.stage), site = (o.client.website || "").replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
-  const ST = { verified:["Verified", "ok"], "said done, not proven":["Said done, not proven", "warn"], contradicted:["Contradicted", "bad"], "not started":["Not started", "n"] };
+  const ST = { done:["Done", "ok"], partly:["Partly done", "warn"], "not done":["Not done", "bad"], "cannot check":["Can't check yet", "n"], verified:["Done", "ok"], "said done, not proven":["Partly done", "warn"], contradicted:["Not done", "bad"], "not started":["Not done", "bad"] };
+  const TY = { "site change":"On the site", "google setup":"Google setup", report:"Report", "file or recording":"File or recording", communication:"Client update", "google result":"Google result" };
   const chip = (t, k) => `<span class="chip ${k}">${E(t)}</span>`;
   const NAV = [], dotOf = st => /chip bad/.test(st) ? "bad" : /chip (warn|y)\b/.test(st) ? "warn" : /chip ok/.test(st) ? "ok" : "n";
   const box = (n, title, status, body, open) => { NAV.push({ n, title, dot:dotOf(status || "") }); return `<details class="card ob" id="sec${n}" ${open ? "open" : ""}><summary><i>${n}</i><b>${title}</b><span class="obs">${status || ""}</span></summary><div class="obb">${body}</div></details>`; };
-  const rows = ck.rows || [], cnt = k => rows.filter(r => r.status === k).length;
+  const rows = ck.rows || [], cnt = k => rows.filter(r => (ST[r.status] || [])[0] === (ST[k] || [])[0]).length;
   // 0. Header and the problems that matter
   const probs = (ck.problems || []).filter(p => !PJ || p.who !== "sales");
-  const vN = rows.filter(r => r.status === "verified").length, accN = o.access.filter(a => ["received", "skip"].includes(a.status)).length;
+  const vN = cnt("done"), accN = o.access.filter(a => ["received", "skip"].includes(a.status)).length;
   const head = `<section class="card oh2"><div class="ohg"><div class="ohi"><div class="lbl">${E(o.id)} · ${E(gig.name || "")} · ${E(o.pkg)} package</div><h1><a class="clink" href="#c=${E(o.cid || "")}">${E(o.client.name || "Client")}</a></h1>
        <div class="ometa"><a href="https://${E(site)}" target="_blank" rel="noopener">${E(site)}</a>${o.client.country ? `<span>${E(o.client.country)}</span>` : ""}${x ? `<span>${money(x.price)} · we keep ${money(x.net)}</span>` : ""}</div></div>
      <div class="ohk"><div><span>Due</span><b class="${left < 0 ? "r" : left <= 2 ? "w" : ""}">${left < 0 ? Math.abs(left) + "d late" : left === 0 ? "Today" : left + " days"}</b><small>${fmtD(o.deadline)}</small></div>
        <div><span>Stage</span><b style="font-size:16px">${E((STAGES[si] || [0, SN[o.stage]])[1])}</b><small>step ${si + 1} of ${STAGES.length}</small></div>
-       <div><span>Verified</span><b class="${rows.length && vN === rows.length ? "g" : rows.length ? "w" : ""}">${rows.length ? vN + " / " + rows.length : "–"}</b><small>requirements</small></div>
+       <div><span>Done</span><b class="${rows.length && vN === rows.length ? "g" : rows.length ? "w" : ""}">${rows.length ? vN + " / " + rows.length : "–"}</b><small>requirements</small></div>
        <div><span>Access</span><b class="${accN === o.access.length ? "g" : "w"}">${accN} / ${o.access.length}</b><small>received</small></div></div></div>
      <div class="verd ${ck.readyForQA ? "ok" : ck.verdict ? "warn" : ""}"><div><b>${ck.verdict ? E(ck.verdict) : "Not checked yet."}</b><span class="sub">${ck.at ? "Checked " + ago(ck.at) + " against the requirement email, group chat, work report and the live site." : "The check reads the requirement email, the group chat, the work report and the client's live site."}</span></div>${can("pm") || can("qa") || can("comms") ? `<button class="btn sm pri" id="ckB">${ck.at ? "Check again" : "Check the order"}</button>` : ""}</div>
      ${probs.length ? `<div class="plist"><div class="plh"><span>Who</span><span>Step</span><span>Problem</span></div>${probs.slice(0, 8).map(p => `<div><span class="chip ${/sales/.test(p.who) ? "y" : /qa/i.test(p.who) ? "n" : "warn"}">${E(p.who)}</span><span class="lbl2">${E(p.step)}</span><span>${E(p.text)}</span></div>`).join("")}${probs.length > 8 ? `<p class="sub">${probs.length - 8} more in their steps.</p>` : ""}</div>` : ""}</section>`;
@@ -495,10 +500,13 @@ function drawOrder(){
   const dOf = id => o.deliverables.find(d => d.id === id), files = ck.files || [], chat = o.teamChat || [];
   const s4 = box(4, "Work check", rows.length ? chip(cnt("verified") + " of " + rows.length + " verified", cnt("verified") === rows.length ? "ok" : "warn") + (cnt("contradicted") ? chip(cnt("contradicted") + " contradicted", "bad") : "") : "",
     `${rows.length ? L(rows, r => { const req = (ck.requirements || []).find(q => q.id === r.r) || {}, st = ST[r.status] || [r.status, "n"], d = r.d && dOf(r.d);
-        return `<div class="wrow ${st[1]}"><div class="wrh"><b>${E(req.text || "")}</b>${chip(st[0], st[1])}</div>${r.problem ? `<p class="wprob">${E(r.problem)}</p>` : ""}${r.told && !PJ ? `<p class="wtold">Told the client: ${E(r.told)}</p>` : ""}
-          <div class="w3"><div><span class="lbl">Project team says</span><p>${E(r.team || "Nothing said in the group chat")}</p></div><div><span class="lbl">Work report</span><p>${E(r.report || "Not in the report")}</p></div><div><span class="lbl">Live check</span><p>${E(r.live || "Cannot be checked live")}</p></div></div>
-          ${d && (d.proofs || []).length ? `<div class="sub" style="margin-top:8px">Proof: ${(d.proofs || []).map(p => `<a href="${E(p.url)}" target="_blank" rel="noopener">${E(p.name || "link")}</a>`).join(", ")}${d.done ? " · done" : ""}</div>` : ""}
-          ${d && can("pm") && o.stage === "work" ? `<div class="padd"><input placeholder="Add proof: pick a document or paste a link" data-purl="${d.id}" list="ourdocs"><button class="btn sm" data-padd="${d.id}">Add</button>${(d.proofs || []).length && !d.done ? `<button class="btn sm pri" data-done="${d.id}">Mark done</button>` : ""}</div>` : ""}</div>`; })
+        return `<div class="wrow ${st[1]}"><div class="wrh"><div><b>${E(req.text || "")}</b>${req.type ? ` <span class="ty">${E(TY[req.type] || req.type)}</span>` : ""}</div>${chip(st[0], st[1])}</div>
+          ${req.doneWhen ? `<p class="wrule"><span>Done when</span>${E(req.doneWhen)}</p>` : ""}
+          <div class="w2"><div><span class="lbl">Found</span><p>${E(r.found || r.report || "Nothing yet")}</p></div>${r.toPass ? `<div class="tp"><span class="lbl">To pass</span><p>${E(r.toPass)}</p></div>` : ""}</div>
+          ${r.told && !PJ ? `<p class="wtold">Told the client: ${E(r.told)}</p>` : ""}
+          <details class="mx wdet"><summary>Details</summary><div class="w3"><div><span class="lbl">Project team says</span><p>${E(r.team || "Nothing said in the group chat")}</p></div><div><span class="lbl">Work report</span><p>${E(r.report || "Not in the report")}</p></div><div><span class="lbl">Live check</span><p>${E(r.live || "Not needed for this item")}</p></div></div></details>
+          ${d && (d.proofs || []).length ? `<div class="sub" style="margin-top:6px">Proof: ${(d.proofs || []).map(p => p.url ? `<a href="${E(p.url)}" target="_blank" rel="noopener">${E(p.name || "link")}</a>` : E(p.name || "")).join(", ")}</div>` : ""}
+          ${d && can("pm") && o.stage === "work" && r.status !== "done" ? `<div class="padd"><input placeholder="Add proof: pick a document or paste a link" data-purl="${d.id}" list="ourdocs"><button class="btn sm" data-padd="${d.id}">Add</button></div>` : ""}</div>`; })
        : `<p class="note">${ck.at ? "No requirements found." : "Press Check the order to see each requirement checked against the group chat, the work report and the live site."}</p>`}
      <datalist id="ourdocs">${L((o.docs || []).filter(d => d.status === "linked" && d.current !== false), d => `<option value="${E(d.link || "")}">${E(d.name)}</option>`)}</datalist>
      <div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap">${files.length ? `<span class="sub">Work report read: ${L(files, f => `<a href="${E(f.link || "#")}" target="_blank" rel="noopener">${E(f.name)}</a> (${ago(f.modified)})`)}</span>` : ""}</div>

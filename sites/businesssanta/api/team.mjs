@@ -716,7 +716,7 @@ async function buildCheck(o){
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
-  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), note:str(r.note, 200) }));
+  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), doneWhen:str(r.doneWhen, 240), note:str(r.note, 200) }));
   o.check = Object.assign(r2.data || {}, { at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
     probes, files:reads.map(x => ({ name:x.name, link:x.link, modified:x.modified, by:x.by })) });
@@ -726,7 +726,17 @@ async function buildCheck(o){
     o.deliverables = reqs.map(r => ({ id:nid("d"), text:r.text, done:false, proof:"", qa:"", req:r.id }));
     log(o, { name:"Order desk" }, "Deliverables set from the requirement email \"" + str(reqMail.subject, 80) + "\": " + reqs.length + " requirements");
   }
-  (o.check.rows || []).forEach(row => { const d = (o.deliverables || []).find(x => x.req === row.r); if(d){ row.d = d.id; d.status = row.status; } });
+  // A requirement the check finds done is ticked, with what proved it; when every one is done the order moves to QA
+  let ticked = 0;
+  for(const row of o.check.rows || []){ const d = (o.deliverables || []).find(x => x.req === row.r); if(!d) continue; row.d = d.id; d.status = row.status;
+    if(row.status === "done" && !d.done){ d.done = true; ticked++;
+      const u = /^https?:\/\//.test(row.proofUrl || "") ? row.proofUrl : "";
+      if(u && !proofsOf(d).some(p => p.url === u)){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:/google\.com/.test(u) ? "drive" : "link", url:u, name:str(row.found, 90) || u, at:now(), by:"Order check", auto:str(row.found, 200) }); delete d.proof; }
+      else if(!u){ d.proofs = proofsOf(d).concat({ id:nid("p"), kind:"check", url:"", name:"Order check: " + str(row.found, 120), at:now(), by:"Order check", auto:str(row.found, 200) }); delete d.proof; } }
+    if(["not done", "partly"].includes(row.status) && d.done && proofsOf(d).every(p => p.by === "Order check")){ d.done = false; } }
+  if(ticked) log(o, { name:"Order desk" }, ticked + " requirement" + (ticked > 1 ? "s" : "") + " confirmed done by the order check");
+  if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && !staleProofs(o).length){
+    o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   return o.check;
 }
