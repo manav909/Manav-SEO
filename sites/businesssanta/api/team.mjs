@@ -840,23 +840,28 @@ async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a 
 const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
 async function writeGroupMsg(o){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
-  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !/sales/i.test(r.who || "")).map(r => { const q = reqs.find(x => x.id === r.r) || {};
-    return { asked:q.text, askedIn:q.askedIn ? q.askedIn.where : "", status:r.status, found:r.found, missing:r.toPass, who:r.who }; });
+  const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !/sales/i.test(r.who || "")).map(r => { const q = reqs.find(x => x.id === r.r) || {}, a2 = q.askedIn || {};
+    return { id:r.r, asked:q.text, from:a2.where || "requirement email", when:a2.when || "", status:r.status, found:r.found, missing:r.toPass, who:r.who }; });
   if(!open.length) return "";
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You write a short team chat message to professionals about what is still open before QA. They already have the requirement email and the group chat, so do not teach them how to do the work and give no click steps.
-For each open item write one point:
-1. Start with the item's short name as it was asked (two to five words, for example "Search Console review"), then a colon.
-2. Then say plainly what is missing compared to what was asked, in one or two short sentences of at most 14 words each (count them; split longer ones). Name at most two examples. Mention a key fact when it helps (for example "the sheet still says Not Updated").
-3. Very simple, respectful English. No reasons for the client, no dashes, no emojis.
-At most 6 points; join items that are really the same gap. If every item belongs to one person, name that person once at the start instead of in each point.
-Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":["Search Console review: the report has no review of the current setup yet."]}`;
-  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `OPEN ITEMS: ${JSON.stringify(open)}`, 1500);
+  const system = `You write short points for a team chat to professionals about work still open before QA. They already have the emails and the group chat, so do not teach them how to work and give no click steps.
+For each item write one point: the item's short name as asked (two to five words), a colon, then what is missing, in one or two short sentences of at most 14 words each. Name at most two examples. Very simple, respectful English. No dashes, no emojis. Do not add where it was asked; that is added later.
+Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":[{"id":"item id","text":""}]}`;
+  const r = await askAI("groupmsg", "claude-haiku-5-5", system, `ITEMS: ${JSON.stringify(open)}`, 1500);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const d = r.data || {}, pts = (d.points || []).map(t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim()).filter(Boolean).slice(0, 6);
+  const d = r.data || {}, clean = t => String(t || "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
+  const pts = (d.points || []).map(p2 => ({ it:open.find(x => x.id === p2.id), text:clean(p2.text) })).filter(p2 => p2.it && p2.text);
   if(!pts.length) return "";
-  const who = str(d.person, 30), src = [...new Set(open.map(x => x.askedIn).filter(Boolean).map(x => /^(the|our) /i.test(x) ? x : "the " + x))].join(" and ") || "the requirement email";
-  return `Hi ${who || "team"}, for ${domOf(o.client.website)} these items from ${src} are still open before QA:\n\n${pts.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
+  const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? String(w || "") : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
+  const isReq = it => /^requirement email$/i.test(it.from);
+  const srcName = it => /client chat|call/i.test(it.from) ? "asked by the client, shared by sales" : "asked in the " + it.from.replace(/^the /i, "");
+  const reqPts = pts.filter(p2 => isReq(p2.it)), addPts = pts.filter(p2 => !isReq(p2.it));
+  const reqWhen = (reqPts[0] && reqPts[0].it.when) ? " (" + fmtW(reqPts[0].it.when) + ")" : "";
+  let n = 0; const who = str(d.person, 30);
+  let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
+  if(reqPts.length) msg += `\n\nStill open from the requirement email${reqWhen}:\n` + reqPts.map(p2 => `${++n}. ${p2.text}`).join("\n");
+  if(addPts.length) msg += `\n\nAlso needed (not in the requirement email):\n` + addPts.map(p2 => `${++n}. ${p2.text} (${srcName(p2.it)}${p2.it.when ? ", " + fmtW(p2.it.when) : ""})`).join("\n");
+  return msg + `\n\n${pm ? pm + ", please confirm.\n" : ""}Reply "done" here when an item is finished.`;
 }
 function stepsText(o){
   if(o.groupMsg && o.groupMsgAt && o.check && o.groupMsgAt >= o.check.at) return o.groupMsg;
