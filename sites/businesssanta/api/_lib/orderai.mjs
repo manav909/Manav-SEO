@@ -90,7 +90,7 @@ const PRICE = { "claude-sonnet-5-5":[2, 10], "claude-haiku-5-5":[0.1, 0.5] };
 export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
 /* Speed: copying and sorting jobs run on Haiku with no thinking; judgement jobs run on Sonnet at medium effort (default is high). */
 const FAST = { output_config:{ effort:"low" }, thinking:{ type:"disabled" } }, MED = { output_config:{ effort:"medium" } };
-const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED };
+const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED, teamreply:MED };
 export async function askAI(kind, model, system, user, maxTokens){
   const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
     headers:{ "x-api-key":process.env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "content-type":"application/json" },
@@ -132,7 +132,7 @@ Answer with one JSON object only, no other text, in this shape:
 "questions":["things to confirm with the client before starting, only real gaps"],
 "remarks":["special remarks: promises, sensitivities, deadlines inside the deadline, tone the client likes"],
 "risks":[{"risk":"","prevent":"","level":"high | medium | low","status":"open | watch | handled | happened"}],
-"actions":[{"title":"short action","why":"which risk, remark or promise it serves","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"client | project team | QA | manager","severity":"high | medium | low","message":"for client and internal types: the exact copy and paste message, ready to send. Internal messages are short chat messages to the project team or executive asking exactly what we need to know or what must be done, with the order id and a by-when. Empty for task type."}],
+"actions":[{"title":"short action","why":"which risk, remark or promise it serves","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"client | project team | QA | manager","severity":"high | medium | low","message":"client type only: the exact message to paste on the marketplace, short paragraphs. Empty for internal and task types.","questions":["internal type only: each question or request for the project team, one per line, short and specific, answerable in one line"],"needBy":"internal type only: when we need the answer, e.g. today 5 PM IST"}],
 "kt":"handover note for the project team in plain words, 6 to 10 lines, so nobody needs to read the chat",
 "qa":["checks QA must do before delivery, each tied to a deliverable, always including a live check and proof"],
 "profile":{"type":"what kind of client","goal":"what they really want","style":"how they like to talk","watch":"what could upset them","budget":"budget signal"},
@@ -286,7 +286,7 @@ Answer with one JSON object only:
 {"changed":"one or two lines: what this update changed","health":"on track | watch | at risk | late","next":"the very next step and by when",
 "promises":[{"what":"","by":"YYYY-MM-DD or empty","status":"open | kept | broken"}],
 "risks":[{"risk":"","prevent":"","level":"high | medium | low","status":"open | watch | handled | happened"}],
-"actions":[{"id":"existing id or empty","title":"","why":"","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"","severity":"high | medium | low","message":"","status":"open | sent | waiting | done | blocked","statusWhy":"why this status"}],
+"actions":[{"id":"existing id or empty","title":"","why":"","owner":"comms | pm | qa | manager","type":"client | internal | task","to":"","severity":"high | medium | low","message":"client type only","questions":["internal type only, one short question each"],"needBy":"internal type only","status":"open | sent | waiting | done | blocked","statusWhy":"why this status"}],
 "done":["work now shown as done, with date"],"scopeChange":"empty, or what the client now wants that was not sold","mood":"happy | neutral | worried | upset",
 "askNext":["what the order team should paste or ask next to keep this order fully known"]}`;
   const user = `ORDER ${o.id} for ${o.client.name} (${o.client.website || "no site"}), deadline ${o.deadline}, stage ${o.stage}.
@@ -302,5 +302,19 @@ ${tail}
 
 NEW INFORMATION JUST ADDED:
 ${fresh}`;
+  return { system, user };
+}
+
+/* A reply from the project team to one internal ask: which questions are answered, what is still missing, what it changes. */
+export function teamReplyPrompt(o, a, reply){
+  const system = `You read a reply from our project team to questions from the client messages person, on one order. Judge each question: answered, partly answered or not answered.
+Write plainly, no dashes. Answer with one JSON object only:
+{"answers":[{"n":1,"answer":"the answer in one short line, or empty","status":"answered | partial | missing"}],"summary":"one line: what we now know","facts":["new facts the order should know, e.g. plugin removed on 25 Nov"],"followUp":["only for questions still partial or missing: the short follow-up question"]}`;
+  const user = `Order ${o.id} (${o.client.name}, ${o.client.website || ""}).
+Questions we asked:
+${(a.questions || []).map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n")}
+
+Their reply:
+${String(reply).slice(0, 12000)}`;
   return { system, user };
 }

@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt, teamReplyPrompt } from "./_lib/orderai.mjs";
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
@@ -91,7 +91,7 @@ async function analyse(o, cfg){
   if(Array.isArray(d.deliverables) && d.deliverables.length && !(o.deliverables || []).some(x => x.done || x.proof))
     o.deliverables = d.deliverables.slice(0, 25).map(t => ({ id:nid("d"), text:str(t, 300), done:false, proof:"", qa:"" }));
   applyRegister(o, await regOf(o.client.website));
-  if(Array.isArray(d.actions)) mergeActions(o, d.actions, true);
+  if(Array.isArray(d.actions)){ o.actions = (o.actions || []).filter(a => !(a.by === "Order desk" && a.status === "open")); mergeActions(o, d.actions, true); }
   if(d.msgs && !(o.queue || []).some(q => q.auto)){
     o.queue = o.queue || [];
     if(d.msgs.access) o.queue.push({ id:nid("q"), auto:true, kind:"access", text:str(d.msgs.access, 4000), at:now(), by:"Order desk", sent:false });
@@ -139,19 +139,30 @@ async function runProofCheck(o, d){
 
 /* Actions: every risk, remark and open promise turned into a step with an owner, a status and a ready message */
 const ASTAT = ["open", "sent", "waiting", "done", "blocked"];
+const dshort = d => { try{ return new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day:"numeric", month:"short" }); }catch(e){ return d; } };
+function internalText(o, a){
+  const qs = (a.questions || []).filter(q => (q.status || "") !== "answered");
+  return `${o.id} · ${o.client.name}${o.client.website ? " · " + domOf(o.client.website) : ""} · due ${dshort(o.deadline)}\n${a.title}\nReply by: ${a.needBy || "today"}\n\n` +
+    qs.map((q, i) => (i + 1) + ". " + (q.q || q)).join("\n") + `\n\nPlease reply with the numbers, for example: 1. Done on 25 Nov.`;
+}
+const toQs = l => (Array.isArray(l) ? l : []).filter(Boolean).slice(0, 10).map(q => typeof q === "string" ? { q:str(q, 300), status:"" } : { q:str(q.q, 300), answer:str(q.answer, 400), status:q.status || "" });
 function mergeActions(o, list, fresh){
   o.actions = o.actions || [];
   (list || []).forEach(x => { if(x && x.message) x.message = String(x.message).replace(/\[(order id|order number|order)\]/gi, o.id); });
   for(const x of (list || []).slice(0, 40)){
     const cur = x.id && o.actions.find(a => a.id === x.id);
     if(cur){
-      cur.title = str(x.title, 200) || cur.title; cur.message = x.message != null ? String(x.message).slice(0, 4000) : cur.message; cur.severity = x.severity || cur.severity;
+      cur.title = str(x.title, 200) || cur.title; cur.severity = x.severity || cur.severity;
+      if(cur.type === "internal"){ if(Array.isArray(x.questions) && x.questions.length && !(cur.questions || []).some(q => q.answer)) cur.questions = toQs(x.questions); if(x.needBy) cur.needBy = str(x.needBy, 60); cur.message = internalText(o, cur); }
+      else if(x.message != null) cur.message = String(x.message).slice(0, 4000);
       const st = ASTAT.includes(x.status) ? x.status : cur.status;
       if(cur.status !== "done" && st !== cur.status && (cur.by === "Order desk" || st === "done" || !cur.by)){ cur.status = st; cur.statusWhy = str(x.statusWhy, 300); cur.at = now(); cur.by = "Order desk"; }
     } else if(fresh || !x.id){
       if(o.actions.some(a => a.title.toLowerCase() === String(x.title || "").toLowerCase())) continue;
       o.actions.push({ id:nid("x"), title:str(x.title, 200), why:str(x.why, 300), owner:["comms", "pm", "qa", "manager"].includes(x.owner) ? x.owner : "comms", type:["client", "internal", "task"].includes(x.type) ? x.type : "task",
-        to:str(x.to, 60), severity:["high", "medium", "low"].includes(x.severity) ? x.severity : "medium", message:String(x.message || "").slice(0, 4000), status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), by:"Order desk" });
+        to:str(x.to, 60), severity:["high", "medium", "low"].includes(x.severity) ? x.severity : "medium", message:String(x.message || "").slice(0, 4000), questions:toQs(x.questions), needBy:str(x.needBy, 60),
+        status:ASTAT.includes(x.status) ? x.status : "open", statusWhy:str(x.statusWhy, 300), at:now(), by:"Order desk" });
+      const nw = o.actions[o.actions.length - 1]; if(nw.type === "internal"){ if(!nw.questions.length && nw.message) nw.questions = toQs(nw.message.split(/\n|(?<=\?)\s+/).filter(l => /\?\s*$/.test(l.trim()))); nw.message = internalText(o, nw); }
     }
   }
 }
@@ -387,6 +398,19 @@ async function handle(request){
       const d = await rethink(o, k.fresh);
       log(o, w, (k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") + " added" : { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[k.kind] + " added") + (d.changed ? ". " + str(d.changed, 300) : ""));
       await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
+    else if(op === "actReply"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
+      const text = redact(str(q.text, 12000)); if(text.length < 2) return bad("Paste their reply first"); if(!aiOn()) return bad("The AI helpers are off", 503);
+      if(!(x.questions || []).length) x.questions = [{ q:x.title, status:"" }];
+      const p = teamReplyPrompt(o, x, text), r = await askAI("teamreply", "claude-sonnet-5-5", p.system, p.user, 4000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+      const d = r.data || {}; (d.answers || []).forEach(an => { const qq = x.questions[(an.n || 0) - 1]; if(qq){ qq.answer = str(an.answer, 400) || qq.answer; qq.status = an.status || qq.status; } });
+      (x.replies = x.replies || []).push({ text, at:now(), by:w.name, summary:str(d.summary, 300) });
+      const left = x.questions.filter(qq => qq.status !== "answered");
+      x.status = left.length ? "waiting" : "done"; x.statusWhy = left.length ? left.length + " of " + x.questions.length + " still open: follow-up ready" : "All answered"; x.at = now(); x.by = w.name;
+      if(left.length){ (d.followUp || []).forEach((f, i) => { if(left[i]) left[i].q = str(f, 300) || left[i].q; }); x.message = internalText(o, x); }
+      (o.notes = o.notes || []).push({ id:nid("n"), kind:"team", title:"Team reply: " + x.title.slice(0, 80), text, from:x.to || "Project team", at:now(), by:w.name });
+      log(o, w, "Team replied to \"" + x.title.slice(0, 60) + "\": " + (d.summary || "") + (left.length ? " (" + left.length + " still open)" : " (all answered)"));
+      try{ await rethink(o, "TEAM REPLY to \"" + x.title + "\": " + text + "\nFacts: " + (d.facts || []).join("; ")); }catch(e){}
+      o.lastUpdateAt = now(); o.lastUpdateBy = w.name; }
     else if(op === "action"){ const x = find("actions", q.aid); if(!x) return bad("Not found"); if(!ASTAT.includes(q.status)) return bad("Unknown status");
       x.status = q.status; x.note = str(q.note, 500) || x.note; x.at = now(); x.by = w.name; x.statusWhy = ""; log(o, w, "Action \"" + x.title.slice(0, 70) + "\": " + x.status + (q.note ? " (" + str(q.note, 200) + ")" : "")); }
     else if(op === "pay"){ if(w.role !== "admin") return bad("Payments are for Manav only", 403); const p = payOf(o);

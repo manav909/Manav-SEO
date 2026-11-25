@@ -169,6 +169,12 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .ach{display:flex;gap:10px;align-items:flex-start}.ach .tx{flex:1;min-width:0}.ach b{color:var(--ink);font-size:14.5px}
 .newb{display:inline-block;font-size:11px;font-weight:700;color:#0b0d14;background:var(--y);border-radius:6px;padding:0 6px;margin-bottom:4px}
 .clink{color:inherit;text-decoration:none}.clink:hover{color:var(--y)}
+.afil{display:flex;gap:6px;flex-wrap:wrap}.afil a{padding:8px 12px;border-radius:999px;background:var(--panel);border:1px solid var(--line);color:var(--sub);text-decoration:none;font-size:13.5px;font-weight:600}
+.afil a.on{border-color:var(--y);color:var(--ink)}.afil em,.otabs em.n{font-style:normal;background:var(--raise);color:var(--sub);border-radius:999px;padding:0 7px;font-size:12px;margin-left:4px}
+.qlist{margin:10px 0 0 22px;padding-left:18px;font-size:14px;color:var(--ink)}.qlist li{margin:6px 0}.qlist li>span:first-child{margin-right:6px}.qa2{font-size:13px;color:var(--ok);margin-top:2px}
+.mx{margin:10px 0 0 22px}.mx summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--sub)}.mx .msg{margin-top:8px}
+.rbox{display:flex;flex-direction:column;gap:8px;margin:12px 0 0 22px}.rbox textarea{min-height:80px;font-size:14px}.rbox .btn{align-self:flex-start}
+@media(max-width:620px){.qlist,.mx,.rbox{margin-left:0}}
 .busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
 </style>
 </head>
@@ -362,14 +368,17 @@ function drawOrder(){
   const TYP = { client:"Send to the client", internal:"Ask the team", task:"Task" };
   (o.actions || []).forEach(a => { if(a.message) a.message = a.message.replace(/\[(order id|order number|order)\]/gi, o.id); });
   const acts = (o.actions || []).slice().sort((a, b) => ((a.status === "done") - (b.status === "done")) || (({ high:0, medium:1, low:2 })[a.severity] - ({ high:0, medium:1, low:2 })[b.severity]));
-  const actCard = a => `<div class="ac2 ${a.status}"><div class="ach"><span class="dot ${a.severity === "high" ? "bad" : a.severity === "medium" ? "warn" : "y"}"></span><div class="tx"><b>${E(a.title)}</b>
-      <div class="dvs"><span class="chip ${ACT[a.status][1]}">${ACT[a.status][0]}</span><span class="chip n">${E(TYP[a.type] || a.type)}${a.to ? " · " + E(a.to) : ""}</span><span class="chip n">${E(OWN[a.owner] || a.owner)}</span></div>
+  const actCard = a => { const isI = a.type === "internal", qs = a.questions || [], ans = qs.filter(q => q.status === "answered").length;
+    return `<div class="ac2 ${a.status}"><div class="ach"><span class="dot ${a.severity === "high" ? "bad" : a.severity === "medium" ? "warn" : "y"}"></span><div class="tx"><b>${E(a.title)}</b>
+      <div class="dvs"><span class="chip ${ACT[a.status][1]}">${ACT[a.status][0]}</span><span class="chip n">${E(TYP[a.type] || a.type)}</span><span class="chip n">${E(OWN[a.owner] || a.owner)}</span>${isI && a.needBy ? `<span class="chip n">Reply by ${E(a.needBy)}</span>` : ""}</div>
       ${a.why ? `<div class="sub">${E(a.why)}</div>` : ""}${a.statusWhy ? `<div class="sub ev">${E(a.statusWhy)}</div>` : ""}${a.note ? `<div class="sub ev">Note: ${E(a.note)}</div>` : ""}</div></div>
-      ${a.message && a.status !== "done" ? `<div class="msg" style="margin:10px 0 0 22px">${E(a.message)}</div>` : ""}
-      <div class="row" style="gap:6px;margin:10px 0 0 22px;flex-wrap:wrap">${a.message && a.status !== "done" ? `<button class="btn sm" data-acopy="${a.id}">Copy</button>` : ""}
-       ${a.status !== "done" ? (a.type !== "task" ? `<button class="btn sm ${a.status === "open" ? "pri" : ""}" data-ast="${a.id}|sent">Sent</button><button class="btn sm" data-ast="${a.id}|waiting">Waiting reply</button>` : "") + `<button class="btn sm" data-ast="${a.id}|done">Done</button><button class="btn sm danger" data-ast="${a.id}|blocked">Blocked</button>` : `<button class="btn sm ghost" data-ast="${a.id}|open">Reopen</button>`}</div></div>`;
-  const actSec = acts.length ? sec("Action plan", "Every risk, remark and open promise as a step with an owner. Copy the message, send it, then set the status. Replies go into the update box above.", acts.map(actCard).join(""),
-    `<span class="chip ${acts.some(a => a.status === "blocked") ? "bad" : acts.every(a => a.status === "done") ? "ok" : "warn"}">${acts.filter(a => a.status === "done").length} of ${acts.length} done</span>`) : "";
+      ${isI && qs.length ? `<ol class="qlist">${qs.map(q => `<li><span>${E(q.q)}</span>${q.status ? `<span class="chip ${q.status === "answered" ? "ok" : q.status === "partial" ? "warn" : "bad"}">${q.status === "answered" ? "Answered" : q.status === "partial" ? "Partly" : "No answer"}</span>` : ""}${q.answer ? `<div class="qa2">${E(q.answer)}</div>` : ""}</li>`).join("")}</ol>` : ""}
+      ${a.status !== "done" && a.message ? `<details class="mx" ${a.status === "open" ? "open" : ""}><summary>${isI ? (ans ? "Follow-up message for the team" : "Message for the team") : "Message for the client"}</summary><div class="msg">${E(a.message)}</div><button class="btn sm" data-acopy="${a.id}" style="margin-top:8px">Copy</button></details>` : ""}
+      ${isI && a.status !== "done" && (can("comms") || can("pm")) ? `<div class="rbox"><textarea data-rtxt="${a.id}" placeholder="Paste the team's reply here (from Google Chat or email). The order desk matches it to the questions."></textarea><button class="btn sm pri" data-rsend="${a.id}">Add their reply</button></div>` : ""}
+      ${(a.replies || []).length ? `<details class="mx"><summary>${a.replies.length} repl${a.replies.length > 1 ? "ies" : "y"} from the team</summary>${a.replies.map(r => `<div class="sub" style="margin-top:6px">${ago(r.at)} · added by ${E(r.by)}${r.summary ? ": " + E(r.summary) : ""}</div><div class="msg" style="margin-top:4px">${E(r.text)}</div>`).join("")}</details>` : ""}
+      <div class="row" style="gap:6px;margin-top:10px;flex-wrap:wrap">${a.status !== "done" ? (a.type !== "task" ? `<button class="btn sm ${a.status === "open" ? "pri" : ""}" data-ast="${a.id}|sent">Sent</button>` : "") + `<button class="btn sm" data-ast="${a.id}|done">Done</button><button class="btn sm danger" data-ast="${a.id}|blocked">Blocked</button>` : `<button class="btn sm ghost" data-ast="${a.id}|open">Reopen</button>`}</div></div>`; };
+  const AF = window.AFILT || "open", afl = acts.filter(x => AF === "all" ? true : AF === "done" ? x.status === "done" : AF === "open" ? x.status !== "done" : x.type === AF && x.status !== "done");
+  const topActs = acts.filter(x => x.status !== "done").slice(0, 3);
   const header = `<section class="card ohero"><div class="oh1"><div class="lbl">${E(o.id)} · ${E(gig.name)} · ${E(o.pkg)} package</div>
     <h1><a class="clink" href="#c=${E(o.cid || "")}">${E(o.client.name || "Client")}</a> <span class="hp ${h.k}">${h.t}</span></h1>
     <div class="ometa">${o.client.country ? `<span>${E(o.client.country)}</span>` : ""}${o.client.website ? `<a href="${E(/^https?:/.test(o.client.website) ? o.client.website : "https://" + o.client.website)}" target="_blank" rel="noopener">${E(o.client.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a>` : ""}<span>Sold by ${E(o.byName)} on ${fmtD(o.at)}</span>${CLINFO ? `<a href="#c=${E(CLINFO.id)}">${CLINFO.orders > 1 ? CLINFO.orders + " orders from this client" : "First order from this client"}</a>` : ""}</div></div>
@@ -385,18 +394,21 @@ function drawOrder(){
    </div>
    ${att.length ? `<section class="card attn"><h2>Needs attention now</h2>${L(att, a => `<div class="arow"><span class="dot ${a.k}"></span><div class="tx"><b>${E(a.t)}</b>${a.d ? `<br>${E(a.d)}` : ""}${a.list ? `<div class="alist">${a.list.slice(0, 4).map(t => `<span>${E(String(t).replace(/\s*\((said|asked|agreed)[^)]*\)\s*$/i, ""))}</span>`).join("")}${a.list.length > 4 ? `<span class="more">and ${a.list.length - 4} more</span>` : ""}</div>` : ""}</div>${a.btn || (a.go ? `<button class="btn sm" data-tab="${a.go}" data-jump="${a.go === "overview" ? "prom" : ""}">${a.goT || "Open"}</button>` : "")}</div>`)}</section>` : ""}
    ${upd}
-   <nav class="otabs">${[["overview","Overview"],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
+   <nav class="otabs">${[["overview","Overview"],["actions","Actions" + (acts.filter(x => x.status !== "done").length ? ` <em class="n">${acts.filter(x => x.status !== "done").length}</em>` : "")],["work","Work"],["client","Client" + (toSend + newRep ? ` <em>${toSend + newRep}</em>` : "")],["history","History"]].map(t => `<a href="javascript:void 0" data-tab="${t[0]}" class="${OTAB === t[0] ? "on" : ""}">${t[1]}</a>`).join("")}</nav>`;
 
   const none = ME.ai ? "Not ready yet. Press Run the order desk again under History." : "Turns on with the AI helpers.";
-  const overview = `<div class="og"><div>
-    ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
-    ${actSec}
-    ${proms.length ? `<div id="prom"></div>` + sec("Promises to the client", "Everything our side promised in the chat. Broken promises are the fastest way to lose a client.",
-      `<table class="t2"><thead><tr><th>Promise</th><th>By</th><th>Status</th></tr></thead><tbody>${L(proms, p => { const od = p.by && !kept(p) && p.by < TODAY(), td = p.by && !kept(p) && p.by === TODAY();
-        return `<tr><td>${E(p.what)}</td><td class="nw">${p.by ? fmtD(p.by) : "No date"}</td><td><span class="chip ${kept(p) ? "ok" : broken(p) || od ? "bad" : td ? "warn" : "n"}">${kept(p) ? "Kept" : broken(p) ? "Broken" : od ? "Overdue" : td ? "Due today" : "Open"}</span></td></tr>`; })}</tbody></table>`) : ""}
-    ${(ai.risks || []).length ? sec("Risks and how we prevent them", "Where this order could go wrong. Each prevention is a step in the Action plan; the status changes as updates come in.",
+  const actionsTab = `<nav class="afil">${[["open","Open"],["internal","Team questions"],["client","Client messages"],["task","Tasks"],["done","Done"],["all","All"]].map(f => `<a href="javascript:void 0" data-af="${f[0]}" class="${AF === f[0] ? "on" : ""}">${f[1]} <em>${f[0] === "all" ? acts.length : f[0] === "done" ? acts.filter(x => x.status === "done").length : f[0] === "open" ? acts.filter(x => x.status !== "done").length : acts.filter(x => x.type === f[0] && x.status !== "done").length}</em></a>`).join("")}</nav>
+   <div class="og"><div>${afl.map(actCard).join("") || `<div class="card"><p class="note">Nothing here.</p></div>`}</div><div>
+    ${(ai.risks || []).length ? sec("Risks", "Each prevention is an action on the left. Status changes as updates come in.",
       `<table class="t2"><thead><tr><th style="width:40%">Risk</th><th>How we prevent it</th><th>Level</th><th>Status</th></tr></thead><tbody>${L(ai.risks, r => `<tr><td><b>${E(r.risk)}</b></td><td>${E(r.prevent)}</td><td><span class="chip ${r.level === "high" ? "bad" : r.level === "low" ? "n" : "warn"}">${E(r.level || "medium")}</span></td><td><span class="chip ${/handled/.test(r.status || "") ? "ok" : /happened/.test(r.status || "") ? "bad" : /watch/.test(r.status || "") ? "y" : "warn"}">${E({ open:"Open", watch:"Watching", handled:"Handled", happened:"Happened" }[r.status] || "Open")}</span></td></tr>`)}</tbody></table>`) : ""}
     ${(ai.remarks || []).length || o.remarks ? sec("Special remarks", "What the chat alone does not make obvious.", `<ul class="clean">${o.remarks ? `<li><span class="tag">Sales</span>${E(o.remarks)}</li>` : ""}${L(ai.remarks, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
+   </div></div>`;
+  const overview = `<div class="og"><div>
+    ${sec("Order brief", "What we sold and what the client will judge us on.", ai.summary ? `<p class="lead">${E(ai.summary)}</p>${ai.next ? `<div class="nextbox"><span class="lbl">Next step</span><p>${E(ai.next)}</p></div>` : ""}` : `<p class="note">${none}</p>`)}
+    ${topActs.length ? sec("Top actions", acts.filter(x => x.status !== "done").length + " open of " + acts.length + ". All steps, team questions and replies are in the Actions tab.", topActs.map(x => `<div class="arow"><span class="dot ${x.status === "blocked" ? "bad" : x.severity === "high" ? "bad" : "warn"}"></span><div class="tx"><b>${E(x.title)}</b><br><span class="sub">${E(ACT[x.status][0])} · ${E(OWN[x.owner] || x.owner)}${x.type === "internal" && x.needBy ? " · reply by " + E(x.needBy) : ""}</span></div></div>`).join("") + `<button class="btn sm" data-tab="actions" style="margin-top:10px">Open all actions</button>`) : ""}
+    ${proms.length ? `<div id="prom"></div>` + sec("Promises to the client", openP + " open, " + proms.filter(kept).length + " kept. Broken promises are the fastest way to lose a client.",
+      `<table class="t2"><thead><tr><th>Promise</th><th>By</th><th>Status</th></tr></thead><tbody>${L(proms.filter(p => !kept(p)), p => { const od = p.by && !kept(p) && p.by < TODAY(), td = p.by && !kept(p) && p.by === TODAY();
+        return `<tr><td>${E(p.what)}</td><td class="nw">${p.by ? fmtD(p.by) : "No date"}</td><td><span class="chip ${kept(p) ? "ok" : broken(p) || od ? "bad" : td ? "warn" : "n"}">${kept(p) ? "Kept" : broken(p) ? "Broken" : od ? "Overdue" : td ? "Due today" : "Open"}</span></td></tr>`; })}</tbody></table>`) : ""}
    </div><div>
     ${x ? sec("Payment", "Only you see this. Track the money for this order until it clears.", payCard(o, CUR.pay)) : ""}
     ${!x ? "" : sec("Money on this order", "What the order really earns after the fee, team time and AI.",
@@ -408,8 +420,6 @@ function drawOrder(){
     ${(ai.pitch || []).length || rt.offer ? sec("Grow this client", "Repeat work and a monthly plan, offered at the right moment.",
       `${rt.offer ? `<div class="plan"><div><span class="lbl">Monthly plan to offer</span><h3>${E(rt.offer)}</h3><p class="note" style="margin:0">When: ${E(rt.when)}</p></div><div class="pp">${E(rt.price)}</div></div>${rt.line ? `<div class="quote">${E(rt.line)}<button class="btn sm" data-cp="${E(rt.line)}">Copy</button></div>` : ""}` : ""}
        ${(ai.pitch || []).length ? `<div class="lbl" style="margin:16px 0 8px">Next projects to suggest</div><ul class="clean">${L(ai.pitch, r => `<li>${E(r)}</li>`)}</ul>` : ""}`) : ""}
-    ${o.site ? sec("Website check", "A first look at the client's home page." + (o.site.at ? " Checked " + fmtD(o.site.at) + "." : ""), o.site.error ? `<p class="note">${E(o.site.error)}</p>${can("pm") ? `<button class="btn sm" id="site">Check again</button>` : ""}` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
-      + (st.verdict ? `<p style="margin:12px 0 0">${E(st.verdict)}</p>` : "") + ((st.quickWins || []).length ? `<div class="lbl" style="margin:14px 0 8px">Quick wins that delight</div><ul class="clean">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : "")) : ""}
    </div></div>`;
 
   const acc = `<table class="t2"><thead><tr><th>Access</th><th>Level needed</th><th>Status</th>${can("pm") ? "<th></th>" : ""}</tr></thead><tbody>${L(o.access, a => `<tr><td><b>${E(a.item)}</b><div class="sub">${E(a.why)}</div>${a.note ? `<div class="sub ev">${E(a.note)}</div>` : ""}</td><td>${E(a.level)}</td>
@@ -455,6 +465,8 @@ function drawOrder(){
     ${(ai.done || []).length ? sec("Already done", "From the chat, before this order reached the desk.", `<ul class="clean">${L(ai.done, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(ai.questions || []).length ? sec("Confirm with the client", "Real gaps only. Ask once, together, through the client messages person.", `<ul class="clean">${L(ai.questions, r => `<li>${E(r)}</li>`)}</ul>`) : ""}
     ${(o.hours || []).length ? sec("Hours logged", "", `<table class="money">${L(o.hours, t => `<tr><td>${E(t.who)} · ${fmtD(t.at)}${t.note ? `<div class="sub">${E(t.note)}</div>` : ""}</td><td>${t.h} h</td></tr>`)}</table>`) : ""}
+    ${o.site ? sec("Website check", "A first look at the client's home page." + (o.site.at ? " Checked " + fmtD(o.site.at) + "." : ""), o.site.error ? `<p class="note">${E(o.site.error)}</p>${can("pm") ? `<button class="btn sm" id="site">Check again</button>` : ""}` : `<div class="facts"><div><span>Built on</span><b>${E(o.site.cms)}</b></div><div><span>Secure</span><b class="${o.site.https ? "g" : "r"}">${o.site.https ? "HTTPS" : "No HTTPS"}</b></div><div><span>Opened in</span><b>${(o.site.ms / 1000).toFixed(1)} s</b></div><div><span>H1 headings</span><b>${o.site.h1}</b></div><div><span>Images without alt</span><b>${o.site.imagesNoAlt} / ${o.site.images}</b></div><div><span>Indexable</span><b class="${o.site.noindex ? "r" : "g"}">${o.site.noindex ? "No (noindex)" : "Yes"}</b></div></div>`
+      + (st.verdict ? `<p style="margin:12px 0 0">${E(st.verdict)}</p>` : "") + ((st.quickWins || []).length ? `<div class="lbl" style="margin:14px 0 8px">Quick wins that delight</div><ul class="clean">${L(st.quickWins, r => `<li>${E(r)}</li>`)}</ul>` : "")) : ""}
    </div></div>`;
 
   const msgs = L((o.queue || []).slice().reverse(), m => `<div class="mcard ${m.kind === "reply" ? "rep" : m.sent ? "" : "pend"}"><div class="mh"><b>${m.kind === "reply" ? "Client replied" : { access:"Ask for access", question:"Questions for the client", delivery:"Delivery", update:"Progress update after delivery" }[m.kind] || "Message"}</b>
@@ -482,7 +494,7 @@ function drawOrder(){
   const history = sec("What happened", "Every step on this order, newest first.", `<div class="tl">${L(o.timeline, t => `<div><span class="sub">${new Date(t.at).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" })}</span><b>${E(t.who)}</b> ${E(t.what)}</div>`)}</div>
     <div class="row" style="gap:8px;margin-top:14px">${can("pm") ? `<button class="btn sm" id="rerun">Run the order desk again</button>` : ""}<button class="btn sm" id="nt">Add a note</button>${can("assign") && !["done","cancelled"].includes(o.stage) ? `<button class="btn sm danger" id="cnl">Cancel order</button>` : ""}</div>`);
 
-  app.innerHTML = tabs("board") + header + ({ overview, work, client, history }[OTAB] || overview);
+  app.innerHTML = tabs("board") + header + ({ overview, actions:actionsTab, work, client, history }[OTAB] || overview);
   wireOrder(o);
   if(OTAB === "work") accFile(o);
 }
@@ -512,6 +524,8 @@ function wireOrder(o){
   { const cv = $("#cv"); if(cv) cv.scrollTop = cv.scrollHeight; }
   on("#updB", () => { const t = $("#updT").value.trim(); if(!t) return toast("Paste something first", 1); act(async () => { const r = await api("do", { id:o.id, op:"update", text:t }); CUR = r; drawOrder(); toast(r.info || "Updated"); }, "Reading what you pasted and re-checking the order (about 20 to 40 seconds)…"); });
   document.querySelectorAll("[data-ast]").forEach(b => b.onclick = () => { const [aid, st] = b.dataset.ast.split("|"); const note = st === "blocked" ? prompt("What is blocking it?") : ""; if(note === null) return; doOp("action", { aid, status:st, note }); });
+  document.querySelectorAll("[data-af]").forEach(b => b.onclick = () => { window.AFILT = b.dataset.af; drawOrder(); });
+  document.querySelectorAll("[data-rsend]").forEach(b => b.onclick = () => { const t = document.querySelector(`[data-rtxt="${b.dataset.rsend}"]`).value.trim(); if(!t) return toast("Paste their reply first", 1); doOp("actReply", { aid:b.dataset.rsend, text:t }, "Matching the reply to the questions and updating the order (about 30 seconds)…"); });
   document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => toast("Copied")); });
   on("#verify", () => doOp("verify", {}, "Checking the live site and Search Console…"));
   on("#qafin", () => doOp("qa", {}, "Finishing QA…"));
