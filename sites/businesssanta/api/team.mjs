@@ -141,6 +141,7 @@ async function runProofCheck(o, d){
 const ASTAT = ["open", "sent", "waiting", "done", "blocked"];
 function mergeActions(o, list, fresh){
   o.actions = o.actions || [];
+  (list || []).forEach(x => { if(x && x.message) x.message = String(x.message).replace(/\[(order id|order number|order)\]/gi, o.id); });
   for(const x of (list || []).slice(0, 40)){
     const cur = x.id && o.actions.find(a => a.id === x.id);
     if(cur){

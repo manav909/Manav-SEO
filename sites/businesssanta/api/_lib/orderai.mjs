@@ -142,7 +142,8 @@ Answer with one JSON object only, no other text, in this shape:
 "retainer":{"offer":"a monthly plan that fits them","price":"USD per month","when":"the right moment to offer it","line":"one sentence the comms person can say"},
 "msgs":{"access":"ready message asking for the access, step by step for a non technical client","questions":"ready message with the questions, or empty"}}
 "good bargain" means the client pays well for the work. "undercharged" means we are giving too much for the price. hours = honest team hours for this scope.`;
-  const user = `Gig: ${gig ? gig.name : "unknown"}
+  const user = `Order id: ${o.id}
+Gig: ${gig ? gig.name : "unknown"}
 Package: ${o.pkg} at $${pk ? pk.price : "?"} (package says: ${pk ? pk.what : "?"})
 Price the client actually paid: $${o.price}  Extras: ${o.extras || "none"}
 Deadline: ${o.deadline}
