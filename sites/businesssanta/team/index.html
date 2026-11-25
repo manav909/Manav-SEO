@@ -201,6 +201,8 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .rolepick{display:flex;gap:6px 12px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:13px;color:var(--sub)}.rolepick label{display:inline-flex;gap:5px;align-items:center;cursor:pointer}.rolepick input{width:auto;min-height:0}
 .srch{margin-left:auto;display:flex}.srch input{min-height:36px;width:260px;max-width:52vw;border-radius:999px;padding:0 14px;font-size:13.5px}@media(max-width:700px){.srch{margin-left:0;width:100%}.srch input{width:100%;max-width:none}}
 .sr{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;text-decoration:none;color:inherit}.sr:hover{background:var(--raise)}.sr div{display:flex;flex-direction:column;gap:2px;min-width:0}.sr b{color:var(--ink);font-size:14.5px}.sr span{font-size:12.5px;color:var(--mut)}.sr em{font-style:normal;font-size:12.5px;color:var(--sub);overflow-wrap:anywhere}
+.sop{display:grid;gap:12px}.sst{border:1px solid var(--soft);border-radius:14px;padding:14px 16px}.sst.me{border-color:rgba(74,222,128,.45)}.ssh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.ssh i{font-style:normal;width:26px;height:26px;border-radius:50%;background:var(--raise);display:grid;place-items:center;font-weight:800;font-size:13px}.ssh b{font-size:16px;margin-right:4px}
+.ssg{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:10px}@media(max-width:760px){.ssg{grid-template-columns:1fr}}.ssf{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px;padding-top:10px;border-top:1px solid var(--soft);font-size:13px;color:var(--sub)}.ssf b{color:var(--ink)}
 .tsum{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.tsum span{background:var(--raise);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--sub)}.tsum b{color:var(--ink)}.tsum em{font-style:normal;color:var(--warn);font-weight:700;margin-left:4px}
 .tsg{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:22px}@media(max-width:900px){.tsg{grid-template-columns:1fr}}
 .dcard{border:1px solid var(--soft);border-radius:12px;padding:12px 14px;margin-bottom:10px;font-size:14px}.dcard.suggested{border-color:rgba(251,191,36,.55);background:rgba(251,191,36,.05)}
@@ -283,6 +285,7 @@ function tabs(on){
   if(!P_) t.push(["msgs","Client messages"]); else t.push(["access","Access"]);
   if(ME.role === "admin" || ME.role === "manager") t.push(["score","Scorecard"]);
   if(ME.role === "admin") t.push(["hod","HoD report"], ["pay","Payments"], ["people","Team and settings"]);
+  t.push(["sop","How we work"]);
   const qn = QUEUE.length;
   return `<nav class="tabs">${t.map(x => `<a href="#${x[0]}" class="${x[0] === on ? "on" : ""}">${x[1]}${x[0] === "msgs" && qn ? `<span class="n">${qn}</span>` : ""}</a>`).join("")}<form class="srch" onsubmit="event.preventDefault();location.hash='#s='+encodeURIComponent(this.q.value.trim())"><input name="q" type="search" placeholder="${ME.role === "pm" || ME.role === "qa" ? "Search orders" : "Search clients, leads, orders"}" value="${on === "search" ? E(SQ) : ""}" aria-label="Search"></form></nav>
   ${ME.ai ? "" : `<div class="note" style="border-color:var(--warn)"><b>AI helpers are off.</b> Orders, checklists and gates all work. The brief, client profile, price check and lead help start once the API key is added in Vercel.</div>`}`;
@@ -304,6 +307,7 @@ async function route(){
     if(h === "pay") return await payPage();
     if(h === "my") return await myWork();
     if(h === "hod") return await hodPage();
+    if(h === "sop") return await sopPage();
     if(h === "access") return await myWork(true);
     return await board();
   }catch(e){ if(e.message !== "signin") app.innerHTML = tabs("") + `<div class="card err"><h2>Not available</h2><p>${E(e.message)}</p><a class="btn sm" href="#">Back to your work</a></div>`; }
@@ -870,6 +874,46 @@ async function lead(openId){
   $("#lf").onsubmit = e => { e.preventDefault(); act(async () => { const r = await api("lead", { title:$("#lt").value, chat:$("#lc").value, note:$("#ln").value }); await lead(); show(r.lead); }, "Reading the chat…"); };
 }
 
+
+/* How we work: the order SOP, step by step, with who acts, what the desk does by itself, the gate, and the time target. Same rules the desk enforces. */
+const SOP = [
+  { k:"lead", n:"Lead", who:["Sales"], pj:false, you:["Reply to every new lead fast. Stuck? Paste the whole chat into Lead help and send the reply it gives."], desk:["Reads the chat: what they really want, the right offer, the next message."], gate:"Client hires us", time:"Reply within 1 hour" },
+  { k:"details", n:"Order in", who:["Sales"], pj:false, you:["Open New order: the whole chat, every call note under its date, gig, package, price, deadline.", "If the desk found the order itself (Orders, first column), open it and add these details."], desk:["Writes the brief, access list, client profile and price check.", "Sets the PM and QA by default when there is only one.", "Finds the client's past work in the team's emails, chats and files."], gate:"Brief ready, team set", time:"Within 1 hour of the hire" },
+  { k:"access", n:"Access", who:["Sales", "PM"], pj:true, you:["Sales: send the access message the desk prepared, then paste the client's reply.", "PM: in Step 1, mark each item Received or Wrong level. Share every access in the project access group."], desk:["Reads the project access group and the client's replies and ticks items by itself.", "Hides any password before keeping a message. Remembers access per site for the next order."], gate:"Every access item received or not needed", time:"Asked the same day; checked within 2 hours of the reply" },
+  { k:"questions", n:"Questions", who:["Sales", "PM", "Manager"], pj:true, you:["Sales: copy the team questions (at most 3) or let the PM answer them in My work.", "PM: answer each question, or disagree with a reason. Add a screenshot when it helps.", "Manager: decide when sales and the PM disagree."], desk:["Asks only what matters. Marks each answer, and rewrites the next steps from it."], gate:"Questions answered or decided", time:"By the time shown on each question" },
+  { k:"work", n:"Work and proof", who:["PM"], pj:true, you:["Do the work. Keep every file in the project's Drive, shared with seo@indiit.com.", "Add proof to each deliverable (Drive file or live link) and mark it Done. Use the newest copy of each file."], desk:["Checks each proof and says what it shows and what is missing.", "Groups copies of the same file and reads only the newest. Compares versions."], gate:"Every deliverable done with proof, no outdated copy", time:"Before the deadline, with a day for QA" },
+  { k:"qa", n:"QA", who:["QA"], pj:true, you:["Check every deliverable live, against the QA list on the order. Pass, or fail with a clear note."], desk:["Shows Google's own data (Search Console, live pages) next to each item."], gate:"Every deliverable passes", time:"Within 24 hours of hand-off" },
+  { k:"ready", n:"Delivery", who:["Sales"], pj:false, you:["Send the delivery message the desk prepared. Mark it delivered."], desk:["Blocks delivery if a file changed after QA passed or a proof is an older copy."], gate:"Delivered on time", time:"Same day QA passes" },
+  { k:"delivered", n:"After delivery", who:["Sales", "PM"], pj:true, you:["Sales: send the follow-up updates the desk drafts, log any revision.", "PM: fix revisions fast; they count against us when the mistake was ours."], desk:["Rechecks the results 3, 7 and 14 days after delivery and drafts an update for the client.", "Suggests the next work from the client's own numbers."], gate:"Client happy, order closed", time:"Revisions within 24 hours" }
+];
+const SOP_STAGE = { details:"details", access:"access", work:"work", qa:"qa", ready:"ready", delivered:"delivered" };
+const SOP_WHO = { details:"Sales: add the order details", access:"Sales asks, PM checks", work:"PM", qa:"QA", ready:"Sales: deliver", delivered:"Sales: follow-ups" };
+async function sopPage(){
+  if(!ORD.length) await refresh();
+  const PJ = ME.role === "pm" || ME.role === "qa", steps = SOP.filter(x => !PJ || x.pj), mine = r => (ME.myRoles || [ME.role]).some(m => ({ sales:"Sales", comms:"Sales", pm:"PM", qa:"QA", manager:"Manager", admin:"Manager" })[m] === r);
+  const open = ORD.filter(o => SOP_STAGE[o.stage]);
+  const ROUT = [
+    { r:"Sales", show:!PJ, d:["Morning: open Orders, clear Your next steps first.", "Paste every new client message into its order (the whole chat again is fine).", "Send what the desk prepared, then mark it sent.", "Before you log off: no order left in Found, needs details."] },
+    { r:"PM", show:!PJ || ME.role === "pm", d:["Morning: open My work. Blinking items first.", "Answer team questions by their time. Disagree with a reason when needed.", "Check access in Step 1 as soon as it is shared.", "Add proof as you finish each piece, not at the end."] },
+    { r:"QA", show:!PJ || ME.role === "qa", d:["Check orders in QA check within 24 hours.", "Fail with a note the PM can act on: what is wrong, where, what right looks like."] },
+    { r:"Manager", show:!PJ, d:["Pick the PM and QA when there is more than one.", "Decide every disagreement the same day.", "Read the Scorecard weekly: revisions, QA first pass, late orders."] }
+  ].filter(x => x.show);
+  const RULES = (PJ ? [] : ["Clients stay on the marketplace. Never ask for or share emails or phone numbers there; use the access email placeholder the desk writes."])
+    .concat(["Never type a password into the order desk. Share access in the project access group; the desk hides passwords by itself.",
+      "Add seo@indiit.com to every project group, email and Drive folder. It reads them so nobody has to report twice.",
+      PJ ? "Client chats stay with sales. Ask sales on the order when you need something from the client." : "Share client messages with the project team only when they need them, from the Client tab.",
+      "One file, one name, newest copy as proof. The desk reads only the newest copy."]);
+  app.innerHTML = tabs("sop") + `<section class="card"><h1 style="font-size:24px;margin:0 0 6px">How we work</h1><p class="note" style="margin:0">Every order follows these steps. The desk does its part by itself and stops an order at each gate until it is right, so mistakes are caught before the client sees them.</p></section>
+   <section class="card"><div class="sop">${steps.map((x, i) => `<div class="sst ${x.who.some(mine) ? "me" : ""}"><div class="ssh"><i>${i + 1}</i><b>${E(x.n)}</b>${x.who.map(w => `<span class="chip ${mine(w) ? "ok" : "n"}">${E(w)}</span>`).join("")}</div>
+     <div class="ssg"><div><span class="lbl">You do</span><ul class="clean">${x.you.filter(t => !PJ || !/^Sales:/.test(t) || x.k === "questions").map(t => `<li>${E(t)}</li>`).join("")}</ul></div><div><span class="lbl">The desk does</span><ul class="clean">${x.desk.map(t => `<li>${E(t)}</li>`).join("")}</ul></div></div>
+     <div class="ssf"><span>Gate: <b>${E(x.gate)}</b></span><span>Target: <b>${E(x.time)}</b></span></div></div>`).join("")}</div></section>
+   <div class="og"><div>
+    ${sec("Where every order is now", "Open orders by step, and who must act.", open.length ? `<table class="t2"><thead><tr><th>Order</th><th>Step</th><th>Who acts</th><th>Due</th></tr></thead><tbody>${open.map(o => `<tr><td><a href="#o=${E(o.id)}"><b>${E(o.id)}</b></a><div class="sub">${E(o.client.name || o.client.website || "")}</div></td><td>${E((SOP.find(x => x.k === SOP_STAGE[o.stage]) || {}).n || SN[o.stage])}</td><td>${E(SOP_WHO[o.stage] || "")}</td><td class="nw">${o.deadline ? fmtD(o.deadline) : ""}</td></tr>`).join("")}</tbody></table>` : `<p class="note">No open orders.</p>`)}
+    ${sec("Rules we never break", "", `<ol class="clean num">${RULES.map(r => `<li>${E(r)}</li>`).join("")}</ol>`)}
+   </div><div>
+    ${ROUT.map(x => sec("Daily routine · " + x.r, "", `<ul class="clean">${x.d.map(t => `<li>${E(t)}</li>`).join("")}</ul>`)).join("")}
+   </div></div>`;
+}
 /* Search */
 let SQ = "";
 async function searchPage(q){
