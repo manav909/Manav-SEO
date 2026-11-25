@@ -849,7 +849,7 @@ For each item return: "title" (the item's short name, two to five words) and "te
 Answer with one JSON object only: {"person":"first name if every item is for one person, else empty","points":[{"id":"item id","title":"","text":""}]}`;
   const r = await askAI("groupmsg", "claude-haiku-5-5", system, `ITEMS: ${JSON.stringify(open)}`, 1800);
   o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  const d = r.data || {}, clean = t => String(t || "").replace(/[*_]/g, "").replace(/\s*Where:\s*/gi, " ").replace(/\s{2,}/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
+  const d = r.data || {}, clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s*Where:\s*/gi, " ").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
   const pts = (d.points || []).map(p2 => ({ it:open.find(x => x.id === p2.id), title:clean(p2.title), text:clean(p2.text) })).filter(p2 => p2.it && p2.text);
   if(!pts.length) return "";
   const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? String(w || "") : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
