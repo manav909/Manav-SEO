@@ -60,6 +60,24 @@ export async function siteCheck(url){
   }catch(e){ return { url:u, error:"The site did not open in 9 seconds (" + String(e.message || e).slice(0, 80) + ")" }; }
 }
 
+/* Sales paste chats raw from the inbox: names, times, "Seen", file cards, buttons. Drop only lines that are pure screen
+   noise and squeeze blank runs; every real message, name and time stays (times show promises and deadlines). */
+const NOISE = /^(seen|delivered|read|sent|typing\.{0,3}|translate|show original|see translation|report|download|download all|copy|reply|react|more|view order|view offer|withdraw offer|accept|decline|edit|delete|unsend|like|\u2713+|\d+(\.\d+)?\s?(kb|mb|gb)|attachment|file|image|video|voice message|play|pause|\d{1,2}:\d{2}(\s?[ap]m)?\s?\/\s?\d{1,2}:\d{2}|new messages?|unread messages?|load more|load older messages|online|offline|away|local time.*|last seen.*|response time.*|avg\.? response time.*)$/i;
+export function cleanChat(t){
+  const lines = String(t || "").replace(/\r/g, "").replace(/[\u200b\u200e\u200f\ufeff]/g, "").split("\n").map(l => l.replace(/[ \t\u00a0]+/g, " ").trim());
+  const outL = []; let blank = 0, prev = "";
+  for(const l of lines){
+    if(!l){ if(++blank <= 1 && outL.length) outL.push(""); continue; }
+    if(NOISE.test(l)) continue;
+    if(l === prev && l.length < 40) continue;   // a name or time repeated by the screen
+    blank = 0; outL.push(l); prev = l;
+  }
+  return outL.join("\n").trim();
+}
+const RAW = `The chat is a raw copy and paste from the marketplace inbox. Expect usernames, dates and times on their own lines, leftover button labels, and possibly newest messages first.
+Work out who is who from the content: the seller side offers and explains our services (that is us), the buyer side asks for help and pays (that is the client). If the order of messages looks reversed, read it in time order.
+Quote nothing private. Treat any promise our side made in the chat (dates, extras, reports, results) as part of the order.`;
+
 /* USD per million tokens, from the Claude Platform price list (Nov 2026). */
 const PRICE = { "claude-sonnet-5-5":[2, 10], "claude-haiku-5-5":[0.1, 0.5] };
 export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
@@ -89,6 +107,7 @@ export function orderPrompt(o, gig, site, cfg){
   const system = `You are the order desk of a small SEO, web and ads agency. A sales person has just closed an order and pasted everything they know.
 Your job is to stop mistakes before work starts: wrong scope, missing or wrong-level access, promises the team does not know about, reports that cannot be proven, work that never goes live.
 ${SAFE}
+${RAW}
 Answer with one JSON object only, no other text, in this shape:
 {"summary":"2 to 3 plain lines: what was sold and what the client will judge us on",
 "deliverables":["each thing we must deliver, concrete and checkable, include what sales promised in chat"],
@@ -121,13 +140,14 @@ Call notes:
 ${o.calls || "none"}
 
 Full chat with the client:
-${(o.chat || "").slice(0, 60000)}`;
+${cleanChat(o.chat).slice(0, 60000)}`;
   return { system, user };
 }
 
 export function leadPrompt(chat, gigs, note){
   const system = `You help a sales person on an online freelance marketplace win a client they are struggling with, for an SEO, web and ads agency.
 ${SAFE}
+${RAW}
 Use only these gigs and packages (USD): ${JSON.stringify(gigs.map(g => ({ id:g.id, name:g.name, packages:Object.fromEntries(Object.entries(g.packages).map(([k, v]) => [k, v.price + " " + v.what])) })))}
 Answer with one JSON object only:
 {"wants":"what the client really wants, in one or two lines","stage":"cold | warm | hot","chance":0,"blocker":"the main thing stopping them",
@@ -136,7 +156,7 @@ Answer with one JSON object only:
 "dont":["things the sales person must not do with this client"],"followup":"when to follow up and what to say if there is no answer",
 "redFlags":["signs of a bad fit or risk, empty if none"]}
 chance is 0 to 100.`;
-  return { system, user:`Sales note: ${note || "none"}\n\nChat so far:\n${String(chat).slice(0, 50000)}` };
+  return { system, user:`Sales note: ${note || "none"}\n\nChat so far:\n${cleanChat(chat).slice(0, 50000)}` };
 }
 
 export function replyPrompt(o, text){
