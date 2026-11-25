@@ -880,7 +880,8 @@ async function postSteps(o, cfg, by){
   // One living message per order: edit the desk's last steps message instead of posting a repeat
   const last = (o.deskPosts || []).filter(p => p.kind === "steps" && p.name && p.name.startsWith(g.id + "/")).slice(-1)[0];
   if(last){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
-    await editChat(as, last.name, deskSay(cfg, t)); last.hash = sha(t).slice(0, 12); last.editedAt = now();
+    try{ await editChat(as, last.name, deskSay(cfg, t)); }catch(e){ if(/insufficient authentication scopes|403/.test(e.message)) throw new Error("To edit its own message, " + as + " needs one more permission. Reconnect it in Team and settings (Connect a Google account), then try again. Nothing was sent."); throw e; }
+    last.hash = sha(t).slice(0, 12); last.editedAt = now();
     log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
     await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:"(edited) " + str(t, 780), usd:0 }); return; }
   const m = await postChat(as, g.id, deskSay(cfg, t));

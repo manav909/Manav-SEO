@@ -11,7 +11,7 @@ export const SCOPES = ["openid", "email", "https://www.googleapis.com/auth/webma
   "https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/drive.activity.readonly",   // Drive: read-only, for order proof (team order desk)
   "https://www.googleapis.com/auth/drive.file"];   // Drive: only files the portal itself creates (the HoD reports folder); it cannot change anyone else's files
 // Team access accounts (e.g. seo@indiit.com) also read the project's Gmail and Google Chat, read-only, to follow the team's work
-export const TEAM_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/chat.spaces.readonly", "https://www.googleapis.com/auth/chat.messages.readonly", "https://www.googleapis.com/auth/chat.messages.create"];
+export const TEAM_SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/chat.spaces.readonly", "https://www.googleapis.com/auth/chat.messages.readonly", "https://www.googleapis.com/auth/chat.messages.create", "https://www.googleapis.com/auth/chat.messages"];
 export const REDIRECT = "https://www.businesssanta.com/api/portal?a=g-callback";
 export const configured = () => !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 
@@ -135,7 +135,7 @@ export async function syncBrand(b){
 /* Every connected Google account: the portal's main one plus the team's other access accounts */
 export async function accounts(){
   const p = await getJ(GK.tok), h = await cmd("HGETALL", GK.accs), out = [];
-  const fl = sc => ({ drive:/drive\.readonly/.test(sc || ""), write:/drive\.file/.test(sc || ""), gmail:/gmail\.readonly/.test(sc || ""), chat:/chat\.messages/.test(sc || ""), post:/chat\.messages\.create/.test(sc || "") });
+  const fl = sc => ({ drive:/drive\.readonly/.test(sc || ""), write:/drive\.file/.test(sc || ""), gmail:/gmail\.readonly/.test(sc || ""), chat:/chat\.messages/.test(sc || ""), post:/chat\.messages\.create|chat\.messages(\s|$)/.test(sc || ""), edit:/chat\.messages(\s|$)/.test(sc || "") });
   if(p && p.refresh) out.push(Object.assign({ email:p.email, primary:true, since:p.at }, fl(p.scope)));
   for(let i = 0; i < h.length; i += 2){ const r = JSON.parse(h[i + 1]); if(r.refresh) out.push(Object.assign({ email:r.email, primary:false, since:r.at }, fl(r.scope))); }
   return out;
