@@ -35,6 +35,15 @@ async function who(request){
   if(!p || p.off || (p.rev || 1) !== (s.rev || 1)) return null;
   return { role:p.role, uid:p.id, name:p.name, tok:t };
 }
+/* With only one active PM (or one QA), every order gets that person by default; with more, a manager picks */
+function autoAssign(o, ps, w){
+  let ch = false; const one = r => { const l = ps.filter(p => p.role === r && !p.off); return l.length === 1 ? l[0] : null; };
+  const pm = one("pm"), qa = one("qa");
+  if(!o.pm && pm){ o.pm = pm.id; o.pmName = pm.name; ch = true; }
+  if(!o.qa && qa){ o.qa = qa.id; o.qaName = qa.name; ch = true; }
+  if(ch) log(o, w || { name:"Order desk" }, "Team set by default: PM " + (o.pmName || "none") + ", QA " + (o.qaName || "none"));
+  return ch;
+}
 async function people(){ const h = await cmd("HGETALL", T.people); const o = []; for(let i = 0; i < h.length; i += 2) o.push(JSON.parse(h[i + 1])); return o.sort((a, b) => a.name.localeCompare(b.name)); }
 
 /* Order helpers */
@@ -428,7 +437,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     return out({ ok:true, items:items.sort((a, b) => rank[a.urgency] - rank[b.urgency] || a.deadline.localeCompare(b.deadline)), orders:mine.sort((a, b) => a.deadline.localeCompare(b.deadline)) }); }
   if(a === "order"){ const o = await getJ(T.ord(str(url.searchParams.get("id"), 20))); if(!o) return bad("Order not found", 404);
     (o.actions || []).forEach(x => { if(x.type === "internal" && (x.questions || []).length) x.message = internalText(o, x); });
-    { const n0 = (o.access || []).length; dedupeAccess(o); if(o.access.length !== n0) await saveO(o); }
+    { const n0 = (o.access || []).length; dedupeAccess(o); const ch = !["done", "cancelled"].includes(o.stage) && autoAssign(o, await people()); if(o.access.length !== n0 || ch) await saveO(o); }
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
     return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null }); }
   if(a === "clients"){ const all = await loadAll(1000);
@@ -487,6 +496,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     if(an.status === "fulfilled"){ ai = an.value; if(ai.ok) log(o, { name:"Order desk" }, "Brief, access list, client profile and price check ready"); } else ai = { ok:false, why:an.reason.message };
     if(!ai.ok && ai.why) log(o, { name:"Order desk" }, "Brief not made: " + ai.why);
     if(fm.status === "fulfilled" && fm.value.ok) log(o, { name:"Order desk" }, "Client conversation laid out (" + o.convo.messages.length + " messages)");
+    autoAssign(o, await people());
     o.cid = cidOf(o.client.name); await touchClient(o);
     await pipe([["SET", T.ord(id), JSON.stringify(o)], ["ZADD", T.ords, Date.now(), id]]);
     return out({ ok:true, id, ai }); }
@@ -502,6 +512,7 @@ Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"
     const code = crypto.randomBytes(8).toString("base64").replace(/[^A-Z0-9]/gi, "").toUpperCase().slice(0, 10).padEnd(10, "7");
     p.codeHash = sha(code); p.rev = (p.rev || 1) + (a === "newCode" ? 1 : 0);
     await pipe([["HSET", T.people, p.id, JSON.stringify(p)], ["SET", T.code(p.codeHash), p.id]]);
+    if(["pm", "qa"].includes(p.role)){ const ps = await people(); for(const o of (await loadAll(300)).filter(x => !["done", "cancelled"].includes(x.stage))) if(autoAssign(o, ps)) await saveO(o); }
     return out({ ok:true, id:p.id, code }); }
   if(a === "people"){ if(w.role !== "admin") return bad("Only Manav", 403); return out({ ok:true, people:(await people()).map(p => ({ id:p.id, name:p.name, role:p.role, off:!!p.off, at:p.at })) }); }
 
