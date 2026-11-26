@@ -56,7 +56,30 @@ export async function allSpaces(email){
   do{ const r = await apiAs(email, "https://chat.googleapis.com/v1/spaces?pageSize=1000" + (tok ? "&pageToken=" + encodeURIComponent(tok) : "")); out.push(...(r.spaces || [])); tok = r.nextPageToken || ""; }while(tok && ++n < 5);
   return out;
 }
-export async function syncOrder(o){
+/* A few messages of a space, oldest or newest first, as plain lines (for sorting groups by what is written in them) */
+export async function spaceMessages(email, space, order, n){
+  const r = await apiAs(email, "https://chat.googleapis.com/v1/" + space + "/messages?pageSize=" + (n || 25) + "&orderBy=createTime%20" + (order === "desc" ? "desc" : "asc"));
+  return (r.messages || []).map(m => ({ at:m.createTime, by:(m.sender && m.sender.displayName) || "", text:maskCreds(String(m.text || "")).slice(0, 400), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) }));
+}
+/* groups: the project groups this order owns, decided by content (see mapGroups in team.mjs). When given, names decide nothing. */
+/* Read the project groups of one order: the whole history the first time, then every new message */
+async function readGroups(o, a, spaces, out){
+  const since = o.syncAt || o.at;
+  for(const s of spaces){
+          const full = !((o.chatFull || {})[s.name]), all = [];
+          let tok = "", pages = 0;
+          do{ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=500&orderBy=createTime%20asc" + (full ? "" : "&filter=" + encodeURIComponent('createTime > "' + since + '"')) + (tok ? "&pageToken=" + encodeURIComponent(tok) : ""));
+            all.push(...(ms.messages || [])); tok = ms.nextPageToken || ""; }while(tok && ++pages < 8);
+          for(const m of all){ const old = (o.teamChat || []).find(x => x.id === m.name); if(old && !old.spaceId){ old.spaceId = s.name; old.thread = m.thread ? m.thread.name : ""; old.sender = m.sender ? m.sender.name : ""; } }
+          for(const m of all) if(!(o.teamChat || []).some(x => x.id === m.name)){
+            const att = m.attachment || [];
+            out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 8000), files:att.map(x => x.contentName).filter(Boolean),
+              links:att.filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId }))
+                .concat(att.filter(x => x.attachmentDataRef && x.attachmentDataRef.resourceName).map(x => ({ name:x.contentName || "file", mime:x.contentType || "", media:x.attachmentDataRef.resourceName, id:"chat-" + String(m.name).split("/").pop() + "-" + String(x.name || x.contentName || "").split("/").pop().slice(0, 40).replace(/[^\w.-]/g, "") }))) }); }
+          out.chatFull = Object.assign(out.chatFull || {}, { [s.name]:{ at:new Date().toISOString(), messages:all.length, from:(all[0] || {}).createTime || "" } });
+        }
+}
+export async function syncOrder(o, groups){
   const k = keysOf(o), out = { at:new Date().toISOString(), folder:o.folder || null, files:[], mails:[], chat:[], access:[], errors:{} }, since = o.syncAt || o.at;
   const accs = (await accounts()).filter(a => !a.primary || a.drive);
   for(const a of accs){
@@ -83,6 +106,11 @@ export async function syncOrder(o){
     // The first read of a group takes its WHOLE history (work starts in the group before the order reaches the portal); later reads take every new page.
     if(!a.chat) (out.chatStatus = out.chatStatus || []).push({ email:a.email, noChat:true });
     if(a.chat){
+      if(Array.isArray(groups)){ try{ const mine = groups.filter(g => g.via === a.email);
+          (out.chatStatus = out.chatStatus || []).push({ email:a.email, spaces:groups.spacesSeen || 0, found:mine.length });
+          out.chatSpaces = Object.assign(out.chatSpaces || {}, Object.fromEntries(mine.map(g => [g.id, { name:g.name, via:a.email, why:g.why, confidence:g.confidence, manual:!!g.manual }])));
+          await readGroups(o, a, mine.map(g => ({ name:g.id, displayName:g.name })), out); }catch(e){ out.errors.chat = e.message; (out.chatStatus = out.chatStatus || []).push({ email:a.email, error:e.message }); }
+        continue; }
       try{ const all0 = await allSpaces(a.email), scan = Object.assign({}, o.chatScan || {});
         // A group whose name does not say which order it is for is found by what is written in it (each group is looked at again only when it had new activity)
         const named = all0.filter(s => !/access/i.test(s.displayName || "") && s.spaceType !== "DIRECT_MESSAGE" && spaceMatch(o, s.displayName));
@@ -93,26 +121,17 @@ export async function syncOrder(o){
           scan[s.name] = { at:new Date().toISOString(), hit, name:s.displayName || "" }; if(hit) byText.push(s); }
         out.chatScan = scan; (out.chatStatus = out.chatStatus || []).push({ email:a.email, spaces:all0.filter(s => s.spaceType !== "DIRECT_MESSAGE").length, found:named.length + byText.length });
         out.chatSpaces = Object.assign(out.chatSpaces || {}, Object.fromEntries(named.map(s => [s.name, { name:s.displayName, via:a.email, why:spaceMatch(o, s.displayName) }]).concat(byText.map(s => [s.name, { name:s.displayName, via:a.email, why:"messages in it name the client's site or the order number" }]))));
-        for(const s of named.concat(byText).slice(0, 3)){
-          const full = !((o.chatFull || {})[s.name]), all = [];
-          let tok = "", pages = 0;
-          do{ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=500&orderBy=createTime%20asc" + (full ? "" : "&filter=" + encodeURIComponent('createTime > "' + since + '"')) + (tok ? "&pageToken=" + encodeURIComponent(tok) : ""));
-            all.push(...(ms.messages || [])); tok = ms.nextPageToken || ""; }while(tok && ++pages < 8);
-          for(const m of all){ const old = (o.teamChat || []).find(x => x.id === m.name); if(old && !old.spaceId){ old.spaceId = s.name; old.thread = m.thread ? m.thread.name : ""; old.sender = m.sender ? m.sender.name : ""; } }
-          for(const m of all) if(!(o.teamChat || []).some(x => x.id === m.name)){
-            const att = m.attachment || [];
-            out.chat.push({ id:m.name, space:s.displayName, spaceId:s.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", via:a.email, by:(m.sender && (m.sender.displayName || m.sender.name)) || "", at:m.createTime, text:maskCreds(String(m.text || m.formattedText || "")).slice(0, 8000), files:att.map(x => x.contentName).filter(Boolean),
-              links:att.filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId }))
-                .concat(att.filter(x => x.attachmentDataRef && x.attachmentDataRef.resourceName).map(x => ({ name:x.contentName || "file", mime:x.contentType || "", media:x.attachmentDataRef.resourceName, id:"chat-" + String(m.name).split("/").pop() + "-" + String(x.name || x.contentName || "").split("/").pop().slice(0, 40).replace(/[^\w.-]/g, "") }))) }); }
-          out.chatFull = Object.assign(out.chatFull || {}, { [s.name]:{ at:new Date().toISOString(), messages:all.length, from:(all[0] || {}).createTime || "" } });
-        } }catch(e){ out.errors.chat = e.message; (out.chatStatus = out.chatStatus || []).push({ email:a.email, error:e.message }); }
+        await readGroups(o, a, named.concat(byText).slice(0, 3), out);
+ }catch(e){ out.errors.chat = e.message; (out.chatStatus = out.chatStatus || []).push({ email:a.email, error:e.message }); }
     }
   }
   // The project access group (a Google Chat space with "access" in its name, where sales and the project team share and fix access):
   // messages naming this order's site, client or number, plus the rest of their threads. Credentials are masked before anything is kept.
   for(const a of accs.filter(x => x.chat)){
-    try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
-      for(const s of (sp.spaces || []).filter(s => /access/i.test(s.displayName || "")).slice(0, 3)){
+    try{ const sp = { spaces:await allSpaces(a.email) };
+      // The access group is the one the content map calls "access" (its name is only the fallback when no map exists)
+      const accIds = groups && Array.isArray(groups.access) && groups.access.length ? new Set(groups.access) : null;
+      for(const s of (sp.spaces || []).filter(s => accIds ? accIds.has(s.name) : /access/i.test(s.displayName || "")).slice(0, 3)){
         const from = o.accessSyncAt || new Date(Date.parse(o.at) - 30 * 864e5).toISOString();
         const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=200&orderBy=createTime%20desc&filter=" + encodeURIComponent('createTime > "' + from + '"'));
         const list = (ms.messages || []).reverse(), cname = String(o.client.name || "").toLowerCase();

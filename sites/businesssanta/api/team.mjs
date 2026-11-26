@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, allSpaces, spaceMessages, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -305,7 +305,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -374,8 +374,57 @@ export async function dailyIntel(){
 }
 
 /* Team sources: project Drive folder, emails and Google Chat the team account is in. New items re-check the order. */
+/* Google Chat groups, sorted by WHAT IS WRITTEN IN THEM (the people, the site, the work, the files), never by the group's name:
+   a name is only a hint. Each group is read again only when it had new activity or the list of orders changed. A manager or Manav
+   can confirm or reject a match; their word stays. */
+const GMK = P + "chatmap";
+async function mapGroups(force){
+  const cur = (await getJ(GMK)) || { at:"", spaces:{} }; cur.spaces = cur.spaces || {};
+  const orders = (await loadAll(300, true)).filter(o => o.stage !== "cancelled" && o.client), ofp = sha(orders.map(o => o.id + domOf(o.client.website)).join(",")).slice(0, 10);
+  const accs = (await gAccounts()).filter(a => a.chat), todo = [], seen = new Set();
+  for(const a of accs){ let sps = []; try{ sps = await allSpaces(a.email); }catch(e){ continue; }
+    for(const sp of sps){ if(sp.spaceType === "DIRECT_MESSAGE" || seen.has(sp.name)) continue; seen.add(sp.name);
+      const c = cur.spaces[sp.name];
+      if(!force && c && c.last === (sp.lastActiveTime || "") && c.ofp === ofp) continue;
+      let first = [], last = []; try{ first = await spaceMessages(a.email, sp.name, "asc", 25); last = await spaceMessages(a.email, sp.name, "desc", 20); }catch(e){ continue; }
+      todo.push({ id:sp.name, name:sp.displayName || "", via:a.email, last:sp.lastActiveTime || "", first, latest:last.reverse() }); } }
+  for(const k of Object.keys(cur.spaces)) if(!seen.has(k)) delete cur.spaces[k];
+  cur.seen = seen.size;
+  if(todo.length && aiOn()){
+    const system = `You sort the Google Chat groups of an SEO, web and ads agency by WHAT IS WRITTEN IN THEM, never by the group's name alone: a name is only a hint and is often vague or wrong.
+For each group decide its kind: "project" (the working group of ONE client order: the team discusses that one client's site, work and files), "shared" (a common team group where several clients' orders are discussed), "access" (where logins and access are shared), "client" (talking with a client directly), or "other".
+For a project group give the order id it belongs to, judged by the client's site, the client's name, the work and the files discussed, and dates that fit the order. For a shared group list every order it discusses. confidence is 0 to 1: 0.8 or more only when the messages clearly point at that order (its site, client or exact work); 0.5 to 0.8 when it is likely but not sure.
+"why" says in a few plain words what in the messages shows it. Answer with one JSON object only: {"groups":[{"id":"group id as given","kind":"project | shared | access | client | other","order":"order id or empty","orders":["order ids, for a shared group"],"confidence":0,"why":""}]}`;
+    const ol = orders.map(o => `${o.id} | client ${o.client.name || ""} | site ${domOf(o.client.website)} | since ${String(o.at).slice(0, 10)} | stage ${o.stage} | work: ${str(((o.ai || {}).summary) || (o.deliverables || []).map(d => d.text).join("; "), 220)}`).join("\n");
+    for(let i = 0; i < todo.length; i += 6){ const batch = todo.slice(i, i + 6);
+      const line = m => `${String(m.at).slice(0, 10)} ${m.by}: ${String(m.text).replace(/\s+/g, " ").slice(0, 260)}${m.files.length ? " [files: " + m.files.join(", ") + "]" : ""}`;
+      const user = `ORDERS:\n${ol}\n\nGROUPS:\n` + batch.map(g => `GROUP ${g.id} (name hint: "${g.name}")\nFIRST MESSAGES:\n${g.first.map(line).join("\n") || "(empty)"}\nLATEST MESSAGES:\n${g.latest.map(line).join("\n") || "(empty)"}`).join("\n\n");
+      try{ const r = await askAI("groupmap", "claude-sonnet-5-5", system, user.slice(0, 120000), 2500);
+        for(const g of batch){ const d = ((r.data || {}).groups || []).find(x => x.id === g.id) || {}, man = (cur.spaces[g.id] || {}).manual;
+          cur.spaces[g.id] = { name:g.name, via:g.via, last:g.last, ofp, at:now(), kind:str(d.kind, 12) || "other", order:str(d.order, 20), orders:(d.orders || []).map(x => str(x, 20)).slice(0, 30), confidence:Math.max(0, Math.min(1, num(d.confidence, 0))), why:str(d.why, 200), manual:man || null }; } }
+      catch(e){ for(const g of batch) cur.spaces[g.id] = Object.assign(cur.spaces[g.id] || {}, { name:g.name, via:g.via, error:str(e.message, 120) }); } } }
+  cur.at = now(); await setJ(GMK, cur); return todo.length;
+}
+/* The project groups of one order, from the content map: confirmed by a person, or sure by content */
+async function groupsOf(o){
+  let m = await getJ(GMK); if(!m || !m.at || Date.now() - Date.parse(m.at) > 60 * 6e4){ try{ await mapGroups(); m = await getJ(GMK); }catch(e){} }
+  if(!m || !m.spaces) return null;
+  const own = [], maybe = [];
+  for(const [id, g] of Object.entries(m.spaces)){
+    const man = g.manual;
+    if(man && man.yes){ if(man.order === o.id) own.push({ id, name:g.name, via:g.via, why:"confirmed by " + man.by, confidence:1, manual:true }); continue; }
+    if(man && !man.yes && man.order === o.id) continue;
+    // A group this order was already read from stays, unless the content clearly shows it belongs to another order
+    if((o.chatFull || {})[id] && !["shared", "access", "client"].includes(g.kind) && !(g.kind === "project" && g.order && g.order !== o.id && g.confidence >= 0.75) && !(g.kind === "project" && g.order === o.id)){ own.push({ id, name:g.name, via:g.via, why:"read before for this order" + (g.why ? "; " + g.why : ""), confidence:g.confidence || 0.75 }); continue; }
+    if(g.kind !== "project" || g.order !== o.id) continue;
+    (g.confidence >= 0.75 ? own : maybe).push({ id, name:g.name, via:g.via, why:g.why, confidence:g.confidence });
+  }
+  own.spacesSeen = m.seen || Object.keys(m.spaces).length; own.access = Object.entries(m.spaces).filter(([, g]) => g.kind === "access").map(([id]) => id);
+  o.groupCands = maybe; return own;
+}
 async function syncTeam(o){
-  const r = await syncOrder(o), fresh = [];
+  let groups = null; try{ groups = await groupsOf(o); }catch(e){}
+  const r = await syncOrder(o, groups), fresh = [];
   if(r.folder && (!o.folder || o.folder.id !== r.folder.id)){ o.folder = r.folder; fresh.push("PROJECT FOLDER linked: " + r.folder.name); }
   const old = new Map((o.folderFiles || []).map(f => [f.id, f.modified]));
   for(const f of r.files){ const was = old.get(f.id); if(!was) fresh.push("NEW FILE in the project folder: " + f.name + " (by " + f.by + ")"); else if(was !== f.modified) fresh.push("FILE CHANGED: " + f.name + " (by " + f.by + ")"); }
@@ -417,6 +466,7 @@ async function syncTeam(o){
 export async function hourlySync(){
   const done = [];
   try{ done.push("new work: " + await discover()); }catch(e){ done.push("new work: " + e.message); }
+  try{ done.push("groups sorted by content: " + await mapGroups()); }catch(e){ done.push("groups: " + e.message); }
   try{ done.push("senior groups: " + await readCommon()); }catch(e){ done.push("senior groups: " + e.message); }
   const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
   for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
@@ -1156,7 +1206,8 @@ async function readCommon(){
   const cfg = await cfgOf(), as = await poster(cfg) || cfg.chatAs; if(!as) return "no account";
   const since = (await cmd("GET", P + "common:at")) || new Date(Date.now() - 3 * 864e5).toISOString(), started = now();
   const orders = (await loadAll(300)).filter(o => !["done", "cancelled"].includes(o.stage)), own = new Set(orders.map(o => (groupOf(o) || {}).id).filter(Boolean));
-  const spaces = (await mySpaces(as)).filter(x => !/^DIRECT_MESSAGE$/i.test(x.type) && !own.has(x.id) && !/access/i.test(x.name)).slice(0, 15); let n = 0; const touched = new Set();
+  const gm = ((await getJ(GMK)) || {}).spaces || {}, kindOf = id => (gm[id] || {}).kind || "";
+  const spaces = (await mySpaces(as)).filter(x => !/^DIRECT_MESSAGE$/i.test(x.type) && !own.has(x.id) && !["access", "client", "project"].includes(kindOf(x.id)) && !(!kindOf(x.id) && /access/i.test(x.name))).slice(0, 15); let n = 0; const touched = new Set();
   for(const sp of spaces){ let msgs = []; try{ msgs = await chatSince(as, sp.id, since); }catch(e){ continue; }
     for(const m of msgs){ const o = orderInText(m.text, orders); if(!o || /^Order desk:/.test(m.text)) continue;
       if((o.seniorNotes || []).some(x => x.id === m.id)) continue;
@@ -1856,6 +1907,10 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "groupLink"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); const m = (await getJ(GMK)) || { spaces:{} }, g = (m.spaces || {})[str(q.space, 80)]; if(!g) return bad("Group not found");
+      g.manual = { order:o.id, yes:!!q.yes, by:w.name, at:now() }; await setJ(GMK, m);
+      log(o, w, (q.yes ? "Confirmed" : "Rejected") + " the group \"" + str(g.name, 80) + "\" as this order's project group");
+      if(q.yes){ try{ await syncTeam(o); }catch(e){} } else o.groupCands = (o.groupCands || []).filter(x => x.id !== q.space); }
     else if(op === "mgrAdd"){ if(!isMgrW(w)) return bad("Only a manager or Manav can add tasks", 403); if(o.stage === "cancelled") return bad("This order is cancelled");
       const text = str(q.text, 400).trim(), phase = q.phase === "delivery" ? "delivery" : "project", who = str(q.who, 40).trim(); if(text.length < 8) return bad("Write the task in a short sentence");
       const id = "m" + (Math.max(0, ...(o.mgrTasks || []).map(m => parseInt(String(m.id).slice(1)) || 0)) + 1), m = { id, text, phase, who, by:w.name, at:now() };
