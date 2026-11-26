@@ -70,7 +70,8 @@ function flags(o){
   if(o.stage === "access" && Date.now() - Date.parse(o.at) > 864e5) f.push({ k:"warn", t:"Waiting for access over a day" });
   const q = (o.queue || []).filter(x => !x.sent).length; if(q) f.push({ k:"y", t:q + " message" + (q > 1 ? "s" : "") + " to send" });
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
-  if(o.alert) f.push({ k:"bad", t:o.alert });
+  // A scope warning holds only until the next order check, which reads the client chat and carries any new ask in its own lists
+  if(o.alert && !(/something new/i.test(o.alert) && o.checkAt && (!o.alertAt || o.checkAt > o.alertAt))) f.push({ k:"bad", t:o.alert });
   if(open){ const last = Date.parse(o.lastUpdateAt || o.at), hrs = (Date.now() - last) / 36e5; if(hrs > 24) f.push({ k:"bad", t:"No update for " + Math.round(hrs) + " h: paste the latest messages" }); else if(hrs > 8) f.push({ k:"warn", t:"Last update " + Math.round(hrs) + " h ago" }); }
   const dc = (o.actions || []).filter(a => a.status === "decide").length; if(dc) f.push({ k:"bad", t:dc + " step" + (dc > 1 ? "s need" : " needs") + " a decision" });
   const bl = (o.actions || []).filter(a => a.status === "blocked").length; if(bl) f.push({ k:"bad", t:bl + " action" + (bl > 1 ? "s" : "") + " blocked" });
@@ -213,7 +214,7 @@ async function rethink(o, fresh){
   const d = r.data || {}; o.ai = o.ai || {};
   ["promises", "risks", "done", "askNext"].forEach(k => { if(Array.isArray(d[k])) o.ai[k] = d[k]; });
   if(d.next) o.ai.next = d.next; if(d.health) o.ai.health = d.health; if(d.mood) o.ai.mood = d.mood; o.ai.changed = d.changed || ""; o.ai.rethinkAt = now();
-  if(d.scopeChange) o.alert = "Client asked for something new: " + str(d.scopeChange, 140);
+  if(d.scopeChange){ o.alert = "Client asked for something new: " + str(d.scopeChange, 140); o.alertAt = now(); }
   if(Array.isArray(d.actions)) mergeActions(o, d.actions, false);
   return d;
 }
@@ -1828,7 +1829,7 @@ async function handle(request){
     else if(op === "reply"){ need("comms"); const t = str(q.text, 12000); if(!t) return bad("Paste the client's message");
       const x = { id:nid("q"), kind:"reply", text:"", at:now(), by:w.name, sent:true, reply:t, replyAt:now(), seen:false };
       if(aiOn()){ try{ const p = replyPrompt(o, t); const r = await askAI("reply", "claude-haiku-5-5", p.system, p.user, 1500); x.digest = r.data; o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-        if(r.data.scopeChange) o.alert = "Client asked for something new: check scope"; }catch(e){} }
+        if(r.data.scopeChange){ o.alert = "Client asked for something new: check scope"; o.alertAt = now(); } }catch(e){} }
       o.queue.push(x); log(o, w, "Client replied" + (x.digest ? ": " + str(x.digest.summary, 200) : "")); }
     else if(op === "drop"){ need("pm"); const x = find("queue", q.qid); if(!x || x.sent) return bad("Only unsent messages can be dropped"); o.queue = o.queue.filter(y => y !== x); log(o, w, "Dropped a message that is not needed: " + x.kind); }
     else if(op === "seen"){ const x = find("queue", q.qid); if(x){ x.seen = true; x.seenBy = w.name; } if(q.clearAlert) o.alert = ""; }
