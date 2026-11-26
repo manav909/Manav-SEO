@@ -75,6 +75,7 @@ function flags(o){
   const bl = (o.actions || []).filter(a => a.status === "blocked").length; if(bl) f.push({ k:"bad", t:bl + " action" + (bl > 1 ? "s" : "") + " blocked" });
   const hr = ((o.ai || {}).risks || []).filter(r => r.level === "high" && /open|happened/.test(r.status || "open")).length; if(open && hr) f.push({ k:"warn", t:hr + " high risk" + (hr > 1 ? "s" : "") + " open" });
   const today = new Date().toISOString().slice(0, 10);
+  ((o.retention || {}).reminders || []).filter(x => x.status === "open" && x.due <= today).slice(0, 2).forEach(x => f.push({ k:x.due < today ? "bad" : "y", t:(x.due < today ? "Client care overdue: " : "Client care today: ") + String(x.what).slice(0, 70) }));
   if(open && o.ai && Array.isArray(o.ai.promises)) o.ai.promises.filter(p => p.by && !/kept/i.test(p.status || "") && p.by <= today).slice(0, 2)
     .forEach(p => f.push({ k:"bad", t:(p.by < today ? "Promise overdue: " : "Promised for today: ") + String(p.what).slice(0, 70) }));
   return f;
@@ -740,6 +741,52 @@ async function learnTxt(){ if(Date.now() - LEARN.at < 60000) return LEARN.txt; l
   LEARN = { at:Date.now(), txt:l.length ? "\n\nLESSONS FROM THE OWNER'S REVIEWS (always follow these; they come from real mistakes):\n" + l.map((x, i) => `${i + 1}. ${x.rule}`).join("\n") : "" }; return LEARN.txt; }
 async function askAI(job, model, system, user, max, ...rest){ return rawAsk(job, model, LJOBS.has(job) ? system + await learnTxt() : system, user, max, ...rest); }
 
+/* Before delivery: a checklist anyone can tick, with help on any item, saved for the next person */
+const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()).slice(0, 10);
+function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k]; list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "" }); };
+  (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
+  (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
+  (pk.final || []).filter(f => f.status !== "ready" && f.fix).forEach(f => add("QA", f.fix, "delivery pack"));
+  if(pk.client && pk.client.message) add("Sales", "Send the delivery message from the delivery pack on the marketplace" + ((pk.client.attach || []).length ? ", with " + pk.client.attach.join(", ") : ""), "delivery pack");
+  if((o.deferred || []).length || (ck.deliveryNotes || []).length) add("Sales", "Tell the client the recommended next steps (the delivery note) in the delivery message", "delivery note");
+  return list; }
+async function deliveryHelp(o, item, question, w){
+  const system = `You help a team member deliver one SEO order. Answer like a patient senior colleague sitting next to them: first line is the direct answer, then short numbered steps with the exact place (marketplace order page, Drive file, group) and exact text to copy in backticks. Use only the facts given; if something is unknown, say who to ask. Very simple English. No dashes. Answer with one JSON object only: {"answer":""}`;
+  const pk = o.pack || {}, ck = o.check || {};
+  const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage ${o.stage}. Marketplace: ${o.gig || "Fiverr"}.
+CHECKLIST ITEM: ${item ? item.who + ": " + item.what : "none"}
+QUESTION from ${w.name} (${(w.roles || [w.role]).join("+")}): ${question || "How do I do this item?"}
+FINAL FILES: ${JSON.stringify((pk.final || []).map(f => ({ files:(f.use || []).map(u => u.name + " " + u.url), status:f.status, fix:f.fix })))}
+DELIVERY MESSAGE: ${(pk.client || {}).message || "not built yet"}
+ATTACH: ${JSON.stringify((pk.client || {}).attach || [])}
+DELIVERY NOTE (next steps for the client): ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ck.deliveryNotes || []))}
+TASKS: ${JSON.stringify((ck.rows || []).map(r => ({ status:r.status, open:r.toPass })))}
+LAST CLIENT MESSAGES: ${JSON.stringify((o.convo ? o.convo.messages : []).slice(-8).map(m => (m.time || "") + " " + m.who + ": " + str(m.text, 300)))}`;
+  const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1500); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  return noId(str((r.data || {}).answer, 3000)) || "I could not write help for this. Ask the PM in the project group.";
+}
+
+/* After delivery the order is kept as a client care record (what was done, what to remember, next steps) with a loop of
+   reminders that stay current: the keep-current step re-judges them whenever the client chat or another order changes things. */
+async function buildRetention(o, why){
+  const ck = o.check || {}, pk = o.pack || {}, today = new Date().toISOString().slice(0, 10);
+  const system = `You write the client care record for one delivered SEO order, so the business keeps this client for years. Retention is the plan: every client is important.
+Write: "summary" (what we did and what it achieved, 3 short plain sentences, facts only), "keep" (up to 6 facts to remember about this client: how they like to talk, what they care about, their site, anything promised for later), and "reminders" (4 to 7 dated follow ups for sales, each with "inDays" from today, "what" to do in one plain line, "why"). Always include: a check that the client is happy and has what they need (2 to 4 days), a results update from Search Console or the live site (about 14 days), the recommended next steps from the delivery note as a friendly offer (about 21 to 30 days), and a later check in (about 60 to 90 days). Add any promise made for later and any good date for this client (for example their busy season). Never pushy, never invent facts. No dashes. Answer with one JSON object only: {"summary":"","keep":[""],"reminders":[{"inDays":3,"what":"","why":""}]}`;
+  const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}, delivered ${o.deliveredAt || today}${o.closedAt ? ", closed " + o.closedAt : ""}${o.rating ? ", rating " + o.rating : ""}. Today ${today}.
+WHAT WAS SOLD: ${(o.ai || {}).summary || ""}
+WORK CHECK: ${ck.verdict || ""}; tasks ${JSON.stringify((ck.rows || []).map(r => ({ task:((ck.requirements || []).find(q => q.id === r.r) || {}).text, status:r.status, found:str(r.found, 200) })))}
+DELIVERY MESSAGE: ${str((pk.client || {}).message || "", 1500)}
+DELIVERY NOTE (next steps for the client): ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ck.deliveryNotes || []))}
+PROMISES: ${JSON.stringify(((o.ai || {}).promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
+CLIENT CHAT (last 20): ${JSON.stringify((o.convo ? o.convo.messages : []).slice(-20).map(m => (m.time || "") + " " + m.who + ": " + str(m.text, 300)))}`;
+  const r = await askAI("retention", "claude-sonnet-5-5", system, user, 2500); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  const d = r.data || {}, old = (o.retention || {}).reminders || [];
+  o.retention = { at:now(), why:str(why, 60), summary:noId(str(d.summary, 900)), keep:(d.keep || []).map(x => noId(str(x, 240))).filter(Boolean).slice(0, 6),
+    reminders:old.filter(x => x.status !== "open").concat((d.reminders || []).slice(0, 7).map(x => ({ id:nid("rm"), due:new Date(Date.now() + Math.max(1, Math.min(365, num(x.inDays, 7))) * 864e5).toISOString().slice(0, 10), what:noId(str(x.what, 240)), why:noId(str(x.why, 240)), who:"sales", status:"open" }))) };
+  log(o, { name:"Order desk" }, "Client care record saved with " + o.retention.reminders.filter(x => x.status === "open").length + " reminders, first on " + (o.retention.reminders.filter(x => x.status === "open").map(x => x.due).sort()[0] || "none"));
+  if(o.cid) try{ const c = await getJ(CK(o.cid)); if(c){ c.care = { order:o.id, at:o.retention.at, summary:o.retention.summary, keep:o.retention.keep }; await setJ(CK(o.cid), c); } }catch(e){}
+}
+
 /* Keep every open item true to the current situation. Messages to send, team asks, tasks and the check's lists are re-judged
    against the latest client chat, project group, check, stage and today's date whenever any of those changed (or once a day as
    time passes): each is kept, rewritten for today, or closed with its reason. Nothing is deleted without a record. */
@@ -751,6 +798,8 @@ async function reconcile(o, why){
   (ck.beforeDelivery || []).forEach((x, i) => items.push({ id:"b:" + i, kind:"before delivery", made:ck.at, by:"Order desk", text:(x.who ? x.who + ": " : "") + (x.do || "") }));
   (ck.waitingOnClient || []).forEach((x, i) => items.push({ id:"w:" + i, kind:"waiting on the client", made:ck.at, by:"Order desk", text:String(x) }));
   (ck.problems || []).forEach((x, i) => items.push({ id:"p:" + i, kind:"problem", made:ck.at, by:"Order desk", text:(x.step ? x.step + ": " : "") + (x.text || "") }));
+  ((o.retention || {}).reminders || []).filter(x => x.status === "open").forEach(x => items.push({ id:"r:" + x.id, kind:"client care reminder", made:(o.retention || {}).at, by:"Order desk", needBy:x.due, text:x.what + " (" + x.why + ")" }));
+  if(["delivered", "done"].includes(o.stage)) for(let i = items.length - 1; i >= 0; i--) if(/^[bwp]:/.test(items[i].id)) items.splice(i, 1);
   if(!items.length) return 0;
   const today = new Date().toISOString().slice(0, 10), lastC = msgs.slice(-1)[0] || {};
   const key = sha(JSON.stringify([items.map(x => x.id + ":" + String(x.text).length), msgs.length, lastC.time || "", (o.teamChat || []).length, ck.at || "", o.stage, (o.deliverables || []).filter(d => d.done).length, (o.deferred || []).length, today])).slice(0, 16);
@@ -758,7 +807,7 @@ async function reconcile(o, why){
   const rows = (ck.rows || []).map(r => { const q = (ck.requirements || []).find(x => x.id === r.r) || {}; return { task:q.text, phase:q.phase, status:r.status, open:r.toPass || "" }; });
   const system = `You keep one order's open items true to the situation NOW. Today is ${today} (India). For each item decide:
 "keep": still right and still needed, as written.
-"update": still needed, but its words, facts or date are out of date. Give the full new "text" (and "title" or "needBy" if they changed). A client message is rewritten whole from the latest situation, in the same warm voice, honest about anything late (say it plainly, with the new time), never promising what the facts do not support.
+"update": still needed, but its words, facts or date are out of date. Give the full new "text" (and "title" or "needBy" if they changed). A client care reminder may get a new date ("needBy") or wording when the situation changed (for example the client wrote again, or ordered again). A client message is rewritten whole from the latest situation, in the same warm voice, honest about anything late (say it plainly, with the new time), never promising what the facts do not support.
 "done": the facts show it was done or already said (for example the same update was already sent in the client chat after the item was made).
 "outdated": no longer true or needed (superseded by a newer item, the situation moved on, or a later item says the same).
 Rules: base every decision on the FACTS only and say why in one plain sentence. Never mark an item a person made (by is not "Order desk") as done or outdated unless the facts clearly show it. Two items that ask for the same thing: keep the better one, mark the other outdated. No dashes. Answer with one JSON object only: {"items":[{"id":"","decision":"keep | update | done | outdated","why":"","title":"","text":"","needBy":"YYYY-MM-DD or empty"}]}`;
@@ -787,6 +836,9 @@ OPEN ITEMS TO JUDGE: ${JSON.stringify(items)}`;
     else if(t === "a"){ const a = (o.actions || []).find(y => y.id === id); if(!a) continue;
       if(dec === "update"){ if(x.text) a.message = str(x.text, 4000); if(x.title) a.title = str(x.title, 200); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) a.needBy = x.needBy; a.updatedAt = now(); a.updatedWhy = w2; rec.push({ what:"Updated: " + str(a.title, 100), why:w2 }); }
       else { a.status = dec === "done" ? "done" : "skipped"; a.statusWhy = w2; a.note = (dec === "done" ? "Done: " : "Outdated: ") + w2; a.closedBy = by.name; a.closedAt = now(); rec.push({ what:(dec === "done" ? "Closed as done: " : "Closed as outdated: ") + str(a.title, 100), why:w2 }); } }
+    else if(t === "r"){ const x2 = ((o.retention || {}).reminders || []).find(y => y.id === id); if(!x2) continue;
+      if(dec === "update"){ if(x.text) x2.what = str(x.text, 240); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) x2.due = x.needBy; x2.updatedWhy = w2; rec.push({ what:"Client care reminder updated: " + str(x2.what, 90), why:w2 }); }
+      else { x2.status = dec === "done" ? "done" : "skipped"; x2.note = w2; x2.doneBy = by.name; x2.doneAt = now(); rec.push({ what:"Client care reminder closed (" + dec + ")", why:w2 }); } }
     else if(drop[t]){ const i = +id; if(dec === "update" && x.text){ if(t === "b" && ck.beforeDelivery[i]) ck.beforeDelivery[i].do = str(x.text, 400); if(t === "w" && ck.waitingOnClient[i] != null) ck.waitingOnClient[i] = str(x.text, 400); if(t === "p" && ck.problems[i]) ck.problems[i].text = str(x.text, 400); }
       else if(dec !== "update") drop[t].add(i); } }
   if(drop.b.size) ck.beforeDelivery = ck.beforeDelivery.filter((_, i) => !drop.b.has(i));
@@ -1294,7 +1346,7 @@ async function handle(request){
     try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   const isA = w.role === "admin";
-  const strip = o => { if(isA) return o; const c = Object.assign({}, isProj(w) ? projView(o) : o); delete c.pay; c.timeline = []; return c; };
+  const strip = o => { const dl = deliveryList(o); if(isA) return Object.assign({}, o, { deliveryList:dl }); const c = Object.assign({}, isProj(w) ? projView(o) : o); delete c.pay; c.timeline = []; c.deliveryList = dl; c.deliveryHelp = o.deliveryHelp || []; return c; };
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
@@ -1319,6 +1371,9 @@ async function handle(request){
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
     for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
     return out({ ok:true, groups:Object.values(by).map(b => Object.assign(b, { usdToday:+b.usdToday.toFixed(3), usdMonth:+b.usdMonth.toFixed(3) })), log:l.slice(0, 60), limits:{ daily:num(cfg.deskDaily, 40), group:num(cfg.deskPerGroup, 15), person:num(cfg.deskPerPerson, 8) } }); }
+  if(a === "care"){ const all = await loadAll(1000), today = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10), l = [];
+    for(const o2 of all) ((o2.retention || {}).reminders || []).filter(x => x.status === "open" && x.due <= soon).forEach(x => l.push({ order:o2.id, client:o2.client.name, site:o2.client.website, id:x.id, due:x.due, what:x.what, why:x.why, late:x.due < today }));
+    l.sort((p2, q2) => String(p2.due).localeCompare(String(q2.due))); return out({ ok:true, reminders:l.slice(0, 60) }); }
   if(a === "mentions"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", MK, 0, 49)) || []).map(x => JSON.parse(x)); return out({ ok:true, mentions:l }); }
   if(a === "mentionDone"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", MK, 0, 199)) || []).map(x => JSON.parse(x)); const i = l.findIndex(x => x.id === q.id); if(i < 0) return bad("Not found");
     l[i].handled = true; await cmd("LSET", MK, i, JSON.stringify(l[i])); return out({ ok:true }); }
@@ -1440,6 +1495,16 @@ async function handle(request){
     else if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); try{ await reconcile(o, "chat laid out"); }catch(e){} }
+    else if(op === "dTick"){ const k = str(q.key, 20); if(!k) return bad("Missing item"); o.deliveryTicks = o.deliveryTicks || {};
+      const it = deliveryList(o).find(x => x.key === k); if(q.on === false){ delete o.deliveryTicks[k]; log(o, w, "Unticked before delivery: " + str(it ? it.what : k, 140)); }
+      else { o.deliveryTicks[k] = { by:w.name, at:now(), what:str(it ? it.what : "", 300) }; log(o, w, "Done before delivery: " + str(it ? it.what : k, 140)); } }
+    else if(op === "dHelp"){ if(!aiOn()) return bad("The AI helpers are off", 503); const it = deliveryList(o).find(x => x.key === str(q.key, 20)) || null, qq = str(q.question, 600);
+      if(!it && !qq) return bad("Write your question"); const a2 = await deliveryHelp(o, it, qq, w);
+      (o.deliveryHelp = o.deliveryHelp || []).push({ id:nid("h"), key:it ? it.key : "", q:qq || ("How do I do this: " + (it ? it.what : "")), a:a2, by:w.name, at:now() }); o.deliveryHelp = o.deliveryHelp.slice(-30); }
+    else if(op === "careSet"){ const x2 = ((o.retention || {}).reminders || []).find(y => y.id === q.rid); if(!x2) return bad("Not found");
+      if(q.status === "snooze"){ x2.due = new Date(Date.now() + Math.max(1, Math.min(60, num(q.days, 7))) * 864e5).toISOString().slice(0, 10); log(o, w, "Client care reminder moved to " + x2.due + ": " + x2.what); }
+      else { x2.status = q.status === "done" ? "done" : "skipped"; x2.note = str(q.note, 400); x2.doneBy = w.name; x2.doneAt = now(); log(o, w, "Client care " + x2.status + ": " + x2.what + (x2.note ? ". " + x2.note : "")); } }
+    else if(op === "careBuild"){ if(!aiOn()) return bad("The AI helpers are off", 503); await buildRetention(o, "rebuilt by " + w.name); }
     else if(op === "reconcile"){ if(o.recon) o.recon.key = ""; const c = await reconcile(o, "asked by " + w.name); if(!c) log(o, w, "Checked that every open item is current: nothing to change"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
       x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; if(x.status === "received" && !x.receivedAt) x.receivedAt = now(); x.note = str(q.note, 300); x.by = w.name; x.atS = now();
@@ -1652,12 +1717,14 @@ async function handle(request){
       for(const d of o.deliverables) for(const p of proofsOf(d)) if(p.kind === "drive"){ const m = await driveMeta(p.url); if(m.ok && passAt && m.modified > passAt) changed.push(m.name); }
       if(changed.length){ setStage(o, "qa"); o.deliverables.forEach(d => { d.qa = ""; }); log(o, { name:"Order desk" }, "Changed after QA passed: " + changed.join(", ") + ". Sent back to QA."); await saveO(o); return bad("These were changed after QA passed: " + changed.join(", ") + ". The order went back to QA."); }
       setStage(o, "delivered"); o.deliveredAt = now(); o.rechecks = [3, 7, 14].map(n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10));
-      log(o, w, "Delivered to the client. The order desk will recheck Google on " + o.rechecks.join(", ") + " and draft an update for the client."); }
+      log(o, w, "Delivered to the client. The order desk will recheck Google on " + o.rechecks.join(", ") + " and draft an update for the client.");
+      try{ await buildRetention(o, "delivered"); }catch(e){} }
     else if(op === "revision"){ need("comms"); const reason = str(q.reason, 40), ours = !/client changed/i.test(reason);
       o.revisions.push({ at:now(), by:w.name, reason, note:str(q.note, 2000), ours }); setStage(o, "work"); o.deliverables.forEach(d => { d.qa = ""; });
       log(o, w, "Revision: " + reason + (q.note ? ". " + str(q.note, 300) : "")); }
     else if(op === "close"){ need("comms"); o.rating = Math.min(5, Math.max(0, num(q.rating, 0))) || null; o.repeat = !!q.repeat; o.retainer = !!q.retainer; setStage(o, "done"); o.closedAt = now();
-      log(o, w, "Closed" + (o.rating ? ", rating " + o.rating : "") + (o.retainer ? ", retainer agreed" : o.repeat ? ", ordered again" : "")); }
+      log(o, w, "Closed" + (o.rating ? ", rating " + o.rating : "") + (o.retainer ? ", retainer agreed" : o.repeat ? ", ordered again" : ""));
+      try{ await buildRetention(o, "closed"); }catch(e){} }
     else if(op === "assign"){ need("assign"); const ps = await people();
       if(q.pm != null){ const p = ps.find(x => x.id === q.pm); o.pm = p ? p.id : ""; o.pmName = p ? p.name : ""; }
       if(q.qa != null){ const p = ps.find(x => x.id === q.qa); o.qa = p ? p.id : ""; o.qaName = p ? p.name : ""; }
