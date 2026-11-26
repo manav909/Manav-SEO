@@ -77,7 +77,7 @@ function flags(o){
   const hr = ((o.ai || {}).risks || []).filter(r => r.level === "high" && /open|happened/.test(r.status || "open")).length; if(open && hr) f.push({ k:"warn", t:hr + " high risk" + (hr > 1 ? "s" : "") + " open" });
   const today = new Date().toISOString().slice(0, 10);
   ((o.retention || {}).reminders || []).filter(x => x.status === "open" && x.due <= today).slice(0, 2).forEach(x => f.push({ k:x.due < today ? "bad" : "y", t:(x.due < today ? "Client care overdue: " : "Client care today: ") + String(x.what).slice(0, 70) }));
-  if(open && o.ai && Array.isArray(o.ai.promises)) o.ai.promises.filter(p => p.by && !/kept/i.test(p.status || "") && p.by <= today).slice(0, 2)
+  if(open && o.ai && Array.isArray(o.ai.promises)) o.ai.promises.filter(p => p.by && !/kept|outdated/i.test(p.status || "") && p.by <= today).slice(0, 2)
     .forEach(p => f.push({ k:"bad", t:(p.by < today ? "Promise overdue: " : "Promised for today: ") + String(p.what).slice(0, 70) }));
   return f;
 }
@@ -245,7 +245,7 @@ function applyRegister(o, reg){
 const cidOf = n => String(n || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60) || "unknown";
 const CK = id => P + "cl:" + id, CLS = P + "clients";
 async function touchClient(o){
-  const id = o.cid || (o.cid = cidOf(o.client.name)); const c = (await getJ(CK(id))) || { id, name:o.client.name, first:o.at, orders:[], sites:[], notes:"", tags:[] };
+  const id = o.cid || (o.cid = cidOf(o.client.name || domOf(o.client.website))); const c = (await getJ(CK(id))) || { id, name:o.client.name || domOf(o.client.website), first:o.at, orders:[], sites:[], notes:"", tags:[] };
   if(!c.orders.includes(o.id)) c.orders.push(o.id); if(o.client.website && !c.sites.includes(domOf(o.client.website))) c.sites.push(domOf(o.client.website));
   c.country = o.client.country || c.country; c.last = o.at > (c.last || "") ? o.at : c.last; if(o.ai && o.ai.profile) c.profile = o.ai.profile;
   await pipe([["SET", CK(id), JSON.stringify(c)], ["SADD", CLS, id]]); return c;
@@ -877,6 +877,10 @@ async function reconcile(o, why){
   (ck.waitingOnClient || []).forEach((x, i) => items.push({ id:"w:" + i, kind:"waiting on the client", made:ck.at, by:"Order desk", text:String(x) }));
   (ck.problems || []).forEach((x, i) => items.push({ id:"p:" + i, kind:"problem", made:ck.at, by:"Order desk", text:(x.step ? x.step + ": " : "") + (x.text || "") }));
   ((o.retention || {}).reminders || []).filter(x => x.status === "open").forEach(x => items.push({ id:"r:" + x.id, kind:"client care reminder", made:(o.retention || {}).at, by:"Order desk", needBy:x.due, text:x.what + " (" + x.why + ")" }));
+  // The board's warnings are judged too: an alert, a high risk or a promise that the situation has moved past must not stay on the card
+  if(o.alert) items.push({ id:"al:0", kind:"warning on the order card", made:o.alertAt || ck.at || "", by:"Order desk", text:o.alert });
+  ((o.ai || {}).risks || []).forEach((x, i) => { if(x.level === "high" && /open|happened/.test(x.status || "open")) items.push({ id:"rk:" + i, kind:"high risk", made:(o.ai || {}).at || "", by:"Order desk", text:str(x.risk || x.text || x.what || JSON.stringify(x), 400) }); });
+  ((o.ai || {}).promises || []).forEach((x, i) => { if(x.by && !/kept|outdated/i.test(x.status || "")) items.push({ id:"pm:" + i, kind:"promise to the client", made:(o.ai || {}).at || "", by:"Order desk", needBy:x.by, text:str(x.what, 400) }); });
   if(["delivered", "done"].includes(o.stage)) for(let i = items.length - 1; i >= 0; i--) if(/^[bwp]:/.test(items[i].id)) items.splice(i, 1);
   if(!items.length) return 0;
   const today = new Date().toISOString().slice(0, 10), lastC = msgs.slice(-1)[0] || {};
@@ -914,6 +918,11 @@ OPEN ITEMS TO JUDGE: ${JSON.stringify(items)}`;
     else if(t === "a"){ const a = (o.actions || []).find(y => y.id === id); if(!a) continue;
       if(dec === "update"){ if(x.text) a.message = str(x.text, 4000); if(x.title) a.title = str(x.title, 200); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) a.needBy = x.needBy; a.updatedAt = now(); a.updatedWhy = w2; rec.push({ what:"Updated: " + str(a.title, 100), why:w2 }); }
       else { a.status = dec === "done" ? "done" : "skipped"; a.statusWhy = w2; a.note = (dec === "done" ? "Done: " : "Outdated: ") + w2; a.closedBy = by.name; a.closedAt = now(); rec.push({ what:(dec === "done" ? "Closed as done: " : "Closed as outdated: ") + str(a.title, 100), why:w2 }); } }
+    else if(t === "al"){ if(dec === "update" && x.text){ o.alert = str(x.text, 200); rec.push({ what:"Warning updated", why:w2 }); } else if(dec !== "update"){ (o.closedItems = o.closedItems || []).push({ kind:"warning", text:o.alert, why:w2, decision:dec, at:now() }); delete o.alert; rec.push({ what:"Warning removed (" + dec + ")", why:w2 }); } }
+    else if(t === "rk"){ const x2 = ((o.ai || {}).risks || [])[+id]; if(!x2) continue; if(dec !== "update"){ x2.status = dec === "done" ? "handled" : "outdated"; x2.statusWhy = w2; rec.push({ what:"Risk closed (" + dec + "): " + str(x2.risk || x2.text || "", 80), why:w2 }); } }
+    else if(t === "pm"){ const x2 = ((o.ai || {}).promises || [])[+id]; if(!x2) continue;
+      if(dec === "update"){ if(x.text) x2.what = str(x.text, 240); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) x2.by = x.needBy; rec.push({ what:"Promise updated: " + str(x2.what, 80), why:w2 }); }
+      else { x2.status = dec === "done" ? "kept" : "outdated"; x2.statusWhy = w2; rec.push({ what:"Promise closed (" + (dec === "done" ? "kept" : "outdated") + "): " + str(x2.what, 80), why:w2 }); } }
     else if(t === "r"){ const x2 = ((o.retention || {}).reminders || []).find(y => y.id === id); if(!x2) continue;
       if(dec === "update"){ if(x.text) x2.what = str(x.text, 240); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) x2.due = x.needBy; x2.updatedWhy = w2; rec.push({ what:"Client care reminder updated: " + str(x2.what, 90), why:w2 }); }
       else { x2.status = dec === "done" ? "done" : "skipped"; x2.note = w2; x2.doneBy = by.name; x2.doneAt = now(); rec.push({ what:"Client care reminder closed (" + dec + ")", why:w2 }); } }
@@ -1546,7 +1555,8 @@ async function handle(request){
     const c = await getJ(CK(o.cid || cidOf(o.client.name)));
     return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:isProj(w) ? flags(o).filter(f => !/message|reply|update|promise/i.test(f.t)) : flags(o), client:c && !isProj(w) ? { id:c.id, orders:c.orders.length, first:c.first } : null, history:await getJ(HK(domOf(o.client.website))), stepsPreview:stepsText(o) }); }
   if(a === "clients"){ const all = await loadAll(1000);
-    for(const o of all) if(!o.cid){ o.cid = cidOf(o.client.name); await touchClient(o); await saveO(o); }
+    for(const o of all) if(!o.cid || (o.cid === "unknown" && !o.client.name && o.client.website)){ o.cid = cidOf(o.client.name || domOf(o.client.website)); await touchClient(o); await saveO(o); }
+    { const u = await getJ(CK("unknown")); if(u && !all.some(o => o.cid === "unknown")){ await cmd("DEL", CK("unknown")); await cmd("SREM", CLS, "unknown"); } }
     const ids = await cmd("SMEMBERS", CLS), cs = (await mgetJ(ids.map(CK))).filter(Boolean);
     return out({ ok:true, clients:cs.map(c => clientSummary(c, all, cfg, isA)).sort((x, y) => (y.last || "").localeCompare(x.last || "")) }); }
   if(a === "client"){ const c = await getJ(CK(str(url.searchParams.get("id"), 80))); if(!c) return bad("Client not found", 404); const all = await loadAll(1000), os = all.filter(o => o.cid === c.id);

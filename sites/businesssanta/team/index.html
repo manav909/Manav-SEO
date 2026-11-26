@@ -25,7 +25,7 @@ nav.tabs a .n{background:var(--bad);color:#fff;border-radius:999px;padding:0 7px
 .oc:hover{border-color:#3a4052}
 .oc b{color:var(--ink);font-size:14.5px;display:block}
 .oc .fl{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-.oc .chip{font-size:11.5px;padding:1px 8px;white-space:normal;max-width:100%;overflow-wrap:anywhere;line-height:1.35}.oc,.oc b{overflow-wrap:anywhere}
+.oc .chip{font-size:11.5px;padding:2px 8px;white-space:normal;max-width:100%;overflow-wrap:anywhere;line-height:1.35;border-radius:7px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left}.oc,.oc b{overflow-wrap:anywhere}
 .empty-col{font-size:13px;color:var(--mut);padding:8px}
 .fg{display:grid;gap:12px;grid-template-columns:repeat(4,minmax(0,1fr))}
 .fg .w2{grid-column:span 2}.fg .w4{grid-column:1/-1}
@@ -472,7 +472,7 @@ function card(o){
   if(o.stage === "details") return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.client.website || o.id)}</b>${E(o.id)} · ${E(o.client.website || "")}<br>Found by the team account<div class="fl"><span class="chip y">Needs order details</span>${o.strength ? `<span class="chip ${o.strength === "strong" ? "ok" : o.strength === "likely" ? "warn" : "n"}">${E(o.strength)}</span>` : ""}</div></a>`;
   const left = Math.ceil((Date.parse(o.deadline + "T23:59:00") - Date.now()) / 864e5);
   return `<a class="oc" href="#o=${E(o.id)}"><b>${E(o.client.name || o.id)}</b>${E(o.id)} · ${E(o.gigName)}<br>${money(o.price)} · ${left >= 0 ? left + " day" + (left === 1 ? "" : "s") + " left" : "late"}${o.revisions ? " · " + o.revisions + " revision" + (o.revisions > 1 ? "s" : "") : ""}
-  <div class="fl">${o.flags.map(f => `<span class="chip ${f.k}">${E(f.t)}</span>`).join("")}${o.verdict ? `<span class="chip n">${E(o.verdict)}</span>` : ""}</div></a>`;
+  <div class="fl">${o.flags.map(f => `<span class="chip ${f.k}" title="${E(f.t)}">${E(f.t)}</span>`).join("")}${o.verdict ? `<span class="chip n">${E(o.verdict)}</span>` : ""}</div></a>`;
 }
 
 /* New order */
