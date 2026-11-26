@@ -1822,6 +1822,14 @@ async function handle(request){
       if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
       log(o, w, "Restored the task \"" + str(rq.text, 120) + "\" (discarded earlier by " + dd.by + ")"); o.checkAt = ""; }
     else if(op === "redoMsg"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }
+    else if(op === "deskSay"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
+      // A note from the owner, posted as the desk. Current sources are read first: if a person wrote after the last reading, nothing is sent
+      await freshen(o); const nw = (await newerThanRead(o)).filter(x => /message|email/.test(x));
+      if(nw.length && !q.anyway) return bad("New in the group since the last reading: " + [...new Set(nw)].join(", ") + ". Read it first, then send again.");
+      const as = await poster(cfg), g = groupOf(o); if(!as || !g) return bad("No project group or posting account");
+      const m = await postChat(as, g.id, t);
+      o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"note", hash:sha(t).slice(0, 12) }).slice(-30);
+      log(o, w, "Posted a note in the project group as the desk: " + str(t, 200)); await deskLog({ kind:"note", group:g.name, space:g.id, order:o.id, by:w.name, q:"", a:str(t, 800), usd:0 }); }
     else if(op === "postSteps"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); try{ await postSteps(o, cfg, w); }catch(e){ return bad(e.message); } }
     else if(op === "pack"){ if(!(can(w, "pm") || can(w, "qa") || can(w, "comms"))) return bad("Your role cannot do this step"); if(!aiOn()) return bad("The AI helpers are off", 503); await buildPack(o); }
     else if(op === "toQA"){ need("pm"); groupDocs(o); { const st = staleProofs(o); if(st.length) return bad("A newer copy exists for: " + st.join(", ") + ". Switch to the newest first (Use the newest, under the proof)."); } const left = o.deliverables.filter(d => !d.done || !proofsOf(d).length); if(left.length) return bad("Every deliverable needs proof and Done first (" + left.length + " left)");
