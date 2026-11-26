@@ -12,6 +12,18 @@ async function sheetText(id, tok){
 
 const host = u => { try{ return new URL(/^https?:/i.test(u) ? u : "https://" + u).hostname.replace(/^www\./, "").toLowerCase(); }catch(e){ return ""; } };
 const keysOf = o => { const h = host(o.client.website), root = h.split(".")[0]; return { id:o.id, h, root:root && root.length >= 4 ? root : "" }; };
+/* Does a group's NAME point at this order? Names are written by people ("DIY Fix Tool SEO", "Zhang - diyfixtool", "O-1008"), so spaces,
+   dots and dashes are ignored and the order number, the site, the site's name and the client's username all count. */
+const squash = t => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+export function spaceMatch(o, name){
+  const k = keysOf(o), n = squash(name), u = squash(o.client && o.client.name);
+  if(!n) return "";
+  if(n.includes(squash(k.id))) return "its name has the order number";
+  if(k.h && n.includes(squash(k.h))) return "its name has the client's site";
+  if(k.root && k.root.length >= 5 && n.includes(squash(k.root))) return "its name has the site's name";
+  if(u.length >= 5 && n.includes(u)) return "its name has the client's username";
+  return "";
+}
 const hits = (text, k) => { const t = String(text || "").toLowerCase(); return t.includes(k.id.toLowerCase()) || (k.h && t.includes(k.h)) || (k.root && new RegExp("\\b" + k.root + "\\b").test(t)); };
 const b64 = s => Buffer.from(String(s || "").replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
 function bodyOf(p){
@@ -38,6 +50,12 @@ MESSAGES:
 ${msgs.map(m => `${m.at} ${m.by}: ${m.text}${(m.files || []).length ? " [files: " + m.files.join(", ") + "]" : ""}`).join("\n")}`.slice(0, 60000);
   return { system, user };
 }
+/* Every Google Chat space an account is in (all pages) */
+export async function allSpaces(email){
+  const out = []; let tok = "", n = 0;
+  do{ const r = await apiAs(email, "https://chat.googleapis.com/v1/spaces?pageSize=1000" + (tok ? "&pageToken=" + encodeURIComponent(tok) : "")); out.push(...(r.spaces || [])); tok = r.nextPageToken || ""; }while(tok && ++n < 5);
+  return out;
+}
 export async function syncOrder(o){
   const k = keysOf(o), out = { at:new Date().toISOString(), folder:o.folder || null, files:[], mails:[], chat:[], access:[], errors:{} }, since = o.syncAt || o.at;
   const accs = (await accounts()).filter(a => !a.primary || a.drive);
@@ -63,9 +81,19 @@ export async function syncOrder(o){
     }
     // Google Chat: spaces named after the order or site that this account is in.
     // The first read of a group takes its WHOLE history (work starts in the group before the order reaches the portal); later reads take every new page.
+    if(!a.chat) (out.chatStatus = out.chatStatus || []).push({ email:a.email, noChat:true });
     if(a.chat){
-      try{ const sp = await apiAs(a.email, "https://chat.googleapis.com/v1/spaces?pageSize=100");
-        for(const s of (sp.spaces || []).filter(s => hits(s.displayName, k)).slice(0, 3)){
+      try{ const all0 = await allSpaces(a.email), scan = Object.assign({}, o.chatScan || {});
+        // A group whose name does not say which order it is for is found by what is written in it (each group is looked at again only when it had new activity)
+        const named = all0.filter(s => !/access/i.test(s.displayName || "") && s.spaceType !== "DIRECT_MESSAGE" && spaceMatch(o, s.displayName));
+        const byText = [];
+        for(const s of all0.filter(s => !named.includes(s) && !/access/i.test(s.displayName || "") && s.spaceType !== "DIRECT_MESSAGE" && (!s.lastActiveTime || s.lastActiveTime >= o.at.slice(0, 10) || Date.parse(s.lastActiveTime) > Date.now() - 30 * 864e5)).slice(0, 40)){
+          const seen = scan[s.name]; if(seen && seen.at >= (s.lastActiveTime || "")) { if(seen.hit) byText.push(s); continue; }
+          let hit = false; try{ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=15&orderBy=createTime%20asc"); hit = (ms.messages || []).some(m => hits(m.text, k)); }catch(e){}
+          scan[s.name] = { at:new Date().toISOString(), hit, name:s.displayName || "" }; if(hit) byText.push(s); }
+        out.chatScan = scan; (out.chatStatus = out.chatStatus || []).push({ email:a.email, spaces:all0.filter(s => s.spaceType !== "DIRECT_MESSAGE").length, found:named.length + byText.length });
+        out.chatSpaces = Object.assign(out.chatSpaces || {}, Object.fromEntries(named.map(s => [s.name, { name:s.displayName, via:a.email, why:spaceMatch(o, s.displayName) }]).concat(byText.map(s => [s.name, { name:s.displayName, via:a.email, why:"messages in it name the client's site or the order number" }]))));
+        for(const s of named.concat(byText).slice(0, 3)){
           const full = !((o.chatFull || {})[s.name]), all = [];
           let tok = "", pages = 0;
           do{ const ms = await apiAs(a.email, "https://chat.googleapis.com/v1/" + s.name + "/messages?pageSize=500&orderBy=createTime%20asc" + (full ? "" : "&filter=" + encodeURIComponent('createTime > "' + since + '"')) + (tok ? "&pageToken=" + encodeURIComponent(tok) : ""));
@@ -77,7 +105,7 @@ export async function syncOrder(o){
               links:att.filter(x => x.driveDataRef && x.driveDataRef.driveFileId).map(x => ({ name:x.contentName || "", url:"https://drive.google.com/file/d/" + x.driveDataRef.driveFileId + "/view", id:x.driveDataRef.driveFileId }))
                 .concat(att.filter(x => x.attachmentDataRef && x.attachmentDataRef.resourceName).map(x => ({ name:x.contentName || "file", mime:x.contentType || "", media:x.attachmentDataRef.resourceName, id:"chat-" + String(m.name).split("/").pop() + "-" + String(x.name || x.contentName || "").split("/").pop().slice(0, 40).replace(/[^\w.-]/g, "") }))) }); }
           out.chatFull = Object.assign(out.chatFull || {}, { [s.name]:{ at:new Date().toISOString(), messages:all.length, from:(all[0] || {}).createTime || "" } });
-        } }catch(e){ out.errors.chat = e.message; }
+        } }catch(e){ out.errors.chat = e.message; (out.chatStatus = out.chatStatus || []).push({ email:a.email, error:e.message }); }
     }
   }
   // The project access group (a Google Chat space with "access" in its name, where sales and the project team share and fix access):

@@ -305,7 +305,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -385,6 +385,9 @@ async function syncTeam(o){
   if(changedAfterQA.length) o.alert = "Changed after QA passed: " + changedAfterQA.map(f => f.name).join(", ").slice(0, 140);
   if(r.mails.length){ o.mails = (o.mails || []).concat(r.mails).sort((a, b) => a.date.localeCompare(b.date)).slice(-80); r.mails.forEach(m => fresh.push("TEAM EMAIL " + m.date + " from " + m.from + ", subject \"" + m.subject + "\":\n" + m.text.slice(0, 2500) + (m.files.length ? "\nAttachments: " + m.files.join(", ") : ""))); }
   if(r.chatFull) o.chatFull = Object.assign(o.chatFull || {}, r.chatFull);
+  // What the desk could and could not read in Google Chat, kept on the order so the portal always shows the true source status
+  if(r.chatScan) o.chatScan = r.chatScan;
+  o.chatStatus = { at:r.at, accounts:r.chatStatus || [], groups:Object.entries(r.chatSpaces || {}).map(([id, g]) => Object.assign({ id }, g)), error:(r.errors || {}).chat || "" };
   if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-800); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 20000)); }
   // Project access group: keep the (masked) messages, and update the access checklist from what they show
   if(r.access.length){ o.accessChat = (o.accessChat || []).concat(r.access).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-200);
