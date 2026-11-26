@@ -72,6 +72,7 @@ function flags(o){
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
   // A scope warning holds only until the next order check, which reads the client chat and carries any new ask in its own lists
   if(o.scopePending) f.push({ k:"warn", t:"Scope changed: a manager to look" });
+  (o.blockers || []).filter(b => b.open).slice(-2).forEach(b => f.push({ k:"bad", t:"Blocked (" + String(b.by || "").split(" ")[0] + "): " + String(b.text).slice(0, 70) }));
   if(o.alert && !(/something new/i.test(o.alert) && o.checkAt && (!o.alertAt || o.checkAt > o.alertAt))) f.push({ k:"bad", t:o.alert });
   if(open){ const last = Date.parse(o.lastUpdateAt || o.at), hrs = (Date.now() - last) / 36e5; if(hrs > 24) f.push({ k:"bad", t:"No update for " + Math.round(hrs) + " h: paste the latest messages" }); else if(hrs > 8) f.push({ k:"warn", t:"Last update " + Math.round(hrs) + " h ago" }); }
   const dc = (o.actions || []).filter(a => a.status === "decide").length; if(dc) f.push({ k:"bad", t:dc + " step" + (dc > 1 ? "s need" : " needs") + " a decision" });
@@ -306,7 +307,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, blockers:o.blockers, teamNotes:o.teamNotes,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -1254,7 +1255,7 @@ async function writeGroupMsg(o, opts){ opts = opts || {};
   const cc = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${m.text}`).join("\n") : (o.chat || "");
   if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
-  const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
+  const system = `Never put in the message: a deadline or due date, a price, or client details (the client's name, contact, location, or the client's own words). You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
 Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm". When a team member, the PM or a manager said in the group that an item is done, fixed or agreed (see LATEST FROM THE TEAM), make NO point about it unless the findings hold live proof that it is still not done; then the point names who said done and states exactly what the live check shows. State only what the findings VERIFIED: when the findings say something was not read, not checked, or will be read later, make NO point about it (the desk checks it itself) and never write it as not done.
 Each point: "title" (two to five words), for a quick fix list its pages (short paths) in "now", "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Say what is wrong in words anyone understands, and in a few words why it matters (for example: "the sitemap line in robots.txt is missing the word Sitemap: at the start, so search engines skip it"). Never write a bare web address as if it were the problem. Put any exact text the person must type or paste inside backticks, for example \`Sitemap: https://site/sitemap_index.xml\`. Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
 Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
@@ -1352,7 +1353,7 @@ async function reasonText(o, why){
   if(why.kind === "ready") return `Thank you, team. For ${site}, every requirement is now verified on the live site and in the files. The order moves to QA.`;
   if(why.kind === "added"){ const mt = (o.mgrTasks || []).filter(m => why.ids.includes(m.id)); return `Hi team, for ${site}: ${mt.map(m => String(m.by || "the manager").split(" ")[0] + " added a task: **" + m.text + "**" + (m.who ? " (for " + m.who + ")" : "")).join("\n")}\n\nIt is part of this order before QA.`; }
   if(why.kind === "deadline"){ const d = new Date(String(o.deadline) + "T12:00:00Z").toLocaleDateString("en-GB", { day:"numeric", month:"short" });
-    return `Hi team, a gentle note for ${site}: the deadline is ${d}. When you get a moment, please share where the work stands, or post the files here. Thank you.${pm ? "" : ""}`; }
+    return `Hi team, a gentle note for ${site}: this order is getting close to its due time. When you get a moment, please share where the work stands, or post the files here. Thank you.`; }
   return "";
 }
 async function postSteps(o, cfg, by, why){
@@ -1482,6 +1483,9 @@ export async function recheckStale(){
   const cfg = await cfgOf(), as = await poster(cfg), out = [], ripe = t => Date.now() - Date.parse(t) > 3 * 6e4;
   const open = (await loadAll(300, true)).filter(o => ["work", "qa"].includes(o.stage) && o.check);
   let n = 0;
+  for(const o of open.concat((await loadAll(300, true)).filter(x => !["work", "qa", "done", "cancelled"].includes(x.stage) && (x.deskJobs || []).length))) if((o.deskJobs || []).length && n < 2){
+    if(await cmd("SET", "bsp:chk:" + o.id, "1", "NX", "EX", 280) !== "OK") continue;
+    try{ const k = await runDeskJobs(o, cfg, as); await saveO(o); n++; out.push(o.id + " answered " + k + " request(s)"); }catch(e){ out.push(o.id + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + o.id); } }
   for(const o of open){ if(n >= 2) break; const at = (o.readLog || {}).at || o.checkAt; if(!at) continue;
     let why = [], touched = false;
     const g = groupOf(o); if(as && g) try{ const ms = (await chatSince(as, g.id, at)).filter(m => !isDeskMsg(o, m)); (o.seen = o.seen || {}).group = now(); touched = true; if(ms.length && ms.every(m => ripe(m.at))) why.push(ms.length + " new message(s) in the group"); else if(ms.length){ await saveO(o); continue; } }catch(e){}
@@ -1493,13 +1497,67 @@ export async function recheckStale(){
   return out.length ? out : ["nothing new"];
 }
 
+/* Commands people can use in a project group. The desk never shares deadlines, prices or client details (name, contact, what the
+   client wrote) in a team group: those stay with sales and the PM. */
+const CMDS = new Set(["help", "commands", "status", "update", "check", "done", "review", "how", "note", "blocked", "block", "ask"]);
+const HELP_CARD = `**Order desk: how to use me in this group**
+
+Start your message with **desk**, then one word:
+
+- \`desk help\`: show this list
+- \`desk status\`: what is still open here, and anything I noticed
+- \`desk check\`: I read the group, the files and the live site again, then reply with what is verified
+- \`desk done\` and what you finished: I check it and confirm in your thread
+- \`desk review\`: I read the latest report or file shared here and give my input
+- \`desk how\` and the task: step by step help for that task
+- \`desk note\` and your note: tell me an update or a decision, and I add it to the order
+- \`desk blocked\` and the reason: something stops your work, and I tell the PM and the manager
+- \`desk\` and any question: ask me anything about the work
+
+_I never share deadlines or client details here. For those, please ask your PM._`;
+async function deskCommand(o, cw, rest, m){
+  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", who = String(m.by || "").split(" ")[0];
+  if(cw === "help" || cw === "commands") return HELP_CARD;
+  if(cw === "status" || cw === "update"){
+    const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !r.notAsked), qf = (ck.quickFixes || []).filter(q => q.status !== "done");
+    const notes = [];
+    if(o.scopePending) notes.push("The scope changed after a manager's message; the PM or manager will confirm it.");
+    const lines = open.map(r => "- " + ((reqs.find(q => q.id === r.r) || {}).text || r.r) + (r.status === "partly" ? " (partly done)" : "")).concat(qf.map(q => "- Quick fix: " + q.what.split(". ")[0]));
+    return lines.length ? `Hi ${who}, here is where this order stands (as of my last read, ${new Date(ck.at || Date.now()).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Kolkata" })}):\n\n**Still open**\n${lines.join("\n")}${notes.length ? "\n\n**Also**\n" + notes.map(x => "- " + x).join("\n") : ""}\n\nWrite \`desk check\` when you finish something and I will read it again.` : `Hi ${who}, everything asked on this order is verified done. Thank you!`; }
+  if(["check", "done", "review"].includes(cw)){
+    (o.deskJobs = o.deskJobs || []).push({ kind:cw, by:m.by, thread:m.thread, text:str(rest, 600), at:now() });
+    return cw === "review" ? `Thanks ${who}. I am reading the latest file shared here and will reply in this thread within about ten minutes.` : `Thanks ${who}. I am reading the group, the files and the live site again, and will reply in this thread within about ten minutes.`; }
+  if(cw === "note"){ if(rest.length < 3) return "Please write the note after the word note, for example: `desk note client approved the new titles`.";
+    (o.teamNotes = o.teamNotes || []).push({ at:now(), by:m.by, text:rest }); log(o, { name:"Order desk" }, "Note from " + m.by + " in the project group: " + str(rest, 300)); o.checkAt = "";
+    return `Noted, thank you ${who}. I have added it to the order for the PM and the manager.`; }
+  if(cw === "blocked" || cw === "block"){ if(rest.length < 3) return "Please write what is stopping the work, for example: `desk blocked Shopify staff access is missing`.";
+    (o.blockers = o.blockers || []).push({ id:nid("bl"), at:now(), by:m.by, text:rest, open:true, thread:m.thread || "" }); log(o, { name:"Order desk" }, "Blocked, said by " + m.by + ": " + str(rest, 300));
+    return `Thanks ${who}, I have flagged this to the PM and the manager: "${str(rest, 200)}". I will update here when it is cleared.`; }
+  return "";   // "ask" and plain questions go to the normal answer below
+}
+/* Jobs people asked for in a group ("desk check", "desk done", "desk review", or a plain "done"): run by the 10 minute job, answered in the thread */
+async function runDeskJobs(o, cfg, as){
+  const jobs = (o.deskJobs || []).splice(0); if(!jobs.length) return 0; const g = groupOf(o); if(!g) return 0;
+  const before = new Map(((o.check || {}).rows || []).map(r => [r.r, r.status]));
+  const q0 = o._quiet; o._quiet = true; try{ await buildCheck(o); }finally{ o._quiet = q0; }   // the answer goes in the asker's thread, not as a new post
+  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", T = r => (reqs.find(q => q.id === r.r) || {}).text || r.r;
+  const rows = (ck.rows || []).filter(r => ph(r) === "project" && !r.notAsked), nowDone = rows.filter(r => r.status === "done" && before.get(r.r) !== "done"), open = rows.filter(r => r.status !== "done");
+  for(const j of jobs){ const who = String(j.by || "").split(" ")[0]; let say = "";
+    if(j.kind === "review"){ const m2 = (o.teamChat || []).filter(m => !isDeskMsg(o, m) && ((m.links || []).length || /docs\.google|drive\.google/.test(m.text || ""))).slice(-1)[0];
+      const ids = m2 ? (m2.links || []).map(l => l.id).concat([...String(m2.text || "").matchAll(/\/d\/([\w-]{15,})/g)].map(x => x[1])) : [], d = (o.docs || []).find(x => ids.includes(x.id));
+      say = d ? await reasonText(o, { kind:"report", ids:[d.id], by:j.by }) : ""; if(!say) say = d ? `Thanks ${who}, I read ${d.name}. It covers what is asked; nothing important to add.` : `Thanks ${who}. I could not find a shared file in this group yet. Share the link here and write \`desk review\` again.`; }
+    else say = `Thanks ${who}, I have read everything again.` + (nowDone.length ? `\n\n**Now verified done**\n${nowDone.map(r => "- " + T(r)).join("\n")}` : "") + (open.length ? `\n\n**Still open**\n${open.map(r => "- " + T(r) + (r.toPass ? ": " + str(noId(r.toPass), 160) : "")).join("\n")}` : `\n\nEverything asked is verified done.`);
+    try{ await postChat(as, g.id, deskSay(cfg, say), j.thread); log(o, { name:"Order desk" }, "Answered " + j.by + "'s " + j.kind + " in the project group"); }catch(e){} }
+  return jobs.length;
+}
+
 /* Every 10 minutes: questions to the desk in project groups get an answer in their thread */
 export async function chatAnswers(){
   const cfg = await cfgOf(), as = await poster(cfg); if(!as || !aiOn()) return "off";
   let men = []; try{ men = await mentionsRun(cfg, as); }catch(e){ men = ["mentions: " + e.message]; }
   // questions in the desk's own threads: every 10 minutes is enough
-  if(new Date().getUTCMinutes() % 10 > 1) return men.join(", ") || "no mentions";
-  const open = (await loadAll(300)).filter(o => ["access", "work", "qa"].includes(o.stage) && (o.deskPosts || []).length), done = [];
+  // Commands and questions to the desk are answered within about two minutes
+  const open = (await loadAll(300)).filter(o => ["access", "work", "qa", "ready", "delivered"].includes(o.stage) && groupOf(o)), done = [];
   for(const o of open.slice(0, 25)){
     const g = groupOf(o); if(!g) continue; let msgs = [];
     try{ msgs = await chatSince(as, g.id, o.chatPollAt || new Date(Date.now() - 15 * 6e4).toISOString()); }catch(e){ done.push(o.id + ": " + e.message); continue; }
@@ -1509,14 +1567,19 @@ export async function chatAnswers(){
     for(const m of msgs){
       if(mine.has(m.sender)) continue;
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
-      if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; changed = true; }   // a "done" brings the next check forward
+      // Commands: "desk <word> ..." anywhere in the first words of the message (after an @mention, if any)
+      const cm = String(m.text || "").replace(/\*/g, "").match(/^\s*(?:@[^\n]{0,40}?\s+)?(?:order\s+)?desk\b[\s,:.\-]*([a-z]+)?\b\s*([\s\S]*)$/i), cw = cm ? String(cm[1] || "").toLowerCase() : "", rest = cm ? str(cm[2], 1500).trim() : "";
+      if(cm && (!cw || CMDS.has(cw))){ let said = false; try{ const say = await deskCommand(o, cw || (rest ? "ask" : "help"), rest, m); if(say){ await postChat(as, g.id, deskSay(cfg, say), m.thread); said = true;
+            await deskLog({ kind:"command", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(say, 800), usd:0 }); } changed = true; }catch(e){ done.push(o.id + " command: " + e.message); }
+        if(said) continue; }   // "desk how ..." and plain questions get the normal answer below
+      if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; (o.deskJobs = o.deskJobs || []).push({ kind:"done", by:m.by, thread:m.thread, text:str(m.text, 600), at:now() }); changed = true; }   // a "done" is checked within ten minutes and answered in its thread
       if(!mine.has(m.sender) && (threads.has(m.thread) || /^\s*done\b/i.test(m.text))){ const lp = (o.deskPosts || []).filter(p => p.at <= m.at).slice(-1)[0]; if(lp && !(o.replied || {})[lp.name + m.by]){ (o.replied = o.replied || {})[lp.name + m.by] = 1; await perfEv({ type:"reply", who:m.by, order:o.id, minutes:Math.round((Date.parse(m.at) - Date.parse(lp.at)) / 6e4) }); } }
       const sRole = ((await people()).find(p2 => p2.name && String(m.by || "").toLowerCase().startsWith(p2.name.toLowerCase().split(" ")[0])) || {}), sRoles = sRole.id ? rolesOf(sRole) : [];
       const isMgr = sRoles.includes("manager"), isPM = sRoles.includes("pm");
       if(!asked && !((isMgr || isPM) && threads.has(m.thread))) continue;
       if(mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
-      const system = `You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
+      const system = `Never share in this team group: the deadline or due date, the price or money, or client details (the client's name, contact, location, or what the client wrote). If asked, say kindly that the PM shares those. You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
 Every step you give is a proposal open to the PM's approval. The SENDER ROLE tells you who wrote:
 If the PM approves, thank them in one line and record it. If the PM disagrees or suggests another way, judge it fairly against the requirement and what the client needs: if their way still gets the work done right, accept it warmly and say what changes; if not, politely give ONE clear reason and a helpful option. If you already argued this point before (see EARLIER), accept the PM's decision, say you have noted the risk, and do not argue again.
@@ -1969,6 +2032,9 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "unblock"){ if(!(isMgrW(w) || can(w, "pm") || can(w, "comms"))) return bad("Your role cannot do this step"); const b = (o.blockers || []).find(x => x.id === q.bid && x.open); if(!b) return bad("Not found");
+      b.open = false; b.clearedBy = w.name; b.clearedAt = now(); log(o, w, "Cleared the blocker: " + str(b.text, 200));
+      try{ const as = await poster(cfg), g = groupOf(o); if(as && g && b.thread) await postChat(as, g.id, deskSay(cfg, "Update: this is cleared now (" + String(w.name || "").split(" ")[0] + "). Thank you for waiting."), b.thread); }catch(e){} }
     else if(op === "scopeOk"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); if(!o.scopePending) return bad("Nothing to confirm");
       log(o, w, "Saw the scope change: " + o.scopePending.changes.map(c => c.kind + ": " + str(c.text, 60)).join("; ")); (o.scopeLog = o.scopeLog || []).push(Object.assign({ seenBy:w.name, seenAt:now() }, o.scopePending)); delete o.scopePending; }
     else if(op === "groupLink"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); const m = (await getJ(GMK)) || { spaces:{} }, g = (m.spaces || {})[str(q.space, 80)]; if(!g) return bad("Group not found");
