@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, allSpaces, spaceMessages, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, allSpaces, spaceMessages, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat, deleteChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -307,7 +307,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, blockers:o.blockers, teamNotes:o.teamNotes,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, lastFresh:o.lastFresh, blockers:o.blockers, teamNotes:o.teamNotes,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -442,8 +442,8 @@ async function syncTeam(o){
   // When each channel was last read, so the portal always says how fresh every source is
   o.seen = Object.assign(o.seen || {}, { folder:r.at }, (r.errors || {}).gmail ? {} : { email:r.at }, (r.errors || {}).chat ? {} : { group:r.at }, (r.errors || {}).access ? {} : { access:r.at });
   o.chatStatus = { at:r.at, accounts:r.chatStatus || [], groups:Object.entries(r.chatSpaces || {}).map(([id, g]) => Object.assign({ id }, g)), error:(r.errors || {}).chat || "" };
-  try{ await introGroups(o); }catch(e){}
   if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-800); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 20000)); }
+  try{ await introGroups(o); }catch(e){}   // after the newest messages are in, and safePost reads the group live anyway
   // Project access group: keep the (masked) messages, and update the access checklist from what they show
   if(r.access.length){ o.accessChat = (o.accessChat || []).concat(r.access).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-200);
     if(aiOn() && (o.access || []).length) try{ const p = accessPrompt(o, o.access, r.access), x = await askAI("accesschat", "claude-haiku-5-5", p.system, p.user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + x.usd).toFixed(4);
@@ -1003,6 +1003,14 @@ OPEN ITEMS TO JUDGE: ${JSON.stringify(items)}`;
   return rec.length;
 }
 
+/* Before the desk sends or hands over ANYTHING (a group message, a client message, the delivery message), it reads every channel again
+   and, when something changed since its last reading, judges the order again, so nothing goes out from an old picture */
+async function ensureCurrent(o, why){
+  await freshen(o); const nw = [...new Set(await newerThanRead(o))];
+  if(nw.length){ const q0 = o._quiet; o._quiet = true; o._regated = true; try{ await checkNow(o); }finally{ o._quiet = q0; delete o._regated; } }
+  else { try{ await reconcile(o, why || "before sending"); }catch(e){} }
+  return nw;
+}
 /* Current sources, right now: the group, emails, the folder and files newly posted, without starting a check of their own */
 async function freshen(o){
   let n = 0; o._noCheck = true; try{ n = (await syncTeam(o)).new; }catch(e){} finally{ delete o._noCheck; }
@@ -1015,6 +1023,7 @@ async function newerThanRead(o){
   const out = [];
   for(const m of o.teamChat || []) if(m.at > at && !isDeskMsg(o, m)) out.push("a message from " + String(m.by || "").split(" ")[0]);
   for(const m of o.mails || []) if(m.date > at) out.push("an email (" + str(m.subject, 50) + ")");
+  if(o.lastUpdateAt && o.lastUpdateAt > at) out.push("new client chat pasted by sales");
   for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false)){
     if(d.at && d.at > at){ out.push("a new file (" + str(d.name, 50) + ")"); continue; }
     try{ const md = await docModified(d); if(md && md.at){ if(md.at > at) out.push("an edited file (" + str(d.name, 50) + (md.by ? ", by " + md.by.split(" ")[0] : "") + ")"); d.modified = md.at; if(md.by) d.by = md.by; } }catch(e){} }
@@ -1316,6 +1325,26 @@ function stepsText(o){
   const pm = (o.pmName || "").split(" ")[0];
   return `Hi team, for ${domOf(o.client.website)} we still need:\n${lines.join("\n")}\n${pm ? pm + ", does this plan work for you? " : ""}Write "done" here when a step is finished.`;
 }
+/* EVERY message the desk sends to a group passes here. Right before sending, the group is read live (its latest messages, not a stored copy):
+   nothing is sent that the desk has already said there, nothing new is put on top of the desk's own latest message, and nothing new is
+   dropped into a conversation that is going on right now. An answer to someone's request goes in their thread and is only stopped if the
+   same answer was just given there. */
+const wordsSet = t => new Set(String(t || "").toLowerCase().replace(/\*|`|_/g, "").replace(/^order desk:\s*/i, "").replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(w => w.length > 3));
+const overlap = (a, b) => { const A = wordsSet(a), B = wordsSet(b); if(!A.size || !B.size) return 0; let n = 0; for(const x of A) if(B.has(x)) n++; return n / Math.min(A.size, B.size); };
+async function safePost(o, as, gid, text, opts){
+  opts = opts || {};
+  let recent = []; try{ recent = (await spaceMessages(as, gid, "desc", 60)).reverse(); }catch(e){ throw new Error("Could not read the group just before posting, so nothing was sent: " + e.message); }
+  const ids = new Set((o.deskPosts || []).map(p => p.sender).filter(Boolean)), isDesk = m => ids.has(m.sender) || /^order desk:/i.test(m.full || m.text || "");
+  const deskMsgs = recent.filter(isDesk), win = opts.answer ? deskMsgs.filter(m => m.thread === opts.thread && Date.now() - Date.parse(m.at) < 15 * 6e4) : deskMsgs;
+  const dup = win.find(m => overlap(text, m.full || m.text) >= 0.8);
+  if(dup) throw new Error("Not sent: the desk already said this in the group (" + new Date(dup.at).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Kolkata" }) + ")");
+  if(!opts.thread && !opts.answer){
+    const last = recent[recent.length - 1]; if(last && isDesk(last)) throw new Error("Not sent: the desk's own message is still the latest in the group, so the team has not answered yet");
+    const lp = recent.filter(m => !isDesk(m)).slice(-1)[0]; if(lp && Date.now() - Date.parse(lp.at) < 3 * 6e4) throw new Error("Not sent yet: people are talking in the group right now");
+  }
+  return postChat(as, gid, text, opts.thread || undefined);
+}
+
 /* The desk writes in a project group ONLY for an important reason, never to repeat the requirement email (the team works from it already):
    a "done" the desk's own live check does not confirm, every requirement verified (ready for QA), a task a manager added, or a deadline close
    with work still open (one polite note, and not while the PM has just said the work is going on, unless it is a day away). Never in the
@@ -1371,7 +1400,7 @@ async function postSteps(o, cfg, by, why){
       if(o.check && o.check.autoPostHeld) throw new Error(o.check.autoPostHeld); } }
   if(!o.groupMsg || !o.groupMsgAt || (o.check && o.groupMsgAt < o.check.at)){ try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){} }
   // By itself the desk posts only for its reason, with only what that reason needs; a person pressing Post sends the full list they looked at
-  if(!by){ why = why || postReason(o); if(!why) return; }
+  if(!by){ why = postReason(o); if(!why) return; }   // the reason is weighed again on the current picture, never taken from before
   const t = why ? await reasonText(o, why) : stepsText(o);
   // Nothing worth saying for this reason: remember it was weighed, so it is not weighed again, and stay quiet
   if(!t && why){ o.deskPosts = (o.deskPosts || []).concat({ name:"", at:now(), kind:"steps", reason:why.kind, items:why.ids.slice().sort().join(","), skipped:true }).slice(-30); return; }
@@ -1385,7 +1414,7 @@ async function postSteps(o, cfg, by, why){
     last.hash = sha(t).slice(0, 12); last.editedAt = now();
     log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
     await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:"(edited) " + str(t, 780), usd:0 }); return; }
-  const m = await postChat(as, g.id, deskSay(cfg, t), why && why.thread ? why.thread : undefined);
+  const m = await safePost(o, as, g.id, deskSay(cfg, t), { thread:why && why.thread ? why.thread : "" });
   o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12), reason:why ? why.kind : "person", items:why ? why.ids.slice().sort().join(",") : "" }).slice(-30);
   if(why) log(o, { name:"Order desk" }, "Posted in the project group because: " + ({ claim:"an item marked done is not showing yet", ready:"every requirement is verified", added:"a manager added a task", deadline:"the deadline is close with work open" })[why.kind]);
   o.chatPollAt = o.chatPollAt || now();
@@ -1517,6 +1546,9 @@ Start your message with **desk**, then one word:
 async function deskCommand(o, cw, rest, m){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", who = String(m.by || "").split(" ")[0];
   if(cw === "help" || cw === "commands") return HELP_CARD;
+  if((cw === "status" || cw === "update") && (!ck.at || Date.now() - Date.parse(ck.at) > 45 * 6e4 || (o.teamChat || []).some(x => !isDeskMsg(o, x) && x.at > ((o.readLog || {}).at || "")) || (o.lastUpdateAt || "") > ((o.readLog || {}).at || ""))){
+    (o.deskJobs = o.deskJobs || []).push({ kind:"check", by:m.by, thread:m.thread, text:"status", at:now() });
+    return `Thanks ${who}. Some things changed since my last read, so I am reading the group, the files and the live site again. I will reply in this thread within about ten minutes.`; }
   if(cw === "status" || cw === "update"){
     const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !r.notAsked), qf = (ck.quickFixes || []).filter(q => q.status !== "done");
     const notes = [];
@@ -1543,7 +1575,7 @@ async function introGroups(o){
     const said = (o.teamChat || []).some(m => m.spaceId === g.id && isDeskMsg(o, m) && /how to use me in this group/i.test(m.text || "")) || (o.deskPosts || []).some(p => p.kind === "intro" && String(p.name || "").startsWith(g.id + "/"));
     if(said){ (o.introduced = o.introduced || {})[g.id] = now(); continue; }
     const t = `Hello team, I will follow ${domOf(o.client.website)} with you here. I read this group, the files you share and the live site, and I help wherever you need me.\n\n` + HELP_CARD;
-    try{ const m = await postChat(as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
+    try{ const m = await safePost(o, as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
       o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"intro", hash:sha(t).slice(0, 12) }).slice(-30);
       log(o, { name:"Order desk" }, "Introduced itself in the project group " + (g.name || "") + " with how to use it"); n++; }catch(e){} }
   return n;
@@ -1560,7 +1592,7 @@ async function runDeskJobs(o, cfg, as){
       const ids = m2 ? (m2.links || []).map(l => l.id).concat([...String(m2.text || "").matchAll(/\/d\/([\w-]{15,})/g)].map(x => x[1])) : [], d = (o.docs || []).find(x => ids.includes(x.id));
       say = d ? await reasonText(o, { kind:"report", ids:[d.id], by:j.by }) : ""; if(!say) say = d ? `Thanks ${who}, I read ${d.name}. It covers what is asked; nothing important to add.` : `Thanks ${who}. I could not find a shared file in this group yet. Share the link here and write \`desk review\` again.`; }
     else say = `Thanks ${who}, I have read everything again.` + (nowDone.length ? `\n\n**Now verified done**\n${nowDone.map(r => "- " + T(r)).join("\n")}` : "") + (open.length ? `\n\n**Still open**\n${open.map(r => "- " + T(r) + (r.toPass ? ": " + str(noId(r.toPass), 160) : "")).join("\n")}` : `\n\nEverything asked is verified done.`);
-    try{ await postChat(as, g.id, deskSay(cfg, say), j.thread); log(o, { name:"Order desk" }, "Answered " + j.by + "'s " + j.kind + " in the project group"); }catch(e){} }
+    try{ await safePost(o, as, g.id, deskSay(cfg, say), { thread:j.thread, answer:true }); log(o, { name:"Order desk" }, "Answered " + j.by + "'s " + j.kind + " in the project group"); }catch(e){} }
   return jobs.length;
 }
 
@@ -1582,7 +1614,7 @@ export async function chatAnswers(){
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
       // Commands: "desk <word> ..." anywhere in the first words of the message (after an @mention, if any)
       const cm = String(m.text || "").replace(/\*/g, "").match(/^\s*(?:@[^\n]{0,40}?\s+)?(?:order\s+)?desk\b[\s,:.\-]*([a-z]+)?\b\s*([\s\S]*)$/i), cw = cm ? String(cm[1] || "").toLowerCase() : "", rest = cm ? str(cm[2], 1500).trim() : "";
-      if(cm && (!cw || CMDS.has(cw))){ let said = false; try{ const say = await deskCommand(o, cw || (rest ? "ask" : "help"), rest, m); if(say){ await postChat(as, g.id, deskSay(cfg, say), m.thread); said = true;
+      if(cm && (!cw || CMDS.has(cw))){ let said = false; try{ const say = await deskCommand(o, cw || (rest ? "ask" : "help"), rest, m); if(say){ await safePost(o, as, g.id, deskSay(cfg, say), { thread:m.thread, answer:true }); said = true;
             await deskLog({ kind:"command", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(say, 800), usd:0 }); } changed = true; }catch(e){ done.push(o.id + " command: " + e.message); }
         if(said) continue; }   // "desk how ..." and plain questions get the normal answer below
       if(/^\s*done\b/i.test(m.text)){ o.checkAt = ""; (o.deskJobs = o.deskJobs || []).push({ kind:"done", by:m.by, thread:m.thread, text:str(m.text, 600), at:now() }); changed = true; }   // a "done" is checked within ten minutes and answered in its thread
@@ -1615,7 +1647,7 @@ SITE CHECK: ${o.verify ? verifyText(o.verify).slice(0, 4000) : ""}`;
         if(d.genuine === false || !d.answer){ await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:"", usd:+r.usd.toFixed(4), skipped:"not a work question" }); continue; }
         await deskCount(g.id, m.by); await deskLog({ kind:"thread", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(d.answer, 800), usd:+r.usd.toFixed(4), needsHuman:!!d.needsHuman });
         await perfEv({ type:"query", who:m.by, order:o.id, group:g.name, q:str(m.text, 300), topic:str(d.topic, 40), qtype:str(d.qtype, 12), genuine:true, usd:+r.usd.toFixed(4) });
-        await postChat(as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), m.thread);
+        await safePost(o, as, g.id, deskSay(cfg, (d.needsHuman ? d.answer + (d.who ? " (" + d.who + " will confirm.)" : "") : d.answer)), { answer:true, thread:m.thread });
         log(o, { name:"Order desk" }, "Answered " + m.by + " in the project group: " + str(d.answer, 160));
         if(d.needsHuman) (o.deskAsks = o.deskAsks || []).push({ at:now(), by:m.by, q:str(m.text, 400), who:str(d.who, 20), answer:str(d.answer, 400) });
         if(["approval", "counter", "manager decision"].includes(d.intent)) (o.stepLog = o.stepLog || []).push({ at:now(), by:m.by, role:isMgr ? "manager" : isPM ? "PM" : "team", intent:d.intent, said:str(m.text, 300), argued:!!d.argued, accepted:!!d.accepted, record:str(d.record, 240) });
@@ -2047,7 +2079,7 @@ async function handle(request){
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
     else if(op === "unblock"){ if(!(isMgrW(w) || can(w, "pm") || can(w, "comms"))) return bad("Your role cannot do this step"); const b = (o.blockers || []).find(x => x.id === q.bid && x.open); if(!b) return bad("Not found");
       b.open = false; b.clearedBy = w.name; b.clearedAt = now(); log(o, w, "Cleared the blocker: " + str(b.text, 200));
-      try{ const as = await poster(cfg), g = groupOf(o); if(as && g && b.thread) await postChat(as, g.id, deskSay(cfg, "Update: this is cleared now (" + String(w.name || "").split(" ")[0] + "). Thank you for waiting."), b.thread); }catch(e){} }
+      try{ const as = await poster(cfg), g = groupOf(o); if(as && g && b.thread) await safePost(o, as, g.id, deskSay(cfg, "Update: this is cleared now (" + String(w.name || "").split(" ")[0] + "). Thank you for waiting."), { thread:b.thread, answer:true }); }catch(e){} }
     else if(op === "scopeOk"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); if(!o.scopePending) return bad("Nothing to confirm");
       log(o, w, "Saw the scope change: " + o.scopePending.changes.map(c => c.kind + ": " + str(c.text, 60)).join("; ")); (o.scopeLog = o.scopeLog || []).push(Object.assign({ seenBy:w.name, seenAt:now() }, o.scopePending)); delete o.scopePending; }
     else if(op === "groupLink"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); const m = (await getJ(GMK)) || { spaces:{} }, g = (m.spaces || {})[str(q.space, 80)]; if(!g) return bad("Group not found");
@@ -2089,6 +2121,14 @@ async function handle(request){
       if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
       log(o, w, "Restored the task \"" + str(rq.text, 120) + "\" (discarded earlier by " + dd.by + ")"); o.checkAt = ""; }
     else if(op === "redoMsg"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }
+    else if(op === "deskDelete"){ if(w.role !== "admin") return bad("For Manav only", 403); const p2 = (o.deskPosts || []).find(x => x.name === q.name); if(!p2) return bad("Only the desk's own messages can be removed");
+      const as = await poster(cfg); await deleteChat(as, p2.name); o.deskPosts = o.deskPosts.filter(x => x !== p2); o.teamChat = (o.teamChat || []).filter(m => m.id !== p2.name); log(o, w, "Removed the desk's duplicate message from the project group"); }
+    else if(op === "fresh"){ const kind = str(q.kind, 12), id = str(q.id, 40), nw = await ensureCurrent(o, "before sending");
+      let text = "", gone = "";
+      if(kind === "queue"){ const m = (o.queue || []).find(x => x.id === id); if(!m) gone = "This message is no longer needed: the situation moved on. See the order history."; else text = m.text; }
+      else if(kind === "action"){ const a = (o.actions || []).find(x => x.id === id); if(!a || ["done", "skipped"].includes(a.status)) gone = "No longer needed: " + ((a && a.statusWhy) || "the situation moved on"); else text = a.message || ""; }
+      else if(kind === "delivery"){ if(!o.pack || (o.check && String(o.pack.at || "") < String(o.check.at || "")) || nw.length) try{ await buildPack(o); }catch(e){} text = ((o.pack || {}).client || {}).message || ""; }
+      o.lastFresh = { at:now(), kind, id, text, gone, news:nw }; log(o, w, "Made sure the " + (kind === "delivery" ? "delivery message" : "client message") + " is current before copying" + (nw.length ? " (new: " + nw.slice(0, 4).join(", ") + ")" : "")); }
     else if(op === "deskEdit"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
       const last = (o.deskPosts || []).filter(p => p.kind === "note" && p.name).slice(-1)[0]; if(!last) return bad("No desk note to edit");
       const as = await poster(cfg); await editChat(as, last.name, t); last.hash = sha(t).slice(0, 12); last.editedAt = now(); log(o, w, "Edited the desk's note in the project group"); }
@@ -2097,7 +2137,7 @@ async function handle(request){
       await freshen(o); const nw = (await newerThanRead(o)).filter(x => /message|email/.test(x));
       if(nw.length && !q.anyway) return bad("New in the group since the last reading: " + [...new Set(nw)].join(", ") + ". Read it first, then send again.");
       const as = await poster(cfg), g = groupOf(o); if(!as || !g) return bad("No project group or posting account");
-      const m = await postChat(as, g.id, t);
+      let m; try{ m = await safePost(o, as, g.id, t, { allowAfterDesk:!!q.anyway }); }catch(e){ return bad(e.message); }
       o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"note", hash:sha(t).slice(0, 12) }).slice(-30);
       log(o, w, "Posted a note in the project group as the desk: " + str(t, 200)); await deskLog({ kind:"note", group:g.name, space:g.id, order:o.id, by:w.name, q:"", a:str(t, 800), usd:0 }); }
     else if(op === "postSteps"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); try{ await postSteps(o, cfg, w); }catch(e){ return bad(e.message); } }

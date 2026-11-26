@@ -59,7 +59,7 @@ export async function allSpaces(email){
 /* A few messages of a space, oldest or newest first, as plain lines (for sorting groups by what is written in them) */
 export async function spaceMessages(email, space, order, n){
   const r = await apiAs(email, "https://chat.googleapis.com/v1/" + space + "/messages?pageSize=" + (n || 25) + "&orderBy=createTime%20" + (order === "desc" ? "desc" : "asc"));
-  return (r.messages || []).map(m => ({ at:m.createTime, by:(m.sender && m.sender.displayName) || "", text:maskCreds(String(m.text || "")).slice(0, 400), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) }));
+  return (r.messages || []).map(m => ({ id:m.name, at:m.createTime, by:(m.sender && m.sender.displayName) || "", sender:m.sender ? m.sender.name : "", thread:m.thread ? m.thread.name : "", full:maskCreds(String(m.text || "")).slice(0, 6000), text:maskCreds(String(m.text || "")).slice(0, 400), files:(m.attachment || []).map(x => x.contentName).filter(Boolean) }));
 }
 /* groups: the project groups this order owns, decided by content (see mapGroups in team.mjs). When given, names decide nothing. */
 /* Read the project groups of one order: the whole history the first time, then every new message */
@@ -346,6 +346,11 @@ export async function chatSince(email, space, since){
 export async function mySpaces(email){ const r = await apiAs(email, "https://chat.googleapis.com/v1/spaces?pageSize=100"); return (r.spaces || []).map(x => ({ id:x.name, name:x.displayName || "Direct chat", type:x.spaceType || x.type || "" })); }
 
 /* Edit a message the account posted earlier (keeps the group free of repeats) */
+export async function deleteChat(email, name){
+  const tok = await (await import("./google.mjs")).accessTokenAs(email);
+  const r = await fetch("https://chat.googleapis.com/v1/" + name, { method:"DELETE", headers:{ authorization:"Bearer " + tok } });
+  if(!r.ok){ const j = await r.json().catch(() => ({})); throw new Error("Google Chat " + r.status + ": " + ((j.error || {}).message || "").slice(0, 160)); } return true;
+}
 export async function editChat(email, name, text){
   const tok = await (await import("./google.mjs")).accessTokenAs(email);
   const r = await fetch("https://chat.googleapis.com/v1/" + name + "?updateMask=text", { method:"PATCH", headers:{ authorization:"Bearer " + tok, "content-type":"application/json" }, body:JSON.stringify({ text:String(text).slice(0, 4000) }) });

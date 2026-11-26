@@ -320,6 +320,7 @@ async function api(a, body, params){
 const LOADS = {
   groupmap:{ t:"Sorting the chat groups by content", est:40, s:["Listing every group the team accounts are in", "Reading the first and latest messages", "Matching each group to its order"] },
   groupLink:{ t:"Linking the group", est:30, s:["Saving your choice", "Reading the group from its first message"] },
+  fresh:{ t:"Making sure this is current", est:60, s:["Reading the group, emails and files again", "Looking for anything new since the last read", "Bringing the text up to date"] },
   check:{ t:"Checking every task", est:140, s:["Reading the requirement email and client chat", "Reading the whole project group", "Opening every file and screenshot", "Reading the live site and Search Console", "Judging each task against its proof", "Writing the group message"] },
   pack:{ t:"Building the delivery pack", est:70, s:["Collecting every proof and file", "Checking each deliverable", "Writing the QA checks", "Writing the client message"] },
   draftReport:{ t:"Writing the work report", est:70, s:["Reading the verified work", "Writing it task by task", "Saving the draft to Drive"] },
@@ -536,6 +537,14 @@ async function order(id){
   const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j;
   if(first) OTAB = (ME.role === "qa" && j.order.stage === "qa") || (ME.role === "pm" && ["access", "work"].includes(j.order.stage)) ? "work" : "overview"; CLINFO = j.client; drawOrder();
 }
+/* Copy for sending: the desk first reads every channel again and brings the text up to date, then copies the current text */
+async function freshCopy(kind, id, after){
+  const r = await act(() => api("do", { id:CUR.order.id, op:"fresh", kind, id }), "Making sure this is current", "fresh"); if(!r) return;
+  CUR = r; const f = (r.order || {}).lastFresh || {};
+  if(f.gone){ drawOrder(); return toast(f.gone, 1); }
+  try{ await navigator.clipboard.writeText(f.text || ""); toast((f.news || []).length ? "Brought up to date first (" + f.news.slice(0, 2).join(", ") + "), then copied" : "Checked every channel: it is current. Copied."); }catch(e){ toast("Copy did not work here: select the text and copy it", 1); }
+  drawOrder(); if(after) after();
+}
 async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…", op); if(r){ CUR = r; drawOrder(); } return r; }
 let OTAB = "overview";
 const TODAY = () => new Date().toISOString().slice(0, 10);
@@ -670,7 +679,7 @@ function drawOrder(){
   const s7 = box(7, "Delivery pack", (dleft ? chip(dleft + " before delivery", "y") : DL.length ? chip("Checklist done", "ok") : "") + (pk ? chip(o.stage === "ready" ? "Ready to send" : "Built " + ago(pk.at), o.stage === "ready" ? "ok" : "n") : ""),
     dlist + (pk ? `<p>${E(pk.summary || "")}</p><table class="t2"><tbody>${L(pk.final, f => { const d = dOf(f.d) || {}; return `<tr><td><b>${E(d.text || f.text || f.what || "Delivery item")}</b>${f.fix ? `<div class="sub ev">${E(f.fix)}</div>` : ""}</td><td>${L(f.use, u => `<a href="${E(u.url || "#")}" target="_blank" rel="noopener">${E(u.name || u.url)}</a><br>`) || `<span class="sub">None yet</span>`}</td><td>${chip({ ready:"Ready", "needs fix":"Needs a fix", missing:"Not found yet" }[f.status] || f.status, f.status === "ready" ? "ok" : f.status === "missing" ? "bad" : "warn")}</td></tr>`; })}</tbody></table>
        ${(pk.notUse || []).length ? `<details class="mx"><summary>Do not send (${pk.notUse.length})</summary><ul class="clean">${L(pk.notUse, n => `<li><b>${E(n.name)}</b>: ${E(n.why)}</li>`)}</ul></details>` : ""}
-       ${!PJ && pk.client && ["ready", "delivered"].includes(o.stage) ? `<div class="lbl" style="margin:12px 0 6px">Delivery message</div><div class="msg">${E(pk.client.message || "")}</div>${(pk.client.attach || []).length ? `<p class="sub">Attach: ${pk.client.attach.map(E).join(", ")}</p>` : ""}<div class="row" style="gap:6px;margin-top:6px"><button class="btn sm pri" data-cp="${E(pk.client.message || "")}">Copy message</button>${o.stage === "ready" && can("comms") ? `<button class="btn sm" id="deliver">Mark delivered</button>` : ""}</div>` : ""}
+       ${!PJ && pk.client && ["ready", "delivered"].includes(o.stage) ? `<div class="lbl" style="margin:12px 0 6px">Delivery message</div><div class="msg">${E(pk.client.message || "")}</div>${(pk.client.attach || []).length ? `<p class="sub">Attach: ${pk.client.attach.map(E).join(", ")}</p>` : ""}<div class="row" style="gap:6px;margin-top:6px"><button class="btn sm pri" data-fresh="delivery:">Copy message</button>${o.stage === "ready" && can("comms") ? `<button class="btn sm" id="deliver">Mark delivered</button>` : ""}</div>` : ""}
        ${can("pm") || can("qa") || can("comms") ? `<button class="btn sm ghost" id="packB" style="margin-top:8px">Build again</button>` : ""}`
      : `<p class="note" style="margin-top:10px">The pack is built when the order goes to QA: the final file per requirement, what not to send, QA checks and the delivery message.</p>${can("pm") || can("qa") || can("comms") ? `<button class="btn sm" id="packB">Build now</button>` : ""}`), ["ready"].includes(o.stage) && !PJ);
   // 8. History
@@ -729,7 +738,8 @@ function wireOrder(o){
   document.querySelectorAll("[data-sent]").forEach(b => b.onclick = () => doOp("sent", { qid:b.dataset.sent }));
   document.querySelectorAll("[data-drop]").forEach(b => b.onclick = () => { if(confirm("Drop this message? It will not be sent.")) doOp("drop", { qid:b.dataset.drop }); });
   document.querySelectorAll("[data-seen]").forEach(b => b.onclick = () => doOp("seen", { qid:b.dataset.seen }));
-  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => { const m = o.queue.find(x => x.id === b.dataset.copy); navigator.clipboard.writeText(m.text).then(() => toast("Copied. Replace [our access email] before sending.")); });
+  document.querySelectorAll("[data-copy]").forEach(b => b.onclick = () => freshCopy("queue", b.dataset.copy));
+  document.querySelectorAll("[data-fresh]").forEach(b => b.onclick = () => { const [k, i] = b.dataset.fresh.split(":"); freshCopy(k, i || ""); });
   on("#addacc", () => { const it = prompt("Access item (e.g. Google Tag Manager)"); if(!it) return; const lv = prompt("Exact level needed (e.g. Publish)") || ""; doOp("addAccess", { item:it, level:lv }); });
   on("#adddel", () => { const t = prompt("Deliverable (concrete and checkable)"); if(t) doOp("addDeliv", { text:t }); });
   on("#hrs", () => { const h = prompt("Hours worked today on this order"); if(!h) return; doOp("hours", { h, note:prompt("What you did (short)") || "" }); });
@@ -758,7 +768,7 @@ function wireOrder(o){
   document.querySelectorAll("[data-rtxt]").forEach(t => wireAtt("r" + t.dataset.rtxt, t));
   document.querySelectorAll("[data-rsend]").forEach(b => b.onclick = async () => { const k = "r" + b.dataset.rsend, t = document.querySelector(`[data-rtxt="${b.dataset.rsend}"]`).value.trim(), fs = FILES[k] || []; if(!t && !fs.length) return toast("Paste their reply or a screenshot first", 1);
     const r = await doOp("actReply", { aid:b.dataset.rsend, text:t, files:fs }, "Reading the reply" + (fs.length ? " and " + fs.length + " screenshot" + (fs.length > 1 ? "s" : "") : "") + ", then updating the order (about 30 seconds)…"); if(r) delete FILES[k]; });
-  document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); navigator.clipboard.writeText(a.message).then(() => { if(a.status === "open"){ doOp("action", { aid:a.id, status:"sent", note:"" }, "Copied. Marking it as sent…"); } else toast("Copied"); }); });
+  document.querySelectorAll("[data-acopy]").forEach(b => b.onclick = () => { const a = (o.actions || []).find(x => x.id === b.dataset.acopy); freshCopy("action", a.id, () => { const a2 = ((CUR.order || {}).actions || []).find(x => x.id === a.id); if(a2 && a2.status === "open") doOp("action", { aid:a2.id, status:"sent", note:"" }, "Copied. Marking it as sent…"); }); });
   on("#intel", () => doOp("intel", {}, "Reading Search Console and Analytics and writing the analysis (about 40 seconds)…"));
   document.querySelectorAll("[data-hist]").forEach(b => b.onclick = () => doOp("history", {}, "Reading every email, chat and file about this site (about a minute)…"));
   if($("#packB")) $("#packB").onclick = () => doOp("pack", {}, "Reading every proof, file and check to build the delivery pack (about a minute)…");
@@ -927,7 +937,7 @@ async function msgs(){
   await refresh();
   app.innerHTML = tabs("msgs") + `<div class="card"><h2>Client messages</h2><p class="note">Messages to send on the marketplace, and client replies the team has not read yet. Copy, send, then mark sent.</p>
   ${QUEUE.map(m => `<div class="ln"><div class="tx"><b>${E(m.order)} · ${E(m.client || "")}</b> <span class="chip ${m.kind === "reply" ? "y" : "warn"}">${m.kind === "reply" ? "Reply not read yet" : "To send"}</span>${m.needBy ? ` <span class="chip n">by ${fmtD(m.needBy)}</span>` : ""} <span style="color:var(--mut)">${E(m.by)}</span>${m.title ? `<div class="sub" style="margin-top:4px">${E(m.title)}</div>` : ""}<div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div></div>
-   <div class="ac">${m.kind !== "reply" ? `<button class="btn sm pri" data-cpq="${E(m.text)}">Copy</button>` : ""}<a class="btn sm" href="#o=${E(m.order)}">Open order</a></div></div>`).join("") || `<p class="note">All clear.</p>`}</div>`;
+   <div class="ac">${m.kind !== "reply" ? `<a class="btn sm pri" href="#o=${E(m.order)}">Open to copy</a>` : ""}<a class="btn sm" href="#o=${E(m.order)}">Open order</a></div></div>`).join("") || `<p class="note">All clear.</p>`}</div>`;
   document.querySelectorAll("[data-cpq]").forEach(b => b.onclick = async () => { try{ await navigator.clipboard.writeText(b.dataset.cpq); toast("Copied. Send it on the marketplace, then mark it sent on the order."); }catch(e){ toast("Copy did not work here: select the text and copy it", true); } });
 }
 
