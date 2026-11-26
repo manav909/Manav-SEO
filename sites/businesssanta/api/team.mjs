@@ -19,6 +19,7 @@ const TTL = 60 * 60 * 24 * 14;
 const ROLES = ["sales", "comms", "pm", "qa", "manager"];
 const CAN = { create:["sales"], lead:["sales"], comms:["comms", "sales"], pm:["pm"], qa:["qa"], assign:["manager"], admin:[] };
 const rolesOf = p => (Array.isArray(p.roles) && p.roles.length ? p.roles : [p.role]).filter(r => ROLES.includes(r));
+const isMgrW = w => w.role === "admin" || (w.roles || [w.role]).includes("manager");
 const can = (w, what) => { const rs = w.roles || [w.role]; return w.role === "admin" || rs.includes("manager") && what !== "admin" || rs.some(r => (CAN[what] || []).includes(r)); };
 const H = { "content-type":"application/json", "cache-control":"no-store" };
 const out = (d, s, h) => new Response(JSON.stringify(d), { status:s || 200, headers:Object.assign({}, H, h || {}) });
@@ -755,15 +756,16 @@ const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").
 const REC0 = /\b(record(ing|ed)?|demo|walk ?through|loom|screen ?cast|video (call|walk))\b/i, REC_WHO = "QA, manager or Sales";
 const REC = { test:t => REC0.test(String(t || "")) && !/\b(dns|txt|cname|mx|a record|search console record|schema|structured data)\b/i.test(String(t || "")) };
 const ownerOf = (who, what) => REC.test(String(what || "")) ? REC_WHO : who;
-function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
+function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
+  (o.mgrTasks || []).filter(m => m.phase === "delivery").forEach(m => add(m.who || "Sales", m.text, "added by " + m.by));
   (pk.final || []).filter(f => f.status !== "ready" && f.fix).forEach(f => add("QA", f.fix, "delivery pack"));
   if(pk.client && pk.client.message) add("Sales", "Send the delivery message from the delivery pack on the marketplace" + ((pk.client.attach || []).length ? ", with " + pk.client.attach.join(", ") : ""), "delivery pack");
   if((o.deferred || []).length || (ck.deliveryNotes || []).length) add("Sales", "Tell the client the recommended next steps (the delivery note) in the delivery message", "delivery note");
   return list; }
 async function deliveryHelp(o, item, question, w){
-  const system = `You help a team member deliver one SEO order. Answer like a patient senior colleague sitting next to them: first line is the direct answer, then short numbered steps with the exact place (marketplace order page, Drive file, group) and exact text to copy in backticks. Use only the facts given; if something is unknown, say who to ask. Very simple English. No dashes. Answer with one JSON object only: {"answer":""}`;
+  const system = `A demo or walkthrough recording, and its link, goes only to the client with the delivery (the marketplace delivery message); never tell anyone to share it in the project group. You help a team member deliver one SEO order. Answer like a patient senior colleague sitting next to them: first line is the direct answer, then short numbered steps with the exact place (marketplace order page, Drive file, group) and exact text to copy in backticks. Use only the facts given; if something is unknown, say who to ask. Very simple English. No dashes. Answer with one JSON object only: {"answer":""}`;
   const pk = o.pack || {}, ck = o.check || {};
   const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage ${o.stage}. Marketplace: ${o.gig || "Fiverr"}.
 CHECKLIST ITEM: ${item ? item.who + ": " + item.what : "none"}
@@ -784,7 +786,7 @@ async function buildGuides(o){
   Object.keys(g).forEach(k => { const it = list.find(x => x.key === k); if(!it || (g[k].who !== undefined && g[k].who !== it.who) || (g[k].who === undefined && it.who === REC_WHO)) delete g[k]; });
   const need = list.filter(x => !g[x.key]); if(!need.length) return 0;
   const pk = o.pack || {}, ck = o.check || {};
-  const system = `For each before-delivery item of one SEO order, write the help a team member needs to do it without asking anyone: short numbered steps, each with the exact place (the marketplace order page and its Deliver button, the Drive file by name, the project group) and any exact text to copy in backticks. Use only the facts given; where something is unknown say who to ask. At most 6 steps per item, very simple English, no dashes. Answer with one JSON object only: {"guides":[{"key":"","steps":"1. ...\n2. ..."}]}`;
+  const system = `A demo or walkthrough recording, and its link, goes only to the client with the delivery (the marketplace delivery message); never tell anyone to share it in the project group. For each before-delivery item of one SEO order, write the help a team member needs to do it without asking anyone: short numbered steps, each with the exact place (the marketplace order page and its Deliver button, the Drive file by name, the project group) and any exact text to copy in backticks. Use only the facts given; where something is unknown say who to ask. At most 6 steps per item, very simple English, no dashes. Answer with one JSON object only: {"guides":[{"key":"","steps":"1. ...\n2. ..."}]}`;
   const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}, marketplace ${o.gig || "Fiverr"}, stage ${o.stage}.
 ITEMS: ${JSON.stringify(need.map(x => ({ key:x.key, who:x.who, what:x.what })))}
 FINAL FILES: ${JSON.stringify((pk.final || []).map(f => ({ files:(f.use || []).map(u => u.name + " " + (u.url || "")), status:f.status, fix:f.fix })))}
@@ -946,6 +948,8 @@ async function checkNow(o, fresh){
   const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
   if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
+  // Tasks the manager added are requirements of this order from now on, checked like every other
+  plan.requirements = (plan.requirements || []).filter(r => !(o.mgrTasks || []).some(m => m.id === r.id)).concat((o.mgrTasks || []).filter(m => !(o.discarded || {})[m.id]).map(m => ({ id:m.id, text:m.text, source:"manager", type:"", phase:m.phase, doneWhen:"", askedIn:{ where:"Added by " + m.by + " (manager)", when:String(m.at).slice(0, 10), quote:m.text } })));
   const reads = [];
   // Every current document is read (no file is skipped): reports in full first, then data files share what is left; pictures are looked at
   const cur = (o.docs || []).filter(x => x.status === "linked" && x.current !== false).sort((a, b) => (a.kind === "data") - (b.kind === "data") || String(b.modified).localeCompare(String(a.modified)));
@@ -986,9 +990,10 @@ async function checkNow(o, fresh){
   reads.forEach(x => delete x.full);
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
-  const phaseOf = r => REC.test((r.text || "") + " " + (r.type || "")) && !/report|audit|sheet/i.test(r.text || "") ? "delivery" : ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
+  const phaseOf = r => r.source === "manager" && r.phase ? r.phase : REC.test((r.text || "") + " " + (r.type || "")) && !/report|audit|sheet/i.test(r.text || "") ? "delivery" : ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
-  const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
+  const mIds = new Set((o.mgrTasks || []).map(m => m.id));
+  const reqs = (plan.requirements || []).filter(r => !mIds.has(r.id)).slice(0, 25).concat((plan.requirements || []).filter(r => mIds.has(r.id))).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
 
   // Roles, not personal names, for our sales side
   const seller = new Set(["Manav", "Manav Sharma"].concat((await people()).filter(p => rolesOf(p).some(r => ["sales", "comms", "admin"].includes(r))).map(p => p.name).filter(Boolean)));
@@ -1006,13 +1011,14 @@ async function checkNow(o, fresh){
     const inv = voices.join("\n").split(/\n|(?<=[.!?])\s+/).filter(l => /\bfix/i.test(l) && /quick|straightforward|small|easy|minor|while you.re (in )?there/i.test(l)).slice(0, 6);
     if(inv.length){ const old = (o.check || {}).quickFixes || [];
       const pp = await people(), roleOfBy = by => { const p2 = pp.find(x => x.name && String(by || "").toLowerCase().startsWith(x.name.toLowerCase().split(" ")[0])); const rs = p2 ? rolesOf(p2) : []; return rs.includes("manager") ? "manager" : rs.includes("pm") ? "PM" : "team"; };
+      const dq = o.discardedQF || {}, dqTxt = Object.values(dq).map(x => String(x.what || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 40));
       const firstAsk = old.reduce((m2, q) => q.at && q.at < m2 ? q.at : m2, new Date(Date.now() - 5 * 864e5).toISOString());
       const said = (o.teamChat || []).filter(m => m.at >= firstAsk && !isDeskMsg(o, m)).slice(-30).map(m => String(m.at).slice(0, 16).replace("T", " ") + " " + m.by + " (" + roleOfBy(m.by) + "): " + str(m.text, 700));
       const sysQ = `You pick QUICK FIXES for one SEO order: small fixes (minutes each, a handful of pages) that the team's own reports found and that the client's words invite. They are asked from the team in parallel and never stop QA. Big work (dozens of pages, page speed, content rewrites) is NOT a quick fix; it stays a next step. Writing a new page or new content (a privacy policy, an about page, a blog post) is never a quick fix. Never pick what the requirements already cover.
 WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a manager says which quick fixes were agreed (for example "as discussed with the manager, we needed to fix A, B and C"), only those are quick fixes: drop every other one, even one already asked. When a team member says a fix is done and the team's file marks it done or updated, it is done, unless a live check shows that exact problem still on the page. Never ask again for something a person said is done when you have no live proof against it. Name the exact pages when a report lists them. For each fix already asked, keep its id and set status from the live checks: "done" only when the live check shows it fixed. At most 4 fixes. Plain words. Answer with one JSON object only: {"quickFixes":[{"id":"q1 or the id it already has","what":"what to fix and how many pages","pages":["page address or path"],"look":"description | title | h1","status":"open | done","found":"what the live check shows now, or empty","invitedBy":"the inviting words, copied word for word"}]}`;
-      const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nWHAT THE TEAM SAID SINCE THE FIRST QUICK FIX WAS ASKED (oldest first):\n${said.join("\n") || "(nothing)"}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + fitText(x.content, 25000)).join("\n\n").slice(0, 90000)}`;
+      const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nDISCARDED BY THE MANAGER (never pick these again): ${JSON.stringify(Object.values(dq).map(x => x.what))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.filter(q => !dq[q.id]).map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nWHAT THE TEAM SAID SINCE THE FIRST QUICK FIX WAS ASKED (oldest first):\n${said.join("\n") || "(nothing)"}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + fitText(x.content, 25000)).join("\n\n").slice(0, 90000)}`;
       const rq = await askAI("quickfix", "claude-sonnet-5-5", sysQ, userQ, 2500); o.aiUsd = +(num(o.aiUsd, 0) + rq.usd).toFixed(4);
-      if(Array.isArray((rq.data || {}).quickFixes)) d2.quickFixes = rq.data.quickFixes; } }catch(e){}
+      if(Array.isArray((rq.data || {}).quickFixes)) d2.quickFixes = rq.data.quickFixes.filter(q => !dq[q.id] && !dqTxt.includes(String(q.what || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 40))); } }catch(e){}
   d2.deliveryNotes = (d2.deliveryNotes || []).map(x => noId(str(x, 300))).filter(Boolean).slice(0, 8);
   const prevQF = (o.check || {}).quickFixes || [];
   d2.quickFixes = (d2.quickFixes || []).slice(0, 6).map((q, i) => { const old = prevQF.find(x => x.id === q.id);
@@ -1169,7 +1175,8 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const clean = t => String(t || "").replace(/\*/g, "").replace(/(^|\s)_+|_+(?=\s|$|[.,;:])/g, "$1").replace(/\s+/g, " ").replace(/(https?:\/\/\S+?)\.(\s|$)/g, "$1$2").trim();
   // A quote counts only if it is really in the source it names (or another source, which then becomes the source)
   const norm = t => String(t || "").toLowerCase().replace(/[\u2018\u2019\u201c\u201d'"]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
-  const prove = p2 => { const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
+  const prove = p2 => { const mt = (o.mgrTasks || []).find(m => m.id === p2.id); if(mt) return { key:"manager", date:String(mt.at).slice(0, 10), by:String(mt.by || "").split(" ")[0], quote:mt.text };
+    const q = norm(p2.quote); if(q.split(" ").length < 4) return null;
     const order = ["requirement email", "follow up email", "KT note", "project group", "client chat"], want = String(p2.source || "").toLowerCase();
     const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key))[0];
     return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
@@ -1185,10 +1192,10 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const fmtW = w => { const t = Date.parse(w); return isNaN(t) ? "" : new Date(t).toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
   // Each item says where and by whom it was asked; nothing that was already asked is called extra
   const WHERE = { "requirement email":"Requirement email", "follow up email":"Follow up email", "KT note":"KT note", "project group":"Asked in the group", "client chat":"Asked by the client, shared by sales" };
-  const ref = pr => pr.key === "client chat" ? "_(Asked by the client, shared by sales)_"
+  const ref = pr => pr.key === "manager" ? `_(Added by ${pr.by || "the manager"}${pr.date ? ", " + fmtW(pr.date) : ""})_` : pr.key === "client chat" ? "_(Asked by the client, shared by sales)_"
     : `_(${WHERE[pr.key] || pr.key}${pr.by && pr.key !== "requirement email" ? " by " + pr.by : ""}${pr.date ? ", " + fmtW(pr.date) : ""}: "${pr.quote.replace(/"/g, "'")}")_`;
   const line = p2 => `**${p2.title || "Item"}:** ${p2.text} ${ref(p2.pr)}`;
-  const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "client chat":"Still open, asked by the client" };
+  const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "manager":"Added by the manager", "client chat":"Still open, asked by the client" };
   let n = 0; const who = str(d.person, 30).split(" ")[0];
   let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
   for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k && !p2.it.quick); if(g.length) msg += `\n\n**${HEAD[k]}**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
@@ -1809,6 +1816,21 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "mgrAdd"){ if(!isMgrW(w)) return bad("Only a manager or Manav can add tasks", 403); if(o.stage === "cancelled") return bad("This order is cancelled");
+      const text = str(q.text, 400).trim(), phase = q.phase === "delivery" ? "delivery" : "project", who = str(q.who, 40).trim(); if(text.length < 8) return bad("Write the task in a short sentence");
+      const id = "m" + (Math.max(0, ...(o.mgrTasks || []).map(m => parseInt(String(m.id).slice(1)) || 0)) + 1), m = { id, text, phase, who, by:w.name, at:now() };
+      (o.mgrTasks = o.mgrTasks || []).push(m);
+      if(phase === "project"){ o.deliverables = (o.deliverables || []).concat({ id:nid("d"), text, done:false, proof:"", qa:"", req:id });
+        if(o.check){ (o.check.requirements = o.check.requirements || []).push({ id, text, source:"manager", type:"", phase, doneWhen:"", askedIn:{ where:"Added by " + w.name + " (manager)", when:now().slice(0, 10), quote:text } });
+          (o.check.rows = o.check.rows || []).push({ r:id, status:"not done", found:"Added by " + w.name + ", " + now().slice(0, 10), toPass:text, who:ownerOf(who, text), where:"", check:"" }); o.check.readyForQA = false; }
+        if(["qa", "ready", "delivered", "done"].includes(o.stage)){ log(o, w, "Back to work from " + o.stage + ": the manager added a task"); setStage(o, "work"); } }
+      log(o, w, "Added a task (" + (phase === "project" ? "project work, it must be done before QA" : "before delivery") + (who ? ", for " + who : "") + "): " + text); }
+    else if(op === "mgrDiscard"){ if(!isMgrW(w)) return bad("Only a manager or Manav can discard this", 403); const why = str(q.reason, 400).trim(); if(why.length < 10) return bad("Write the reason (at least a short sentence)");
+      const rec = { by:w.name, role:(w.roles || [w.role]).join("+"), at:now(), reason:why }, k = str(q.key, 40);
+      if(q.kind === "qf"){ const x = ((o.check || {}).quickFixes || []).find(y => y.id === k); if(!x) return bad("Quick fix not found"); (o.discardedQF = o.discardedQF || {})[k] = Object.assign({ what:x.what }, rec); o.check.quickFixes = o.check.quickFixes.filter(y => y.id !== k); log(o, w, "Discarded the quick fix \"" + str(x.what, 120) + "\". Reason: " + why); }
+      else if(q.kind === "dl"){ const x = deliveryList(o).find(y => y.key === k); if(!x) return bad("Item not found"); (o.deliveryDiscard = o.deliveryDiscard || {})[k] = Object.assign({ what:x.what }, rec); const mt = (o.mgrTasks || []).find(m => dKey(m.text) === k); if(mt) (o.discarded = o.discarded || {})[mt.id] = rec; log(o, w, "Discarded the before-delivery item \"" + str(x.what, 120) + "\". Reason: " + why); }
+      else return bad("Unknown item");
+      o.groupMsgAt = ""; }
     else if(op === "discardReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const ck = o.check || {}, rq = (ck.requirements || []).find(x => x.id === q.r);
       if(!rq) return bad("Task not found"); const why = str(q.reason, 400).trim(); if(why.length < 10) return bad("Write the reason for discarding this task (at least a short sentence)");
       (o.discarded = o.discarded || {})[rq.id] = { by:w.name, role:(w.roles || [w.role]).join("+"), at:now(), reason:why };

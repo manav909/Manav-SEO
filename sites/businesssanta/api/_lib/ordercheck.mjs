@@ -16,7 +16,7 @@ Give every requirement a TYPE and a DONE WHEN rule, the way a fair QA lead would
 "site change" (titles, descriptions, robots.txt, redirects, content on the client's site): done when the live page shows it.
 "google setup" (Search Console or Analytics property, sitemap submission, access): done when Google data read with our access shows it.
 "report" (review, audit, analysis, recommendations, a written report): done when the work report contains that part with real findings, not just a status word. No live check is needed.
-"file or recording" (a video, a sheet, an export): done when it is shared in the project group, email or project folder.
+"file or recording" (a video, a sheet, an export): done when it is shared in the project group, email or project folder. A demo or walkthrough recording is client side only: it goes to the client with the delivery, so it is never asked to be shared in the project group and its phase is always "delivery".
 "communication" (keeping the client updated): done when the client chat shows it.
 "google result" (pages indexed, rankings, traffic): done when our action is done and the report explains honestly that Google takes time. Never fail it because Google is slow.
 Give every requirement a PHASE: "project" for the work the project team does (site changes, Google setup, the work report, reviews); "delivery" for what is handed to the client or said to them (recordings, demos, sending the report, client updates); a demo or walkthrough recording is ALWAYS made by QA, a manager or Sales, never by the working executive, so it is never asked from the executive; "client" for what only the client can give (confirmations, approvals, their own actions). Only project items decide QA.
