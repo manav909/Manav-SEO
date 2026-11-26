@@ -247,7 +247,24 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
 .tchat{max-height:360px}
 .doc{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--soft);font-size:14px}.doc:last-child{border-bottom:0}.doc.suggested{background:rgba(251,191,36,.05)}
 @media(max-width:620px){.doc{flex-direction:column}}
-.busy{position:fixed;inset:0;background:rgba(11,13,20,.82);display:flex;align-items:center;justify-content:center;z-index:50;flex-direction:column;gap:12px;font-size:16px;text-align:center;padding:20px}
+.busy{position:fixed;inset:0;background:rgba(8,10,16,.88);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.ld{width:min(440px,100%);background:var(--card,#141824);border:1px solid rgba(251,191,36,.25);border-radius:18px;padding:26px 24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:left}
+.ld-top{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.ld-mark{position:relative;width:64px;height:64px;flex:none}
+.ld-mark img{position:absolute;inset:10px;width:44px;height:44px;border-radius:50%;object-fit:cover}
+.ld-mark svg{position:absolute;inset:0;animation:ldspin 1.6s linear infinite}
+@keyframes ldspin{to{transform:rotate(360deg)}}
+.ld-brand{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#fbbf24;font-weight:700}
+.ld-title{font-size:17px;font-weight:700;line-height:1.3;margin-top:3px}
+.ld-steps{list-style:none;margin:0 0 16px;padding:0;display:grid;gap:7px}
+.ld-steps li{display:flex;gap:9px;align-items:center;font-size:13.5px;color:var(--mut,#8b93a7)}
+.ld-steps li i{width:16px;height:16px;border-radius:50%;border:2px solid #2c3346;flex:none;display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:10px}
+.ld-steps li.on{color:var(--txt,#e8ebf2);font-weight:600}.ld-steps li.on i{border-color:#fbbf24;border-top-color:transparent;animation:ldspin .8s linear infinite}
+.ld-steps li.ok{color:var(--txt,#cfd5e3)}.ld-steps li.ok i{background:#22c55e;border-color:#22c55e;color:#0b0d14}
+.ld-bar{height:6px;background:#232a3a;border-radius:99px;overflow:hidden}.ld-bar b{display:block;height:100%;width:0;background:linear-gradient(90deg,#f59e0b,#fbbf24);border-radius:99px;transition:width .9s linear}
+.ld-foot{display:flex;justify-content:space-between;gap:10px;margin-top:9px;font-size:12.5px;color:var(--mut,#8b93a7)}.ld-foot b{color:var(--txt,#e8ebf2);font-variant-numeric:tabular-nums}
+.ld-note{margin-top:10px;font-size:12px;color:var(--mut,#8b93a7)}
+@media (prefers-reduced-motion:reduce){.ld-mark svg,.ld-steps li.on i{animation:none}}
 </style>
 </head>
 <body>
@@ -256,7 +273,14 @@ table.money small{font-size:12.5px;color:var(--mut);font-weight:600}
   <div class="row" style="gap:8px"><select id="viewas" class="hide" style="min-height:36px;width:auto;font-size:13.5px"></select><button class="btn sm ghost hide" id="out" type="button">Sign out</button></div>
 </header>
 <main class="wrap" id="app"><div class="card">Loading…</div></main>
-<div class="busy hide" id="busy"><div class="spin"></div><div id="busyT">Working…</div></div>
+<div class="busy hide" id="busy" role="status" aria-live="polite"><div class="ld">
+  <div class="ld-top"><div class="ld-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="none" stroke="#2c3346" stroke-width="3"/><circle cx="32" cy="32" r="29" fill="none" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" stroke-dasharray="46 140"/></svg><img src="/assets/img/logo-96.webp" alt=""></div>
+    <div><div class="ld-brand">Business Santa · Order desk</div><div class="ld-title" id="busyT">Working…</div></div></div>
+  <ul class="ld-steps" id="busyS"></ul>
+  <div class="ld-bar"><b id="busyB"></b></div>
+  <div class="ld-foot"><span id="busyE">Usually a few seconds</span><b id="busyC">0:00</b></div>
+  <div class="ld-note" id="busyN">Please keep this page open until it finishes.</div>
+</div></div>
 <script>
 const $ = s => document.querySelector(s), app = $("#app");
 const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
@@ -290,9 +314,51 @@ async function api(a, body, params){
   if(!j.ok) throw new Error(j.error || "Something went wrong");
   return j;
 }
-function busy(t){ $("#busyT").textContent = t || "Working…"; $("#busy").classList.toggle("hide", !t); }
+/* Branded loader for long jobs: the job's own steps, a live timer, and an estimate learned from this browser's real run times */
+const LOADS = {
+  check:{ t:"Checking every task", est:140, s:["Reading the requirement email and client chat", "Reading the whole project group", "Opening every file and screenshot", "Reading the live site and Search Console", "Judging each task against its proof", "Writing the group message"] },
+  pack:{ t:"Building the delivery pack", est:70, s:["Collecting every proof and file", "Checking each deliverable", "Writing the QA checks", "Writing the client message"] },
+  draftReport:{ t:"Writing the work report", est:70, s:["Reading the verified work", "Writing it task by task", "Saving the draft to Drive"] },
+  approveReport:{ t:"Approving the report", est:100, s:["Approving the report", "Checking the whole order again", "Updating the next steps"] },
+  sync:{ t:"Reading everything for this order", est:40, s:["Reading the project folder", "Reading the emails", "Reading the project group", "Matching files to this order"] },
+  history:{ t:"Rebuilding the site history", est:70, s:["Searching the emails", "Reading the chats", "Reading the files", "Writing the history"] },
+  analyse:{ t:"Reading the whole order", est:70, s:["Reading the client chat", "Reading the call notes", "Writing the order scope"] },
+  intel:{ t:"Writing the site analysis", est:45, s:["Reading Search Console", "Reading Analytics", "Writing the analysis"] },
+  verify:{ t:"Checking the live site", est:25, s:["Opening the live site", "Reading Search Console"] },
+  site:{ t:"Checking the website", est:20, s:["Opening the pages", "Reading titles and links"] },
+  postSteps:{ t:"Updating the project group", est:12, s:["Checking who wrote last in the group", "Editing or sending the message"] },
+  proofCheck:{ t:"Reading the proof", est:25, s:["Opening the proof", "Reading it against the task"] },
+  docDiff:{ t:"Comparing the two newest versions", est:35, s:["Opening both versions", "Comparing them line by line"] },
+  hod:{ t:"Analysing every order", est:35, s:["Reading every order", "Scoring the team", "Writing the analysis"] },
+  gl:{ t:"Checking the Google accounts", est:12, s:["Asking Google what each account can see"] },
+  format:{ t:"Laying out the conversation", est:20, s:["Reading the chat", "Laying it out by date and speaker"] }
+};
+let BUSY = null;
+const ldEst = k => { let v = 0; try{ v = +localStorage.getItem("ld:" + k) || 0; }catch(e){} return v || (LOADS[k] || {}).est || 8; };
+const mmss = n => Math.floor(n / 60) + ":" + String(Math.floor(n % 60)).padStart(2, "0");
+function busy(t, key){
+  const el = $("#busy");
+  if(!t){ if(BUSY){ clearInterval(BUSY.iv); const took = (Date.now() - BUSY.t0) / 1000; if(BUSY.k && took > 3) try{ const old = +localStorage.getItem("ld:" + BUSY.k) || took; localStorage.setItem("ld:" + BUSY.k, String(Math.round(old * 0.6 + took * 0.4))); }catch(e){} } BUSY = null; el.classList.add("hide"); return; }
+  const L = LOADS[key] || null, steps = L ? L.s : [], est = ldEst(key);
+  $("#busyT").textContent = L ? L.t : t.replace(/\s*\(about[^)]*\)/i, "").replace(/…$/, "");
+  $("#busyS").innerHTML = steps.map(x => `<li><i></i>${E(x)}</li>`).join("");
+  $("#busyS").style.display = steps.length ? "" : "none";
+  $("#busyE").textContent = est >= 20 ? "Usually about " + (est >= 90 ? Math.round(est / 60 * 2) / 2 + " min" : Math.round(est / 5) * 5 + " seconds") : "A few seconds";
+  $("#busyN").textContent = est >= 20 ? "Please keep this page open until it finishes." : "";
+  if(BUSY) clearInterval(BUSY.iv);
+  BUSY = { t0:Date.now(), k:key || "", iv:0 };
+  const tick = () => { const e = (Date.now() - BUSY.t0) / 1000, f = e / est;
+    $("#busyC").textContent = mmss(e);
+    $("#busyB").style.width = Math.min(95, f < 1 ? f * 88 : 88 + (1 - 1 / (1 + (f - 1))) * 7) + "%";
+    if(f > 1.25) $("#busyE").textContent = "Taking longer than usual, still working";
+    const lis = $("#busyS").children, n = lis.length, cur = Math.min(n - 1, Math.floor(f * n));
+    for(let i = 0; i < n; i++) lis[i].className = i < cur ? "ok" : i === cur ? "on" : "";
+    [...lis].forEach((li, i) => { li.firstChild.textContent = i < cur ? "✓" : ""; }); };
+  tick(); BUSY.iv = setInterval(tick, 500);
+  el.classList.remove("hide");
+}
 function toast(t, bad){ const d = document.createElement("div"); d.className = "toast"; d.textContent = t; if(bad) d.style.borderColor = "var(--bad)"; document.body.appendChild(d); setTimeout(() => d.remove(), 4200); }
-async function act(fn, t){ busy(t); try{ return await fn(); }catch(e){ if(e.message !== "signin") toast(e.message, 1); }finally{ busy(""); } }
+async function act(fn, t, key){ busy(t, key); try{ return await fn(); }catch(e){ if(e.message !== "signin") toast(e.message, 1); }finally{ busy(""); } }
 // Permissions come from every role the person holds; ME.role is the view they chose (View as)
 const can = w => { const l = Array.isArray(w) ? w : [w], rs = ME.myRoles || [ME.role]; return rs.includes("admin") || rs.includes("manager") || rs.some(r => l.includes(r) || (r === "sales" && l.includes("comms"))); };
 
@@ -432,7 +498,7 @@ async function order(id){
   const j = await api("order", null, "&id=" + encodeURIComponent(id)); CUR = j;
   if(first) OTAB = (ME.role === "qa" && j.order.stage === "qa") || (ME.role === "pm" && ["access", "work"].includes(j.order.stage)) ? "work" : "overview"; CLINFO = j.client; drawOrder();
 }
-async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…"); if(r){ CUR = r; drawOrder(); } return r; }
+async function doOp(op, body, t){ const r = await act(() => api("do", Object.assign({ id:CUR.order.id, op }, body || {})), t || "Saving…", op); if(r){ CUR = r; drawOrder(); } return r; }
 let OTAB = "overview";
 const TODAY = () => new Date().toISOString().slice(0, 10);
 const fmtD = d => { if(!d) return ""; const x = new Date(d.length === 10 ? d + "T12:00:00" : d); return isNaN(x) ? E(d) : x.toLocaleDateString("en-GB", { day:"numeric", month:"short" }); };
@@ -770,7 +836,7 @@ async function hodPage(refresh){
     ${sec("Sales and client messages", "Time to send what the order desk prepared.", `<table class="t2"><tbody>${j.sales.map(x => `<tr><td><b>${E(x.name)}</b><div class="sub">${x.orders} order${x.orders > 1 ? "s" : ""}${x.open ? " · " + x.open + " not sent" : ""}</div></td><td>${H(x.hours)}</td></tr>`).join("")}</tbody></table>`)}
     ${(ins.people || []).length ? sec("People notes", "Fair and specific, from the timings.", ins.people.map(x => `<div class="rk"><b>${E(x.name)}</b><div class="sub ev">${E(x.note)}</div></div>`).join("")) : ""}
    </div></div>`;
-  $("#hodR").onclick = () => act(() => hodPage(true), "Analysing every order (about 30 seconds)…");
+  $("#hodR").onclick = () => act(() => hodPage(true), "Analysing every order (about 30 seconds)…", "hod");
   try{ const u = await api("deskUsage"), uc = document.createElement("div"), G = u.groups || [], tot = k => G.reduce((a2, b2) => a2 + (b2[k] || 0), 0);
     uc.innerHTML = sec("Order desk in project groups", `Today: ${tot("today")} replies, $${tot("usdToday").toFixed(3)} · This month: ${tot("month")} replies, $${tot("usdMonth").toFixed(3)} · Limits per day: ${u.limits.daily} in total, ${u.limits.group} per group, ${u.limits.person} per person (change them in Team and settings).`,
       `${G.length ? `<table class="t2"><thead><tr><th>Group</th><th>Today</th><th>Skipped today</th><th>This month</th><th>Cost this month</th></tr></thead><tbody>${G.map(g2 => `<tr><td>${E(g2.group)}</td><td>${g2.today}</td><td>${g2.skipped}</td><td>${g2.month}</td><td>$${g2.usdMonth}</td></tr>`).join("")}</tbody></table>` : `<p class="note">No messages yet. Pick the account to post as in Team and settings.</p>`}
@@ -939,7 +1005,7 @@ async function peoplePage(){
   document.querySelectorAll("[data-nc]").forEach(b => b.onclick = () => act(async () => { const r = await api("newCode", { uid:b.dataset.nc }); const p = j.people.find(x => x.id === b.dataset.nc); showCode(p.name, r.code); }));
   document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
   const gl = async ref => { try{ const g = await api("gaccs", null, ref ? "&refresh=1" : ""); $("#gacc").innerHTML = g.accounts.length ? `<table class="t2"><tbody>${g.accounts.map(a => `<tr><td><b>${E(a.email)}</b>${a.primary ? ` <span class="chip y">Main portal account</span>` : ""}</td><td>${a.gsc} Search Console · ${a.ga} Analytics</td><td>${a.drive ? `<span class="chip ok">Drive</span>` : `<span class="chip warn">No Drive</span>`} ${a.gmail ? `<span class="chip ok">Email</span>` : ""} ${a.chat ? `<span class="chip ok">Chat</span>` : ""}${!a.primary && (!a.gmail || !a.chat) ? `<div class="sub">Connect it again to add email and chat reading</div>` : ""}</td></tr>`).join("")}</tbody></table><p class="sub">Checked ${ago(g.at)}</p>` : `<p class="note">No Google account connected yet.</p>`; }catch(e){ $("#gacc").innerHTML = `<p class="note">${E(e.message)}</p>`; } };
-  gl(false); $("#gref").onclick = () => act(() => gl(true), "Asking Google what each account can see…");
+  gl(false); $("#gref").onclick = () => act(() => gl(true), "Asking Google what each account can see…", "gl");
   (async () => { const g = await api("gaccs").catch(() => ({ accounts:[] })), acs = g.accounts || [], c = ME.cfg || {}, el = $("#deskc"); if(!el) return;
     const cur = acs.find(a => a.email === c.chatAs);
     el.innerHTML = `<h2>Order desk in project groups</h2><p class="note">The desk talks in each order's project group like a colleague: what to do next, and answers to questions, in very simple English. It posts as the account you pick here. Best: seo@indiit.com with its name changed to "Order Desk".</p>
