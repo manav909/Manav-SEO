@@ -178,6 +178,9 @@
     },
     "api/team-chat.mjs": {
       "maxDuration": 120
+    },
+    "api/team-recheck.mjs": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -192,6 +195,10 @@
     {
       "path": "/api/team-chat",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/team-recheck",
+      "schedule": "5,15,25,35,45,55 * * * *"
     }
   ],
   "git": {

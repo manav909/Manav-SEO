@@ -5,12 +5,12 @@
 import crypto from "node:crypto";
 import { store, cmd, pipe, getJ, setJ, mgetJ, rid, cookieOf, setCookie, clearCookie, rateLimit, P } from "./_lib/store.mjs";
 import { GIGS } from "./_lib/gigs.mjs";
-import { ACCESS, siteCheck, aiOn, askAI as rawAsk, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt, teamReplyPrompt } from "./_lib/orderai.mjs";
+import { ACCESS, siteCheck, aiOn, askAI as rawAsk, orderPrompt, leadPrompt, replyPrompt, formatPrompt, redact, checkLink, proofCheck, intakePrompt, rethinkPrompt, teamReplyPrompt, fitText } from "./_lib/orderai.mjs";
 import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, fileBytes, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -403,7 +403,8 @@ async function syncTeam(o){
     }catch(e){} }
   o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
-  if(fresh.length && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 30 * 6e4)) try{ await buildCheck(o); }catch(e){}
+  // New information starts a new check (the check re-reads everything); right after a check, the 10 minute re-read job picks it up instead
+  if(fresh.length && !o._noCheck && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 10 * 6e4)){ o._fresh = true; try{ await buildCheck(o); }catch(e){} finally{ delete o._fresh; } }
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
 }
@@ -906,9 +907,33 @@ OPEN ITEMS TO JUDGE: ${JSON.stringify(items)}`;
   return rec.length;
 }
 
-/* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data */
+/* Current sources, right now: the group, emails, the folder and files newly posted, without starting a check of their own */
+async function freshen(o){
+  let n = 0; o._noCheck = true; try{ n = (await syncTeam(o)).new; }catch(e){} finally{ delete o._noCheck; }
+  try{ n += await matchDocs([o]); }catch(e){} groupDocs(o); return n;
+}
+const isDeskMsg = (o, m) => { const ids = new Set((o.deskPosts || []).map(x => x.sender).filter(Boolean)); return !!(m.sender && ids.has(m.sender)) || /order desk|seo desk|^indi ?it\b/i.test(m.by || "") || /^(Indi IT Solutions|Order desk|SEO Desk):/i.test(m.text || ""); };
+/* Anything a person said, sent, posted or edited after the desk last read the order (messages, emails, new files, edited files) */
+async function newerThanRead(o){
+  const at = (o.readLog || {}).at || o.checkAt || ""; if(!at) return ["nothing read yet"];
+  const out = [];
+  for(const m of o.teamChat || []) if(m.at > at && !isDeskMsg(o, m)) out.push("a message from " + String(m.by || "").split(" ")[0]);
+  for(const m of o.mails || []) if(m.date > at) out.push("an email (" + str(m.subject, 50) + ")");
+  for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false)){
+    if(d.at && d.at > at){ out.push("a new file (" + str(d.name, 50) + ")"); continue; }
+    try{ const md = await docModified(d); if(md && md.at){ if(md.at > at) out.push("an edited file (" + str(d.name, 50) + (md.by ? ", by " + md.by.split(" ")[0] : "") + ")"); d.modified = md.at; if(md.by) d.by = md.by; } }catch(e){} }
+  return out;
+}
+
+/* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data.
+   It always starts from current sources: the group, emails and files are read again first, so it never judges from an old copy. */
 async function buildCheck(o, fresh){
-  if(!aiOn()) return null; groupDocs(o);
+  if(!aiOn()) return null; const own = !o._fresh;
+  if(own){ o._fresh = true; try{ await freshen(o); }catch(e){} }
+  try{ return await checkNow(o, fresh); }finally{ if(own) delete o._fresh; }
+}
+async function checkNow(o, fresh){
+  groupDocs(o);
   const gig = gigOf(o.gig), convoText = o.convo ? o.convo.messages.map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"} ${m.name || ""}: ${m.text}`).join("\n") : o.chat;
   // Requirements stay fixed once set from the requirement email, until that email changes or "fresh" is asked for
   const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
@@ -923,9 +948,9 @@ async function buildCheck(o, fresh){
   const txtDocs = cur.filter(d => !isPic(d)), nData = txtDocs.filter(d => d.kind === "data").length;
   for(const [i, d] of txtDocs.entries()){ const left = txtDocs.length - i, dataLeft = txtDocs.slice(i).filter(x => x.kind === "data").length;
     const cap = d.kind === "data" ? Math.max(2500, Math.min(12000, Math.floor(budget / Math.max(1, dataLeft)))) : Math.max(4000, Math.min(40000, budget - 3000 * dataLeft));
-    try{ const full = await docText(d, 200000), t = full.slice(0, cap); budget -= t.length;
+    try{ const full = await docText(d, 400000), t = fitText(full, cap); budget -= t.length;
       readLog.push({ id:d.id, name:d.name, chars:full.length, used:t.length, whole:t.length >= full.length, ok:!!full, kind:d.kind });
-      if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, kind:d.kind, full, content:t + (t.length < full.length ? "\n[file continues: " + (full.length - t.length) + " more characters not shown]" : "") }); }
+      if(t) reads.push({ name:d.name, link:d.link, modified:d.modified, by:d.by, kind:d.kind, full, content:t }); }
     catch(e){ readLog.push({ id:d.id, name:d.name, chars:0, used:0, whole:false, ok:false, err:str(e.message, 80) }); } }
   for(const d of cur.filter(isPic).slice(0, 8)){
     try{ const b = await fileBytes(d); if(b && b.length < 4.5e6){ const mt = /^image\//.test(d.mime || "") ? d.mime : "image/" + (String(d.name).split(".").pop().toLowerCase().replace("jpg", "jpeg"));
@@ -970,11 +995,15 @@ async function buildCheck(o, fresh){
   d2.quickFixes = ((o.check || {}).quickFixes || []).slice();   // keep tracking what was already asked
   // Only when a person (the client, the manager, sales, the PM) asked for small fixes: never on the desk's own initiative or its own messages
   try{ const deskIds = new Set((o.deskPosts || []).map(x => x.sender).filter(Boolean));
-    const people = [((reqMail || {}).text || "")].concat((o.teamChat || []).filter(m => !(m.sender && deskIds.has(m.sender)) && !/order desk|seo desk|^indi ?it\b/i.test(m.by || "")).map(m => m.text), o.convo ? o.convo.messages.filter(m => m.who !== "us").map(m => m.text) : [String(convoText || "")]);
-    const inv = people.join("\n").split(/\n|(?<=[.!?])\s+/).filter(l => /\bfix/i.test(l) && /quick|straightforward|small|easy|minor|while you.re (in )?there/i.test(l)).slice(0, 6);
+    const voices = [((reqMail || {}).text || "")].concat((o.teamChat || []).filter(m => !(m.sender && deskIds.has(m.sender)) && !/order desk|seo desk|^indi ?it\b/i.test(m.by || "")).map(m => m.text), o.convo ? o.convo.messages.filter(m => m.who !== "us").map(m => m.text) : [String(convoText || "")]);
+    const inv = voices.join("\n").split(/\n|(?<=[.!?])\s+/).filter(l => /\bfix/i.test(l) && /quick|straightforward|small|easy|minor|while you.re (in )?there/i.test(l)).slice(0, 6);
     if(inv.length){ const old = (o.check || {}).quickFixes || [];
-      const sysQ = `You pick QUICK FIXES for one SEO order: small fixes (minutes each, a handful of pages) that the team's own reports found and that the client's words invite. They are asked from the team in parallel and never stop QA. Big work (dozens of pages, page speed, content rewrites) is NOT a quick fix; it stays a next step. Never pick what the requirements already cover. Name the exact pages when a report lists them. For each fix already asked, keep its id and set status from the live checks: "done" only when the live check shows it fixed. At most 4 fixes. Plain words. Answer with one JSON object only: {"quickFixes":[{"id":"q1 or the id it already has","what":"what to fix and how many pages","pages":["page address or path"],"look":"description | title | h1","status":"open | done","found":"what the live check shows now, or empty","invitedBy":"the inviting words, copied word for word"}]}`;
-      const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + String(x.content).slice(0, 25000)).join("\n\n").slice(0, 80000)}`;
+      const pp = await people(), roleOfBy = by => { const p2 = pp.find(x => x.name && String(by || "").toLowerCase().startsWith(x.name.toLowerCase().split(" ")[0])); const rs = p2 ? rolesOf(p2) : []; return rs.includes("manager") ? "manager" : rs.includes("pm") ? "PM" : "team"; };
+      const firstAsk = old.reduce((m2, q) => q.at && q.at < m2 ? q.at : m2, new Date(Date.now() - 5 * 864e5).toISOString());
+      const said = (o.teamChat || []).filter(m => m.at >= firstAsk && !isDeskMsg(o, m)).slice(-30).map(m => String(m.at).slice(0, 16).replace("T", " ") + " " + m.by + " (" + roleOfBy(m.by) + "): " + str(m.text, 700));
+      const sysQ = `You pick QUICK FIXES for one SEO order: small fixes (minutes each, a handful of pages) that the team's own reports found and that the client's words invite. They are asked from the team in parallel and never stop QA. Big work (dozens of pages, page speed, content rewrites) is NOT a quick fix; it stays a next step. Writing a new page or new content (a privacy policy, an about page, a blog post) is never a quick fix. Never pick what the requirements already cover.
+WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a manager says which quick fixes were agreed (for example "as discussed with the manager, we needed to fix A, B and C"), only those are quick fixes: drop every other one, even one already asked. When a team member says a fix is done and the team's file marks it done or updated, it is done, unless a live check shows that exact problem still on the page. Never ask again for something a person said is done when you have no live proof against it. Name the exact pages when a report lists them. For each fix already asked, keep its id and set status from the live checks: "done" only when the live check shows it fixed. At most 4 fixes. Plain words. Answer with one JSON object only: {"quickFixes":[{"id":"q1 or the id it already has","what":"what to fix and how many pages","pages":["page address or path"],"look":"description | title | h1","status":"open | done","found":"what the live check shows now, or empty","invitedBy":"the inviting words, copied word for word"}]}`;
+      const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nWHAT THE TEAM SAID SINCE THE FIRST QUICK FIX WAS ASKED (oldest first):\n${said.join("\n") || "(nothing)"}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + fitText(x.content, 25000)).join("\n\n").slice(0, 90000)}`;
       const rq = await askAI("quickfix", "claude-sonnet-5-5", sysQ, userQ, 2500); o.aiUsd = +(num(o.aiUsd, 0) + rq.usd).toFixed(4);
       if(Array.isArray((rq.data || {}).quickFixes)) d2.quickFixes = rq.data.quickFixes; } }catch(e){}
   d2.deliveryNotes = (d2.deliveryNotes || []).map(x => noId(str(x, 300))).filter(Boolean).slice(0, 8);
@@ -1112,7 +1141,7 @@ async function writeGroupMsg(o){
   if(cc) src.push({ key:"client chat", date:"", text:cc });
   const pm = (o.pmName || "").split(" ")[0];
   const system = `You write the points of one team chat message to working professionals (SEO executives and their PM) about work still open before QA. They already have the emails and the group: never teach them how to work, no click steps.
-Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm". State only what the findings VERIFIED: when the findings say something was not read, not checked, or will be read later, make NO point about it (the desk checks it itself) and never write it as not done.
+Write ONE point per problem. Never put the same thing in two points (for example the robots.txt line belongs to exactly one point). Never mention anything in ALREADY VERIFIED DONE, not even "also confirm". When a team member, the PM or a manager said in the group that an item is done, fixed or agreed (see LATEST FROM THE TEAM), make NO point about it unless the findings hold live proof that it is still not done; then the point names who said done and states exactly what the live check shows. State only what the findings VERIFIED: when the findings say something was not read, not checked, or will be read later, make NO point about it (the desk checks it itself) and never write it as not done.
 Each point: "title" (two to five words), for a quick fix list its pages (short paths) in "now", "now" (one short sentence: what is there now, as a plain fact), "expected" (one short sentence: what must be done or be there, as a plain instruction, for example "set the line to: Sitemap: https://site/sitemap_index.xml"). Say what is wrong in words anyone understands, and in a few words why it matters (for example: "the sitemap line in robots.txt is missing the word Sitemap: at the start, so search engines skip it"). Never write a bare web address as if it were the problem. Put any exact text the person must type or paste inside backticks, for example \`Sitemap: https://site/sitemap_index.xml\`. Use exact values only when the findings state them once and clearly; never join numbers from different files into a range, never round or guess. If it is a mistake (the team or a file says done but it is not), say exactly what says done and what shows it is not, for example: "The sheet's index tab says titles are Updated, but its title list marks every title Not Updated." No vague words like "must be exact", "still open", "needs work". Very simple, respectful English, at most 18 words a sentence. No dashes, no emojis, no asterisks or underscores.
 Then the proof of who asked for it: "source" is where it was asked (requirement email, follow up email, KT note, project group, client chat) and "quote" is the shortest full sentence COPIED WORD FOR WORD from that source that asks for THIS point; a line that only describes the client's problem, or speaks of the work in general, is not proof. Prefer the requirement email, then follow up email or KT note, then project group, then client chat. If no source asks for it, set source "none" and quote "": the desk will not ask the team for it.
 Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
@@ -1120,6 +1149,7 @@ Answer with one JSON object only: {"person":"first name if every point is for on
 OPEN ITEMS (findings from the check): ${JSON.stringify(open)}
 QUICK FIXES (small, they do not stop QA; write a point for each with id as given): ${JSON.stringify(((ck.quickFixes || []).filter(q => q.status !== "done")).map(q => ({ id:q.id, fix:q.what, pages:q.pages, now:q.found, invited:q.invitedBy })))}
 ALREADY VERIFIED DONE (never mention): ${JSON.stringify(done)}
+LATEST FROM THE TEAM (people's messages since the desk's last message, newest last): ${JSON.stringify((o.teamChat || []).filter(m => !isDeskMsg(o, m) && m.at > (((o.deskPosts || []).slice(-1)[0] || {}).at || "")).slice(-15).map(m => String(m.at).slice(0, 16) + " " + m.by + ": " + str(m.text, 500)))}
 SOURCES:
 ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice(0, x.key === "requirement email" ? 8000 : 2500)}`).join("\n\n").slice(0, 70000)}`;
   const r = await askAI("groupmsg", "claude-sonnet-5-5", system, user, 3000);
@@ -1175,6 +1205,12 @@ async function postSteps(o, cfg, by){
   if(!g){ const names = [...new Set((o.teamChat || []).map(m => m.space).filter(n2 => n2 && !/access/i.test(n2)))], sp = (await mySpaces(as)).find(x => names.includes(x.name));
     if(sp){ g = { id:sp.id, name:sp.name }; (o.teamChat || []).forEach(m => { if(m.space === sp.name && !m.spaceId) m.spaceId = sp.id; }); } }
   if(!g) throw new Error("No project group found for this order yet. Add seo@indiit.com to the project's Google Chat group");
+  // Never post from an old reading: the group, emails and files are read again now, and anything newer than the check means a new check first
+  if(!o._regated){ await freshen(o); const nw = await newerThanRead(o);
+    if(nw.length){ log(o, by || { name:"Order desk" }, "Before posting, found " + [...new Set(nw)].slice(0, 5).join(", ") + " after the last check: read everything again");
+      const q0 = o._quiet; o._quiet = true; o._regated = true; try{ await checkNow(o); }finally{ o._quiet = q0; delete o._regated; }
+      if(by) throw new Error("New information came in after the last check (" + [...new Set(nw)].slice(0, 3).join(", ") + "). The desk read everything again: look at the updated message, then post it.");
+      if(o.check && o.check.autoPostHeld) throw new Error(o.check.autoPostHeld); } }
   if(!o.groupMsg || !o.groupMsgAt || (o.check && o.groupMsgAt < o.check.at)){ try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){} }
   const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
   // One living message per order: edit the desk's last steps message instead of posting a repeat
@@ -1275,6 +1311,24 @@ Answer with one JSON object only: {"genuine":true,"topic":"two to four words, fo
   }
   await cmd("SET", MP, started);
   return out;
+}
+
+/* Every 10 minutes: an order whose group got a person's message, or whose files were edited, after the check read it is read and judged
+   again (after 3 quiet minutes, so a person can finish what they are writing). The group message then always follows the newest word. */
+export async function recheckStale(){
+  if(!aiOn()) return ["off"]; if(await cmd("GET", "bsp:teamsync:lock")) return ["hourly sync running"];
+  const cfg = await cfgOf(), as = await poster(cfg), out = [], ripe = t => Date.now() - Date.parse(t) > 3 * 6e4;
+  const open = (await loadAll(300, true)).filter(o => ["work", "qa"].includes(o.stage) && o.check);
+  let n = 0;
+  for(const o of open){ if(n >= 2) break; const at = (o.readLog || {}).at || o.checkAt; if(!at) continue;
+    let why = [];
+    const g = groupOf(o); if(as && g) try{ const ms = (await chatSince(as, g.id, at)).filter(m => !isDeskMsg(o, m)); if(ms.length && ms.every(m => ripe(m.at))) why.push(ms.length + " new message(s) in the group"); else if(ms.length) continue; }catch(e){}
+    if(!why.length) for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false && !x.media).slice(0, 30)){ try{ const md = await docModified(d); if(md && md.at > at && ripe(md.at)) why.push("file edited: " + d.name); }catch(e){} }
+    if(!why.length) continue;
+    if(await cmd("SET", "bsp:chk:" + o.id, "1", "NX", "EX", 280) !== "OK") continue;
+    try{ log(o, { name:"Order desk" }, "Read the order again: " + why.slice(0, 3).join("; ")); await buildCheck(o); await saveO(o); n++; out.push(o.id + " read again"); }
+    catch(e){ out.push(o.id + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + o.id); } }
+  return out.length ? out : ["nothing new"];
 }
 
 /* Every 10 minutes: questions to the desk in project groups get an answer in their thread */

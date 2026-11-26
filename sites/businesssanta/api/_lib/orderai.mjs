@@ -240,16 +240,38 @@ function unzip(buf, want){
   return out;
 }
 const ent = s => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+/* A file's text cut to fit a reading budget without losing any part of it: a spreadsheet keeps EVERY tab (name, size and its
+   first rows), sharing the budget so small tabs show whole and big tabs show as much as fits, each saying what was left out. */
+export const TAB = "=== TAB: ";
+export function fitText(text, cap){
+  text = String(text || ""); if(text.length <= cap) return text;
+  const parts = text.split(/\n\n(?==== TAB: )/); if(parts.length < 2) return text.slice(0, cap) + "\n[file continues: " + (text.length - cap) + " more characters not shown]";
+  let left = cap - 60 * parts.length, open = parts.map((p, i) => i); const give = new Array(parts.length).fill(0);
+  while(open.length && left > 0){ const share = Math.floor(left / open.length); if(share < 1) break; const next = []; let used = 0;
+    for(const i of open){ const g = Math.min(parts[i].length - give[i], share); give[i] += g; used += g; if(give[i] < parts[i].length) next.push(i); }
+    left -= used; if(next.length === open.length) break; open = next; }
+  return parts.map((p, i) => { if(give[i] >= p.length) return p; const head = p.split("\n")[0], body = p.slice(head.length + 1, Math.max(head.length + 1, give[i])).replace(/\n[^\n]*$/, "");
+    const shown = body ? body.split("\n").length : 0, all = p.split("\n").length - 1; return head + "\n" + body + "\n[this tab continues: " + (all - shown) + " more rows not shown]"; }).join("\n\n");
+}
 export function officeText(buf, name){
   const ext = (name.split(".").pop() || "").toLowerCase();
-  if(["txt", "csv", "md", "html", "htm", "json"].includes(ext)) return buf.toString("utf8").slice(0, 40000);
-  if(ext === "docx"){ const f = unzip(buf, /^word\/(document|header\d*|footer\d*)\.xml$/); return ent(Object.values(f).join("\n").replace(/<\/w:p>/g, "\n").replace(/<w:tab\/>/g, "\t").replace(/<[^>]+>/g, "")).replace(/\n{3,}/g, "\n\n").slice(0, 40000); }
-  if(ext === "pptx"){ const f = unzip(buf, /^ppt\/slides\/slide\d+\.xml$/); return Object.keys(f).sort((a, b) => parseInt(a.match(/\d+/)) - parseInt(b.match(/\d+/))).map((k, i) => "Slide " + (i + 1) + ": " + ent(f[k].replace(/<\/a:p>/g, "\n").replace(/<[^>]+>/g, ""))).join("\n").slice(0, 40000); }
+  if(["txt", "csv", "md", "html", "htm", "json"].includes(ext)) return buf.toString("utf8").slice(0, 400000);
+  if(ext === "docx"){ const f = unzip(buf, /^word\/(document|header\d*|footer\d*)\.xml$/); return ent(Object.values(f).join("\n").replace(/<\/w:p>/g, "\n").replace(/<w:tab\/>/g, "\t").replace(/<[^>]+>/g, "")).replace(/\n{3,}/g, "\n\n").slice(0, 400000); }
+  if(ext === "pptx"){ const f = unzip(buf, /^ppt\/slides\/slide\d+\.xml$/); return Object.keys(f).sort((a, b) => parseInt(a.match(/\d+/)) - parseInt(b.match(/\d+/))).map((k, i) => "Slide " + (i + 1) + ": " + ent(f[k].replace(/<\/a:p>/g, "\n").replace(/<[^>]+>/g, ""))).join("\n").slice(0, 400000); }
   if(ext === "xlsx"){
-    const f = unzip(buf, /^xl\/(sharedStrings\.xml|worksheets\/sheet\d+\.xml)$/), ss = [];
-    (f["xl/sharedStrings.xml"] || "").replace(/<si>([\s\S]*?)<\/si>/g, (_, x) => { ss.push(ent(x.replace(/<[^>]+>/g, ""))); return ""; });
-    return Object.keys(f).filter(k => /sheet\d+/.test(k)).sort().map(k => k.replace(/.*\//, "") + ":\n" + (f[k].match(/<row[\s\S]*?<\/row>/g) || []).slice(0, 400).map(r => (r.match(/<c [^>]*?(\/>|>[\s\S]*?<\/c>)/g) || []).map(c => {
-      const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [])[1] || (c.match(/<t[^>]*>([\s\S]*?)<\/t>/) || [])[1] || ""; return / t="s"/.test(c) ? (ss[+v] || "") : ent(v); }).join("\t")).join("\n")).join("\n\n").slice(0, 40000);
+    // Every tab, in the workbook's own order and under its own name, so a tab like "Duplicate Meta Descriptions" is never lost
+    const f = unzip(buf, /^xl\/(sharedStrings\.xml|workbook\.xml|_rels\/workbook\.xml\.rels|worksheets\/sheet\d+\.xml)$/), ss = [];
+    (f["xl/sharedStrings.xml"] || "").replace(/<si>([\s\S]*?)<\/si>/g, (_, x) => { ss.push(ent(x.replace(/<rPh[\s\S]*?<\/rPh>/g, "").replace(/<[^>]+>/g, ""))); return ""; });
+    const rel = {}; (f["xl/_rels/workbook.xml.rels"] || "").replace(/<Relationship\b[^>]*>/g, t => { const id = (t.match(/\bId="([^"]+)"/) || [])[1], tg = (t.match(/\bTarget="([^"]+)"/) || [])[1]; if(id && tg) rel[id] = "xl/" + tg.replace(/^\/?xl\//, "").replace(/^\//, ""); return ""; });
+    const tabs = []; (f["xl/workbook.xml"] || "").replace(/<sheet\b[^>]*>/g, t => { const nm = ent((t.match(/\bname="([^"]*)"/) || [])[1] || ""), rid = (t.match(/\br:id="([^"]+)"/) || [])[1]; if(rid && f[rel[rid]]) tabs.push({ name:nm, file:rel[rid] }); return ""; });
+    const files = Object.keys(f).filter(k => /worksheets\/sheet\d+\.xml$/.test(k)).sort((a, b) => parseInt(a.match(/(\d+)\.xml$/)[1]) - parseInt(b.match(/(\d+)\.xml$/)[1]));
+    for(const k of files) if(!tabs.some(t => t.file === k)) tabs.push({ name:k.replace(/.*\//, "").replace(".xml", ""), file:k });
+    const col = r => { let n = 0; for(const ch of String(r || "").replace(/\d+$/, "")) n = n * 26 + ch.charCodeAt(0) - 64; return n; };
+    return tabs.map(tb => { const rows = (f[tb.file].match(/<row[\s\S]*?<\/row>/g) || []).slice(0, 5000).map(r => { const cells = []; let at = 0;
+        for(const c of r.match(/<c [^>]*?(\/>|>[\s\S]*?<\/c>)/g) || []){ const ref = (c.match(/\br="([A-Z]+)\d+"/) || [])[1], ci = ref ? col(ref) - 1 : at; at = ci + 1;
+          const v = (c.match(/<v>([\s\S]*?)<\/v>/) || [])[1] || (c.match(/<t[^>]*>([\s\S]*?)<\/t>/) || [])[1] || ""; cells[ci] = / t="s"/.test(c) ? (ss[+v] || "") : ent(v); }
+        return Array.from(cells, x => x == null ? "" : String(x).replace(/[\t\n]+/g, " ")).join("\t").replace(/\t+$/, ""); }).filter(x => x.trim());
+      return TAB + tb.name + " (" + rows.length + " rows) ===\n" + rows.join("\n"); }).join("\n\n").slice(0, 2000000);
   }
   return "";
 }

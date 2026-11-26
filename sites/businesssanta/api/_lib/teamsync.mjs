@@ -2,7 +2,7 @@
    the project's Drive folder, emails the account is copied on, and Google Chat spaces it is a member of.
    Orders are matched by order number (O-1001) or the client's site (pwmania.com / pwmania). */
 import { apiAs, accounts } from "./google.mjs";
-import { officeText } from "./orderai.mjs";
+import { officeText, fitText } from "./orderai.mjs";
 import { inflateSync as INFLATE } from "node:zlib";
 /* A Google Sheet as text, every tab (the plain-text export gives only the first tab) */
 async function sheetText(id, tok){
@@ -147,6 +147,12 @@ export const docGroup = d => (d.kind || "other") + ":" + String(d.name || "").to
   .replace(/\b(v|ver|version|final|draft|new|latest|updated)\s*\d*\b/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 export async function docText(d, max){ return fileText(d, max || 20000); }
 /* Raw bytes of a picture the team shared (Drive or uploaded in a chat), so the check can look at it */
+/* When a linked file last changed, read live from Drive (files uploaded into a chat never change) */
+export async function docModified(d){
+  if(!d.via || d.media || !d.id) return "";
+  const r = await apiAs(d.via, "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&fields=modifiedTime,lastModifyingUser(displayName)");
+  return { at:r.modifiedTime || "", by:(r.lastModifyingUser || {}).displayName || "" };
+}
 export async function fileBytes(d){
   if(!d.via) return null; const tok = await (await import("./google.mjs")).accessTokenAs(d.via);
   const u = d.media ? "https://chat.googleapis.com/v1/media/" + d.media + "?alt=media" : "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&alt=media";
@@ -166,9 +172,13 @@ export async function fileText(d, max){
   if(d.media) t = fromBuf(await get("https://chat.googleapis.com/v1/media/" + d.media + "?alt=media"), name, mime);
   else { const D = "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true";
     if(/google-apps\.spreadsheet$/.test(mime)) t = await sheetText(d.id, tok);
-    else if(/google-apps\.(document|presentation)$/.test(mime)) t = (await get("https://www.googleapis.com/drive/v3/files/" + d.id + "/export?mimeType=text/plain")).toString("utf8");
+    else if(/google-apps\.(document|presentation)$/.test(mime)){
+      // A Google Doc can have several tabs: the Word export carries every tab, the plain text export may carry only the first. Keep the fuller one.
+      const plain = (await get("https://www.googleapis.com/drive/v3/files/" + d.id + "/export?mimeType=text/plain")).toString("utf8");
+      let office = ""; try{ const isDoc = /document$/.test(mime); office = officeText(await get("https://www.googleapis.com/drive/v3/files/" + d.id + "/export?mimeType=" + encodeURIComponent(isDoc ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "application/vnd.openxmlformats-officedocument.presentationml.presentation")), isDoc ? "f.docx" : "f.pptx"); }catch(e){}
+      t = office.replace(/\s+/g, "").length > plain.replace(/\s+/g, "").length * 1.05 ? office : plain; }
     else if(!/google-apps/.test(mime)) t = fromBuf(await get(D + "&alt=media"), name, mime); }
-  return maskCreds(String(t || ""), true).slice(0, max);
+  return fitText(maskCreds(String(t || ""), true), max);
 }
 function a85(t){ t = t.replace(/\s/g, "").replace(/^<~/, "").replace(/~>.*$/, ""); const out = []; let g = [];
   for(const ch of t){ if(ch === "z" && !g.length){ out.push(0, 0, 0, 0); continue; } g.push(ch.charCodeAt(0) - 33);
