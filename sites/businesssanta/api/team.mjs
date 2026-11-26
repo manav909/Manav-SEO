@@ -799,6 +799,7 @@ async function buildCheck(o, fresh){
   d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
   d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
   // Quick fixes get their own focused look: small fixes the team's reports found, invited by the client's own words
+  d2.quickFixes = ((o.check || {}).quickFixes || []).slice();   // keep tracking what was already asked
   // Only when a person (the client, the manager, sales, the PM) asked for small fixes: never on the desk's own initiative or its own messages
   try{ const deskIds = new Set((o.deskPosts || []).map(x => x.sender).filter(Boolean));
     const people = [((reqMail || {}).text || "")].concat((o.teamChat || []).filter(m => !(m.sender && deskIds.has(m.sender)) && !/order desk|seo desk|^indi ?it\b/i.test(m.by || "")).map(m => m.text), o.convo ? o.convo.messages.filter(m => m.who !== "us").map(m => m.text) : [String(convoText || "")]);
