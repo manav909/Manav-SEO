@@ -71,6 +71,7 @@ function flags(o){
   const q = (o.queue || []).filter(x => !x.sent).length; if(q) f.push({ k:"y", t:q + " message" + (q > 1 ? "s" : "") + " to send" });
   const r = (o.queue || []).filter(x => x.reply && !x.seen).length; if(r) f.push({ k:"y", t:"New client reply" });
   // A scope warning holds only until the next order check, which reads the client chat and carries any new ask in its own lists
+  if(o.scopePending) f.push({ k:"warn", t:"Scope changed: a manager to look" });
   if(o.alert && !(/something new/i.test(o.alert) && o.checkAt && (!o.alertAt || o.checkAt > o.alertAt))) f.push({ k:"bad", t:o.alert });
   if(open){ const last = Date.parse(o.lastUpdateAt || o.at), hrs = (Date.now() - last) / 36e5; if(hrs > 24) f.push({ k:"bad", t:"No update for " + Math.round(hrs) + " h: paste the latest messages" }); else if(hrs > 8) f.push({ k:"warn", t:"Last update " + Math.round(hrs) + " h ago" }); }
   const dc = (o.actions || []).filter(a => a.status === "decide").length; if(dc) f.push({ k:"bad", t:dc + " step" + (dc > 1 ? "s need" : " needs") + " a decision" });
@@ -305,7 +306,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -1030,7 +1031,7 @@ async function checkNow(o, fresh){
   const prev = o.check && o.check.reqMail && (o.check.requirements || []).length && !fresh ? o.check : null;
   const p1 = planPrompt(o, gig, convoText, prev ? prev.requirements : null), r1 = await askAI("check1", "claude-sonnet-5-5", p1.system, p1.user, 8000), plan = r1.data || {};
   const ri = plan.reqMail && Number.isInteger(plan.reqMail.index) ? plan.reqMail.index : -1, reqMail = ri >= 0 ? (o.mails || [])[ri] || null : null;
-  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:r.phase || nw.phase, askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
+  if(prev && reqMail && reqMail.id === prev.reqMail.id) plan.requirements = prev.requirements.map(r => { const nw = (plan.requirements || []).find(x => x.id === r.id) || {}; return Object.assign({}, r, { phase:nw.managerSaid && nw.phase ? nw.phase : r.phase || nw.phase, managerSaid:nw.managerSaid || r.managerSaid || "", askedIn:nw.askedIn && nw.askedIn.where ? nw.askedIn : r.askedIn, why:r.why || nw.why }); });
   // Tasks the manager added are requirements of this order from now on, checked like every other
   plan.requirements = (plan.requirements || []).filter(r => !(o.mgrTasks || []).some(m => m.id === r.id)).concat((o.mgrTasks || []).filter(m => !(o.discarded || {})[m.id]).map(m => ({ id:m.id, text:m.text, source:"manager", type:"", phase:m.phase, doneWhen:"", askedIn:{ where:"Added by " + m.by + " (manager)", when:String(m.at).slice(0, 10), quote:m.text } })));
   const reads = [];
@@ -1076,8 +1077,16 @@ async function checkNow(o, fresh){
   const phaseOf = r => r.source === "manager" && r.phase ? r.phase : REC.test((r.text || "") + " " + (r.type || "")) && !/report|audit|sheet/i.test(r.text || "") ? "delivery" : ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
   const mIds = new Set((o.mgrTasks || []).map(m => m.id));
-  const reqs = (plan.requirements || []).filter(r => !mIds.has(r.id)).slice(0, 25).concat((plan.requirements || []).filter(r => mIds.has(r.id))).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
+  const reqs = (plan.requirements || []).filter(r => !mIds.has(r.id)).slice(0, 25).concat((plan.requirements || []).filter(r => mIds.has(r.id))).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200), managerSaid:str(r.managerSaid, 400) }));
 
+  // The scope never changes silently: any task added, dropped or moved (for example by a manager's instruction) is recorded with its reason,
+  // shown on the order, and nothing is posted to the group about the new scope until a manager or Manav has seen it
+  { const before = ((o.check || {}).requirements || []).filter(r => !(o.mgrTasks || []).some(m => m.id === r.id));
+    if(before.length){ const after = reqs.filter(r => !(o.mgrTasks || []).some(m => m.id === r.id)), ch = [];
+      for(const r of after){ const b = before.find(x => x.id === r.id); if(!b) ch.push({ kind:"added", text:r.text });
+        else if((b.phase || "project") !== (r.phase || "project")) ch.push({ kind:"moved", text:r.text, from:b.phase || "project", to:r.phase || "project", why:r.managerSaid || "" }); }
+      for(const b of before) if(!after.some(x => x.id === b.id)) ch.push({ kind:"dropped", text:b.text });
+      if(ch.length){ o.scopePending = { at:now(), changes:ch.slice(0, 12) }; log(o, { name:"Order desk" }, "Scope changed by the check (waits for a manager to see it): " + ch.map(c => c.kind + ": " + str(c.text, 70) + (c.why ? " (" + str(c.why, 120) + ")" : "")).join("; ")); } } }
   // Roles, not personal names, for our sales side
   const seller = new Set(["Manav", "Manav Sharma"].concat((await people()).filter(p => rolesOf(p).some(r => ["sales", "comms", "admin"].includes(r))).map(p => p.name).filter(Boolean)));
   const role = t => { let x = String(t || ""); for(const n of seller) x = x.replace(new RegExp("\\b" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), "Sales"); return x.replace(/\bSales Sharma\b/g, "Sales"); };
@@ -1155,7 +1164,7 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
   o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
-  try{ const cfg2 = await cfgOf(), t = stepsText(o); if(cfg2.autoPost && !o._quiet && !unsure && t && !(o.deskPosts || []).some(p => p.hash === sha(t).slice(0, 12))) await postSteps(o, cfg2); }catch(e){}
+  try{ const cfg2 = await cfgOf(), why = postReason(o); if(cfg2.autoPost && !o._quiet && !unsure && why) await postSteps(o, cfg2, null, why); }catch(e){}
   return o.check;
 }
 
@@ -1222,10 +1231,10 @@ async function readCommon(){
 const groupOf = o => { const n = {}; (o.teamChat || []).filter(m => m.spaceId && !/access/i.test(m.space || "")).forEach(m => n[m.spaceId] = (n[m.spaceId] || 0) + 1); const id = Object.keys(n).sort((a, b) => n[b] - n[a])[0]; return id ? { id, name:((o.teamChat || []).find(m => m.spaceId === id) || {}).space || "" } : null; };
 async function poster(cfg){ const as = cfg.chatAs; if(!as) return null; const a = (await gAccounts()).find(x => x.email === as); return a && a.post ? a.email : null; }
 const deskSay = (cfg, t) => (cfg.deskTag === true ? "Order desk: " : "") + t;
-async function writeGroupMsg(o){
+async function writeGroupMsg(o, opts){ opts = opts || {};
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project";
   const proj = (ck.rows || []).filter(r => ph(r) === "project" && !/sales/i.test(r.who || ""));
-  const open = proj.filter(r => r.status !== "done").map(r => { const q = reqs.find(x => x.id === r.r) || {};
+  const open = proj.filter(r => r.status !== "done" && (!opts.only || opts.only.includes(r.r))).map(r => { const q = reqs.find(x => x.id === r.r) || {};
     return { id:r.r, asked:q.text, status:r.status, found:r.found, missing:r.toPass, live:r.live, report:r.report, who:r.who }; });
   if(!open.length && !(ck.quickFixes || []).some(q => q.status !== "done")){ o.groupMsgLeftOut = []; return ""; }
   const done = proj.filter(r => r.status === "done").map(r => ({ asked:((reqs.find(x => x.id === r.r) || {}).text) || "", found:r.found }));
@@ -1248,7 +1257,7 @@ Then the proof of who asked for it: "source" is where it was asked (requirement 
 Answer with one JSON object only: {"person":"first name if every point is for one person, else empty","points":[{"id":"item id","title":"","now":"","expected":"","source":"","quote":""}]}`;
   const user = `SITE: ${o.client.website}
 OPEN ITEMS (findings from the check): ${JSON.stringify(open)}
-QUICK FIXES (small, they do not stop QA; write a point for each with id as given): ${JSON.stringify(((ck.quickFixes || []).filter(q => q.status !== "done")).map(q => ({ id:q.id, fix:q.what, pages:q.pages, now:q.found, invited:q.invitedBy })))}
+QUICK FIXES (small, they do not stop QA; write a point for each with id as given): ${JSON.stringify(((ck.quickFixes || []).filter(q => q.status !== "done" && !opts.only)).map(q => ({ id:q.id, fix:q.what, pages:q.pages, now:q.found, invited:q.invitedBy })))}
 ALREADY VERIFIED DONE (never mention): ${JSON.stringify(done)}
 LATEST FROM THE TEAM (people's messages since the desk's last message, newest last): ${JSON.stringify((o.teamChat || []).filter(m => !isDeskMsg(o, m) && m.at > (((o.deskPosts || []).slice(-1)[0] || {}).at || "")).slice(-15).map(m => String(m.at).slice(0, 16) + " " + m.by + ": " + str(m.text, 500)))}
 SOURCES:
@@ -1269,7 +1278,7 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
     const hit = src.filter(x => norm(x.text).includes(q)).sort((x, y) => order.indexOf(x.key) - order.indexOf(y.key))[0];
     return hit ? { key:hit.key, date:hit.date, by:hit.by || "", quote:clean(p2.quote) } : null; };
   const seen = new Set(), pts = [], left = [];
-  const qfs = (ck.quickFixes || []).filter(q => q.status !== "done");
+  const qfs = (ck.quickFixes || []).filter(q => q.status !== "done" && !opts.only);
   for(const p2 of d.points || []){ const qf = qfs.find(x => x.id === p2.id), it = open.find(x => x.id === p2.id) || (qf ? { id:qf.id, quick:true } : null); if(!it) continue;
     const ex = clean(p2.expected).replace(/^(needed|expected|it should)\s*:?\s*/i, ""), title = clean(p2.title), text = [clean(p2.now), ex ? "Needed: " + ex.charAt(0).toLowerCase() + ex.slice(1) : ""].filter(Boolean).join(" "), k = norm(title);
     if(!text || seen.has(k)) continue; seen.add(k);
@@ -1285,7 +1294,7 @@ ${src.map(x => `[${x.key}${x.date ? ", " + x.date : ""}]\n${String(x.text).slice
   const line = p2 => `**${p2.title || "Item"}:** ${p2.text} ${ref(p2.pr)}`;
   const HEAD = { "requirement email":"Still open from the requirement email" + (rm && rm.date ? " (" + fmtW(rm.date) + ")" : ""), "follow up email":"Still open from the follow up emails", "KT note":"Still open from the KT note", "project group":"Still open, already asked here in the group", "manager":"Added by the manager", "client chat":"Still open, asked by the client" };
   let n = 0; const who = str(d.person, 30).split(" ")[0];
-  let msg = `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
+  let msg = opts.intro || `Hi ${who || "team"}, for ${domOf(o.client.website)}:`;
   for(const k of Object.keys(HEAD)){ const g = pts.filter(p2 => p2.pr.key === k && !p2.it.quick); if(g.length) msg += `\n\n**${HEAD[k]}**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
   { const g = pts.filter(p2 => p2.it.quick); if(g.length) msg += `\n\n**Quick fixes, please do these too (they do not stop QA)**\n\n` + g.map(p2 => `${++n}. ${line(p2)}`).join("\n"); }
   return msg + `\n\n${pm ? pm + ", please check this list is right.\n" : ""}Reply "done" here when an item is finished.`;
@@ -1301,7 +1310,35 @@ function stepsText(o){
   const pm = (o.pmName || "").split(" ")[0];
   return `Hi team, for ${domOf(o.client.website)} we still need:\n${lines.join("\n")}\n${pm ? pm + ", does this plan work for you? " : ""}Write "done" here when a step is finished.`;
 }
-async function postSteps(o, cfg, by){
+/* The desk writes in a project group ONLY for an important reason, never to repeat the requirement email (the team works from it already):
+   a "done" the desk's own live check does not confirm, every requirement verified (ready for QA), a task a manager added, or a deadline close
+   with work still open (one polite note, and not while the PM has just said the work is going on, unless it is a day away). Never in the
+   access stage, never while a scope change waits for a manager, never twice for the same reason and items. */
+function postReason(o){
+  const ck = o.check || {}, posts = (o.deskPosts || []).filter(p => p.kind === "steps"), last = posts.slice(-1)[0], lastAt = last ? last.at : "";
+  if(o.stage !== "work" || o.scopePending) return null;
+  const reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", rows = (ck.rows || []).filter(r => ph(r) === "project" && !r.notAsked);
+  const same = (kind, ids) => posts.some(p => p.reason === kind && p.items === ids.slice().sort().join(","));
+  const wrong = rows.filter(r => ["not done", "partly"].includes(r.status) && (ck.claims || []).some(c => { const t = Date.parse(c.at); return c.r === r.r && (!lastAt || (!isNaN(t) && new Date(t).toISOString() > lastAt)); }));
+  if(wrong.length && !same("claim", wrong.map(r => r.r))) return { kind:"claim", ids:wrong.map(r => r.r) };
+  if(ck.readyForQA && !posts.some(p => p.reason === "ready")) return { kind:"ready", ids:[] };
+  const mt = (o.mgrTasks || []).filter(m => m.phase === "project" && (!lastAt || m.at > lastAt) && !(o.discarded || {})[m.id]);
+  if(mt.length && !same("added", mt.map(m => m.id))) return { kind:"added", ids:mt.map(m => m.id) };
+  const open = rows.filter(r => r.status !== "done"), hrs = (Date.parse(String(o.deadline) + "T23:59:00Z") - Date.now()) / 36e5;
+  const busy = (o.teamChat || []).some(m => !isDeskMsg(o, m) && Date.now() - Date.parse(m.at) < 12 * 36e5 && /in progress|progress mode|working on|on it|will (share|update|send)|kaam chal|kar rah|kr rh|ho rha|ho raha/i.test(m.text || ""));
+  if(open.length && hrs > 0 && hrs < 48 && (!busy || hrs < 24) && !posts.some(p => p.reason === "deadline" && Date.now() - Date.parse(p.at) < 20 * 36e5)) return { kind:"deadline", ids:open.map(r => r.r) };
+  return null;
+}
+async function reasonText(o, why){
+  const site = domOf(o.client.website), pm = (o.pmName || "").split(" ")[0];
+  if(why.kind === "claim") return await writeGroupMsg(o, { only:why.ids, intro:`Thanks for the update on ${site}. The desk checked the items marked done, and ${why.ids.length > 1 ? "these are" : "this one is"} not showing yet:` });
+  if(why.kind === "ready") return `Thank you, team. For ${site}, every requirement is now verified on the live site and in the files. The order moves to QA.`;
+  if(why.kind === "added"){ const mt = (o.mgrTasks || []).filter(m => why.ids.includes(m.id)); return `Hi team, for ${site}: ${mt.map(m => String(m.by || "the manager").split(" ")[0] + " added a task: **" + m.text + "**" + (m.who ? " (for " + m.who + ")" : "")).join("\n")}\n\nIt is part of this order before QA.`; }
+  if(why.kind === "deadline"){ const d = new Date(String(o.deadline) + "T12:00:00Z").toLocaleDateString("en-GB", { day:"numeric", month:"short" });
+    return `Hi team, a gentle note for ${site}: the deadline is ${d}. When you get a moment, please share where the work stands, or post the files here. Thank you.${pm ? "" : ""}`; }
+  return "";
+}
+async function postSteps(o, cfg, by, why){
   const as = await poster(cfg); if(!as) throw new Error("Choose the account to post as in Team and settings, and connect it with Google Chat permission");
   let g = groupOf(o);
   if(!g){ const names = [...new Set((o.teamChat || []).map(m => m.space).filter(n2 => n2 && !/access/i.test(n2)))], sp = (await mySpaces(as)).find(x => names.includes(x.name));
@@ -1314,18 +1351,21 @@ async function postSteps(o, cfg, by){
       if(by) throw new Error("New information came in after the last check (" + [...new Set(nw)].slice(0, 3).join(", ") + "). The desk read everything again: look at the updated message, then post it.");
       if(o.check && o.check.autoPostHeld) throw new Error(o.check.autoPostHeld); } }
   if(!o.groupMsg || !o.groupMsgAt || (o.check && o.groupMsgAt < o.check.at)){ try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){} }
-  const t = stepsText(o); if(!t) throw new Error("No open project steps to post");
+  // By itself the desk posts only for its reason, with only what that reason needs; a person pressing Post sends the full list they looked at
+  if(!by){ why = why || postReason(o); if(!why) return; }
+  const t = why ? await reasonText(o, why) : stepsText(o); if(!t) throw new Error("No open project steps to post");
   // One living message per order: edit the desk's last steps message instead of posting a repeat
   const last = (o.deskPosts || []).filter(p => p.kind === "steps" && p.name && p.name.startsWith(g.id + "/")).slice(-1)[0];
   let quiet = false;
   if(last){ try{ const after = await chatSince(as, g.id, last.at); quiet = !after.some(m2 => m2.id !== last.name && m2.sender !== last.sender); }catch(e){ quiet = false; } }
-  if(last && quiet){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
+  if(last && quiet && !why){ if(last.hash === sha(t).slice(0, 12)) throw new Error("The group already has these exact steps");
     try{ await editChat(as, last.name, deskSay(cfg, t)); }catch(e){ if(/insufficient authentication scopes|403/.test(e.message)) throw new Error("To edit its own message, " + as + " needs one more permission. Reconnect it in Team and settings (Connect a Google account), then try again. Nothing was sent."); throw e; }
     last.hash = sha(t).slice(0, 12); last.editedAt = now();
     log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
     await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:"(edited) " + str(t, 780), usd:0 }); return; }
   const m = await postChat(as, g.id, deskSay(cfg, t));
-  o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12) }).slice(-30);
+  o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12), reason:why ? why.kind : "person", items:why ? why.ids.slice().sort().join(",") : "" }).slice(-30);
+  if(why) log(o, { name:"Order desk" }, "Posted in the project group because: " + ({ claim:"an item marked done is not showing yet", ready:"every requirement is verified", added:"a manager added a task", deadline:"the deadline is close with work open" })[why.kind]);
   o.chatPollAt = o.chatPollAt || now();
   log(o, by || { name:"Order desk" }, "Steps to reach QA posted in the project group " + (g.name || ""));
   await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:str(t, 800), usd:0 });
@@ -1909,6 +1949,8 @@ async function handle(request){
       dr.approved = true; dr.approvedBy = w.name; dr.approvedAt = now();
       o.docs = (o.docs || []).filter(d => d.id !== dr.id).concat({ id:dr.id, name:dr.name.replace(/ draft$/, ""), mime:"application/vnd.google-apps.document", link:dr.link, modified:now(), by:"Order desk, approved by " + w.name, via:dr.via, kind:"report", why:"Work report written from verified work, approved by " + w.name, confidence:1, status:"linked", at:now() });
       groupDocs(o); log(o, w, "Approved the work report written from verified work. It now counts as our work report."); try{ await buildCheck(o); }catch(e){} }
+    else if(op === "scopeOk"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); if(!o.scopePending) return bad("Nothing to confirm");
+      log(o, w, "Saw the scope change: " + o.scopePending.changes.map(c => c.kind + ": " + str(c.text, 60)).join("; ")); (o.scopeLog = o.scopeLog || []).push(Object.assign({ seenBy:w.name, seenAt:now() }, o.scopePending)); delete o.scopePending; }
     else if(op === "groupLink"){ if(!(isMgrW(w) || can(w, "pm"))) return bad("Only a manager, the PM or Manav", 403); const m = (await getJ(GMK)) || { spaces:{} }, g = (m.spaces || {})[str(q.space, 80)]; if(!g) return bad("Group not found");
       g.manual = { order:o.id, yes:!!q.yes, by:w.name, at:now() }; await setJ(GMK, m);
       log(o, w, (q.yes ? "Confirmed" : "Rejected") + " the group \"" + str(g.name, 80) + "\" as this order's project group");
