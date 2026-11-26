@@ -416,6 +416,7 @@ export async function hourlySync(){
   // Changes on the client's site or in Search Console leave no message: recheck work orders every 3 hours (two a run)
   { let n2 = 0; for(const o of open){ if(n2 >= 2) break; if(["work", "qa"].includes(o.stage) && o.check && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 3 * 36e5)) try{ await buildCheck(o); n2++; done.push(o.id + " rechecked"); }catch(e){ done.push(o.id + " recheck: " + e.message); } } }
   for(const o of open) if(o.stage === "work") try{ const n = await autoProof(o); if(n) done.push(o.id + " proofs:" + n); }catch(e){ done.push(o.id + " proofs: " + e.message); }
+  { let n3 = 0; for(const o of open){ if(n3 >= 8) break; try{ const c = await reconcile(o, "hourly"); if(o.recon && o.recon.at && Date.now() - Date.parse(o.recon.at) < 6e4) n3++; if(c) done.push(o.id + " kept current:" + c); }catch(e){ done.push(o.id + " current: " + e.message); } } }
   for(const o of open) await saveO(o);
   // Work history for every client site that has none yet (or older than 30 days), two a run
   { let n = 0; const all = await loadAll(1000, true);
@@ -734,10 +735,70 @@ const LSEED = [
 ];
 async function learnList(){ let l = await getJ(LK); if(!Array.isArray(l)){ l = LSEED.map(([k, rule, why], i) => ({ id:"L" + (i + 1), kind:k, rule, why, by:"Manav (review of O-1001)", at:now(), on:true })); await setJ(LK, l); } return l; }
 let LEARN = { at:0, txt:"" };
-const LJOBS = new Set(["check1", "check2", "groupmsg", "quickfix", "deskanswer", "draftreport", "pack", "autoproof", "history"]);
+const LJOBS = new Set(["check1", "check2", "groupmsg", "quickfix", "reconcile", "deskanswer", "draftreport", "pack", "autoproof", "history"]);
 async function learnTxt(){ if(Date.now() - LEARN.at < 60000) return LEARN.txt; let l = []; try{ l = (await learnList()).filter(x => x.on !== false); }catch(e){}
   LEARN = { at:Date.now(), txt:l.length ? "\n\nLESSONS FROM THE OWNER'S REVIEWS (always follow these; they come from real mistakes):\n" + l.map((x, i) => `${i + 1}. ${x.rule}`).join("\n") : "" }; return LEARN.txt; }
 async function askAI(job, model, system, user, max, ...rest){ return rawAsk(job, model, LJOBS.has(job) ? system + await learnTxt() : system, user, max, ...rest); }
+
+/* Keep every open item true to the current situation. Messages to send, team asks, tasks and the check's lists are re-judged
+   against the latest client chat, project group, check, stage and today's date whenever any of those changed (or once a day as
+   time passes): each is kept, rewritten for today, or closed with its reason. Nothing is deleted without a record. */
+async function reconcile(o, why){
+  if(!aiOn()) return 0;
+  const ck = o.check || {}, items = [], msgs = o.convo ? (o.convo.messages || []) : [];
+  (o.queue || []).filter(m => !m.sent && !m.reply).forEach(m => items.push({ id:"q:" + m.id, kind:"client message to send", made:m.at, by:m.by || "", text:str(m.text, 1500) }));
+  (o.actions || []).filter(a => !["done", "skipped"].includes(a.status)).forEach(a => items.push({ id:"a:" + a.id, kind:a.type === "client" ? "client message to send" : a.type === "internal" ? "message to the team" : "task", made:a.at, by:a.by || "Order desk", title:a.title, needBy:a.needBy || "", text:str(a.message || a.why || "", 1200) }));
+  (ck.beforeDelivery || []).forEach((x, i) => items.push({ id:"b:" + i, kind:"before delivery", made:ck.at, by:"Order desk", text:(x.who ? x.who + ": " : "") + (x.do || "") }));
+  (ck.waitingOnClient || []).forEach((x, i) => items.push({ id:"w:" + i, kind:"waiting on the client", made:ck.at, by:"Order desk", text:String(x) }));
+  (ck.problems || []).forEach((x, i) => items.push({ id:"p:" + i, kind:"problem", made:ck.at, by:"Order desk", text:(x.step ? x.step + ": " : "") + (x.text || "") }));
+  if(!items.length) return 0;
+  const today = new Date().toISOString().slice(0, 10), lastC = msgs.slice(-1)[0] || {};
+  const key = sha(JSON.stringify([items.map(x => x.id + ":" + String(x.text).length), msgs.length, lastC.time || "", (o.teamChat || []).length, ck.at || "", o.stage, (o.deliverables || []).filter(d => d.done).length, (o.deferred || []).length, today])).slice(0, 16);
+  if(o.recon && o.recon.key === key) return 0;
+  const rows = (ck.rows || []).map(r => { const q = (ck.requirements || []).find(x => x.id === r.r) || {}; return { task:q.text, phase:q.phase, status:r.status, open:r.toPass || "" }; });
+  const system = `You keep one order's open items true to the situation NOW. Today is ${today} (India). For each item decide:
+"keep": still right and still needed, as written.
+"update": still needed, but its words, facts or date are out of date. Give the full new "text" (and "title" or "needBy" if they changed). A client message is rewritten whole from the latest situation, in the same warm voice, honest about anything late (say it plainly, with the new time), never promising what the facts do not support.
+"done": the facts show it was done or already said (for example the same update was already sent in the client chat after the item was made).
+"outdated": no longer true or needed (superseded by a newer item, the situation moved on, or a later item says the same).
+Rules: base every decision on the FACTS only and say why in one plain sentence. Never mark an item a person made (by is not "Order desk") as done or outdated unless the facts clearly show it. Two items that ask for the same thing: keep the better one, mark the other outdated. No dashes. Answer with one JSON object only: {"items":[{"id":"","decision":"keep | update | done | outdated","why":"","title":"","text":"","needBy":"YYYY-MM-DD or empty"}]}`;
+  const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage: ${o.stage}. Deadline: ${o.deadline}. Today: ${today}.
+CLIENT CHAT (newest last, with times):
+${msgs.slice(-25).map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${str(m.text, 600)}`).join("\n") || "none"}
+PROJECT GROUP (newest last):
+${(o.teamChat || []).slice(-15).map(m => `${m.at} ${m.by}: ${str(m.text, 400)}`).join("\n") || "none"}
+LATEST CHECK (${ck.at || "none"}): ${ck.verdict || ""}
+TASKS NOW: ${JSON.stringify(rows)}
+DELIVERABLES: ${JSON.stringify((o.deliverables || []).map(d => ({ text:d.text, done:!!d.done })))}
+MOVED TO THE DELIVERY NOTE: ${JSON.stringify((o.deferred || []).map(x => x.part))}
+QUICK FIXES: ${JSON.stringify((ck.quickFixes || []).map(q => ({ what:q.what, status:q.status })))}
+PROMISES TO THE CLIENT: ${JSON.stringify(((o.ai || {}).promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
+OPEN ITEMS TO JUDGE: ${JSON.stringify(items)}`;
+  const r = await askAI("reconcile", "claude-sonnet-5-5", system, user, 5000);
+  o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  const out2 = ((r.data || {}).items || []).filter(x => items.some(y => y.id === x.id));
+  const by = { name:"Order desk (kept current)" }, rec = [];
+  const drop = { b:new Set(), w:new Set(), p:new Set() };
+  for(const x of out2){ const [t, id] = String(x.id).split(/:(.*)/s), dec = x.decision, w2 = noId(str(x.why, 240));
+    if(!["update", "done", "outdated"].includes(dec)) continue;
+    if(t === "q"){ const m = (o.queue || []).find(y => y.id === id); if(!m) continue;
+      if(dec === "update" && x.text){ m.text = str(x.text, 4000); m.updatedAt = now(); m.updatedWhy = w2; rec.push({ what:"Client message rewritten for today", why:w2 }); }
+      else if(dec !== "update"){ o.queue = o.queue.filter(y => y !== m); (o.closedItems = o.closedItems || []).push({ kind:"client message", text:str(m.text, 600), why:w2, decision:dec, at:now() }); rec.push({ what:"Client message closed (" + dec + ")", why:w2 }); } }
+    else if(t === "a"){ const a = (o.actions || []).find(y => y.id === id); if(!a) continue;
+      if(dec === "update"){ if(x.text) a.message = str(x.text, 4000); if(x.title) a.title = str(x.title, 200); if(/^\d{4}-\d{2}-\d{2}$/.test(x.needBy || "")) a.needBy = x.needBy; a.updatedAt = now(); a.updatedWhy = w2; rec.push({ what:"Updated: " + str(a.title, 100), why:w2 }); }
+      else { a.status = dec === "done" ? "done" : "skipped"; a.statusWhy = w2; a.note = (dec === "done" ? "Done: " : "Outdated: ") + w2; a.closedBy = by.name; a.closedAt = now(); rec.push({ what:(dec === "done" ? "Closed as done: " : "Closed as outdated: ") + str(a.title, 100), why:w2 }); } }
+    else if(drop[t]){ const i = +id; if(dec === "update" && x.text){ if(t === "b" && ck.beforeDelivery[i]) ck.beforeDelivery[i].do = str(x.text, 400); if(t === "w" && ck.waitingOnClient[i] != null) ck.waitingOnClient[i] = str(x.text, 400); if(t === "p" && ck.problems[i]) ck.problems[i].text = str(x.text, 400); }
+      else if(dec !== "update") drop[t].add(i); } }
+  if(drop.b.size) ck.beforeDelivery = ck.beforeDelivery.filter((_, i) => !drop.b.has(i));
+  if(drop.w.size) ck.waitingOnClient = ck.waitingOnClient.filter((_, i) => !drop.w.has(i));
+  if(drop.p.size) ck.problems = ck.problems.filter((_, i) => !drop.p.has(i));
+  const nList = drop.b.size + drop.w.size + drop.p.size;
+  if(nList) rec.push({ what:nList + " outdated line(s) removed from the check's lists", why:"the situation changed since the check" });
+  o.recon = { key, at:now(), why:str(why, 60), judged:items.length, changed:rec.length, log:rec.concat((o.recon || {}).log || []).slice(0, 30) };
+  if(o.closedItems) o.closedItems = o.closedItems.slice(-40);
+  if(rec.length) log(o, by, "Kept the order current (" + why + "): " + rec.map(x => x.what).join("; ").slice(0, 400));
+  return rec.length;
+}
 
 /* The order check: requirement email first, then what the team says, the work report, and the client's live site and Google data */
 async function buildCheck(o, fresh){
@@ -855,6 +916,7 @@ async function buildCheck(o, fresh){
     o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every requirement is confirmed done. Sent to QA."); try{ await buildPack(o); }catch(e){} }
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
+  try{ await reconcile(o, "new check"); }catch(e){}
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
   o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
@@ -1377,7 +1439,8 @@ async function handle(request){
       log(o, w, "Work history for " + site + " rebuilt from the team's emails, chats and files"); }
     else if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
-    else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); }
+    else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); try{ await reconcile(o, "chat laid out"); }catch(e){} }
+    else if(op === "reconcile"){ if(o.recon) o.recon.key = ""; const c = await reconcile(o, "asked by " + w.name); if(!c) log(o, w, "Checked that every open item is current: nothing to change"); }
     else if(op === "access"){ need("pm"); const x = find("access", q.aid); if(!x) return bad("Not found");
       x.status = ["needed", "asked", "received", "wrong", "skip"].includes(q.status) ? q.status : x.status; if(x.status === "received" && !x.receivedAt) x.receivedAt = now(); x.note = str(q.note, 300); x.by = w.name; x.atS = now();
       log(o, w, "Access " + x.item + ": " + x.status + (x.note ? " (" + x.note + ")" : ""));
@@ -1411,6 +1474,7 @@ async function handle(request){
       o.lastUpdateAt = now(); o.lastUpdateBy = w.name;
       if(!k.added){ log(o, w, "Pasted the conversation again: nothing new found"); await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:"Nothing new in that paste. The thread is already up to date." }); }
       const d = await rethink(o, k.fresh);
+      try{ await reconcile(o, "new client chat"); }catch(e){}
       log(o, w, (k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") + " added" : { call:"Call notes", team:"Team update", media:"Files shared", note:"Note" }[k.kind] + " added") + (d.changed ? ". " + str(d.changed, 300) : ""));
       await saveO(o); return out({ ok:true, order:strip(o), econ:isA ? econ(o, cfg) : null, pay:isA ? payNums(o, cfg) : null, flags:flags(o), info:(k.kind === "chat" ? k.added + " new message" + (k.added > 1 ? "s" : "") : "Added") + ". " + (d.changed || "") }); }
     else if(op === "actReply"){ if(!can(w, "comms") && !can(w, "pm")) return bad("Your role cannot do this step"); const x = find("actions", q.aid); if(!x) return bad("Not found");
