@@ -384,6 +384,7 @@ async function syncTeam(o){
   const changedAfterQA = passAt && ["ready", "delivered"].includes(o.stage) ? r.files.filter(f => f.modified > passAt) : [];
   if(changedAfterQA.length) o.alert = "Changed after QA passed: " + changedAfterQA.map(f => f.name).join(", ").slice(0, 140);
   if(r.mails.length){ o.mails = (o.mails || []).concat(r.mails).sort((a, b) => a.date.localeCompare(b.date)).slice(-80); r.mails.forEach(m => fresh.push("TEAM EMAIL " + m.date + " from " + m.from + ", subject \"" + m.subject + "\":\n" + m.text.slice(0, 2500) + (m.files.length ? "\nAttachments: " + m.files.join(", ") : ""))); }
+  const newGroup = !!r.chatFull && Object.keys(r.chatFull).some(k2 => !(o.chatFull || {})[k2]);
   if(r.chatFull) o.chatFull = Object.assign(o.chatFull || {}, r.chatFull);
   // What the desk could and could not read in Google Chat, kept on the order so the portal always shows the true source status
   if(r.chatScan) o.chatScan = r.chatScan;
@@ -409,7 +410,7 @@ async function syncTeam(o){
   o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
   // New information starts a new check (the check re-reads everything); right after a check, the 10 minute re-read job picks it up instead
-  if(fresh.length && !o._noCheck && ["access", "work", "qa"].includes(o.stage) && aiOn() && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 10 * 6e4)){ o._fresh = true; try{ await buildCheck(o); }catch(e){} finally{ delete o._fresh; } }
+  if(fresh.length && !o._noCheck && ["access", "work", "qa"].includes(o.stage) && aiOn() && (newGroup || !o.checkAt || Date.now() - Date.parse(o.checkAt) > 10 * 6e4)){ o._fresh = true; try{ await buildCheck(o); }catch(e){} finally{ delete o._fresh; } }
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
 }
