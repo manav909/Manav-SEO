@@ -860,6 +860,7 @@ async function sopPage(){
 /* Learnings brain: lessons the desk follows on every order */
 async function drawLearn(){
   const el = document.getElementById("learnBox"); if(!el) return;
+  if(!(ME.role === "admin" && !ME.viewAs)){ el.innerHTML = ""; return; }   // lessons are for the owner only
   let j = {}; try{ j = await api("learn"); }catch(e){ return; }
   const l = j.lessons || [], adm = j.admin, on = l.filter(x => x.on !== false), sug = l.filter(x => x.on === false);
   const row = x => `<li><div>${E(x.rule)}</div>${x.why ? `<div class="sub"><i>${E(x.why)}</i></div>` : ""}${adm ? `<div class="row" style="gap:6px;margin-top:4px"><button class="btn sm ghost" data-lt="${E(x.id)}">${x.on === false ? "Turn on" : "Turn off"}</button><button class="btn sm ghost" data-le="${E(x.id)}">Edit</button><button class="btn sm ghost" data-ld="${E(x.id)}">Remove</button></div>` : ""}</li>`;

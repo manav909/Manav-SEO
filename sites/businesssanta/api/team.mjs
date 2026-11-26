@@ -1241,7 +1241,7 @@ async function handle(request){
     for(const d of (o2.docs || []).filter(x => x.status === "linked" && x.current !== false)){ let t = ""; try{ t = await docText(d, 300000); }catch(e){}
       t.split("\n").forEach((ln, i) => { if(qx && ln.toLowerCase().includes(qx) && hits2.length < 60) hits2.push({ file:d.name, line:i + 1, text:str(ln, 400) }); }); }
     return out({ ok:true, hits:hits2 }); }
-  if(a === "learn"){ const l = await learnList();
+  if(a === "learn"){ if(!isA) return out({ ok:true, lessons:[], admin:false }); const l = await learnList();
     if(request.method === "POST"){ if(!isA) return bad("For Manav only", 403);
       if(q.op === "add"){ const rule = str(q.rule, 600).trim(); if(rule.length < 12) return bad("Write the lesson as one clear rule");
         l.push({ id:"L" + (Math.max(0, ...l.map(x => parseInt(String(x.id).slice(1)) || 0)) + 1), kind:str(q.kind, 20) || "general", rule, why:str(q.why, 300), by:w.name, at:now(), on:true }); }
