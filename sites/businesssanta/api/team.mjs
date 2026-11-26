@@ -697,6 +697,7 @@ async function buildPack(o){
 Answer with one JSON object only: {"summary":"one line: is this order ready for QA or for delivery, and what blocks it","final":[{"d":"deliverable id","use":[{"name":"","url":"","why":"one line"}],"status":"ready | needs fix | missing","fix":"what to fix or add, empty if ready","basis":"what this item rests on, in plain words: the package, the client chat (with date), the live check (with time), or a file"}],"notUse":[{"name":"","why":""}],"qa":[{"d":"deliverable id","check":["exact check"]}],"client":{"message":"","attach":["file names to attach to the delivery"]}}`;
   const user = `Order ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage: ${o.stage}. Deadline ${o.deadline}.
 WHAT WAS SOLD: ${ai.summary || ""}
+DELIVERY NOTE ITEMS (tell the client these as recommended next steps in the delivery message; they are not part of this delivery): ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ((o.check || {}).deliveryNotes || [])))}
 PROMISES: ${JSON.stringify((ai.promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
 DELIVERABLES WITH PROOF AND THE DESK'S CHECK:
 ${JSON.stringify(dl)}
@@ -809,6 +810,7 @@ async function buildCheck(o, fresh){
       const userQ = `SITE: ${o.client.website}\nTHE CLIENT'S INVITING WORDS: ${JSON.stringify(inv)}\nREQUIREMENTS (already covered, not quick fixes): ${JSON.stringify(reqs.map(r => r.text))}\nQUICK FIXES ALREADY ASKED: ${JSON.stringify(old.map(q => ({ id:q.id, what:q.what, pages:q.pages, look:q.look, status:q.status })))}\nLIVE CHECKS OF THEIR PAGES: ${JSON.stringify(probes.filter(p => /^quick fix/.test(p.r || "")))}\nTHE TEAM'S REPORTS:\n${reads.filter(x => x.kind !== "data").map(x => "FILE: " + x.name + "\n" + String(x.content).slice(0, 25000)).join("\n\n").slice(0, 80000)}`;
       const rq = await askAI("quickfix", "claude-sonnet-5-5", sysQ, userQ, 2500); o.aiUsd = +(num(o.aiUsd, 0) + rq.usd).toFixed(4);
       if(Array.isArray((rq.data || {}).quickFixes)) d2.quickFixes = rq.data.quickFixes; } }catch(e){}
+  d2.deliveryNotes = (d2.deliveryNotes || []).map(x => noId(str(x, 300))).filter(Boolean).slice(0, 8);
   const prevQF = (o.check || {}).quickFixes || [];
   d2.quickFixes = (d2.quickFixes || []).slice(0, 6).map((q, i) => { const old = prevQF.find(x => x.id === q.id);
     return { id:old ? old.id : "q" + (Math.max(0, ...prevQF.map(x => parseInt(String(x.id).slice(1)) || 0)) + i + 1), what:noId(str(q.what, 300)), pages:(q.pages || []).map(u => str(u, 300)).slice(0, 12), look:["description", "title", "h1"].includes(q.look) ? q.look : "description",
@@ -1555,6 +1557,15 @@ async function handle(request){
       o.check.rows = (ck.rows || []).filter(r => r.r !== rq.id); o.deliverables = (o.deliverables || []).filter(d => d.req !== rq.id);
       log(o, w, "Discarded the task \"" + str(rq.text, 120) + "\". Reason: " + why);
       if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && (o.check.rows || []).filter(r => ((ck.requirements || []).find(x => x.id === r.r) || {}).phase === "project").every(r => r.status === "done")){ o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every remaining requirement is done. Sent to QA."); } }
+    else if(op === "deferReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const ck = o.check || {}, rq = (ck.requirements || []).find(x => x.id === q.r);
+      if(!rq) return bad("Task not found"); const why = str(q.reason, 400).trim(), part = str(q.part, 400).trim();
+      if(why.length < 10) return bad("Write why this goes to the delivery note (at least a short sentence)");
+      (o.deferred = o.deferred || []).push({ id:nid("dn"), r:rq.id, task:str(rq.text, 200), part:part || str(rq.text, 200), whole:!part, reason:why, by:w.name, role:(w.roles || [w.role]).join("+"), at:now() });
+      log(o, w, "Moved to the delivery note: \"" + (part || str(rq.text, 120)) + "\". It does not stop QA. Reason: " + why);
+      if(!part){ o.check.rows = (ck.rows || []).filter(r => r.r !== rq.id); o.deliverables = (o.deliverables || []).filter(d => d.req !== rq.id); } }
+    else if(op === "undefer"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const i = (o.deferred || []).findIndex(x => x.id === q.did); if(i < 0) return bad("Not found");
+      const x = o.deferred.splice(i, 1)[0]; log(o, w, "Took back from the delivery note: \"" + x.part + "\"");
+      if(x.whole){ const rq = ((o.check || {}).requirements || []).find(y => y.id === x.r) || {}; if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === x.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:x.r }); } }
     else if(op === "restoreReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const dd = (o.discarded || {})[q.r]; if(!dd) return bad("Not discarded");
       delete o.discarded[q.r]; const rq = ((o.check || {}).requirements || []).find(x => x.id === q.r) || {};
       if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
