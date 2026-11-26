@@ -741,6 +741,9 @@ async function learnTxt(){ if(Date.now() - LEARN.at < 60000) return LEARN.txt; l
   LEARN = { at:Date.now(), txt:l.length ? "\n\nLESSONS FROM THE OWNER'S REVIEWS (always follow these; they come from real mistakes):\n" + l.map((x, i) => `${i + 1}. ${x.rule}`).join("\n") : "" }; return LEARN.txt; }
 async function askAI(job, model, system, user, max, ...rest){ return rawAsk(job, model, LJOBS.has(job) ? system + await learnTxt() : system, user, max, ...rest); }
 
+/* Strip internal task ids (r1, r2) from text people read */
+const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
+
 /* Before delivery: a checklist anyone can tick, with help on any item, saved for the next person */
 const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()).slice(0, 10);
 function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k]; list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "" }); };
@@ -904,7 +907,7 @@ async function buildCheck(o, fresh){
   const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
   const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
-  const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)]*\)/gi, "").replace(/\br\d+\b,?\s*/g, "").replace(/\s{2,}/g, " ").trim();
+
   // Roles, not personal names, for our sales side
   const seller = new Set(["Manav", "Manav Sharma"].concat((await people()).filter(p => rolesOf(p).some(r => ["sales", "comms", "admin"].includes(r))).map(p => p.name).filter(Boolean)));
   const role = t => { let x = String(t || ""); for(const n of seller) x = x.replace(new RegExp("\\b" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), "Sales"); return x.replace(/\bSales Sharma\b/g, "Sales"); };
