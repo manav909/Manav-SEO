@@ -706,6 +706,8 @@ DELIVERY NOTE ITEMS (tell the client these as recommended next steps in the deli
 PROMISES: ${JSON.stringify((ai.promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
 DELIVERABLES WITH PROOF AND THE DESK'S CHECK:
 ${JSON.stringify(dl)}
+DISCARDED BY A MANAGER OR MANAV (never a fix, task or delivery item; leave them out completely): ${JSON.stringify(discTexts(o))}
+MOVED TO THE DELIVERY NOTE (only mentioned to the client as next steps, never a task): ${JSON.stringify((o.deferred || []).map(x => x.part))}
 OUR DOCUMENTS FOR THIS ORDER:
 ${JSON.stringify(docs)}
 SHARED BY THE TEAM IN THE PROJECT GROUP AND EMAILS (newest last):
@@ -759,10 +761,12 @@ const ownerOf = (who, what) => REC.test(String(what || "")) ? REC_WHO : who;
 const STOPW = new Set("a an the to of and or in on for with by it its this that is are be as at from all any our your their send make made short client clients".split(" "));
 const wordsOf = t => new Set(String(t || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(x => x.length > 2 && !STOPW.has(x)).map(x => x.replace(/(ings?|ed|s)$/, "")));
 const sameJob = (a, b) => { if(REC.test(a) && REC.test(b) && !/report/i.test(a + " " + b)) return true; const A = wordsOf(a), B = wordsOf(b); if(!A.size || !B.size) return false; let n = 0; for(const x of A) if(B.has(x)) n++; return n / Math.min(A.size, B.size) >= 0.6; };
-function deliveryList(o){ const ck = o.check || {}, list = [], seen = new Set();
+/* Tasks a manager or Manav discarded, as text (older records are read back from the order history) */
+function discTexts(o){ return Object.entries(o.discarded || {}).map(([id, d]) => d.task || (((o.timeline || []).find(t => /^Discarded the task "/.test(t.what || "") && Math.abs(Date.parse(t.at) - Date.parse(d.at)) < 12e4) || {}).what || "").replace(/^Discarded the task "(.*?)"\. Reason:.*$/s, "$1")).filter(Boolean); }
+function deliveryList(o){ const ck = o.check || {}, list = [], seen = new Set(), gone = discTexts(o);
   // The delivery pack is used only when it was made from the latest check: an older pack's fixes are history, not tasks
   const pk = o.pack && (!ck.at || String(o.pack.at || "") >= String(ck.at)) ? o.pack : {};
-  const add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; if(list.some(x => sameJob(x.what, what))) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
+  const add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; if(from !== "task" && gone.some(g2 => sameJob(g2, what) || (/robots\.txt/i.test(g2) && /robots\.txt/i.test(what)))) return; if(list.some(x => sameJob(x.what, what))) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
   (o.mgrTasks || []).filter(m => m.phase === "delivery").forEach(m => add(m.who || "Sales", m.text, "added by " + m.by));
@@ -1840,7 +1844,7 @@ async function handle(request){
       o.groupMsgAt = ""; }
     else if(op === "discardReq"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); const ck = o.check || {}, rq = (ck.requirements || []).find(x => x.id === q.r);
       if(!rq) return bad("Task not found"); const why = str(q.reason, 400).trim(); if(why.length < 10) return bad("Write the reason for discarding this task (at least a short sentence)");
-      (o.discarded = o.discarded || {})[rq.id] = { by:w.name, role:(w.roles || [w.role]).join("+"), at:now(), reason:why };
+      (o.discarded = o.discarded || {})[rq.id] = { by:w.name, role:(w.roles || [w.role]).join("+"), at:now(), reason:why, task:str(rq.text, 300) };
       o.check.rows = (ck.rows || []).filter(r => r.r !== rq.id); o.deliverables = (o.deliverables || []).filter(d => d.req !== rq.id);
       log(o, w, "Discarded the task \"" + str(rq.text, 120) + "\". Reason: " + why);
       if(o.stage === "work" && o.deliverables.length && o.deliverables.every(d => d.done) && (o.check.rows || []).filter(r => ((ck.requirements || []).find(x => x.id === r.r) || {}).phase === "project").every(r => r.status === "done")){ o.deliverables.forEach(d => { d.qa = ""; d.qaNote = ""; }); setStage(o, "qa"); log(o, { name:"Order desk" }, "Every remaining requirement is done. Sent to QA."); } }
