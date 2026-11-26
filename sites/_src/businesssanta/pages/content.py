@@ -1856,3 +1856,76 @@ _sb["faq"] = list(_sb["faq"]) + [
 ]
 _g23("guides/roofing-leads-after-a-storm")["desc"] = "A storm-season SEO playbook for roofing companies: what to prepare before hail and wind season, what to do the week of a storm, and how to win reviews."
 _g23("guides/roofing-seo-cost")["desc"] = "What roofing SEO costs, what drives the price, what a fair package includes and the red flags. Business Santa's own prices: free check, fixes from $120."
+
+# 26 Nov 2026 (Business Santa daily, cloud): insight-BS-20261126-1 (Manav's yes on ins-20261124-1).
+# A roofer version of the $149 Holiday Google tune-up, answering "roofing company local seo marketing" and
+# "roofing seo services" in the first lines, linked from the roofing pages with exact anchors.
+HOLIDAY_GUIDES.append({
+ "slug": "guides/holiday-google-tune-up-for-roofers",
+ "holiday": True,
+ "parent": "seo-for-roofers",
+ "date": "2026-11-26",
+ "nav": "Holiday Google tune-up for roofers",
+ "title": "Roofing Company Local SEO: $149 Holiday Google Tune-Up | Business Santa",
+ "desc": "Local SEO marketing for roofing companies before winter storms: a one-time $149 Google tune-up of your profile, hours, photos and storm searches. Until Dec 10.",
+ "h1": "Holiday Google tune-up for roofing companies:",
+ "h1ac": "$149 until December 10",
+ "answer": ("Roofing company local SEO marketing is the work that gets a roofer chosen when a homeowner searches Google or Google Maps for a roof leak, storm damage or a roofer near me. "
+            "Before winter storms and the holidays, the fastest part of our roofing SEO services is a one-time $149 Holiday Google tune-up: we check and fix your Google Business Profile for roofing, set your Thanksgiving, Christmas and New Year hours, add a winter offer post and fresh job photos, and check what ChatGPT says when people ask for a roofer in your town. "
+            "It is available until December 10, 2026, has no contract and is usually done in 3 to 7 days."),
+ "top": ('<p>Want ongoing work instead? See our <a href="/seo-for-roofers">roofing SEO services</a>. Want the words homeowners type? '
+         'See the <a href="/guides/roofing-seo-keywords">roofing SEO keywords list</a>.</p>'),
+ "pre": [
+  ("Winter and storm searches <span class=\"ac\">your profile must answer</span>",
+   '<ul class="qs"><li>emergency roof repair near me</li><li>roof leak repair</li><li>roof tarping near me</li><li>ice dam removal</li><li>storm damage roof repair</li><li>roofer open today</li></ul>'
+   "<p>Homeowners type these in a hurry, often at night or the day after a storm. Google says local results are based mainly on relevance, distance and prominence, so a roofer whose profile names the job, the towns served and the hours clearly has the best chance to show up and get the call. "
+   'For the page side of winter work, read our <a href="/guides/winter-roofing-leads">winter roofing leads guide</a> and the <a href="/guides/roofing-leads-after-a-storm">storm season playbook for roofers</a>.</p>'),
+ ],
+ "list_h": "What we check and fix <span class=\"ac\">on your Google profile</span>",
+ "items": [
+  ("Category and services", "Primary category Roofing contractor, with roof repair, roof replacement, inspections, gutters and emergency tarping listed in the words homeowners use, if you offer them."),
+  ("Service area", "The towns you really serve, so Google Maps shows you to the right homeowners and not to people two counties away."),
+  ("Holiday and after-hours details", "Special hours for Thanksgiving, Christmas Eve, Christmas Day and New Year, and how to reach you for a leak when the office is closed."),
+  ("A winter offer post", "One Google post with a clear winter offer or storm check, its dates and a button that works, written for a homeowner, not for search engines."),
+  ("Fresh photos of real jobs", "Recent roofs, repairs and crews from your own work, added to the profile. We never use stock photos as your work."),
+  ("Call and website buttons", "We tap them the way a homeowner would: the number rings, and the website opens on a page about the job they searched for."),
+  ("Reviews", "We check that recent reviews have replies and show you a simple way to ask every winter customer for one. We never post or buy reviews."),
+  ("A ChatGPT check", "We ask ChatGPT for a roofer in your town and show you what it says, plus the first thing to fix so you are easier to name."),
+ ],
+ "post": [
+  ("Price, timing <span class=\"ac\">and what you need</span>",
+   "<p><b>$149, one time, until December 10, 2026.</b> No contract and no monthly fee. Most tune-ups are done in 3 to 7 days. You add us as a manager on your own Google Business Profile and can remove us at any time; we never ask for your password. "
+   "Every change is made in your own profile, so you can see each one yourself. If you would rather have monthly help after the holidays, our roofing SEO services start with the same free check.</p>"),
+ ],
+ "src": (GOOGLE_SPECIAL,),
+ "also": (("/seo-for-roofers", "Roofing SEO services for roofing companies"), ("/guides/google-business-profile-for-roofers", "Google Business Profile for roofers"), ("/christmas-marketing-for-small-business", "Christmas marketing plan for small businesses")),
+ "faq": [
+  ("What is local SEO marketing for a roofing company?", "It is the work that gets a roofing company found and chosen on Google, Google Maps and AI answers in the towns it serves: a complete Google Business Profile, a page for each service and town, reviews that name the job, and a website that turns a visit into a call or an inspection request."),
+  ("What do roofing SEO services include?", "A free check, then fixes to your Google Business Profile, service and town pages, reviews, matching listings and the website. The $149 Holiday Google tune-up is the quick profile part of that work, done once before the holidays."),
+  ("Will the tune-up get my roofing company to the top of Google Maps?", "No one can promise a ranking, and Google says so too. The tune-up fixes the things Google and homeowners look at first, so your profile is complete, correct and ready for winter and storm searches."),
+  ("Do you need my Google password?", "No. You add us as a manager on your Google Business Profile, and you can remove us any time."),
+  ("When does the $149 offer end?", "December 10, 2026. Ask for a free check before then and we confirm what the tune-up will fix for your roofing company."),
+ ],
+})
+
+# Exact-anchor links to the new roofer tune-up page from the roofing pages (insight-BS-20261126-1, step 3).
+_RT = '<p>Before winter storms: our one-time <a href="/guides/holiday-google-tune-up-for-roofers">$149 Holiday Google tune-up for roofing companies</a>, until December 10, 2026.</p>'
+_rf["top"] = _rf.get("top", "") + _RT
+_rk["top"] = _rk.get("top", "") + _RT
+for _s in ("guides/winter-roofing-leads", "guides/roofing-leads-after-a-storm"):
+    _g = _g23(_s)
+    _g["top"] = _g.get("top", "") + _RT
+
+# Striking-distance FAQ upgrades (notes/opt-cloud-business-santa-daily-20261122), Search Console 28 days to 23 Nov:
+# "small business cyber monday deals" 14.0 and "cyber monday business deals" 9.0 on the Cyber Monday guide;
+# "roofing website maintenance services" 26.8 on /seo-for-roofers; "geo for roofing companies" 29.8 on the roofing keywords guide.
+_cmg = _g23("guides/cyber-monday-small-business")
+_cmg["faq"] = list(_cmg["faq"]) + [
+ ["What are good Cyber Monday deals for a small business?", "Deals that are simple and easy to claim online: a gift card bonus (for example a $10 bonus card with every $50 gift card), a holiday bundle, free local delivery or pickup, or a prepaid service package at a holiday price. Give it a clear end date, post it on your Google Business Profile and put it at the top of your website."],
+]
+_rf["faq"] = list(_rf["faq"]) + [
+ ("Do you offer roofing website maintenance services?", "We look after the search side of a roofing website: page speed on phones, titles and headings, service and town pages, broken links, the call button and estimate form, and fixes to what Search Console reports. Hosting stays with your current provider, and you approve every change first."),
+]
+_rk["faq"] = list(_rk["faq"]) + [
+ ("What is GEO for roofing companies?", "GEO, or generative engine optimization, means making your roofing company easy for AI answers like ChatGPT, Google AI Overviews and Perplexity to name. It uses the same keywords as SEO, plus clear facts about your services, towns, reviews and licenses in the places those tools read."),
+]
