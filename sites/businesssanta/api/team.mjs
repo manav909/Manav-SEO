@@ -1551,8 +1551,6 @@ async function handle(request){
   if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, myRoles:w.roles || [w.role], uid:w.uid, viewAs:!!w.viewAs }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
     people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:rolesOf(p)[0], roles:rolesOf(p) })), access:ACCESS });
 
-  if(a === "groupMap"){ if(!isA) return bad("For Manav only", 403); if(url.searchParams.get("refresh")) await mapGroups(true); const m = (await getJ(GMK)) || { spaces:{} };
-    return out({ ok:true, at:m.at || "", groups:Object.entries(m.spaces || {}).map(([id, g]) => ({ id, name:g.name, kind:g.kind, order:g.order, orders:g.orders || [], confidence:g.confidence, why:g.why, via:g.via, manual:g.manual || null, error:g.error || "" })) }); }
   if(a === "gaccs"){ const ac = await gAccounts(); let pr = { items:[], at:"" }; try{ pr = url.searchParams.get("refresh") && w.role === "admin" ? await refreshProps() : await gProps(); }catch(e){ pr.error = e.message; }
     return out({ ok:true, accounts:ac.map(x => Object.assign(x, { gsc:pr.items.filter(i => i.email === x.email && i.kind === "gsc").length, ga:pr.items.filter(i => i.email === x.email && i.kind === "ga").length })), at:pr.at, errors:pr.errors || {} }); }
   if(a === "access"){ const site = str(url.searchParams.get("site"), 200), d = domOf(site); let gp = [];
@@ -1570,6 +1568,8 @@ async function handle(request){
     for(const d of (o2.docs || []).filter(x => x.status === "linked" && x.current !== false)){ let t = ""; try{ t = await docText(d, 300000); }catch(e){}
       t.split("\n").forEach((ln, i) => { if(qx && ln.toLowerCase().includes(qx) && hits2.length < 60) hits2.push({ file:d.name, line:i + 1, text:str(ln, 400) }); }); }
     return out({ ok:true, hits:hits2 }); }
+  if(a === "groupMap"){ if(!isA) return bad("For Manav only", 403); if(url.searchParams.get("refresh")) await mapGroups(true); const m = (await getJ(GMK)) || { spaces:{} };
+    return out({ ok:true, at:m.at || "", groups:Object.entries(m.spaces || {}).map(([id, g]) => ({ id, name:g.name, kind:g.kind, order:g.order, orders:g.orders || [], confidence:g.confidence, why:g.why, via:g.via, manual:g.manual || null, error:g.error || "" })) }); }
   if(a === "learn"){ if(!isA) return out({ ok:true, lessons:[], admin:false }); const l = await learnList();
     if(request.method === "POST"){ if(!isA) return bad("For Manav only", 403);
       if(q.op === "add"){ const rule = str(q.rule, 600).trim(); if(rule.length < 12) return bad("Write the lesson as one clear rule");
