@@ -306,7 +306,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -438,6 +438,8 @@ async function syncTeam(o){
   if(r.chatFull) o.chatFull = Object.assign(o.chatFull || {}, r.chatFull);
   // What the desk could and could not read in Google Chat, kept on the order so the portal always shows the true source status
   if(r.chatScan) o.chatScan = r.chatScan;
+  // When each channel was last read, so the portal always says how fresh every source is
+  o.seen = Object.assign(o.seen || {}, { folder:r.at }, (r.errors || {}).gmail ? {} : { email:r.at }, (r.errors || {}).chat ? {} : { group:r.at }, (r.errors || {}).access ? {} : { access:r.at });
   o.chatStatus = { at:r.at, accounts:r.chatStatus || [], groups:Object.entries(r.chatSpaces || {}).map(([id, g]) => Object.assign({ id }, g)), error:(r.errors || {}).chat || "" };
   if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-800); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 20000)); }
   // Project access group: keep the (masked) messages, and update the access checklist from what they show
@@ -1052,6 +1054,7 @@ async function checkNow(o, fresh){
       else readLog.push({ id:d.id, name:d.name, picture:true, ok:false, err:"picture too large" }); }
     catch(e){ readLog.push({ id:d.id, name:d.name, picture:true, ok:false, err:str(e.message, 80) }); } }
   o.readLog = { at:now(), docs:readLog, messages:(o.teamChat || []).length, groups:Object.values(o.chatFull || {}).map(g => g) };
+  o.seen = Object.assign(o.seen || {}, { files:now(), site:now() });
   const probes = [];
   for(const pr of (plan.probes || []).slice(0, 12)) probes.push(Object.assign({ r:pr.r, expect:str(pr.expect, 200) }, await probe(o.client.website, pr)));
   // Quick fixes already asked: their pages are read live so the desk knows when each is done
@@ -1071,6 +1074,7 @@ async function checkNow(o, fresh){
     for(let i = 0; i < pick.length; i += 8) (await Promise.all(pick.slice(i, i + 8).map(c => probe(o.client.website, { url:c.u, look:"title" }).catch(() => null))))
       .forEach(r => { if(r) probes.push(Object.assign({ r:"files", expect:"the title the team's file gives for this page, unique" }, r)); }); }
   if(!o.verify || Date.now() - Date.parse(o.verify.at || 0) > 30 * 6e4) try{ const v = await verifyOrder(o.client.website, o.google && o.google.gsc); o.verify = v; }catch(e){}
+  if(o.verify && o.verify.at) o.seen = Object.assign(o.seen || {}, { gsc:o.verify.at });
   reads.forEach(x => delete x.full);
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
@@ -1319,8 +1323,14 @@ function postReason(o){
   if(o.stage !== "work" || o.scopePending) return null;
   const reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", rows = (ck.rows || []).filter(r => ph(r) === "project" && !r.notAsked);
   const same = (kind, ids) => posts.some(p => p.reason === kind && p.items === ids.slice().sort().join(","));
+  const people = (o.teamChat || []).filter(m => !isDeskMsg(o, m) && !/access/i.test(m.space || "")), after = m => !lastAt || m.at > lastAt;
   const wrong = rows.filter(r => ["not done", "partly"].includes(r.status) && (ck.claims || []).some(c => { const t = Date.parse(c.at); return c.r === r.r && (!lastAt || (!isNaN(t) && new Date(t).toISOString() > lastAt)); }));
-  if(wrong.length && !same("claim", wrong.map(r => r.r))) return { kind:"claim", ids:wrong.map(r => r.r) };
+  if(wrong.length && !same("claim", wrong.map(r => r.r))){ const by = (ck.claims || []).filter(c => wrong.some(r => r.r === c.r)).map(c => String(c.by || "").split(" ")[0].toLowerCase()), m = people.filter(after).reverse().find(x => by.includes(String(x.by || "").split(" ")[0].toLowerCase()));
+    return { kind:"claim", ids:wrong.map(r => r.r), thread:m ? m.thread : "" }; }
+  // A report or file a person shared in the group since our last message: read it, and reply in its thread only with input that helps
+  const shared = people.filter(after).filter(m => (m.links || []).length || (m.files || []).length || /docs\.google|drive\.google/.test(m.text || ""));
+  for(const m of shared.reverse()){ const ids = (m.links || []).map(l => l.id).concat([...String(m.text || "").matchAll(/\/d\/([\w-]{15,})/g)].map(x => x[1]));
+    const d = (o.docs || []).find(x => x.status === "linked" && ids.includes(x.id)); if(d && !same("report", [d.id]) && ((o.readLog || {}).docs || []).some(x => x.id === d.id && x.ok)) return { kind:"report", ids:[d.id], thread:m.thread, by:m.by, msg:m.id }; }
   if(ck.readyForQA && !posts.some(p => p.reason === "ready")) return { kind:"ready", ids:[] };
   const mt = (o.mgrTasks || []).filter(m => m.phase === "project" && (!lastAt || m.at > lastAt) && !(o.discarded || {})[m.id]);
   if(mt.length && !same("added", mt.map(m => m.id))) return { kind:"added", ids:mt.map(m => m.id) };
@@ -1329,9 +1339,16 @@ function postReason(o){
   if(open.length && hrs > 0 && hrs < 48 && (!busy || hrs < 24) && !posts.some(p => p.reason === "deadline" && Date.now() - Date.parse(p.at) < 20 * 36e5)) return { kind:"deadline", ids:open.map(r => r.r) };
   return null;
 }
+const ck0 = o => o.check || {};
 async function reasonText(o, why){
   const site = domOf(o.client.website), pm = (o.pmName || "").split(" ")[0];
   if(why.kind === "claim") return await writeGroupMsg(o, { only:why.ids, intro:`Thanks for the update on ${site}. The desk checked the items marked done, and ${why.ids.length > 1 ? "these are" : "this one is"} not showing yet:` });
+  if(why.kind === "report"){ const d = (o.docs || []).find(x => x.id === why.ids[0]); if(!d) return "";
+    let txt = ""; try{ txt = fitText(await docText(d, 200000), 30000); }catch(e){ return ""; }
+    const reqs = ck0(o).requirements || [], rows = ck0(o).rows || [];
+    const system = `You are the order desk of an SEO, web and ads agency, replying in the project group's thread to a team member who just shared a report or file. Write like a respectful senior colleague: thank them in a few words, then give ONLY input that adds value: what the file covers against the order's requirements, and at most two concrete gaps or fixes that matter, each naming the exact place in the file. If the file covers what is asked and nothing important is missing, say so in one line. Never repeat the requirement list, never teach basics, never ask for something another file already has. Two to five short lines, simple English, no dashes. If nothing useful can be said, answer with an empty reply. Answer with one JSON object only: {"reply":""}`;
+    const user = `SITE: ${o.client.website}\nSHARED BY: ${why.by}\nFILE: ${d.name}\nREQUIREMENTS AND WHAT THE CHECK FOUND: ${JSON.stringify(rows.map(r => ({ task:((reqs.find(q => q.id === r.r) || {}).text) || "", phase:((reqs.find(q => q.id === r.r) || {}).phase) || "", status:r.status, found:str(r.found, 240) })))}\nTHE MANAGER'S LATEST WORD: ${JSON.stringify(reqs.filter(q => q.managerSaid).map(q => q.managerSaid).slice(0, 2))}\nFILE CONTENT:\n${txt}`;
+    try{ const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1200); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4); return str((r.data || {}).reply, 1200).trim(); }catch(e){ return ""; } }
   if(why.kind === "ready") return `Thank you, team. For ${site}, every requirement is now verified on the live site and in the files. The order moves to QA.`;
   if(why.kind === "added"){ const mt = (o.mgrTasks || []).filter(m => why.ids.includes(m.id)); return `Hi team, for ${site}: ${mt.map(m => String(m.by || "the manager").split(" ")[0] + " added a task: **" + m.text + "**" + (m.who ? " (for " + m.who + ")" : "")).join("\n")}\n\nIt is part of this order before QA.`; }
   if(why.kind === "deadline"){ const d = new Date(String(o.deadline) + "T12:00:00Z").toLocaleDateString("en-GB", { day:"numeric", month:"short" });
@@ -1353,7 +1370,10 @@ async function postSteps(o, cfg, by, why){
   if(!o.groupMsg || !o.groupMsgAt || (o.check && o.groupMsgAt < o.check.at)){ try{ o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }catch(e){} }
   // By itself the desk posts only for its reason, with only what that reason needs; a person pressing Post sends the full list they looked at
   if(!by){ why = why || postReason(o); if(!why) return; }
-  const t = why ? await reasonText(o, why) : stepsText(o); if(!t) throw new Error("No open project steps to post");
+  const t = why ? await reasonText(o, why) : stepsText(o);
+  // Nothing worth saying for this reason: remember it was weighed, so it is not weighed again, and stay quiet
+  if(!t && why){ o.deskPosts = (o.deskPosts || []).concat({ name:"", at:now(), kind:"steps", reason:why.kind, items:why.ids.slice().sort().join(","), skipped:true }).slice(-30); return; }
+  if(!t) throw new Error("No open project steps to post");
   // One living message per order: edit the desk's last steps message instead of posting a repeat
   const last = (o.deskPosts || []).filter(p => p.kind === "steps" && p.name && p.name.startsWith(g.id + "/")).slice(-1)[0];
   let quiet = false;
@@ -1363,7 +1383,7 @@ async function postSteps(o, cfg, by, why){
     last.hash = sha(t).slice(0, 12); last.editedAt = now();
     log(o, by || { name:"Order desk" }, "Updated the steps message in the project group " + (g.name || "") + " (no new message sent)");
     await deskLog({ kind:"steps", group:g.name, space:g.id, order:o.id, by:(by && by.name) || "Order desk", q:"", a:"(edited) " + str(t, 780), usd:0 }); return; }
-  const m = await postChat(as, g.id, deskSay(cfg, t));
+  const m = await postChat(as, g.id, deskSay(cfg, t), why && why.thread ? why.thread : undefined);
   o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"steps", hash:sha(t).slice(0, 12), reason:why ? why.kind : "person", items:why ? why.ids.slice().sort().join(",") : "" }).slice(-30);
   if(why) log(o, { name:"Order desk" }, "Posted in the project group because: " + ({ claim:"an item marked done is not showing yet", ready:"every requirement is verified", added:"a manager added a task", deadline:"the deadline is close with work open" })[why.kind]);
   o.chatPollAt = o.chatPollAt || now();
@@ -1463,10 +1483,10 @@ export async function recheckStale(){
   const open = (await loadAll(300, true)).filter(o => ["work", "qa"].includes(o.stage) && o.check);
   let n = 0;
   for(const o of open){ if(n >= 2) break; const at = (o.readLog || {}).at || o.checkAt; if(!at) continue;
-    let why = [];
-    const g = groupOf(o); if(as && g) try{ const ms = (await chatSince(as, g.id, at)).filter(m => !isDeskMsg(o, m)); if(ms.length && ms.every(m => ripe(m.at))) why.push(ms.length + " new message(s) in the group"); else if(ms.length) continue; }catch(e){}
-    if(!why.length) for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false && !x.media).slice(0, 30)){ try{ const md = await docModified(d); if(md && md.at > at && ripe(md.at)) why.push("file edited: " + d.name); }catch(e){} }
-    if(!why.length) continue;
+    let why = [], touched = false;
+    const g = groupOf(o); if(as && g) try{ const ms = (await chatSince(as, g.id, at)).filter(m => !isDeskMsg(o, m)); (o.seen = o.seen || {}).group = now(); touched = true; if(ms.length && ms.every(m => ripe(m.at))) why.push(ms.length + " new message(s) in the group"); else if(ms.length){ await saveO(o); continue; } }catch(e){}
+    if(!why.length){ let ok2 = false; for(const d of (o.docs || []).filter(x => x.status === "linked" && x.current !== false && !x.media).slice(0, 30)){ try{ const md = await docModified(d); ok2 = true; if(md && md.at > at && ripe(md.at)) why.push("file edited: " + d.name); }catch(e){} } if(ok2){ (o.seen = o.seen || {}).files = now(); touched = true; } }
+    if(!why.length){ if(touched) await saveO(o); continue; }
     if(await cmd("SET", "bsp:chk:" + o.id, "1", "NX", "EX", 280) !== "OK") continue;
     try{ log(o, { name:"Order desk" }, "Read the order again: " + why.slice(0, 3).join("; ")); await buildCheck(o); await saveO(o); n++; out.push(o.id + " read again"); }
     catch(e){ out.push(o.id + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + o.id); } }
