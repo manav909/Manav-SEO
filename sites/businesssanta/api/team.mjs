@@ -548,11 +548,14 @@ async function hodData(refresh){ const day = now().slice(0, 10), key = P + "hod:
     const sum = k => +ds.reduce((a2, x) => a2 + x.hours[k], 0).toFixed(1);
     const by = (f, side) => { const m = {}; ds.forEach(x => { const k = f(x) || "Not assigned"; const r = m[k] = m[k] || { orders:0, hours:0, open:0 }; r.orders++; r.hours += x.hours[side]; r.open += x.items[side].filter(i => i.open).length; }); return Object.entries(m).map(([name, r]) => ({ name, orders:r.orders, hours:+r.hours.toFixed(1), open:r.open })).sort((a2, b) => b.hours - a2.hours); };
     let insight = await getJ(key);
-    if((!insight || refresh) && aiOn() && ds.length){
+    // The analysis follows the situation: when any open order moved (stage, check, messages, steps, group chat) it is redone, at most every 30 minutes
+    const fp = sha(JSON.stringify(open.map(o => [o.id, o.stage, o.checkAt || "", (o.queue || []).filter(x => !x.sent).length, (o.actions || []).filter(a2 => !["done", "skipped"].includes(a2.status)).length, (o.teamChat || []).length, (o.convo && o.convo.messages || []).length]))).slice(0, 12);
+    const moved = insight && insight.fp !== fp && Date.now() - Date.parse(insight.at || 0) > 30 * 6e4;
+    if((!insight || refresh || moved) && aiOn() && ds.length){
       try{ const r = await askAI("hod", "claude-sonnet-5-5", `You are the delivery analyst for the HoD of an SEO, web and ads agency. From the order timings below, find where time is lost and why: client side (access, replies), sales side (messages not sent, updates not pasted), project team (slow answers, slow work, rework), QA. Name orders and people. Be specific, fair and short. No dashes.
 Answer with one JSON object only: {"headline":"one line for the HoD","sides":[{"side":"client | sales | project team | QA","finding":""}],"missed":["what was missed or broken, with the order"],"people":[{"name":"","note":"fair, specific"}],"improve":[{"what":"concrete change","impact":"expected effect, e.g. saves about 1 day per order"}],"todayForHod":["at most 3 things only the HoD should do today"]}`,
         JSON.stringify(ds.map(x => ({ order:x.id, site:x.site, stage:x.stage, deadline:x.deadline, pm:x.pm, sales:x.sales, late:x.late, qaFails:x.fails, revisions:x.revisions, broken:x.broken.slice(0, 4), hours:x.hours, worst:Object.fromEntries(Object.entries(x.items).map(([k, v]) => [k, v.sort((a2, b) => b.h - a2.h).slice(0, 3)])) }))), 6000);
-        insight = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4) }); await setJ(key, insight, 60 * 60 * 24 * 40); }catch(e){ insight = { error:e.message }; } }
+        insight = Object.assign(r.data || {}, { at:now(), usd:+r.usd.toFixed(4), fp }); await setJ(key, insight, 60 * 60 * 24 * 40); }catch(e){ insight = { error:e.message }; } }
     return ({ day, totals:{ open:open.length, late:ds.filter(x => x.late).length, client:sum("client"), sales:sum("sales"), team:sum("team"), qa:sum("qa"), fails:ds.reduce((a2, x) => a2 + x.fails, 0), revisions:ds.reduce((a2, x) => a2 + x.revisions, 0) },
       orders:ds.sort((a2, b) => (b.late - a2.late) || (Object.values(b.hours).reduce((p, q) => p + q, 0) - Object.values(a2.hours).reduce((p, q) => p + q, 0))), team:by(x => x.pm, "team"), sales:by(x => x.sales, "sales"), insight }); }
 
@@ -1579,7 +1582,7 @@ async function handle(request){
   if(a === "queue"){ const all = await loadAll(); const items = [];
     all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.queue || []).forEach(x => { if(!x.sent || (x.reply && !x.seen)) items.push(Object.assign({ order:o.id, client:o.client.name, stage:o.stage }, x)); }));
     // Client messages the desk prepared as steps on the order count here too, so this page and the order page always agree
-    all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.actions || []).filter(x => x.type === "client" && !["done", "skipped"].includes(x.status) && x.message).forEach(x => items.push({ order:o.id, client:o.client.name, stage:o.stage, id:x.id, at:x.at || o.at, by:x.by || "Order desk", text:(x.title ? x.title + "\n\n" : "") + x.message, kind:"step", needBy:x.needBy || "" })));
+    all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.actions || []).filter(x => x.type === "client" && !["done", "skipped"].includes(x.status) && x.message).forEach(x => items.push({ order:o.id, client:o.client.name, stage:o.stage, id:x.id, at:x.at || o.at, by:x.by || "Order desk", title:x.title || "", text:x.message, kind:"step", needBy:x.needBy || "" })));
     return out({ ok:true, items:items.sort((x, y) => x.at.localeCompare(y.at)) }); }
 
   if(a === "score"){ if(!can(w, "assign")) return bad("Only Manav and managers see the scorecard", 403);

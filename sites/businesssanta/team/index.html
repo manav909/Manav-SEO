@@ -897,8 +897,9 @@ async function hodPage(refresh){
 async function msgs(){
   await refresh();
   app.innerHTML = tabs("msgs") + `<div class="card"><h2>Client messages</h2><p class="note">Messages to send on the marketplace, and client replies the team has not read yet. Copy, send, then mark sent.</p>
-  ${QUEUE.map(m => `<div class="ln"><div class="tx"><b>${E(m.order)} · ${E(m.client || "")}</b> <span class="chip ${m.kind === "reply" ? "y" : "warn"}">${m.kind === "reply" ? "Reply not read yet" : "To send"}</span>${m.needBy ? ` <span class="chip n">by ${fmtD(m.needBy)}</span>` : ""} <span style="color:var(--mut)">${E(m.by)}</span><div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div></div>
-   <div class="ac"><a class="btn sm" href="#o=${E(m.order)}">Open order</a></div></div>`).join("") || `<p class="note">All clear.</p>`}</div>`;
+  ${QUEUE.map(m => `<div class="ln"><div class="tx"><b>${E(m.order)} · ${E(m.client || "")}</b> <span class="chip ${m.kind === "reply" ? "y" : "warn"}">${m.kind === "reply" ? "Reply not read yet" : "To send"}</span>${m.needBy ? ` <span class="chip n">by ${fmtD(m.needBy)}</span>` : ""} <span style="color:var(--mut)">${E(m.by)}</span>${m.title ? `<div class="sub" style="margin-top:4px">${E(m.title)}</div>` : ""}<div class="msg" style="margin-top:6px">${E(m.reply || m.text)}</div></div>
+   <div class="ac">${m.kind !== "reply" ? `<button class="btn sm pri" data-cpq="${E(m.text)}">Copy</button>` : ""}<a class="btn sm" href="#o=${E(m.order)}">Open order</a></div></div>`).join("") || `<p class="note">All clear.</p>`}</div>`;
+  document.querySelectorAll("[data-cpq]").forEach(b => b.onclick = async () => { try{ await navigator.clipboard.writeText(b.dataset.cpq); toast("Copied. Send it on the marketplace, then mark it sent on the order."); }catch(e){ toast("Copy did not work here: select the text and copy it", true); } });
 }
 
 /* Lead help */
