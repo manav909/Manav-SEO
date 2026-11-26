@@ -1051,7 +1051,7 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   d2.deliveryNotes = (d2.deliveryNotes || []).map(x => noId(str(x, 300))).filter(Boolean).slice(0, 8);
   const prevQF = (o.check || {}).quickFixes || [];
   d2.quickFixes = (d2.quickFixes || []).slice(0, 6).map((q, i) => { const old = prevQF.find(x => x.id === q.id);
-    return { id:old ? old.id : "q" + (Math.max(0, ...prevQF.map(x => parseInt(String(x.id).slice(1)) || 0)) + i + 1), what:noId(str(q.what, 300)), pages:(q.pages || []).map(u => str(u, 300)).slice(0, 12), look:["description", "title", "h1"].includes(q.look) ? q.look : "description",
+    return { id:old ? old.id : "q" + (Math.max(0, ...prevQF.map(x => parseInt(String(x.id).slice(1)) || 0)) + i + 1), what:noId(str(q.what, 700)), pages:(q.pages || []).map(u => str(u, 300)).slice(0, 12), look:["description", "title", "h1"].includes(q.look) ? q.look : "description",
       status:q.status === "done" ? "done" : "open", found:noId(str(q.found, 240)), invitedBy:str(q.invitedBy, 300), at:old ? old.at : now(), doneAt:q.status === "done" ? (old && old.doneAt) || now() : "" }; });
   o.check = Object.assign(d2, { claims:(plan.claims || []).slice(0, 40).map(c => ({ r:str(c.r, 12), by:role(str(c.by, 60)), at:str(c.at, 40), what:str(c.what, 240) })), at:now(), usd:+(r1.usd + r2.usd).toFixed(4), requirements:reqs, chatNotInMail:(plan.chatNotInMail || []).slice(0, 10), outOfScope:(plan.outOfScope || []).slice(0, 10), reqWhy:plan.reqMail ? str(plan.reqMail.why, 240) : "",
     reqMail:reqMail ? { id:reqMail.id, subject:reqMail.subject, from:reqMail.from, to:reqMail.to, date:reqMail.date, text:str(reqMail.text, 6000) } : null,
@@ -1095,6 +1095,8 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ await reconcile(o, "new check"); }catch(e){}
   if(["qa", "ready"].includes(o.stage)) try{ await buildPack(o); }catch(e){}   // the delivery pack always follows the newest check
+  // A draft work report not yet approved is rewritten when the task statuses it was written from have changed
+  if(o.draftReport && !o.draftReport.approved && o.draftReport.fp !== rowsFp(o) && !["delivered", "done", "cancelled"].includes(o.stage)) try{ await draftReport(o); log(o, { name:"Order desk" }, "Work report draft rewritten: the task statuses changed since it was written"); }catch(e){}
   try{ await buildGuides(o); }catch(e){}
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
@@ -1103,6 +1105,7 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   return o.check;
 }
 
+const rowsFp = o => sha(JSON.stringify(((o.check || {}).rows || []).map(r => [r.r, r.status]))).slice(0, 12);
 /* Work report draft: when work is visibly done but missing from the team's report, the desk writes those parts from what it verified
    itself (live site, Search Console, the team's files), each with its source and date. Nothing unverified is claimed. A person approves
    it before it counts as the work report. */
@@ -1134,7 +1137,7 @@ TEAM FILES READ: ${JSON.stringify(ck.files || [])}`.slice(0, 90000);
   const key = "rep:" + o.id, name = o.id + " · " + domOf(o.client.website) + " · work report draft";
   await gPut(acc.email, st2, key, name, st2.drafts.id, "doc", html); await setJ(REPK, st2);
   const f = st2.files[key];
-  o.draftReport = { at:now(), id:f.id, link:f.link, name, html, approved:false, via:acc.email, notVerified:d.notVerified || [] };
+  o.draftReport = { at:now(), id:f.id, link:f.link, name, html, approved:false, via:acc.email, notVerified:d.notVerified || [], fp:rowsFp(o) };
   log(o, { name:"Order desk" }, "Work report draft written from verified work only: " + name);
   return o.draftReport;
 }
