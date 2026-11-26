@@ -401,7 +401,7 @@ For a project group give the order id it belongs to, judged by the client's site
       const user = `ORDERS:\n${ol}\n\nGROUPS:\n` + batch.map(g => `GROUP ${g.id} (name hint: "${g.name}")\nFIRST MESSAGES:\n${g.first.map(line).join("\n") || "(empty)"}\nLATEST MESSAGES:\n${g.latest.map(line).join("\n") || "(empty)"}`).join("\n\n");
       try{ const r = await askAI("groupmap", "claude-sonnet-5-5", system, user.slice(0, 120000), 2500);
         for(const g of batch){ const d = ((r.data || {}).groups || []).find(x => x.id === g.id) || {}, man = (cur.spaces[g.id] || {}).manual;
-          cur.spaces[g.id] = { name:g.name, via:g.via, last:g.last, ofp, at:now(), kind:str(d.kind, 12) || "other", order:str(d.order, 20), orders:(d.orders || []).map(x => str(x, 20)).slice(0, 30), confidence:Math.max(0, Math.min(1, num(d.confidence, 0))), why:str(d.why, 200), manual:man || null }; } }
+          cur.spaces[g.id] = { name:g.name, via:g.via, last:g.last, ofp, at:now(), kind:str(d.kind, 12) || "other", order:str(d.order, 20), orders:(d.orders || []).map(x => str(x, 20)).slice(0, 30), confidence:Math.max(0, Math.min(1, num(d.confidence, 0))), why:str(d.why, 400), manual:man || null }; } }
       catch(e){ for(const g of batch) cur.spaces[g.id] = Object.assign(cur.spaces[g.id] || {}, { name:g.name, via:g.via, error:str(e.message, 120) }); } } }
   cur.at = now(); await setJ(GMK, cur); return todo.length;
 }
