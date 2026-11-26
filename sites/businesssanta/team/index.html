@@ -318,6 +318,8 @@ async function api(a, body, params){
 }
 /* Branded loader for long jobs: the job's own steps, a live timer, and an estimate learned from this browser's real run times */
 const LOADS = {
+  groupmap:{ t:"Sorting the chat groups by content", est:40, s:["Listing every group the team accounts are in", "Reading the first and latest messages", "Matching each group to its order"] },
+  groupLink:{ t:"Linking the group", est:30, s:["Saving your choice", "Reading the group from its first message"] },
   check:{ t:"Checking every task", est:140, s:["Reading the requirement email and client chat", "Reading the whole project group", "Opening every file and screenshot", "Reading the live site and Search Console", "Judging each task against its proof", "Writing the group message"] },
   pack:{ t:"Building the delivery pack", est:70, s:["Collecting every proof and file", "Checking each deliverable", "Writing the QA checks", "Writing the client message"] },
   draftReport:{ t:"Writing the work report", est:70, s:["Reading the verified work", "Writing it task by task", "Saving the draft to Drive"] },
@@ -1056,6 +1058,7 @@ async function peoplePage(){
      <button class="btn pri" style="margin-top:10px">Add person</button></form><div id="pc"></div></div>
    <div class="card"><h2>Google accounts</h2><p class="note">Every Google account the team uses for client access. The order desk reads Search Console, Analytics and Drive proof with whichever account can see it. Connecting asks you to sign in to that account; it is read-only.</p><div id="gacc"><p class="note">Loading…</p></div>
     <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap"><a class="btn sm pri" href="/api/portal?a=g-start&team=1">Connect another Google account</a><button class="btn sm" id="gref" type="button">Refresh what each account can see</button></div></div>
+   ${ME.role === "admin" ? `<div class="card" id="gmap"><h2>Google Chat groups, sorted by content</h2><p class="note">Loading…</p></div>` : ""}
    <div class="card" id="deskc"><h2>Order desk in project groups</h2><p class="note">Loading…</p></div>
    <form class="card" id="cf"><h2>Money settings</h2><p class="note">Used for the money view of every order and the price check.</p>
    <div class="grid" style="gap:10px"><label class="f">Marketplace fee (%)<input id="cfee" type="number" min="0" max="50" value="${ME.cfg.fee}"></label><label class="f">Team cost per hour (USD)<input id="chr" type="number" min="0" step="0.5" value="${ME.cfg.hourly}"></label></div>
@@ -1067,6 +1070,12 @@ async function peoplePage(){
   document.querySelectorAll("[data-off]").forEach(b => b.onclick = () => act(async () => { await api("personOff", { uid:b.dataset.off }); peoplePage(); }));
   const gl = async ref => { try{ const g = await api("gaccs", null, ref ? "&refresh=1" : ""); $("#gacc").innerHTML = g.accounts.length ? `<table class="t2"><tbody>${g.accounts.map(a => `<tr><td><b>${E(a.email)}</b>${a.primary ? ` <span class="chip y">Main portal account</span>` : ""}</td><td>${a.gsc} Search Console · ${a.ga} Analytics</td><td>${a.drive ? `<span class="chip ok">Drive</span>` : `<span class="chip warn">No Drive</span>`} ${a.gmail ? `<span class="chip ok">Email</span>` : ""} ${a.chat ? `<span class="chip ok">Chat</span>` : ""}${!a.primary && (!a.gmail || !a.chat) ? `<div class="sub">Connect it again to add email and chat reading</div>` : ""}</td></tr>`).join("")}</tbody></table><p class="sub">Checked ${ago(g.at)}</p>` : `<p class="note">No Google account connected yet.</p>`; }catch(e){ $("#gacc").innerHTML = `<p class="note">${E(e.message)}</p>`; } };
   gl(false); $("#gref").onclick = () => act(() => gl(true), "Asking Google what each account can see…", "gl");
+  const gmapL = async ref => { const el = $("#gmap"); if(!el) return; try{ const g = await api("groupMap", null, ref ? "&refresh=1" : ""), K = { project:"Project group", shared:"Shared team group", access:"Access group", client:"Client chat", other:"Other" };
+      el.innerHTML = `<h2>Google Chat groups, sorted by content</h2><p class="note">Every group the team accounts are in, sorted by what is written in it (the people, the site, the work and the files), never by its name. Sorted ${g.at ? ago(g.at) : "not yet"}; each group is read again when it has new activity.</p>` +
+        (g.groups.length ? `<table class="t2"><thead><tr><th>Group</th><th>What it is</th><th>Order</th><th>Why</th></tr></thead><tbody>${g.groups.map(x => `<tr><td><b>${E(x.name || x.id)}</b><div class="sub">${E(x.via || "")}</div></td><td>${E(K[x.kind] || x.kind || "Not sorted yet")}${x.error ? `<div class="sub">Could not read: ${E(x.error)}</div>` : ""}</td><td>${x.manual ? `${E(x.manual.order)} <span class="sub">(${x.manual.yes ? "confirmed" : "rejected"} by ${E(x.manual.by)})</span>` : x.order ? `<a href="#o=${E(x.order)}">${E(x.order)}</a> <span class="sub">${Math.round((x.confidence || 0) * 100)}% sure</span>` : (x.orders || []).map(E).join(", ") || "<span class=\"sub\">none</span>"}</td><td class="sub">${E(x.why || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="note">No groups found.</p>`) +
+        `<button class="btn sm" id="gmapR" style="margin-top:10px">Sort again now</button>`;
+      $("#gmapR").onclick = () => act(() => gmapL(true), "Reading every group…", "groupmap"); }catch(e){ el.innerHTML = `<h2>Google Chat groups</h2><p class="note">Could not load: ${E(e.message)}</p>`; } };
+  gmapL();
   (async () => { const g = await api("gaccs").catch(() => ({ accounts:[] })), acs = g.accounts || [], c = ME.cfg || {}, el = $("#deskc"); if(!el) return;
     const cur = acs.find(a => a.email === c.chatAs);
     el.innerHTML = `<h2>Order desk in project groups</h2><p class="note">The desk talks in each order's project group like a colleague: what to do next, and answers to questions, in very simple English. It posts as the account you pick here. Best: seo@indiit.com with its name changed to "Order Desk".</p>

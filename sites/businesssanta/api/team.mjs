@@ -1551,6 +1551,8 @@ async function handle(request){
   if(a === "me") return out({ ok:true, me:{ name:w.name, role:w.role, myRoles:w.roles || [w.role], uid:w.uid, viewAs:!!w.viewAs }, ai:aiOn(), accessEmail:"manavs909@gmail.com", cfg, gigs:GIGS, roles:ROLES,
     people:(await people()).filter(p => !p.off).map(p => ({ id:p.id, name:p.name, role:rolesOf(p)[0], roles:rolesOf(p) })), access:ACCESS });
 
+  if(a === "groupMap"){ if(!isA) return bad("For Manav only", 403); if(url.searchParams.get("refresh")) await mapGroups(true); const m = (await getJ(GMK)) || { spaces:{} };
+    return out({ ok:true, at:m.at || "", groups:Object.entries(m.spaces || {}).map(([id, g]) => ({ id, name:g.name, kind:g.kind, order:g.order, orders:g.orders || [], confidence:g.confidence, why:g.why, via:g.via, manual:g.manual || null, error:g.error || "" })) }); }
   if(a === "gaccs"){ const ac = await gAccounts(); let pr = { items:[], at:"" }; try{ pr = url.searchParams.get("refresh") && w.role === "admin" ? await refreshProps() : await gProps(); }catch(e){ pr.error = e.message; }
     return out({ ok:true, accounts:ac.map(x => Object.assign(x, { gsc:pr.items.filter(i => i.email === x.email && i.kind === "gsc").length, ga:pr.items.filter(i => i.email === x.email && i.kind === "ga").length })), at:pr.at, errors:pr.errors || {} }); }
   if(a === "access"){ const site = str(url.searchParams.get("site"), 200), d = domOf(site); let gp = [];
