@@ -91,11 +91,19 @@ export const aiOn = () => !!process.env.ANTHROPIC_API_KEY;
 /* Speed: copying and sorting jobs run on Haiku with no thinking; judgement jobs run on Sonnet at medium effort (default is high). */
 const FAST = { output_config:{ effort:"low" }, thinking:{ type:"disabled" } }, MED = { output_config:{ effort:"medium" } };
 const SPEED = { format:FAST, intake:FAST, reply:FAST, recheck:FAST, order:MED, rethink:MED, proof:MED, lead:MED, teamreply:MED, intel:MED, hod:MED, docs:FAST, diff:MED, signals:FAST, history:MED, accesschat:FAST, autoproof:FAST, pack:MED, check1:MED, check2:MED, draftreport:MED, deskanswer:FAST, groupmsg:MED, quickfix:MED, reconcile:MED, retention:MED };
+/* Some models no longer take thinking "disabled" (they ask for "between_tools"). The request is retried once with the form the
+   error names and the answer is remembered per model, so no job ever fails on this again. */
+const THINK_OFF = {};
 export async function askAI(kind, model, system, user, maxTokens){
-  const r = await fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
+  const call = extra => fetch("https://api.anthropic.com/v1/messages", { method:"POST", signal:AbortSignal.timeout(170000),
     headers:{ "x-api-key":process.env.ANTHROPIC_API_KEY, "anthropic-version":"2023-06-01", "content-type":"application/json" },
-    body:JSON.stringify(Object.assign({ model, max_tokens:maxTokens || 8000, system, messages:[{ role:"user", content:user }] }, SPEED[kind] || {})) });
-  const j = await r.json().catch(() => null);
+    body:JSON.stringify(Object.assign({ model, max_tokens:maxTokens || 8000, system, messages:[{ role:"user", content:user }] }, extra)) });
+  const speed = Object.assign({}, SPEED[kind] || {}); if(speed.thinking && speed.thinking.type === "disabled" && THINK_OFF[model]) speed.thinking = THINK_OFF[model];
+  let r = await call(speed), j = await r.json().catch(() => null);
+  if(r.status === 400 && j && j.error && /thinking/i.test(j.error.message || "") && speed.thinking){
+    const m = String(j.error.message).match(/"type":\s*"([a-z_]+)"/); THINK_OFF[model] = m && m[1] !== "disabled" ? { type:m[1] } : null;
+    const s2 = Object.assign({}, speed); if(THINK_OFF[model]) s2.thinking = THINK_OFF[model]; else delete s2.thinking;
+    r = await call(s2); j = await r.json().catch(() => null); }
   if(!r.ok || !j) throw new Error("The AI did not answer (" + r.status + (j && j.error ? ": " + j.error.message : "") + ")");
   const inT = j.usage ? (j.usage.input_tokens || 0) + (j.usage.cache_read_input_tokens || 0) + (j.usage.cache_creation_input_tokens || 0) : 0, outT = j.usage ? j.usage.output_tokens || 0 : 0;
   const p = PRICE[model] || [2, 10], usd = (inT * p[0] + outT * p[1]) / 1e6;
