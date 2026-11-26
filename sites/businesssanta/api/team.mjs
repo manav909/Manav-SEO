@@ -769,6 +769,36 @@ LAST CLIENT MESSAGES: ${JSON.stringify((o.convo ? o.convo.messages : []).slice(-
   return noId(str((r.data || {}).answer, 3000)) || "I could not write help for this. Ask the PM in the project group.";
 }
 
+/* Talk to an order: anyone asks anything about it in plain words and gets an answer from everything on the order. Read only. */
+function orderFacts(o, full){
+  const ck = o.check || {}, reqs = ck.requirements || [], cut = (t, n) => str(t, n);
+  return `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}. Stage: ${o.stage}. Deadline: ${o.deadline}. Price ${o.price || ""}. PM ${o.pmName || "none"}, QA ${o.qaName || "none"}. Today ${new Date().toISOString().slice(0, 10)}.
+WHAT WAS SOLD: ${(o.ai || {}).summary || ""}
+PROMISES: ${JSON.stringify(((o.ai || {}).promises || []).map(p => ({ what:p.what, by:p.by, status:p.status })))}
+REQUIREMENT EMAIL: ${cut((ck.reqMail || {}).text || "", 6000)}
+TASKS (latest check ${ck.at || "none"}): ${JSON.stringify((ck.rows || []).map(r => { const q = reqs.find(x => x.id === r.r) || {}; return { task:q.text, phase:q.phase, status:r.status, found:cut(r.found, 300), open:cut(r.toPass, 300), who:r.who }; }))}
+VERDICT: ${ck.verdict || ""}
+QUICK FIXES: ${JSON.stringify((ck.quickFixes || []).map(q => ({ what:q.what, status:q.status })))}
+DELIVERY NOTE: ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ck.deliveryNotes || []))}
+BEFORE DELIVERY: ${JSON.stringify(deliveryList(o).map(x => ({ who:x.who, what:x.what, done:x.done })))}
+FILES: ${JSON.stringify((o.docs || []).filter(d => d.status === "linked").map(d => ({ name:d.name, kind:d.kind, modified:d.modified, by:d.by, current:d.current !== false })))}
+ACCESS: ${JSON.stringify((o.access || []).map(a => ({ item:a.item, status:a.status, note:a.note || "" })))}
+OPEN MESSAGES TO SEND: ${JSON.stringify((o.queue || []).filter(m => !m.sent).map(m => cut(m.text, 400)))}
+OPEN ACTIONS: ${JSON.stringify((o.actions || []).filter(a => !["done", "skipped"].includes(a.status)).map(a => ({ title:a.title, type:a.type, needBy:a.needBy || "" })))}
+CLIENT CARE: ${o.retention ? JSON.stringify({ summary:o.retention.summary, keep:o.retention.keep, reminders:(o.retention.reminders || []).map(x => ({ due:x.due, what:x.what, status:x.status })) }) : "none yet"}
+CLIENT CHAT (newest last): ${(o.convo ? o.convo.messages : []).slice(-40).map(m => `${m.time || ""} ${m.who === "us" ? "US" : "CLIENT"}: ${cut(m.text, 500)}`).join("\n") || cut(o.chat || "", 8000)}
+CALL NOTES: ${cut(o.calls || "", 3000)}
+PROJECT GROUP (newest last): ${(o.teamChat || []).slice(-40).map(m => `${m.at} ${m.by}: ${cut(m.text, 500)}`).join("\n")}
+${full ? "HISTORY (newest first): " + (o.timeline || []).slice(0, 40).map(t => `${t.at} ${t.who}: ${cut(t.what, 200)}`).join("\n") : ""}`;
+}
+async function askOrder(o, question, w, isA){
+  const pj = isProj(w);
+  const system = `You are the order desk. A team member asks about one order. Answer from the FACTS only, like a colleague who has read everything: the direct answer first in one or two sentences, then only the details that help (who, what, when, where it is written, with dates). If the facts do not say, answer "The order does not say" and who would know. Never invent. Simple English, short. No dashes.${pj ? " The asker is on the project team: talk about the work only, never about prices, payments or what sales told the client privately." : ""} Answer with one JSON object only: {"answer":""}`;
+  const r = await askAI("deskanswer", "claude-sonnet-5-5", system, orderFacts(o, isA).slice(0, 120000) + "\n\nQUESTION from " + w.name + ": " + question, 1800);
+  o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  return noId(str((r.data || {}).answer, 4000)) || "I could not answer that. Ask the PM in the project group.";
+}
+
 /* After delivery the order is kept as a client care record (what was done, what to remember, next steps) with a loop of
    reminders that stay current: the keep-current step re-judges them whenever the client chat or another order changes things. */
 async function buildRetention(o, why){
@@ -1349,7 +1379,7 @@ async function handle(request){
     try{ gp = (await gProps()).items.filter(i => { const h = domOf(i.id.replace(/^sc-domain:/, "https://")); return i.kind === "gsc" ? h === d : (i.name || "").toLowerCase().includes(d.split(".")[0]); }); }catch(e){}
     return out({ ok:true, domain:d, register:await regOf(site), google:gp }); }
   const isA = w.role === "admin";
-  const strip = o => { const dl = deliveryList(o); if(isA) return Object.assign({}, o, { deliveryList:dl }); const c = Object.assign({}, isProj(w) ? projView(o) : o); delete c.pay; c.timeline = []; c.deliveryList = dl; c.deliveryHelp = o.deliveryHelp || []; return c; };
+  const strip = o => { const dl = deliveryList(o); if(isA) return Object.assign({}, o, { deliveryList:dl }); const c = Object.assign({}, isProj(w) ? projView(o) : o); delete c.pay; c.timeline = []; c.deliveryList = dl; c.deliveryHelp = o.deliveryHelp || []; c.asks = (o.asks || []).filter(k => !isProj(w) || !/sales|comms|admin|manager/.test(k.role || "")); return c; };
   if(a === "file"){ const v = await getJ(IK(str(url.searchParams.get("id"), 20))); if(!v) return bad("File not found", 404);
     return new Response(Buffer.from(v.data, "base64"), { headers:{ "content-type":v.type, "cache-control":"private, max-age=86400", "x-content-type-options":"nosniff", "content-disposition":"inline; filename=\"" + v.name.replace(/[^\w. -]/g, "") + "\"" } }); }
   if(isProj(w) && ["queue", "clients", "client", "clientSave", "leads", "lead", "score", "payments", "hod", "create"].includes(a)) return bad("This is for the sales team", 403);
@@ -1374,6 +1404,16 @@ async function handle(request){
   if(a === "deskUsage"){ if(!isA) return bad("For Manav only", 403); const l = ((await cmd("LRANGE", DL, 0, 999)) || []).map(x => JSON.parse(x)), d = now().slice(0, 10), m = d.slice(0, 7), by = {};
     for(const e of l){ const k = e.group || "?"; const b = by[k] = by[k] || { group:k, today:0, month:0, usdToday:0, usdMonth:0, skipped:0 }; if(String(e.at).startsWith(m)){ b.usdMonth += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.month++; } if(String(e.at).startsWith(d)){ b.usdToday += e.usd || 0; if(!e.skipped && e.kind !== "steps") b.today++; if(e.skipped) b.skipped++; } }
     return out({ ok:true, groups:Object.values(by).map(b => Object.assign(b, { usdToday:+b.usdToday.toFixed(3), usdMonth:+b.usdMonth.toFixed(3) })), log:l.slice(0, 60), limits:{ daily:num(cfg.deskDaily, 40), group:num(cfg.deskPerGroup, 15), person:num(cfg.deskPerPerson, 8) } }); }
+  if(a === "askDesk"){ if(request.method !== "POST") return bad("Use POST"); if(!aiOn()) return bad("The AI helpers are off", 503); const qq = str(q.question, 800).trim(); if(qq.length < 4) return bad("Write your question");
+    const all = (await loadAll(1000)).filter(o2 => !isProj(w) || [o2.pm, o2.qa].includes(w.id) || (o2.team || []).includes(w.id));
+    const words = qq.toLowerCase().split(/[^a-z0-9.]+/).filter(x => x.length > 3);
+    const score = o2 => words.reduce((n, x) => n + ((String(o2.id).toLowerCase() === x || String(o2.client.name || "").toLowerCase().includes(x) || String(o2.client.website || "").toLowerCase().includes(x)) ? 5 : 0), 0);
+    const hit = all.map(o2 => [score(o2), o2]).filter(x => x[0] > 0).sort((p2, q2) => q2[0] - p2[0]).slice(0, 3).map(x => x[1]);
+    const board = all.slice(0, 80).map(o2 => ({ id:o2.id, client:o2.client.name, site:o2.client.website, stage:o2.stage, deadline:o2.deadline, pm:o2.pmName, flags:flags(o2).map(f => f.t).slice(0, 4), verdict:str((o2.check || {}).verdict, 160) }));
+    const system = `You are the order desk for the whole team. Answer the question from the FACTS only: the direct answer first, then the orders it is about (with their ids), dates and who acts. If the facts do not say, say so. Never invent. Simple English, short. No dashes.${isProj(w) ? " The asker is on the project team: work only, never prices or payments." : ""} Answer with one JSON object only: {"answer":"","orders":["order ids the answer is about"]}`;
+    const user = `ALL ORDERS (newest first): ${JSON.stringify(board)}\n\n${hit.map(o2 => orderFacts(o2, false).slice(0, 30000)).join("\n\n---\n\n")}\n\nQUESTION from ${w.name}: ${qq}`;
+    const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user.slice(0, 140000), 1800);
+    return out({ ok:true, answer:noId(str((r.data || {}).answer, 4000)), orders:((r.data || {}).orders || []).map(x => str(x, 20)).slice(0, 6) }); }
   if(a === "care"){ const all = await loadAll(1000), today = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10), l = [];
     for(const o2 of all) ((o2.retention || {}).reminders || []).filter(x => x.status === "open" && x.due <= soon).forEach(x => l.push({ order:o2.id, client:o2.client.name, site:o2.client.website, id:x.id, due:x.due, what:x.what, why:x.why, late:x.due < today }));
     l.sort((p2, q2) => String(p2.due).localeCompare(String(q2.due))); return out({ ok:true, reminders:l.slice(0, 60) }); }
@@ -1498,6 +1538,8 @@ async function handle(request){
     else if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); try{ await reconcile(o, "chat laid out"); }catch(e){} }
+    else if(op === "askOrder"){ if(!aiOn()) return bad("The AI helpers are off", 503); const qq = str(q.question, 800).trim(); if(qq.length < 4) return bad("Write your question");
+      const a2 = await askOrder(o, qq, w, isA); (o.asks = o.asks || []).push({ id:nid("k"), q:qq, a:a2, by:w.name, role:(w.roles || [w.role]).join("+"), at:now() }); o.asks = o.asks.slice(-40); }
     else if(op === "dTick"){ const k = str(q.key, 20); if(!k) return bad("Missing item"); o.deliveryTicks = o.deliveryTicks || {};
       const it = deliveryList(o).find(x => x.key === k); if(q.on === false){ delete o.deliveryTicks[k]; log(o, w, "Unticked before delivery: " + str(it ? it.what : k, 140)); }
       else { o.deliveryTicks[k] = { by:w.name, at:now(), what:str(it ? it.what : "", 300) }; log(o, w, "Done before delivery: " + str(it ? it.what : k, 140)); } }
