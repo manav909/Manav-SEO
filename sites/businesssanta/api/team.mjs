@@ -756,7 +756,13 @@ const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").
 const REC0 = /\b(record(ing|ed)?|demo|walk ?through|loom|screen ?cast|video (call|walk))\b/i, REC_WHO = "QA, manager or Sales";
 const REC = { test:t => REC0.test(String(t || "")) && !/\b(dns|txt|cname|mx|a record|search console record|schema|structured data)\b/i.test(String(t || "")) };
 const ownerOf = (who, what) => REC.test(String(what || "")) ? REC_WHO : who;
-function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
+const STOPW = new Set("a an the to of and or in on for with by it its this that is are be as at from all any our your their send make made short client clients".split(" "));
+const wordsOf = t => new Set(String(t || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter(x => x.length > 2 && !STOPW.has(x)).map(x => x.replace(/(ings?|ed|s)$/, "")));
+const sameJob = (a, b) => { if(REC.test(a) && REC.test(b) && !/report/i.test(a + " " + b)) return true; const A = wordsOf(a), B = wordsOf(b); if(!A.size || !B.size) return false; let n = 0; for(const x of A) if(B.has(x)) n++; return n / Math.min(A.size, B.size) >= 0.6; };
+function deliveryList(o){ const ck = o.check || {}, list = [], seen = new Set();
+  // The delivery pack is used only when it was made from the latest check: an older pack's fixes are history, not tasks
+  const pk = o.pack && (!ck.at || String(o.pack.at || "") >= String(ck.at)) ? o.pack : {};
+  const add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; if(list.some(x => sameJob(x.what, what))) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
   (o.mgrTasks || []).filter(m => m.phase === "delivery").forEach(m => add(m.who || "Sales", m.text, "added by " + m.by));
@@ -1065,6 +1071,7 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ await reconcile(o, "new check"); }catch(e){}
+  if(["qa", "ready"].includes(o.stage)) try{ await buildPack(o); }catch(e){}   // the delivery pack always follows the newest check
   try{ await buildGuides(o); }catch(e){}
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
