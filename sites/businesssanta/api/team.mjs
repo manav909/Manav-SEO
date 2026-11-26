@@ -735,7 +735,8 @@ const LSEED = [
   ["message", "In group messages: bold for headings and item titles, italic for the reference with its proving line. Simple, human, task only, no meta.", ""],
   ["message", "Edit our own group message only while nobody has written after it; otherwise post a new one.", ""],
   ["people", "Instructions in a group are open to the PM's approval; weigh a PM's counter fairly, argue once politely, then accept. The manager's (Jyoti's) word settles a situation.", ""],
-  ["qa", "Client communication and the demo recording are delivery parts: they never stop an order from reaching QA.", ""]
+  ["qa", "Client communication and the demo recording are delivery parts: they never stop an order from reaching QA.", ""],
+  ["owners", "The demo or walkthrough recording is always made by QA, a manager or Sales, never by the working executive: never ask the executive for it, in the group or anywhere.", ""]
 ];
 async function learnList(){ let l = await getJ(LK); if(!Array.isArray(l)){ l = LSEED.map(([k, rule, why], i) => ({ id:"L" + (i + 1), kind:k, rule, why, by:"Manav (review of O-1001)", at:now(), on:true })); await setJ(LK, l); } return l; }
 let LEARN = { at:0, txt:"" };
@@ -749,7 +750,12 @@ const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)
 
 /* Before delivery: a checklist anyone can tick, with help on any item, saved for the next person */
 const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()).slice(0, 10);
-function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
+/* Who does what is a fixed rule, not the AI's guess: a demo or walkthrough recording is always made by QA, a manager or Sales, never by the
+   working executive, so it is never asked from the executive and never stops the project work. */
+const REC0 = /\b(record(ing|ed)?|demo|walk ?through|loom|screen ?cast|video (call|walk))\b/i, REC_WHO = "QA, manager or Sales";
+const REC = { test:t => REC0.test(String(t || "")) && !/\b(dns|txt|cname|mx|a record|search console record|schema|structured data)\b/i.test(String(t || "")) };
+const ownerOf = (who, what) => REC.test(String(what || "")) ? REC_WHO : who;
+function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
   (pk.final || []).filter(f => f.status !== "ready" && f.fix).forEach(f => add("QA", f.fix, "delivery pack"));
@@ -775,7 +781,7 @@ LAST CLIENT MESSAGES: ${JSON.stringify((o.convo ? o.convo.messages : []).slice(-
 /* Written help for every before-delivery item, made ahead of time (one call for all new items) so it is there when someone looks */
 async function buildGuides(o){
   if(!aiOn()) return 0; const list = deliveryList(o), g = o.deliveryGuide = o.deliveryGuide || {};
-  Object.keys(g).forEach(k => { if(!list.some(x => x.key === k)) delete g[k]; });
+  Object.keys(g).forEach(k => { const it = list.find(x => x.key === k); if(!it || (g[k].who !== undefined && g[k].who !== it.who) || (g[k].who === undefined && it.who === REC_WHO)) delete g[k]; });
   const need = list.filter(x => !g[x.key]); if(!need.length) return 0;
   const pk = o.pack || {}, ck = o.check || {};
   const system = `For each before-delivery item of one SEO order, write the help a team member needs to do it without asking anyone: short numbered steps, each with the exact place (the marketplace order page and its Deliver button, the Drive file by name, the project group) and any exact text to copy in backticks. Use only the facts given; where something is unknown say who to ask. At most 6 steps per item, very simple English, no dashes. Answer with one JSON object only: {"guides":[{"key":"","steps":"1. ...\n2. ..."}]}`;
@@ -787,7 +793,7 @@ ATTACH: ${JSON.stringify((pk.client || {}).attach || [])}
 DELIVERY NOTE: ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ck.deliveryNotes || []))}
 LINKED FILES: ${JSON.stringify((o.docs || []).filter(d => d.status === "linked" && d.current !== false).map(d => d.name + " " + (d.link || "")))}`;
   const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 3500); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
-  let n = 0; for(const x of ((r.data || {}).guides || [])) if(need.some(y => y.key === x.key) && x.steps){ g[x.key] = { text:noId(str(x.steps, 2500)), at:now() }; n++; }
+  let n = 0; for(const x of ((r.data || {}).guides || [])) if(need.some(y => y.key === x.key) && x.steps){ g[x.key] = { text:noId(str(x.steps, 2500)), at:now(), who:(need.find(y => y.key === x.key) || {}).who || "" }; n++; }
   return n;
 }
 
@@ -980,7 +986,7 @@ async function checkNow(o, fresh){
   reads.forEach(x => delete x.full);
   const p2 = judgePrompt(o, plan, reqMail, reads, probes, o.verify ? verifyText(o.verify) : ""), r2 = await askAI("check2", "claude-sonnet-5-5", p2.system, pics.length ? [{ type:"text", text:p2.user + "\n\nPICTURES THE TEAM SHARED (look at each; a screenshot can be proof):" }].concat(pics.flatMap(x => [{ type:"text", text:"PICTURE: " + x.name + " (" + (x.why || "") + ", " + (x.modified || "") + ")" }, { type:"image", source:{ type:"base64", media_type:x.mt, data:x.b64 } }])) : p2.user, 10000);
   o.aiUsd = +(num(o.aiUsd, 0) + r1.usd + r2.usd).toFixed(4);
-  const phaseOf = r => ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
+  const phaseOf = r => REC.test((r.text || "") + " " + (r.type || "")) && !/report|audit|sheet/i.test(r.text || "") ? "delivery" : ["project", "delivery", "client"].includes(r.phase) ? r.phase : /confirm|approv|client (gives|shares|sends)/i.test((r.text || "") + " " + (r.doneWhen || "")) && !/report|review/i.test(r.type || "") ? "client" : ["file or recording", "communication"].includes(r.type) ? "delivery" : "project";
   const aIn = a => a && typeof a === "object" ? { where:str(a.where, 40), when:str(a.when, 40), quote:str(a.quote, 240) } : null;
   const reqs = (plan.requirements || []).slice(0, 25).map(r => ({ id:str(r.id, 12), text:str(r.text, 300), source:str(r.source, 40), type:str(r.type, 30), phase:phaseOf(r), doneWhen:str(r.doneWhen, 240), askedIn:aIn(r.askedIn), why:str(r.why, 240), note:str(r.note, 200) }));
 
@@ -989,8 +995,9 @@ async function checkNow(o, fresh){
   const role = t => { let x = String(t || ""); for(const n of seller) x = x.replace(new RegExp("\\b" + n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g"), "Sales"); return x.replace(/\bSales Sharma\b/g, "Sales"); };
   const walk = v => typeof v === "string" ? role(v) : Array.isArray(v) ? v.map(walk) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k2, v2]) => [k2, walk(v2)])) : v;
   const d2 = walk(r2.data || {}); d2.verdict = noId(d2.verdict); d2.verdictTeam = noId(d2.verdictTeam); (d2.problems || []).forEach(p => p.text = noId(p.text)); (d2.rows || []).forEach(x => { x.found = noId(x.found); x.toPass = noId(x.toPass); x.where = noId(x.where); x.check = noId(x.check); });
-  d2.pathToQA = (d2.pathToQA || []).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
-  d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
+  (d2.rows || []).forEach(x => { const q = (plan.requirements || []).find(y => y.id === x.r) || {}; x.who = ownerOf(x.who, (q.text || "") + " " + (x.toPass || "")); });
+  d2.pathToQA = (d2.pathToQA || []).filter(p => !REC.test(String(p.do || ""))).slice(0, 5).map(p => ({ who:str(p.who, 40), do:noId(str(p.do, 300)), where:noId(str(p.where, 200)), check:noId(str(p.check, 200)), closes:num(p.closes, 0) }));
+  d2.beforeDelivery = (d2.beforeDelivery || []).slice(0, 6).map(p => ({ who:str(ownerOf(p.who, p.do), 40), do:noId(str(p.do, 300)) })); d2.waitingOnClient = (d2.waitingOnClient || []).slice(0, 6).map(t => noId(str(t, 240)));
   // Quick fixes get their own focused look: small fixes the team's reports found, invited by the client's own words
   d2.quickFixes = ((o.check || {}).quickFixes || []).slice();   // keep tracking what was already asked
   // Only when a person (the client, the manager, sales, the PM) asked for small fixes: never on the desk's own initiative or its own messages
