@@ -442,6 +442,7 @@ async function syncTeam(o){
   // When each channel was last read, so the portal always says how fresh every source is
   o.seen = Object.assign(o.seen || {}, { folder:r.at }, (r.errors || {}).gmail ? {} : { email:r.at }, (r.errors || {}).chat ? {} : { group:r.at }, (r.errors || {}).access ? {} : { access:r.at });
   o.chatStatus = { at:r.at, accounts:r.chatStatus || [], groups:Object.entries(r.chatSpaces || {}).map(([id, g]) => Object.assign({ id }, g)), error:(r.errors || {}).chat || "" };
+  try{ await introGroups(o); }catch(e){}
   if(r.chat.length){ o.teamChat = (o.teamChat || []).concat(r.chat).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-800); fresh.push("TEAM CHAT (" + r.chat[0].space + "):\n" + r.chat.map(m => m.at + " " + m.by + ": " + m.text).join("\n").slice(0, 20000)); }
   // Project access group: keep the (masked) messages, and update the access checklist from what they show
   if(r.access.length){ o.accessChat = (o.accessChat || []).concat(r.access).sort((a, b) => String(a.at).localeCompare(String(b.at))).slice(-200);
@@ -1532,6 +1533,20 @@ async function deskCommand(o, cw, rest, m){
     (o.blockers = o.blockers || []).push({ id:nid("bl"), at:now(), by:m.by, text:rest, open:true, thread:m.thread || "" }); log(o, { name:"Order desk" }, "Blocked, said by " + m.by + ": " + str(rest, 300));
     return `Thanks ${who}, I have flagged this to the PM and the manager: "${str(rest, 200)}". I will update here when it is cleared.`; }
   return "";   // "ask" and plain questions go to the normal answer below
+}
+/* The desk's first message in every project group it joins: who it is and how to use it (posted once per group, for open orders) */
+async function introGroups(o){
+  if(["done", "cancelled", "delivered"].includes(o.stage)) return 0;
+  const gs = ((o.chatStatus || {}).groups || []); if(!gs.length) return 0;
+  const cfg = await cfgOf(), as = await poster(cfg); if(!as) return 0; let n = 0;
+  for(const g of gs){ if(g.via && g.via !== as) continue; if((o.introduced || {})[g.id]) continue;
+    const said = (o.teamChat || []).some(m => m.spaceId === g.id && isDeskMsg(o, m) && /how to use me in this group/i.test(m.text || "")) || (o.deskPosts || []).some(p => p.kind === "intro" && String(p.name || "").startsWith(g.id + "/"));
+    if(said){ (o.introduced = o.introduced || {})[g.id] = now(); continue; }
+    const t = `Hello team, I will follow ${domOf(o.client.website)} with you here. I read this group, the files you share and the live site, and I help wherever you need me.\n\n` + HELP_CARD;
+    try{ const m = await postChat(as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
+      o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"intro", hash:sha(t).slice(0, 12) }).slice(-30);
+      log(o, { name:"Order desk" }, "Introduced itself in the project group " + (g.name || "") + " with how to use it"); n++; }catch(e){} }
+  return n;
 }
 /* Jobs people asked for in a group ("desk check", "desk done", "desk review", or a plain "done"): run by the 10 minute job, answered in the thread */
 async function runDeskJobs(o, cfg, as){
