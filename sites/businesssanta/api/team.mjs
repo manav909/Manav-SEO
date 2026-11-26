@@ -1634,6 +1634,8 @@ Answer with one JSON object only: {"genuine":true,"intent":"question | approval 
       const user = `SENDER ROLE: ${isMgr ? "manager" : isPM ? "PM" : sRoles.join(", ") || "team member"}
 EARLIER ON THIS ORDER (PM and manager responses): ${JSON.stringify((o.stepLog || []).slice(-8))}
 REQUIREMENT IDS: ${JSON.stringify((ck.requirements || []).map(q => ({ id:q.id, text:q.text })))}
+THE CONVERSATION JUST BEFORE THIS MESSAGE (read it, answer in its flow, never repeat what someone already said): ${JSON.stringify(msgs.filter(x => x.at <= m.at).slice(-10).map(x => String(x.at).slice(11, 16) + " " + x.by + ": " + str(x.text, 300)))}
+WHAT THE DESK KNOWS IS AS OF: ${((o.readLog || {}).at || o.checkAt || "never")}
 MESSAGE from ${m.by}: ${m.text}
 ORDER FACTS: site ${o.client.website}, stage ${o.stage}.
 REQUIREMENTS AND STATUS: ${JSON.stringify((ck.rows || []).map(r => ({ requirement:((ck.requirements || []).find(q => q.id === r.r) || {}).text, phase:((ck.requirements || []).find(q => q.id === r.r) || {}).phase, doneWhen:((ck.requirements || []).find(q => q.id === r.r) || {}).doneWhen, status:r.status, found:r.found, toPass:r.toPass, where:r.where, check:r.check })))}
