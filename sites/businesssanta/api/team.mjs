@@ -418,6 +418,7 @@ export async function hourlySync(){
   { let n2 = 0; for(const o of open){ if(n2 >= 2) break; if(["work", "qa"].includes(o.stage) && o.check && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 3 * 36e5)) try{ await buildCheck(o); n2++; done.push(o.id + " rechecked"); }catch(e){ done.push(o.id + " recheck: " + e.message); } } }
   for(const o of open) if(o.stage === "work") try{ const n = await autoProof(o); if(n) done.push(o.id + " proofs:" + n); }catch(e){ done.push(o.id + " proofs: " + e.message); }
   { let n3 = 0; for(const o of open){ if(n3 >= 8) break; try{ const c = await reconcile(o, "hourly"); if(o.recon && o.recon.at && Date.now() - Date.parse(o.recon.at) < 6e4) n3++; if(c) done.push(o.id + " kept current:" + c); }catch(e){ done.push(o.id + " current: " + e.message); } } }
+  for(const o of open) if(["qa", "ready"].includes(o.stage)) try{ await buildGuides(o); }catch(e){}
   for(const o of open) await saveO(o);
   // Work history for every client site that has none yet (or older than 30 days), two a run
   { let n = 0; const all = await loadAll(1000, true);
@@ -714,6 +715,7 @@ ${reads.map(x => "FILE: " + x.name + " (" + x.kind + ", changed " + x.modified +
   const r = await askAI("pack", "claude-sonnet-5-5", system, user, 8000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
   o.pack = Object.assign(r.data || {}, { at:now(), stage:o.stage, usd:+r.usd.toFixed(4) });
   log(o, { name:"Order desk" }, "Delivery pack ready: " + str(o.pack.summary, 200));
+  try{ await buildGuides(o); }catch(e){}
   return o.pack;
 }
 
@@ -746,7 +748,7 @@ const noId = t => String(t || "").replace(/\s*\((?:r\d+(?:\s*(?:,|and)\s*)?)+[^)
 
 /* Before delivery: a checklist anyone can tick, with help on any item, saved for the next person */
 const dKey = t => sha(String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()).slice(0, 10);
-function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k]; list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "" }); };
+function deliveryList(o){ const ck = o.check || {}, pk = o.pack || {}, list = [], seen = new Set(), add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
   (pk.final || []).filter(f => f.status !== "ready" && f.fix).forEach(f => add("QA", f.fix, "delivery pack"));
@@ -767,6 +769,25 @@ TASKS: ${JSON.stringify((ck.rows || []).map(r => ({ status:r.status, open:r.toPa
 LAST CLIENT MESSAGES: ${JSON.stringify((o.convo ? o.convo.messages : []).slice(-8).map(m => (m.time || "") + " " + m.who + ": " + str(m.text, 300)))}`;
   const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 1500); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
   return noId(str((r.data || {}).answer, 3000)) || "I could not write help for this. Ask the PM in the project group.";
+}
+
+/* Written help for every before-delivery item, made ahead of time (one call for all new items) so it is there when someone looks */
+async function buildGuides(o){
+  if(!aiOn()) return 0; const list = deliveryList(o), g = o.deliveryGuide = o.deliveryGuide || {};
+  Object.keys(g).forEach(k => { if(!list.some(x => x.key === k)) delete g[k]; });
+  const need = list.filter(x => !g[x.key]); if(!need.length) return 0;
+  const pk = o.pack || {}, ck = o.check || {};
+  const system = `For each before-delivery item of one SEO order, write the help a team member needs to do it without asking anyone: short numbered steps, each with the exact place (the marketplace order page and its Deliver button, the Drive file by name, the project group) and any exact text to copy in backticks. Use only the facts given; where something is unknown say who to ask. At most 6 steps per item, very simple English, no dashes. Answer with one JSON object only: {"guides":[{"key":"","steps":"1. ...\n2. ..."}]}`;
+  const user = `ORDER ${o.id} for ${o.client.name || "the client"}, site ${o.client.website}, marketplace ${o.gig || "Fiverr"}, stage ${o.stage}.
+ITEMS: ${JSON.stringify(need.map(x => ({ key:x.key, who:x.who, what:x.what })))}
+FINAL FILES: ${JSON.stringify((pk.final || []).map(f => ({ files:(f.use || []).map(u => u.name + " " + (u.url || "")), status:f.status, fix:f.fix })))}
+DELIVERY MESSAGE: ${(pk.client || {}).message || "not built yet"}
+ATTACH: ${JSON.stringify((pk.client || {}).attach || [])}
+DELIVERY NOTE: ${JSON.stringify([].concat((o.deferred || []).map(x => x.part), ck.deliveryNotes || []))}
+LINKED FILES: ${JSON.stringify((o.docs || []).filter(d => d.status === "linked" && d.current !== false).map(d => d.name + " " + (d.link || "")))}`;
+  const r = await askAI("deskanswer", "claude-sonnet-5-5", system, user, 3500); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+  let n = 0; for(const x of ((r.data || {}).guides || [])) if(need.some(y => y.key === x.key) && x.steps){ g[x.key] = { text:noId(str(x.steps, 2500)), at:now() }; n++; }
+  return n;
 }
 
 /* Talk to an order: anyone asks anything about it in plain words and gets an answer from everything on the order. Read only. */
@@ -1002,6 +1023,7 @@ async function buildCheck(o, fresh){
   for(const e of perfFromCheck(o)) await perfEv(e);
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ await reconcile(o, "new check"); }catch(e){}
+  try{ await buildGuides(o); }catch(e){}
   // Auto-post only a check that could judge everything: if any item could not be checked, or a file could not be opened, a person looks first
   const unsure = (o.check.rows || []).some(r => /cannot/i.test(r.status || "") || (r.status !== "done" && /not (been )?read|will read|not checked|could not (read|open|check)/i.test(r.found || ""))) || ((o.readLog || {}).docs || []).some(d => !d.ok);
   o.check.autoPostHeld = unsure ? "Not sent to the group by itself: the check could not verify every item. Read it, then post it yourself." : "";
@@ -1538,6 +1560,7 @@ async function handle(request){
     else if(op === "analyse"){ need("pm"); if(!o.site || o.site.error || Date.now() - Date.parse(o.site.at || 0) > 7 * 864e5) o.site = null; o.chat = redact(o.chat); o.calls = redact(o.calls); const r = await analyse(o, cfg); if(!r.ok) return bad(r.why, 503); log(o, w, "Order desk ran again"); }
     else if(op === "site"){ need("pm"); o.site = await siteCheck(o.client.website); if(o.site) o.site.at = now(); log(o, w, "Website checked again" + (o.site && o.site.error ? ": did not open" : "")); }
     else if(op === "format"){ await formatConvo(o); log(o, w, "Client conversation laid out again"); try{ await reconcile(o, "chat laid out"); }catch(e){} }
+    else if(op === "guides"){ const n = await buildGuides(o); if(n) log(o, { name:"Order desk" }, "Wrote the steps for " + n + " before-delivery item" + (n > 1 ? "s" : "")); }
     else if(op === "askOrder"){ if(!aiOn()) return bad("The AI helpers are off", 503); const qq = str(q.question, 800).trim(); if(qq.length < 4) return bad("Write your question");
       const a2 = await askOrder(o, qq, w, isA); (o.asks = o.asks || []).push({ id:nid("k"), q:qq, a:a2, by:w.name, role:(w.roles || [w.role]).join("+"), at:now() }); o.asks = o.asks.slice(-40); }
     else if(op === "dTick"){ const k = str(q.key, 20); if(!k) return bad("Missing item"); o.deliveryTicks = o.deliveryTicks || {};
