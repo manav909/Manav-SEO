@@ -1497,8 +1497,8 @@ export async function recheckStale(){
   return out.length ? out : ["nothing new"];
 }
 
-/* Commands people can use in a project group. The desk never shares deadlines, prices or client details (name, contact, what the
-   client wrote) in a team group: those stay with sales and the PM. */
+/* Commands people can use in a project group. Deadlines, prices and client details (name, contact, what the client wrote) simply never
+   appear in a team group, and the desk never announces that it keeps anything back. */
 const CMDS = new Set(["help", "commands", "status", "update", "check", "done", "review", "how", "note", "blocked", "block", "ask"]);
 const HELP_CARD = `**Order desk: how to use me in this group**
 
@@ -1512,9 +1512,7 @@ Start your message with **desk**, then one word:
 - \`desk how\` and the task: step by step help for that task
 - \`desk note\` and your note: tell me an update or a decision, and I add it to the order
 - \`desk blocked\` and the reason: something stops your work, and I tell the PM and the manager
-- \`desk\` and any question: ask me anything about the work
-
-_I never share deadlines or client details here. For those, please ask your PM._`;
+- \`desk\` and any question: ask me anything about the work`;
 async function deskCommand(o, cw, rest, m){
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", who = String(m.by || "").split(" ")[0];
   if(cw === "help" || cw === "commands") return HELP_CARD;
@@ -1579,7 +1577,7 @@ export async function chatAnswers(){
       if(!asked && !((isMgr || isPM) && threads.has(m.thread))) continue;
       if(mine.has(m.sender) && cfg.deskTag !== false) continue;
       const ck = o.check || {}, pv = projView(o);
-      const system = `Never share in this team group: the deadline or due date, the price or money, or client details (the client's name, contact, location, or what the client wrote). If asked, say kindly that the PM shares those. You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
+      const system = `Never share in this team group: the deadline or due date, the price or money, or client details (the client's name, contact, location, or what the client wrote). Never say that you cannot or will not share something: if someone asks about the deadline or the client, answer the work part naturally and say, like a colleague, that the PM will confirm that with them. You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
 Every step you give is a proposal open to the PM's approval. The SENDER ROLE tells you who wrote:
 If the PM approves, thank them in one line and record it. If the PM disagrees or suggests another way, judge it fairly against the requirement and what the client needs: if their way still gets the work done right, accept it warmly and say what changes; if not, politely give ONE clear reason and a helpful option. If you already argued this point before (see EARLIER), accept the PM's decision, say you have noted the risk, and do not argue again.
@@ -2076,6 +2074,9 @@ async function handle(request){
       if(rq.phase === "project" && !(o.deliverables || []).some(d => d.req === q.r)) o.deliverables.push({ id:nid("d"), text:rq.text || "", done:false, proof:"", qa:"", req:q.r });
       log(o, w, "Restored the task \"" + str(rq.text, 120) + "\" (discarded earlier by " + dd.by + ")"); o.checkAt = ""; }
     else if(op === "redoMsg"){ if(!(can(w, "pm") || can(w, "assign") || can(w, "comms"))) return bad("Your role cannot do this step"); o.groupMsg = await writeGroupMsg(o); o.groupMsgAt = now(); }
+    else if(op === "deskEdit"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
+      const last = (o.deskPosts || []).filter(p => p.kind === "note" && p.name).slice(-1)[0]; if(!last) return bad("No desk note to edit");
+      const as = await poster(cfg); await editChat(as, last.name, t); last.hash = sha(t).slice(0, 12); last.editedAt = now(); log(o, w, "Edited the desk's note in the project group"); }
     else if(op === "deskSay"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
       // A note from the owner, posted as the desk. Current sources are read first: if a person wrote after the last reading, nothing is sent
       await freshen(o); const nw = (await newerThanRead(o)).filter(x => /message|email/.test(x));
