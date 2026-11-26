@@ -768,7 +768,10 @@ function discTexts(o){ return Object.entries(o.discarded || {}).map(([id, d]) =>
 function deliveryList(o){ const ck = o.check || {}, list = [], seen = new Set(), gone = discTexts(o);
   // The delivery pack is used only when it was made from the latest check: an older pack's fixes are history, not tasks
   const pk = o.pack && (!ck.at || String(o.pack.at || "") >= String(ck.at)) ? o.pack : {};
-  const add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; if(from !== "task" && gone.some(g2 => sameJob(g2, what) || (/robots\.txt/i.test(g2) && /robots\.txt/i.test(what)))) return; if(list.some(x => sameJob(x.what, what))) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what); list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
+  const add = (who, what, from) => { const k = dKey(what); if(!what || seen.has(k)) return; if(from !== "task" && gone.some(g2 => sameJob(g2, what) || (/robots\.txt/i.test(g2) && /robots\.txt/i.test(what)))) return; if(list.some(x => sameJob(x.what, what))) return; seen.add(k); const t = (o.deliveryTicks || {})[k], gd = (o.deliveryGuide || {})[k]; if((o.deliveryDiscard || {})[k]) return; who = ownerOf(who, what);
+    // The owner is shown once, in front: "QA, a manager or Sales records ..." becomes "Records ..."
+    if(who === REC_WHO) what = String(what).replace(/^QA,? (a )?manager,? or Sales (should )?(\w)/i, (m0, a1, a2, c) => c.toUpperCase());
+    list.push({ key:k, who:who || "", what, from, done:!!t, by:t ? t.by : "", at:t ? t.at : "", help:gd ? gd.text : "" }); };
   (ck.rows || []).filter(r => r.status !== "done" && ((ck.requirements || []).find(q => q.id === r.r) || {}).phase === "delivery").forEach(r => add(r.who, r.toPass || ((ck.requirements || []).find(q => q.id === r.r) || {}).text, "task"));
   (ck.beforeDelivery || []).forEach(b => add(b.who, b.do, "check"));
   (o.mgrTasks || []).filter(m => m.phase === "delivery").forEach(m => add(m.who || "Sales", m.text, "added by " + m.by));
