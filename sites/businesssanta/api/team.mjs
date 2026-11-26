@@ -1578,6 +1578,8 @@ async function handle(request){
 
   if(a === "queue"){ const all = await loadAll(); const items = [];
     all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.queue || []).forEach(x => { if(!x.sent || (x.reply && !x.seen)) items.push(Object.assign({ order:o.id, client:o.client.name, stage:o.stage }, x)); }));
+    // Client messages the desk prepared as steps on the order count here too, so this page and the order page always agree
+    all.filter(o => !['done', 'cancelled'].includes(o.stage)).forEach(o => (o.actions || []).filter(x => x.type === "client" && !["done", "skipped"].includes(x.status) && x.message).forEach(x => items.push({ order:o.id, client:o.client.name, stage:o.stage, id:x.id, at:x.at || o.at, by:x.by || "Order desk", text:(x.title ? x.title + "\n\n" : "") + x.message, kind:"step", needBy:x.needBy || "" })));
     return out({ ok:true, items:items.sort((x, y) => x.at.localeCompare(y.at)) }); }
 
   if(a === "score"){ if(!can(w, "assign")) return bad("Only Manav and managers see the scorecard", 403);
