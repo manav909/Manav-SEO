@@ -1400,17 +1400,18 @@ async function safePost(o, as, gid, text, opts){
    access stage, never while a scope change waits for a manager, never twice for the same reason and items. */
 function postReason(o){
   const ck = o.check || {}, posts = (o.deskPosts || []).filter(p => p.kind === "steps"), last = posts.slice(-1)[0], lastAt = last ? last.at : "";
-  if(o.stage !== "work" || o.scopePending) return null;
+  if(!["access", "work", "qa"].includes(o.stage)) return null;
   const reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", rows = (ck.rows || []).filter(r => ph(r) === "project" && !r.notAsked);
   const same = (kind, ids) => posts.some(p => p.reason === kind && p.items === ids.slice().sort().join(","));
   const people = (o.teamChat || []).filter(m => !isDeskMsg(o, m) && !/access/i.test(m.space || "")), after = m => !lastAt || m.at > lastAt;
   const wrong = rows.filter(r => ["not done", "partly"].includes(r.status) && (ck.claims || []).some(c => { const t = Date.parse(c.at); return c.r === r.r && (!lastAt || (!isNaN(t) && new Date(t).toISOString() > lastAt)); }));
-  if(wrong.length && !same("claim", wrong.map(r => r.r))){ const by = (ck.claims || []).filter(c => wrong.some(r => r.r === c.r)).map(c => String(c.by || "").split(" ")[0].toLowerCase()), m = people.filter(after).reverse().find(x => by.includes(String(x.by || "").split(" ")[0].toLowerCase()));
+  if(o.stage === "work" && !o.scopePending && wrong.length && !same("claim", wrong.map(r => r.r))){ const by = (ck.claims || []).filter(c => wrong.some(r => r.r === c.r)).map(c => String(c.by || "").split(" ")[0].toLowerCase()), m = people.filter(after).reverse().find(x => by.includes(String(x.by || "").split(" ")[0].toLowerCase()));
     return { kind:"claim", ids:wrong.map(r => r.r), thread:m ? m.thread : "" }; }
   // A report or file a person shared in the group since our last message: read it, and reply in its thread only with input that helps
   const shared = people.filter(after).filter(m => (m.links || []).length || (m.files || []).length || /docs\.google|drive\.google/.test(m.text || ""));
   for(const m of shared.reverse()){ const ids = (m.links || []).map(l => l.id).concat([...String(m.text || "").matchAll(/\/d\/([\w-]{15,})/g)].map(x => x[1]));
     const d = (o.docs || []).find(x => x.status === "linked" && ids.includes(x.id)); if(d && !same("report", [d.id]) && ((o.readLog || {}).docs || []).some(x => x.id === d.id && x.ok)) return { kind:"report", ids:[d.id], thread:m.thread, by:m.by, msg:m.id }; }
+  if(o.stage !== "work" || o.scopePending) return null;   // the rest only once the work has started, and never while a scope change waits
   if(ck.readyForQA && !posts.some(p => p.reason === "ready")) return { kind:"ready", ids:[] };
   const mt = (o.mgrTasks || []).filter(m => m.phase === "project" && (!lastAt || m.at > lastAt) && !(o.discarded || {})[m.id]);
   if(mt.length && !same("added", mt.map(m => m.id))) return { kind:"added", ids:mt.map(m => m.id) };
