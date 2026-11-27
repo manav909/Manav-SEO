@@ -307,7 +307,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, lastFresh:o.lastFresh, reportQA:o.reportQA, blockers:o.blockers, teamNotes:o.teamNotes,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, lastFresh:o.lastFresh, reportQA:o.reportQA, blockers:o.blockers, teamNotes:o.teamNotes, introduced:o.introduced, introWait:o.introWait,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -380,7 +380,7 @@ export async function dailyIntel(){
    a name is only a hint. Each group is read again only when it had new activity or the list of orders changed. A manager or Manav
    can confirm or reject a match; their word stays. */
 const GMK = P + "chatmap";
-async function mapGroups(force){
+async function mapGroups(force, light){
   const cur = (await getJ(GMK)) || { at:"", spaces:{} }; cur.spaces = cur.spaces || {};
   const orders = (await loadAll(300, true)).filter(o => o.stage !== "cancelled" && o.client), ofp = sha(orders.map(o => o.id + domOf(o.client.website)).join(",")).slice(0, 10);
   const accs = (await gAccounts()).filter(a => a.chat), todo = [], seen = new Set();
@@ -388,6 +388,9 @@ async function mapGroups(force){
     for(const sp of sps){ if(sp.spaceType === "DIRECT_MESSAGE" || seen.has(sp.name)) continue; seen.add(sp.name);
       const c = cur.spaces[sp.name];
       if(!force && c && c.last === (sp.lastActiveTime || "") && c.ofp === ofp) continue;
+      const sure = c && !c.error && (c.manual || (c.kind === "project" && c.order && c.confidence >= 0.75) || ["shared", "access", "client"].includes(c.kind));
+      if(!force && sure && c.last === (sp.lastActiveTime || "")) continue;   // a new order alone does not move a group already sorted with certainty
+      if(!force && light && c && !c.error && (sure || c.last === (sp.lastActiveTime || ""))) continue;   // the 10 minute pass: only new groups and groups not yet sure
       let first = [], last = []; try{ first = await spaceMessages(a.email, sp.name, "asc", 25); last = await spaceMessages(a.email, sp.name, "desc", 20); }catch(e){ continue; }
       todo.push({ id:sp.name, name:sp.displayName || "", via:a.email, last:sp.lastActiveTime || "", first, latest:last.reverse() }); } }
   for(const k of Object.keys(cur.spaces)) if(!seen.has(k)) delete cur.spaces[k];
@@ -405,7 +408,7 @@ For a project group give the order id it belongs to, judged by the client's site
         for(const g of batch){ const d = ((r.data || {}).groups || []).find(x => x.id === g.id) || {}, man = (cur.spaces[g.id] || {}).manual;
           cur.spaces[g.id] = { name:g.name, via:g.via, last:g.last, ofp, at:now(), kind:str(d.kind, 12) || "other", order:str(d.order, 20), orders:(d.orders || []).map(x => str(x, 20)).slice(0, 30), confidence:Math.max(0, Math.min(1, num(d.confidence, 0))), why:str(d.why, 400), manual:man || null }; } }
       catch(e){ for(const g of batch) cur.spaces[g.id] = Object.assign(cur.spaces[g.id] || {}, { name:g.name, via:g.via, error:str(e.message, 120) }); } } }
-  cur.at = now(); await setJ(GMK, cur); return todo.length;
+  if(!light || todo.length) cur.at = now(); await setJ(GMK, cur); return todo.length;
 }
 /* The project groups of one order, from the content map: confirmed by a person, or sure by content */
 async function groupsOf(o){
@@ -1561,8 +1564,21 @@ Answer with one JSON object only: {"genuine":true,"topic":"two to four words, fo
 export async function recheckStale(){
   if(!aiOn()) return ["off"]; if(await cmd("GET", "bsp:teamsync:lock")) return ["hourly sync running"];
   const cfg = await cfgOf(), as = await poster(cfg), out = [], ripe = t => Date.now() - Date.parse(t) > 3 * 6e4;
-  const open = (await loadAll(300, true)).filter(o => ["work", "qa"].includes(o.stage) && o.check);
   let n = 0;
+  // Groups the desk was just added to: sort new ones by content, then read each one for its order and post the intro (no waiting for the hourly run)
+  try{ const k = await mapGroups(false, true); if(k) out.push("groups sorted: " + k); }catch(e){ out.push("groups: " + e.message); }
+  for(const o of (await loadAll(300, true)).filter(x => !["done", "cancelled", "delivered"].includes(x.stage) && x.client)){ if(n >= 2) break;
+    let gs = null; try{ gs = await groupsOf(o); }catch(e){} if(!gs) continue;
+    const unread = gs.filter(g => !(o.chatFull || {})[g.id]), noIntro = gs.filter(g => !(o.introduced || {})[g.id] && (!g.via || g.via === as));
+    if(!unread.length && !noIntro.length) continue;
+    const tried = (o.groupTry || {}).at; if(tried && Date.now() - Date.parse(tried) < 25 * 6e4) continue;   // a group that could not be read or greeted is tried again about every half hour, not every run
+    o.groupTry = { at:now() };
+    if(await cmd("SET", "bsp:chk:" + o.id, "1", "NX", "EX", 280) !== "OK") continue;
+    try{ if(unread.length){ log(o, { name:"Order desk" }, "Found its project group by content: " + unread.map(g => g.name).join(", ")); await syncTeam(o); out.push(o.id + " new group read"); }
+      else { const k = await introGroups(o); out.push(o.id + (k ? " introduced" : " intro waiting")); }
+      await saveO(o); n++; }
+    catch(e){ out.push(o.id + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + o.id); } }
+  const open = (await loadAll(300, true)).filter(o => ["work", "qa"].includes(o.stage) && o.check);
   for(const o of open.concat((await loadAll(300, true)).filter(x => !["work", "qa", "done", "cancelled"].includes(x.stage) && (x.deskJobs || []).length))) if((o.deskJobs || []).length && n < 2){
     if(await cmd("SET", "bsp:chk:" + o.id, "1", "NX", "EX", 280) !== "OK") continue;
     try{ const k = await runDeskJobs(o, cfg, as); await saveO(o); n++; out.push(o.id + " answered " + k + " request(s)"); }catch(e){ out.push(o.id + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + o.id); } }
@@ -1625,11 +1641,12 @@ async function introGroups(o){
   const cfg = await cfgOf(), as = await poster(cfg); if(!as) return 0; let n = 0;
   for(const g of gs){ if(g.via && g.via !== as) continue; if((o.introduced || {})[g.id]) continue;
     const said = (o.teamChat || []).some(m => m.spaceId === g.id && isDeskMsg(o, m) && /how to use me in this group/i.test(m.text || "")) || (o.deskPosts || []).some(p => p.kind === "intro" && String(p.name || "").startsWith(g.id + "/"));
-    if(said){ (o.introduced = o.introduced || {})[g.id] = now(); continue; }
+    if(said){ (o.introduced = o.introduced || {})[g.id] = now(); if(o.introWait) delete o.introWait[g.id]; continue; }
     const t = `Hello team, I will follow ${domOf(o.client.website)} with you here. I read this group, the files you share and the live site, and I help wherever you need me.\n\n` + HELP_CARD;
     try{ const m = await safePost(o, as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
       o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"intro", hash:sha(t).slice(0, 12) }).slice(-30);
-      log(o, { name:"Order desk" }, "Introduced itself in the project group " + (g.name || "") + " with how to use it"); n++; }catch(e){} }
+      log(o, { name:"Order desk" }, "Introduced itself in the project group " + (g.name || "") + " with how to use it"); n++; if(o.introWait) delete o.introWait[g.id]; }
+    catch(e){ (o.introWait = o.introWait || {})[g.id] = { at:now(), why:str(e.message, 200), name:g.name || "" }; } }
   return n;
 }
 /* Jobs people asked for in a group ("desk check", "desk done", "desk review", or a plain "done"): run by the 10 minute job, answered in the thread */
