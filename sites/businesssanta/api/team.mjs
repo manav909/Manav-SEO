@@ -1531,6 +1531,8 @@ export async function recheckStale(){
   return out.length ? out : ["nothing new"];
 }
 
+/* How to greet the person: their first name, or nothing when they wrote from the desk's own account (the account's name is not theirs) */
+const greetName = by => /indi ?it|order desk|seo desk|solutions/i.test(String(by || "")) ? "" : String(by || "").split(" ")[0];
 /* Commands people can use in a project group. Deadlines, prices and client details (name, contact, what the client wrote) simply never
    appear in a team group, and the desk never announces that it keeps anything back. */
 const CMDS = new Set(["help", "commands", "status", "update", "check", "done", "review", "how", "note", "blocked", "block", "ask"]);
@@ -1548,26 +1550,26 @@ Start your message with **desk**, then one word:
 - \`desk blocked\` and the reason: something stops your work, and I tell the PM and the manager
 - \`desk\` and any question: ask me anything about the work`;
 async function deskCommand(o, cw, rest, m){
-  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", who = String(m.by || "").split(" ")[0];
+  const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", who = greetName(m.by);
   if(cw === "help" || cw === "commands") return HELP_CARD;
   if((cw === "status" || cw === "update") && (!ck.at || Date.now() - Date.parse(ck.at) > 45 * 6e4 || (o.teamChat || []).some(x => !isDeskMsg(o, x) && x.at > ((o.readLog || {}).at || "")) || (o.lastUpdateAt || "") > ((o.readLog || {}).at || ""))){
     (o.deskJobs = o.deskJobs || []).push({ kind:"check", by:m.by, thread:m.thread, text:"status", at:now() });
-    return `Thanks ${who}. Some things changed since my last read, so I am reading the group, the files and the live site again. I will reply in this thread within about ten minutes.`; }
+    return `Thanks${who ? " " + who : ""}. Some things changed since my last read, so I am reading the group, the files and the live site again. I will reply in this thread within about ten minutes.`; }
   if(cw === "status" || cw === "update"){
     const open = (ck.rows || []).filter(r => ph(r) === "project" && r.status !== "done" && !r.notAsked), qf = (ck.quickFixes || []).filter(q => q.status !== "done");
     const notes = [];
     if(o.scopePending) notes.push("The scope changed after a manager's message; the PM or manager will confirm it.");
     const lines = open.map(r => "- " + ((reqs.find(q => q.id === r.r) || {}).text || r.r) + (r.status === "partly" ? " (partly done)" : "")).concat(qf.map(q => "- Quick fix: " + q.what.split(". ")[0]));
-    return lines.length ? `Hi ${who}, here is where this order stands (as of my last read, ${new Date(ck.at || Date.now()).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Kolkata" })}):\n\n**Still open**\n${lines.join("\n")}${notes.length ? "\n\n**Also**\n" + notes.map(x => "- " + x).join("\n") : ""}\n\nWrite \`desk check\` when you finish something and I will read it again.` : `Hi ${who}, everything asked on this order is verified done. Thank you!`; }
+    return lines.length ? `Hi${who ? " " + who : ""}, here is where this order stands (as of my last read, ${new Date(ck.at || Date.now()).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Kolkata" })}):\n\n**Still open**\n${lines.join("\n")}${notes.length ? "\n\n**Also**\n" + notes.map(x => "- " + x).join("\n") : ""}\n\nWrite \`desk check\` when you finish something and I will read it again.` : `Hi${who ? " " + who : ""}, everything asked on this order is verified done. Thank you!`; }
   if(["check", "done", "review"].includes(cw)){
     (o.deskJobs = o.deskJobs || []).push({ kind:cw, by:m.by, thread:m.thread, text:str(rest, 600), at:now() });
-    return cw === "review" ? `Thanks ${who}. I am reading the latest file shared here and will reply in this thread within about ten minutes.` : `Thanks ${who}. I am reading the group, the files and the live site again, and will reply in this thread within about ten minutes.`; }
+    return cw === "review" ? `Thanks${who ? " " + who : ""}. I am reading the latest file shared here and will reply in this thread within about ten minutes.` : `Thanks${who ? " " + who : ""}. I am reading the group, the files and the live site again, and will reply in this thread within about ten minutes.`; }
   if(cw === "note"){ if(rest.length < 3) return "Please write the note after the word note, for example: `desk note client approved the new titles`.";
     (o.teamNotes = o.teamNotes || []).push({ at:now(), by:m.by, text:rest }); log(o, { name:"Order desk" }, "Note from " + m.by + " in the project group: " + str(rest, 300)); o.checkAt = "";
-    return `Noted, thank you ${who}. I have added it to the order for the PM and the manager.`; }
+    return `Noted, thank you${who ? " " + who : ""}. I have added it to the order for the PM and the manager.`; }
   if(cw === "blocked" || cw === "block"){ if(rest.length < 3) return "Please write what is stopping the work, for example: `desk blocked Shopify staff access is missing`.";
     (o.blockers = o.blockers || []).push({ id:nid("bl"), at:now(), by:m.by, text:rest, open:true, thread:m.thread || "" }); log(o, { name:"Order desk" }, "Blocked, said by " + m.by + ": " + str(rest, 300));
-    return `Thanks ${who}, I have flagged this to the PM and the manager: "${str(rest, 200)}". I will update here when it is cleared.`; }
+    return `Thanks${who ? " " + who : ""}, I have flagged this to the PM and the manager: "${str(rest, 200)}". I will update here when it is cleared.`; }
   return "";   // "ask" and plain questions go to the normal answer below
 }
 /* The desk's first message in every project group it joins: who it is and how to use it (posted once per group, for open orders) */
@@ -1591,11 +1593,11 @@ async function runDeskJobs(o, cfg, as){
   const q0 = o._quiet; o._quiet = true; try{ await buildCheck(o); }finally{ o._quiet = q0; }   // the answer goes in the asker's thread, not as a new post
   const ck = o.check || {}, reqs = ck.requirements || [], ph = r => ((reqs.find(q => q.id === r.r) || {}).phase) || "project", T = r => (reqs.find(q => q.id === r.r) || {}).text || r.r;
   const rows = (ck.rows || []).filter(r => ph(r) === "project" && !r.notAsked), nowDone = rows.filter(r => r.status === "done" && before.get(r.r) !== "done"), open = rows.filter(r => r.status !== "done");
-  for(const j of jobs){ const who = String(j.by || "").split(" ")[0]; let say = "";
+  for(const j of jobs){ const who = greetName(j.by); let say = "";
     if(j.kind === "review"){ const m2 = (o.teamChat || []).filter(m => !isDeskMsg(o, m) && ((m.links || []).length || /docs\.google|drive\.google/.test(m.text || ""))).slice(-1)[0];
       const ids = m2 ? (m2.links || []).map(l => l.id).concat([...String(m2.text || "").matchAll(/\/d\/([\w-]{15,})/g)].map(x => x[1])) : [], d = (o.docs || []).find(x => ids.includes(x.id));
-      say = d ? await reasonText(o, { kind:"report", ids:[d.id], by:j.by }) : ""; if(!say) say = d ? `Thanks ${who}, I read ${d.name}. It covers what is asked; nothing important to add.` : `Thanks ${who}. I could not find a shared file in this group yet. Share the link here and write \`desk review\` again.`; }
-    else say = `Thanks ${who}, I have read everything again.` + (nowDone.length ? `\n\n**Now verified done**\n${nowDone.map(r => "- " + T(r)).join("\n")}` : "") + (open.length ? `\n\n**Still open**\n${open.map(r => "- " + T(r) + (r.toPass ? ": " + str(noId(r.toPass), 160) : "")).join("\n")}` : `\n\nEverything asked is verified done.`);
+      say = d ? await reasonText(o, { kind:"report", ids:[d.id], by:j.by }) : ""; if(!say) say = d ? `Thanks${who ? " " + who : ""}, I read ${d.name}. It covers what is asked; nothing important to add.` : `Thanks${who ? " " + who : ""}. I could not find a shared file in this group yet. Share the link here and write \`desk review\` again.`; }
+    else say = `Thanks${who ? " " + who : ""}, I have read everything again.` + (nowDone.length ? `\n\n**Now verified done**\n${nowDone.map(r => "- " + T(r)).join("\n")}` : "") + (open.length ? `\n\n**Still open**\n${open.map(r => "- " + T(r) + (r.toPass ? ": " + str(noId(r.toPass), 160) : "")).join("\n")}` : `\n\nEverything asked is verified done.`);
     try{ await safePost(o, as, g.id, deskSay(cfg, say), { thread:j.thread, answer:true }); log(o, { name:"Order desk" }, "Answered " + j.by + "'s " + j.kind + " in the project group"); }catch(e){} }
   return jobs.length;
 }
