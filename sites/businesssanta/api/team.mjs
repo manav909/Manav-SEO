@@ -472,19 +472,27 @@ async function syncTeam(o){
   return { new:fresh.length, errors:r.errors };
 }
 export async function hourlySync(){
-  const done = [];
+  const done = [], T0 = Date.now(), inTime = () => Date.now() - T0 < 245e3;
+  /* Each order is worked on from a fresh copy, under its lock, and saved the moment its step ends. Nothing waits for the end of the run,
+     so a run that reaches its time limit never loses what it already read (groups, messages, intros posted), and never writes an old copy
+     over what the chat job saved in between. What does not fit in this run is done by the next one, or by the 10 minute job. */
+  const step = async (id, label, fn) => {
+    if(!inTime()){ done.push(id + " " + label + ": next run"); return; }
+    if(await cmd("SET", "bsp:chk:" + id, "1", "NX", "EX", 280) !== "OK"){ done.push(id + " " + label + ": busy"); return; }
+    try{ const o = await getJ(T.ord(id)); if(!o) return; const r = await fn(o); await saveO(o); if(r !== undefined && r !== null && r !== "") done.push(id + " " + label + ":" + r); }
+    catch(e){ done.push(id + " " + label + ": " + e.message); }finally{ await cmd("DEL", "bsp:chk:" + id); } };
   try{ done.push("new work: " + await discover()); }catch(e){ done.push("new work: " + e.message); }
   try{ done.push("groups sorted by content: " + await mapGroups()); }catch(e){ done.push("groups: " + e.message); }
   try{ done.push("senior groups: " + await readCommon()); }catch(e){ done.push("senior groups: " + e.message); }
-  const open = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40);
-  for(const o of open){ try{ const r = await syncTeam(o); done.push(o.id + ":" + r.new); }catch(e){ done.push(o.id + ": " + e.message); } }
-  try{ done.push("docs:" + await matchDocs(open)); }catch(e){ done.push("docs: " + e.message); }
+  const ids = (await loadAll(300, true)).filter(x => !["done", "cancelled"].includes(x.stage)).slice(0, 40).map(x => x.id);
+  for(const id of ids) await step(id, "read", async o => (await syncTeam(o)).new);
+  if(inTime()){ const fresh = (await loadAll(300, true)).filter(x => ids.includes(x.id)); try{ done.push("docs:" + await matchDocs(fresh)); for(const o of fresh) await step(o.id, "docs", async o2 => { o2.docs = o.docs; o2.docGroups = o.docGroups; const seen = new Set((o2.timeline || []).map(t => t.at + t.what)); const add = (o.timeline || []).filter(t => !seen.has(t.at + t.what)); if(add.length) o2.timeline = add.concat(o2.timeline || []).slice(0, 300); }); }catch(e){ done.push("docs: " + e.message); } }
   // Changes on the client's site or in Search Console leave no message: recheck work orders every 3 hours (two a run)
-  { let n2 = 0; for(const o of open){ if(n2 >= 2) break; if(["work", "qa"].includes(o.stage) && o.check && (!o.checkAt || Date.now() - Date.parse(o.checkAt) > 3 * 36e5)) try{ await buildCheck(o); n2++; done.push(o.id + " rechecked"); }catch(e){ done.push(o.id + " recheck: " + e.message); } } }
-  for(const o of open) if(o.stage === "work") try{ const n = await autoProof(o); if(n) done.push(o.id + " proofs:" + n); }catch(e){ done.push(o.id + " proofs: " + e.message); }
-  { let n3 = 0; for(const o of open){ if(n3 >= 8) break; try{ const c = await reconcile(o, "hourly"); if(o.recon && o.recon.at && Date.now() - Date.parse(o.recon.at) < 6e4) n3++; if(c) done.push(o.id + " kept current:" + c); }catch(e){ done.push(o.id + " current: " + e.message); } } }
-  for(const o of open) if(["qa", "ready"].includes(o.stage)) try{ await buildGuides(o); }catch(e){}
-  for(const o of open) await saveO(o);
+  { let n2 = 0; for(const id of ids){ if(n2 >= 2 || !inTime()) break; const o0 = await getJ(T.ord(id)); if(o0 && ["work", "qa"].includes(o0.stage) && o0.check && (!o0.checkAt || Date.now() - Date.parse(o0.checkAt) > 3 * 36e5)){ n2++; await step(id, "rechecked", async o => { await buildCheck(o); return "yes"; }); } } }
+  for(const id of ids) await step(id, "proofs", async o => o.stage === "work" ? (await autoProof(o)) || "" : "");
+  { let n3 = 0; for(const id of ids){ if(n3 >= 8) break; await step(id, "kept current", async o => { const c = await reconcile(o, "hourly"); if(o.recon && o.recon.at && Date.now() - Date.parse(o.recon.at) < 6e4) n3++; return c || ""; }); } }
+  for(const id of ids) await step(id, "guides", async o => { if(["qa", "ready"].includes(o.stage)) await buildGuides(o); return ""; });
+  const open = (await loadAll(300, true)).filter(x => ids.includes(x.id));
   // Work history for every client site that has none yet (or older than 30 days), two a run
   { let n = 0; const all = await loadAll(1000, true);
     for(const site of [...new Set(open.map(o => domOf(o.client.website)).filter(Boolean))]){ if(n >= 2) break; const hv = await getJ(HK(site)); if(hv && Date.now() - Date.parse(hv.at) < 30 * 864e5) continue;
@@ -1646,7 +1654,8 @@ async function introGroups(o){
     try{ const m = await safePost(o, as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
       o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"intro", hash:sha(t).slice(0, 12) }).slice(-30);
       log(o, { name:"Order desk" }, "Introduced itself in the project group " + (g.name || "") + " with how to use it"); n++; if(o.introWait) delete o.introWait[g.id]; }
-    catch(e){ (o.introWait = o.introWait || {})[g.id] = { at:now(), why:str(e.message, 200), name:g.name || "" }; } }
+    catch(e){ if(/already said this/i.test(e.message)){ (o.introduced = o.introduced || {})[g.id] = now(); if(o.introWait) delete o.introWait[g.id]; continue; }
+      (o.introWait = o.introWait || {})[g.id] = { at:now(), why:str(e.message, 200), name:g.name || "" }; } }
   return n;
 }
 /* Jobs people asked for in a group ("desk check", "desk done", "desk review", or a plain "done"): run by the 10 minute job, answered in the thread */
