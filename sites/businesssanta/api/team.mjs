@@ -1650,8 +1650,9 @@ async function introGroups(o){
   const gs = ((o.chatStatus || {}).groups || []); if(!gs.length) return 0;
   const cfg = await cfgOf(), as = await poster(cfg); if(!as) return 0; let n = 0;
   for(const g of gs){ if(g.via && g.via !== as) continue; if((o.introduced || {})[g.id]) continue;
-    const said = (o.teamChat || []).some(m => m.spaceId === g.id && isDeskMsg(o, m) && /how to use me in this group/i.test(m.text || "")) || (o.deskPosts || []).some(p => p.kind === "intro" && String(p.name || "").startsWith(g.id + "/"));
-    if(said){ (o.introduced = o.introduced || {})[g.id] = now(); if(o.introWait) delete o.introWait[g.id]; continue; }
+    const sm = (o.teamChat || []).find(m => m.spaceId === g.id && isDeskMsg(o, m) && /how to use me in this group/i.test(m.text || "")), sp = (o.deskPosts || []).find(p => p.kind === "intro" && String(p.name || "").startsWith(g.id + "/"));
+    const said = sm || sp;
+    if(said){ (o.introduced = o.introduced || {})[g.id] = (sm && sm.at) || (sp && sp.at) || now(); if(o.introWait) delete o.introWait[g.id]; continue; }
     const t = `Hello team, I will follow ${domOf(o.client.website)} with you here. I read this group, the files you share and the live site, and I help wherever you need me.\n\n` + HELP_CARD;
     try{ const m = await safePost(o, as, g.id, deskSay(cfg, t)); (o.introduced = o.introduced || {})[g.id] = now();
       o.deskPosts = (o.deskPosts || []).concat({ name:m.name, thread:m.thread ? m.thread.name : "", sender:m.sender ? m.sender.name : "", at:now(), kind:"intro", hash:sha(t).slice(0, 12) }).slice(-30);
