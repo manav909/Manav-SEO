@@ -785,7 +785,7 @@ async function reportQA(o, force){
       const dd = r.data || {}, params = (dd.params || []).filter(x => RQ_PARAMS.some(p2 => p2[0] === x.key)).map(x => ({ key:x.key, ok:x.ok === true ? true : x.ok === false ? false : null, note:str(x.note, 240) }));
       const accOk = acc.known ? (acc.anyone ? true : false) : null;
       params.push({ key:"access", ok:accOk, note:acc.known ? (acc.anyone ? "Anyone with the link can open it" : "Only named people can open it: set sharing to anyone with the link, or attach it as a file") : "Sharing could not be read; open the link in a private window to make sure" });
-      const fixes = (dd.fixes || []).slice(0, 10).map(f => ({ where:str(f.where, 160), problem:str(f.problem, 240), fix:str(f.fix, 240) }));
+      const fixes = (dd.fixes || []).slice(0, 10).map(f => ({ where:str(f.where, 160), problem:str(f.problem, 420), fix:str(f.fix, 320) }));
       if(accOk === false) fixes.push({ where:"Sharing", problem:"The client cannot open the link", fix:"Set sharing to anyone with the link (viewer), or attach the file" });
       const ready = params.every(x => x.ok !== false) && !fixes.length && dd.verdict === "ready";
       files.push({ id:d.id, name:d.name, link:d.link, verdict:ready ? "ready" : "fix", score:Math.max(0, Math.min(100, num(dd.score, 0))), params, fixes }); }
