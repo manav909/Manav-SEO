@@ -200,6 +200,13 @@ export async function docModified(d){
   const r = await apiAs(d.via, "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&fields=modifiedTime,lastModifyingUser(displayName)");
   return { at:r.modifiedTime || "", by:(r.lastModifyingUser || {}).displayName || "" };
 }
+/* Can the client open this file? Reads its sharing from Drive: anyone with the link, or only named people */
+export async function docAccess(d){
+  if(!d.via || d.media || !d.id) return { known:false };
+  try{ const r = await apiAs(d.via, "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&fields=permissions(type,role),name,mimeType");
+    const ps = r.permissions || []; return { known:true, anyone:ps.some(p => p.type === "anyone"), domain:ps.some(p => p.type === "domain"), name:r.name || "" }; }
+  catch(e){ return { known:false, error:String(e.message || e).slice(0, 120) }; }
+}
 export async function fileBytes(d){
   if(!d.via) return null; const tok = await (await import("./google.mjs")).accessTokenAs(d.via);
   const u = d.media ? "https://chat.googleapis.com/v1/media/" + d.media + "?alt=media" : "https://www.googleapis.com/drive/v3/files/" + d.id + "?supportsAllDrives=true&alt=media";

@@ -10,7 +10,7 @@ import { isDrive, driveMeta, driveRead } from "./_lib/drive.mjs";
 import { verifyOrder, verifyText } from "./_lib/verify.mjs";
 import { accounts as gAccounts, props as gProps, refreshProps } from "./_lib/google.mjs";
 import { gather, intelPrompt, propsFor } from "./_lib/intel.mjs";
-import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, fileBytes, allSpaces, spaceMessages, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat, deleteChat } from "./_lib/teamsync.mjs";
+import { syncOrder, docCandidates, docPeek, docPrompt, docGroup, docText, docModified, docAccess, fileBytes, allSpaces, spaceMessages, revisionTexts, diffPrompt, sweepSignals, signalsPrompt, siteHistory, historyPrompt, accessPrompt, postChat, chatSince, mySpaces, editChat, deleteChat } from "./_lib/teamsync.mjs";
 import { accessTokenAs } from "./_lib/google.mjs";
 import { planPrompt, probe, judgePrompt } from "./_lib/ordercheck.mjs";
 
@@ -307,7 +307,7 @@ function projView(o){
     pack:o.pack ? { at:o.pack.at, summary:o.pack.summary, final:o.pack.final, notUse:o.pack.notUse, qa:o.pack.qa } : null, accessChat:o.accessChat, accessIssues:o.accessIssues,
     access:o.access, deliverables:o.deliverables, hours:o.hours, revisions:(o.revisions || []).map(r => ({ at:r.at, reason:r.reason, note:r.note, ours:r.ours })), qaRounds:o.qaRounds, verify:o.verify, site:o.site, google:o.google, rechecks:o.rechecks,
     ai:{ kt:ai.kt, qa:ai.qa, done:ai.done, next:ai.next, deliverables:ai.deliverables, health:ai.health },
-    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, lastFresh:o.lastFresh, blockers:o.blockers, teamNotes:o.teamNotes,
+    folder:o.folder, folderFiles:o.folderFiles, docs:o.docs, docGroups:o.docGroups, mails:o.mails, teamChat:o.teamChat, syncAt:o.syncAt, syncErrors:o.syncErrors, chatStatus:o.chatStatus, chatFull:o.chatFull, readLog:o.readLog, groupCands:o.groupCands, scopePending:o.scopePending, deskPosts:o.deskPosts, seen:o.seen, lastFresh:o.lastFresh, reportQA:o.reportQA, blockers:o.blockers, teamNotes:o.teamNotes,
     intel:o.intel ? { at:o.intel.at, numbers:(o.intel.ai || {}).numbers || [], forQA:(o.intel.ai || {}).forQA || [], seen:o.intel.seen } : null,
     actions:(o.actions || []).filter(a => a.type === "internal" || (a.type === "task" && a.owner !== "comms") || a.byTeam), shared:o.shared || [],
     timeline:(o.timeline || []).filter(t => !/client replied|sent to client|payment|price|message|lead/i.test(t.what)), lastUpdateAt:o.lastUpdateAt, alert:o.alert && /scope/i.test(o.alert) ? "The client asked for something new: sales will confirm the scope" : "" };
@@ -751,6 +751,50 @@ Answer with one JSON object only: {"matches":[{"d":"deliverable id","e":0,"confi
 }
 
 /* Delivery pack: from everything the desk knows, the one final file per deliverable, what not to send, what QA checks, and the client's delivery message */
+/* REPORT QUALITY CHECK: every file the client will receive is checked against the same ten points before delivery. A file is client
+   ready only when every point passes. The points are shown to QA on the order, so anyone can see what "client ready" means. */
+const RQ_PARAMS = [
+  ["scope", "Covers every task asked", "Each task in the brief has its own clear part in the file, in the order of the brief"],
+  ["accuracy", "Numbers are right", "Every figure matches the source it names (Search Console, Semrush, the live site), and our own reads agree"],
+  ["evidence", "Each finding has proof", "Data, a screenshot or the page address, with the date and the tool it came from"],
+  ["why", "Explains why it matters", "Every issue says its effect on the client's business in plain words"],
+  ["action", "Clear next steps", "Every issue has its fix, its priority, and whether it is done, coming next, or a later phase"],
+  ["honesty", "Honest about results", "No guarantees; it says Google needs time; done and not done are clearly apart"],
+  ["consistency", "Same facts everywhere", "Site name, addresses, dates and numbers match across every file sent"],
+  ["clean", "Nothing internal", "No team names, internal notes or chat, prices, other clients' data, passwords, or contact details outside the marketplace"],
+  ["finish", "Finished and professional", "A title with the client's site and the date, a summary first, tidy headings and tables, no placeholders, no typos, no broken links"],
+  ["access", "The client can open it", "The link opens without asking for access, or the file is attached, with a professional file name"]
+];
+async function reportQA(o, force){
+  const docs = (o.docs || []).filter(d => d.status === "linked" && d.current !== false && (d.kind === "report" || (((o.pack || {}).final || []).some(f => (f.use || []).some(u => u.id === d.id || u.name === d.name)))));
+  if(!docs.length){ o.reportQA = { at:now(), files:[], ready:false, none:true }; return o.reportQA; }
+  const fpNow = sha(JSON.stringify(docs.map(d => [d.id, d.modified || ""]).concat([(o.check || {}).at || ""]))).slice(0, 12);
+  if(!force && o.reportQA && o.reportQA.fp === fpNow) return o.reportQA;
+  const team = (await people()).map(p2 => p2.name).filter(Boolean), reqs = ((o.check || {}).requirements || []).filter(r => r.phase !== "client");
+  const own = { searchConsole:o.verify ? { at:o.verify.at, summary:str(JSON.stringify(o.verify.gsc || o.verify.summary || {}), 3000) } : null, liveChecks:((o.check || {}).probes || []).slice(0, 30) };
+  const files = [];
+  for(const d of docs.slice(0, 6)){
+    let txt = ""; try{ txt = fitText(await docText(d, 300000), 60000); }catch(e){ files.push({ id:d.id, name:d.name, link:d.link, verdict:"fix", score:0, params:[], fixes:[{ where:"the file", problem:"The desk could not open it: " + str(e.message, 120), fix:"Share it with the team account, then check again" }] }); continue; }
+    const acc = await docAccess(d);
+    const hints = []; if(/\b(TBD|TODO|lorem ipsum|\[insert[^\]]*\]|xx+\b|placeholder)\b/i.test(txt)) hints.push("placeholder text found");
+    const tn = team.filter(n => n.length > 3 && new RegExp("\\b" + n.split(" ")[0].replace(/[^\w]/g, "") + "\\b", "i").test(txt)); if(tn.length) hints.push("team names appear: " + tn.join(", "));
+    if(/[\w.+-]+@[\w-]+\.[\w.]+/.test(txt) || /\+?\d[\d\s-]{9,}\d/.test(txt)) hints.push("an email address or phone number appears");
+    const system = `You are the senior quality checker of an SEO, web and ads agency. Before delivery you check ONE file the client will receive, against ten points, as the client would read it. Be strict and fair: a point passes only when the file truly meets it. For every point that fails, give the exact place (tab, heading or the words) and the fix in one plain sentence. Never invent problems; never ask for something the file already has. Use the requirement list, our own Search Console and live checks to test the numbers. Answer with one JSON object only: {"verdict":"ready | fix","score":0,"params":[{"key":"scope","ok":true,"note":"short"}],"fixes":[{"where":"","problem":"","fix":""}]}. "score" is 0 to 100. Keys: ${RQ_PARAMS.filter(p2 => p2[0] !== "access").map(p2 => p2[0] + " (" + p2[2] + ")").join("; ")}.`;
+    const user = `CLIENT SITE: ${o.client.website}\nFILE: ${d.name}\nREQUIREMENTS THE CLIENT PAID FOR: ${JSON.stringify(reqs.map(r => ({ task:r.text, phase:r.phase })))}\nOUR OWN READS: ${JSON.stringify(own).slice(0, 8000)}\nHINTS FROM A SIMPLE SCAN: ${hints.join("; ") || "none"}\nTEAM MEMBERS (their names must not appear): ${team.join(", ")}\nFILE CONTENT:\n${txt}`;
+    try{ const r = await askAI("reportqa", "claude-sonnet-5-5", system, user, 3000); o.aiUsd = +(num(o.aiUsd, 0) + r.usd).toFixed(4);
+      const dd = r.data || {}, params = (dd.params || []).filter(x => RQ_PARAMS.some(p2 => p2[0] === x.key)).map(x => ({ key:x.key, ok:x.ok === true ? true : x.ok === false ? false : null, note:str(x.note, 240) }));
+      const accOk = acc.known ? (acc.anyone ? true : false) : null;
+      params.push({ key:"access", ok:accOk, note:acc.known ? (acc.anyone ? "Anyone with the link can open it" : "Only named people can open it: set sharing to anyone with the link, or attach it as a file") : "Sharing could not be read; open the link in a private window to make sure" });
+      const fixes = (dd.fixes || []).slice(0, 10).map(f => ({ where:str(f.where, 160), problem:str(f.problem, 240), fix:str(f.fix, 240) }));
+      if(accOk === false) fixes.push({ where:"Sharing", problem:"The client cannot open the link", fix:"Set sharing to anyone with the link (viewer), or attach the file" });
+      const ready = params.every(x => x.ok !== false) && !fixes.length && dd.verdict === "ready";
+      files.push({ id:d.id, name:d.name, link:d.link, verdict:ready ? "ready" : "fix", score:Math.max(0, Math.min(100, num(dd.score, 0))), params, fixes }); }
+    catch(e){ files.push({ id:d.id, name:d.name, link:d.link, verdict:"fix", score:0, params:[], fixes:[{ where:"the check", problem:"The quality check could not finish: " + str(e.message, 100), fix:"Press Check the reports again" }] }); }
+  }
+  o.reportQA = { at:now(), fp:fpNow, files, ready:files.length > 0 && files.every(f => f.verdict === "ready") };
+  log(o, { name:"Order desk" }, "Report quality check: " + files.map(f => f.name + " " + (f.verdict === "ready" ? "client ready" : f.fixes.length + " fix(es)")).join("; "));
+  return o.reportQA;
+}
 async function buildPack(o){
   if(!aiOn()) return null; groupDocs(o);
   const dl = o.deliverables.map(d => ({ id:d.id, text:d.text, done:d.done, qa:d.qa || "", qaNote:d.qaNote || "", proofs:proofsOf(d).map(p => ({ name:p.name, url:p.url, kind:p.kind, modified:(p.meta || {}).modified || "", newer:p.newer ? p.newer.name : "" })),
@@ -1175,6 +1219,7 @@ WHAT THE TEAM SAID decides scope and status, newest word first. When the PM or a
   o.checkAt = now(); log(o, { name:"Order desk" }, "Order checked: " + str(o.check.verdict, 200));
   try{ await reconcile(o, "new check"); }catch(e){}
   if(["qa", "ready"].includes(o.stage)) try{ await buildPack(o); }catch(e){}   // the delivery pack always follows the newest check
+  if(["qa", "ready"].includes(o.stage)) try{ await reportQA(o); }catch(e){}   // every file for the client checked on the ten points (again only when a file or the check changed)
   // A draft work report not yet approved is rewritten when the task statuses it was written from have changed
   if(o.draftReport && !o.draftReport.approved && o.draftReport.fp !== rowsFp(o) && !["delivered", "done", "cancelled"].includes(o.stage)) try{ await draftReport(o); log(o, { name:"Order desk" }, "Work report draft rewritten: the task statuses changed since it was written"); }catch(e){}
   try{ await buildGuides(o); }catch(e){}
@@ -2140,6 +2185,7 @@ async function handle(request){
       else if(kind === "delivery"){ if(!o.pack || (o.check && String(o.pack.at || "") < String(o.check.at || "")) || nw.length) try{ await buildPack(o); }catch(e){} text = ((o.pack || {}).client || {}).message || ""; }
       o.lastFresh = { at:now(), kind, id, text, gone, news:nw }; log(o, w, "Made sure the " + (kind === "delivery" ? "delivery message" : "client message") + " is current before copying" + (nw.length ? " (new: " + nw.slice(0, 4).join(", ") + ")" : "")); }
     else if(op === "repoll"){ if(w.role !== "admin") return bad("For Manav only", 403); o.chatPollAt = str(q.since, 40) || new Date(Date.now() - 3 * 36e5).toISOString(); log(o, w, "Asked the desk to read the group's messages again from " + o.chatPollAt); }
+    else if(op === "reportQA"){ if(!(can(w, "qa") || can(w, "pm") || isMgrW(w))) return bad("Your role cannot do this step"); await reportQA(o, true); }
     else if(op === "deskEdit"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
       const last = (o.deskPosts || []).filter(p => p.kind === "note" && p.name).slice(-1)[0]; if(!last) return bad("No desk note to edit");
       const as = await poster(cfg); await editChat(as, last.name, t); last.hash = sha(t).slice(0, 12); last.editedAt = now(); log(o, w, "Edited the desk's note in the project group"); }
