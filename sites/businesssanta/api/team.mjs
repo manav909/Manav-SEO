@@ -467,7 +467,9 @@ async function syncTeam(o){
   o.accessSyncAt = r.at;
   o.syncAt = r.at; o.syncErrors = r.errors;
   // New information starts a new check (the check re-reads everything); right after a check, the 10 minute re-read job picks it up instead
-  if(fresh.length && !o._noCheck && ["access", "work", "qa"].includes(o.stage) && aiOn() && (newGroup || !o.checkAt || Date.now() - Date.parse(o.checkAt) > 10 * 6e4)){ o._fresh = true; try{ await buildCheck(o); }catch(e){} finally{ delete o._fresh; } }
+  if(fresh.length && !o._noCheck && ["access", "work", "qa"].includes(o.stage) && aiOn() && (newGroup || !o.checkAt || Date.now() - Date.parse(o.checkAt) > 10 * 6e4)){
+    if(newGroup) try{ await matchDocs([o]); }catch(e){}   // a group read for the first time: link the files shared in it BEFORE the check, so the check reads them
+    o._fresh = true; try{ await buildCheck(o); }catch(e){} finally{ delete o._fresh; } }
   if(fresh.length){ log(o, { name:"Order desk" }, "From the team's folder, email and chat: " + fresh.length + " new item(s)"); if(aiOn()) try{ await rethink(o, fresh.join("\n\n")); }catch(e){} }
   return { new:fresh.length, errors:r.errors };
 }
