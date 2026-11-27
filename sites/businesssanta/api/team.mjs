@@ -1344,7 +1344,9 @@ async function safePost(o, as, gid, text, opts){
     const last = recent[recent.length - 1]; if(last && isDesk(last)) throw new Error("Not sent: the desk's own message is still the latest in the group, so the team has not answered yet");
     const lp = recent.filter(m => !isDesk(m)).slice(-1)[0]; if(lp && Date.now() - Date.parse(lp.at) < 3 * 6e4) throw new Error("Not sent yet: people are talking in the group right now");
   }
-  return postChat(as, gid, text, opts.thread || undefined);
+  const sent = await postChat(as, gid, text, opts.thread || undefined);
+  if(opts.answer && sent && sent.name) o.deskPosts = (o.deskPosts || []).concat({ name:sent.name, thread:opts.thread || "", sender:sent.sender ? sent.sender.name : "", at:now(), kind:"answer", hash:sha(text).slice(0, 12) }).slice(-60);
+  return sent;
 }
 
 /* The desk writes in a project group ONLY for an important reason, never to repeat the requirement email (the team works from it already):
@@ -1740,6 +1742,8 @@ async function handle(request){
     for(const d of (o2.docs || []).filter(x => x.status === "linked" && x.current !== false)){ let t = ""; try{ t = await docText(d, 300000); }catch(e){}
       t.split("\n").forEach((ln, i) => { if(qx && ln.toLowerCase().includes(qx) && hits2.length < 60) hits2.push({ file:d.name, line:i + 1, text:str(ln, 400) }); }); }
     return out({ ok:true, hits:hits2 }); }
+  if(a === "groupPeek"){ if(!isA) return bad("For Manav only", 403); const o = await getJ(T.ord(url.searchParams.get("id") || "")); if(!o) return bad("Order not found"); const g = groupOf(o), as = await poster(await cfgOf()); if(!g || !as) return bad("No group");
+    const ms = (await spaceMessages(as, g.id, "desc", 15)).reverse(); return out({ ok:true, group:g.name || g.id, messages:ms.map(m => ({ at:m.at, by:m.by, desk:isDeskMsg(o, m), thread:m.thread, text:str(m.full || m.text, 300) })) }); }
   if(a === "groupMap"){ if(!isA) return bad("For Manav only", 403); if(url.searchParams.get("refresh")) await mapGroups(true); const m = (await getJ(GMK)) || { spaces:{} };
     return out({ ok:true, at:m.at || "", groups:Object.entries(m.spaces || {}).map(([id, g]) => ({ id, name:g.name, kind:g.kind, order:g.order, orders:g.orders || [], confidence:g.confidence, why:g.why, via:g.via, manual:g.manual || null, error:g.error || "" })) }); }
   if(a === "learn"){ if(!isA) return out({ ok:true, lessons:[], admin:false }); const l = await learnList();
