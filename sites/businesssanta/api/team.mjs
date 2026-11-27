@@ -1016,7 +1016,9 @@ async function freshen(o){
   let n = 0; o._noCheck = true; try{ n = (await syncTeam(o)).new; }catch(e){} finally{ delete o._noCheck; }
   try{ n += await matchDocs([o]); }catch(e){} groupDocs(o); return n;
 }
-const isDeskMsg = (o, m) => { const ids = new Set((o.deskPosts || []).map(x => x.sender).filter(Boolean)); return !!(m.sender && ids.has(m.sender)) || /order desk|seo desk|^indi ?it\b/i.test(m.by || "") || /^(Indi IT Solutions|Order desk|SEO Desk):/i.test(m.text || ""); };
+/* A message the desk itself wrote: one of its recorded posts, or one carrying its "Order desk:" tag. A person typing from the same
+   Google account (for example Manav using seo@indiit.com) is a person, and their commands count. */
+const isDeskMsg = (o, m) => { const id = m.id || m.name || ""; return (!!id && (o.deskPosts || []).some(x => x.name && x.name === id)) || /^\s*(Order desk|SEO Desk):/i.test(m.text || m.full || ""); };
 /* Anything a person said, sent, posted or edited after the desk last read the order (messages, emails, new files, edited files) */
 async function newerThanRead(o){
   const at = (o.readLog || {}).at || o.checkAt || ""; if(!at) return ["nothing read yet"];
@@ -1334,7 +1336,7 @@ const overlap = (a, b) => { const A = wordsSet(a), B = wordsSet(b); if(!A.size |
 async function safePost(o, as, gid, text, opts){
   opts = opts || {};
   let recent = []; try{ recent = (await spaceMessages(as, gid, "desc", 60)).reverse(); }catch(e){ throw new Error("Could not read the group just before posting, so nothing was sent: " + e.message); }
-  const ids = new Set((o.deskPosts || []).map(p => p.sender).filter(Boolean)), isDesk = m => ids.has(m.sender) || /^order desk:/i.test(m.full || m.text || "");
+  const isDesk = m => isDeskMsg(o, m);
   const deskMsgs = recent.filter(isDesk), win = opts.answer ? deskMsgs.filter(m => m.thread === opts.thread && Date.now() - Date.parse(m.at) < 15 * 6e4) : deskMsgs;
   const dup = win.find(m => overlap(text, m.full || m.text) >= 0.8);
   if(dup) throw new Error("Not sent: the desk already said this in the group (" + new Date(dup.at).toLocaleString("en-GB", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit", timeZone:"Asia/Kolkata" }) + ")");
@@ -1610,10 +1612,10 @@ export async function chatAnswers(){
     const mine = new Set((o.deskPosts || []).map(p => p.sender).filter(Boolean)), threads = new Set((o.deskPosts || []).map(p => p.thread).filter(Boolean));
     let changed = false;
     for(const m of msgs){
-      if(mine.has(m.sender)) continue;
+      if(isDeskMsg(o, m)) continue;
       const asked = threads.has(m.thread) || /\b(order )?desk\b/i.test(m.text);
       // Commands: "desk <word> ..." anywhere in the first words of the message (after an @mention, if any)
-      const cm = String(m.text || "").replace(/\*/g, "").match(/^\s*(?:@[^\n]{0,40}?\s+)?(?:order\s+)?desk\b[\s,:.\-]*([a-z]+)?\b\s*([\s\S]*)$/i), cw = cm ? String(cm[1] || "").toLowerCase() : "", rest = cm ? str(cm[2], 1500).trim() : "";
+      const cm = String(m.text || "").replace(/\*/g, "").replace(/^\s*[A-Z][\w .'-]{1,40}:\s+(?=(?:@|order\s+)?desk\b)/i, "").match(/^\s*(?:@[^\n]{0,40}?\s+)?(?:order\s+)?desk\b[\s,:.\-]*([a-z]+)?\b\s*([\s\S]*)$/i), cw = cm ? String(cm[1] || "").toLowerCase() : "", rest = cm ? str(cm[2], 1500).trim() : "";
       if(cm && (!cw || CMDS.has(cw))){ let said = false; try{ const say = await deskCommand(o, cw || (rest ? "ask" : "help"), rest, m); if(say){ await safePost(o, as, g.id, deskSay(cfg, say), { thread:m.thread, answer:true }); said = true;
             await deskLog({ kind:"command", group:g.name, space:g.id, order:o.id, by:m.by, q:str(m.text, 500), a:str(say, 800), usd:0 }); } changed = true; }catch(e){ done.push(o.id + " command: " + e.message); }
         if(said) continue; }   // "desk how ..." and plain questions get the normal answer below
@@ -1622,7 +1624,7 @@ export async function chatAnswers(){
       const sRole = ((await people()).find(p2 => p2.name && String(m.by || "").toLowerCase().startsWith(p2.name.toLowerCase().split(" ")[0])) || {}), sRoles = sRole.id ? rolesOf(sRole) : [];
       const isMgr = sRoles.includes("manager"), isPM = sRoles.includes("pm");
       if(!asked && !((isMgr || isPM) && threads.has(m.thread))) continue;
-      if(mine.has(m.sender) && cfg.deskTag !== false) continue;
+      if(isDeskMsg(o, m)) continue;
       const ck = o.check || {}, pv = projView(o);
       const system = `Never share in this team group: the deadline or due date, the price or money, or client details (the client's name, contact, location, or what the client wrote). Never say that you cannot or will not share something: if someone asks about the deadline or the client, answer the work part naturally and say, like a colleague, that the PM will confirm that with them. You are the order desk of an SEO, web and ads agency, answering a project team member's question in the order's project group chat. Talk like a friendly colleague in a team chat: one to four short lines, only what they need to do the task. No meta talk (never explain why a task exists or how the desk checks things). Answer from the order facts given: the requirements and how each passes (where to do it, how it is checked), access status, files read, live check results. Give exact values when you have them. If it is a technical how to question (SEO, WordPress and its plugins, Search Console, Analytics, Tag Manager, ads, website fixes), guide them like a senior expert: numbered steps with exact menu and button names. Never share passwords, logins, prices, money or the client's own messages; never promise anything to or about the client. If the question needs a decision you cannot make (scope change, asking the client, a deadline), say who decides (Sales for anything with the client, the PM for team work) and set needsHuman. Use VERY SIMPLE English a 4th grade child can follow: short sentences, common words, exact button and setting names. No dashes.
 First decide if it is GENUINE: a real question about this order's work or a technical task. Thanks, greetings, chit chat and topics outside work are not genuine: then leave answer empty.
@@ -2131,6 +2133,7 @@ async function handle(request){
       else if(kind === "action"){ const a = (o.actions || []).find(x => x.id === id); if(!a || ["done", "skipped"].includes(a.status)) gone = "No longer needed: " + ((a && a.statusWhy) || "the situation moved on"); else text = a.message || ""; }
       else if(kind === "delivery"){ if(!o.pack || (o.check && String(o.pack.at || "") < String(o.check.at || "")) || nw.length) try{ await buildPack(o); }catch(e){} text = ((o.pack || {}).client || {}).message || ""; }
       o.lastFresh = { at:now(), kind, id, text, gone, news:nw }; log(o, w, "Made sure the " + (kind === "delivery" ? "delivery message" : "client message") + " is current before copying" + (nw.length ? " (new: " + nw.slice(0, 4).join(", ") + ")" : "")); }
+    else if(op === "repoll"){ if(w.role !== "admin") return bad("For Manav only", 403); o.chatPollAt = str(q.since, 40) || new Date(Date.now() - 3 * 36e5).toISOString(); log(o, w, "Asked the desk to read the group's messages again from " + o.chatPollAt); }
     else if(op === "deskEdit"){ if(w.role !== "admin") return bad("For Manav only", 403); const t = str(q.text, 3000).trim(); if(t.length < 10) return bad("Write the message");
       const last = (o.deskPosts || []).filter(p => p.kind === "note" && p.name).slice(-1)[0]; if(!last) return bad("No desk note to edit");
       const as = await poster(cfg); await editChat(as, last.name, t); last.hash = sha(t).slice(0, 12); last.editedAt = now(); log(o, w, "Edited the desk's note in the project group"); }
