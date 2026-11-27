@@ -1929,3 +1929,44 @@ _rf["faq"] = list(_rf["faq"]) + [
 _rk["faq"] = list(_rk["faq"]) + [
  ("What is GEO for roofing companies?", "GEO, or generative engine optimization, means making your roofing company easy for AI answers like ChatGPT, Google AI Overviews and Perplexity to name. It uses the same keywords as SEO, plus clear facts about your services, towns, reviews and licenses in the places those tools read."),
 ]
+
+# 27 Nov 2026 (Business Santa daily, cloud): insight-BS-20261127-3. Google began rolling out Ask Maps features in the US
+# on 16 Nov 2026 that look for open appointments at beauty, pet care, auto and home repair businesses and can phone
+# local businesses for the user (PPC Land, 16 Nov 2026; Search Engine Journal; checked 27 Nov 2026).
+ASK_MAPS = ("https://ppc.land/google-maps-ai-now-calls-us-salons-groomers-and-garages-to-find-open-slots/", "PPC Land: Google Maps AI now calls US salons, groomers and garages to find open slots (November 16, 2026)")
+_AM_H = 'Google Maps may call you now <span class="ac" id="ask-maps">(Nov 2026)</span>'
+def _am_body(one, svc):
+    return ("<p>On November 16, 2026, Google began rolling out new Ask Maps features in the US that look for open appointments at beauty, pet care, auto and home repair businesses, "
+            "and can phone local businesses for the person asking. Google has not said how a business can opt out. "
+            f"If Google's assistant calls your {one}, three things decide whether you get the booking:</p>"
+            '<ol class="steps"><li><b>Answer the phone in business hours.</b>A call that rings out looks the same as a closed business, to a customer and to an assistant.</li>'
+            "<li><b>Keep your hours and booking link right on Google.</b>Holiday hours included, so what Maps says matches what you say on the phone.</li>"
+            f"<li><b>List your services in plain words.</b>{svc}, with a price or a \"from\" price where you can, so it is clear you do what was asked for.</li></ol>"
+            f'<p class="src">Source: <a href="{ASK_MAPS[0]}" rel="noopener">{ASK_MAPS[1]}</a>. Checked November 27, 2026. No one can promise a booking from these calls; these checks only make sure you are not skipped.</p>')
+SALON_EXTRA.insert(0, (_AM_H, _am_body("salon", "\"Gel manicure\", \"balayage\", \"men's fade\" and \"deep tissue massage\"")))
+_gbs = _g23("guides/google-business-profile-for-salons")
+_gbs["date"] = "2026-11-27"
+_gbs["pre"] = list(_gbs.get("pre", [])) + [(_AM_H, _am_body("salon", "\"Gel manicure\", \"balayage\", \"men's fade\" and \"deep tissue massage\""))]
+_gbs["src"] = tuple(_gbs.get("src", ())) + (ASK_MAPS,)
+_AM_LINE = ('<p><b>New in November 2026:</b> Google Maps has started phoning some local businesses, home repair included, to find open slots for customers. '
+            '<a href="/guides/google-business-profile-for-salons#ask-maps">See the 3 checks so Google Maps does not skip you</a>.</p>')
+for _s in ("seo-for-hvac", "seo-for-plumbers"):
+    _i = next(_i for _i in INDUSTRIES if _i["slug"] == _s)
+    _i["top"] = _i.get("top", "") + _AM_LINE
+
+# Striking-distance upgrades (notes/opt-cloud-business-santa-daily-20261122), Search Console 28 days to 24 Nov 2026:
+# "christmas promotions" 22.0 on the Christmas promotion ideas guide, "small business friday 2026" 6.0 on the Black Friday
+# checklist, "dentist fined" 7.0 on the dental reviews and HIPAA guide. Query first in the title, direct answers, FAQs.
+_cp = _g23("guides/christmas-promotion-ideas-for-small-business")
+_cp["title"] = "Christmas Promotions for Small Business 2026: 12 Ideas | Business Santa"
+_cp["desc"] = "Christmas promotions for small business in 2026: 12 dated offers for shops, salons, restaurants and home services, and how to post each one on Google."
+_cp["faq"] = list(_cp["faq"]) + [
+ ("What Christmas promotions work best for a small local business?", "The ones a shopper can understand in one line and claim today: a gift card bonus, a holiday bundle, a last order or booking date, free pickup or local delivery, and a January thank you offer. Put the end date in the offer, post it on your Google Business Profile and show it at the top of your website on a phone."),
+]
+_bf = _g23("guides/black-friday-small-business-checklist")
+_bf["faq"] = list(_bf["faq"]) + [
+ ("Is there a Small Business Friday in 2026?", "There is no official Small Business Friday. Black Friday 2026 is Friday, November 27, and Small Business Saturday, the day for shopping small, is Saturday, November 28, 2026. Many small businesses run one offer across both days; set special hours for each day on your Google Business Profile."),
+]
+_dh = _g23("guides/dental-reviews-hipaa")
+_dh["title"] = "Dentist Fined Over a Review Reply? HIPAA and Dental Reviews | Business Santa"
+_dh["desc"] = "Why dentists get fined for review replies under HIPAA, the $23,000 case from 2022, and safe ways to reply to good and bad Google reviews."

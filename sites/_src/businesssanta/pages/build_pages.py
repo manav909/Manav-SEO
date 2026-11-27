@@ -958,14 +958,29 @@ def _home_cards(cls):
     return "".join(out)
 _HCSS = ".{c}{{display:grid;gap:16px;margin-top:28px;grid-template-columns:{cols}}}.{c}c{{display:flex;flex-direction:column;background:#fff;border-radius:18px;overflow:hidden;text-decoration:none;color:#0f172a;box-shadow:0 10px 30px rgba(0,0,0,.18);transition:transform .2s}}.{c}c:hover{{transform:translateY(-3px)}}.{c}c img{{width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1321}}.{c}c span{{display:flex;flex-direction:column;gap:4px;padding:14px 16px 16px;flex:1}}.{c}c em{{margin-top:auto;padding-top:6px}}.{c}c small{{font-size:.74rem;color:#64748b;line-height:1.3}}.{c}c b{{font-size:{bs};line-height:1.2;font-weight:800;color:#0f172a}}.{c}c em{{font-style:normal;font-size:.82rem;color:#8a5a00;font-weight:700}}.{c}a{{display:inline-block;margin-top:22px;font-weight:700;color:#FDB913}}"
 _SAMPLE_LINE = "A small sample of founder Manav S's 3,000+ orders over 10+ years, rated 4.9 across 2,000+ client reviews. Every result is dated and was checked live."
+# Roofer proof card first (insight-BS-20261126-1 step 2, Manav's yes on 24 Nov): no roofing client story exists yet,
+# so the card shows our dated steps and checks only, never an invented result.
+_ROOF_CARD = ('<div class="hroof" data-track="home-roofers"><span class="hroofk">For roofing companies</span>'
+              '<b class="hroofh">What we check first on a roofer\'s Google profile</b>'
+              '<ol><li>Primary category Roofing contractor and every roofing service named the way homeowners search</li>'
+              '<li>The towns you really serve, plus after-hours and holiday hours for leak calls</li>'
+              '<li>Storm and winter searches like roof leak repair and emergency roof tarping on your pages</li>'
+              '<li>The call button rings and the website opens on the job they searched for</li></ol>'
+              '<p>Checklist dated November 27, 2026, based on Google Business Profile Help on local ranking. '
+              '<a href="/seo-for-roofers">Roofing SEO services</a> &middot; <a href="/guides/holiday-google-tune-up-for-roofers">$149 Holiday Google tune-up for roofing companies, until December 10, 2026</a></p></div>')
+_ROOF_CSS = (".hroof{margin-top:24px;padding:20px 24px;border-radius:18px;background:#fff;color:#0f172a;text-align:left;box-shadow:0 10px 30px rgba(0,0,0,.18)}"
+             ".hroofk{display:block;font-size:.78rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#8a5a00}"
+             ".hroofh{display:block;margin:6px 0 10px;font-size:1.15rem;line-height:1.25;font-weight:800}"
+             ".hroof ol{margin:0 0 10px 1.2em;padding:0;display:grid;gap:6px;font-size:.95rem;line-height:1.4}"
+             ".hroof p{margin:0;font-size:.86rem;color:#475569;line-height:1.5}.hroof a{color:#8a5a00;font-weight:700}")
 _desk = ('<section class="blk dk2" id="clients" data-track="client-results"><style>' + _HCSS.format(c="hres", cols="repeat(4,minmax(0,1fr))", ih=170, bs="1.12rem")
-         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}</style>"
+         + "@media(max-width:980px){.hres{grid-template-columns:repeat(2,minmax(0,1fr))}}.hresw{display:block!important}" + _ROOF_CSS + "</style>"
          '<div class="wrap hresw"><span class="eyb">Real client results</span><h2 class="h2">Real US businesses. <em>Real, dated results.</em></h2>'
-         f'<p class="lead">{_SAMPLE_LINE}</p><div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a></div></section>')
+         f'<p class="lead">{_SAMPLE_LINE}</p>{_ROOF_CARD}<div class="hres">{_home_cards("hres")}</div><a class="hresa" href="/results">See all client results &rarr;</a></div></section>')
 _mob = ('<section data-track="client-results" class="sec" id="clients"><style>' + _HCSS.format(c="hrm", cols="repeat(2,minmax(0,1fr))", ih=110, bs=".98rem")
-        + ".hrma{color:#8a5a00!important}</style>"
+        + ".hrma{color:#8a5a00!important}" + _ROOF_CSS + "</style>"
         '<div class="w"><span class="eyb">Real client results</span><h2>Real US businesses, <em class="ac">real results</em></h2>'
-        f'<p class="lead">{_SAMPLE_LINE}</p><div class="hrm">{_home_cards("hrm")}</div><a class="hrma" href="/results">See all client results &rarr;</a></div></section>')
+        f'<p class="lead">{_SAMPLE_LINE}</p>{_ROOF_CARD}<div class="hrm">{_home_cards("hrm")}</div><a class="hrma" href="/results">See all client results &rarr;</a></div></section>')
 def _patch_res(path, inner):
     s = open(path).read()
     n = re.sub(r"<!--RESULTS-->.*?<!--/RESULTS-->", lambda m: "<!--RESULTS-->" + inner + "<!--/RESULTS-->", s, count=1, flags=re.S)
