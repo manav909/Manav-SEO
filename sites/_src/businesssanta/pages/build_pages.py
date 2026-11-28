@@ -248,11 +248,12 @@ def h1(a, ac):
     return f'<h1>{E(a)} <span class="ac"><span>{E(ac)}</span></span></h1>'
 
 def faq_html(faq):
-    return '<div class="faq">' + "".join(f"<details><summary>{E(q)}</summary><p>{E(a)}</p></details>" for q, a in faq) + "</div>"
+    # An FAQ entry may carry a third item: the same answer as HTML with links, shown on the page (the JSON-LD keeps the plain text).
+    return '<div class="faq">' + "".join(f"<details><summary>{E(f[0])}</summary><p>{f[2] if len(f) > 2 else E(f[1])}</p></details>" for f in faq) + "</div>"
 
 def faq_ld(url, faq):
     return {"@type": "FAQPage", "@id": url + "#faq", "mainEntity": [
-        {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in faq]}
+        {"@type": "Question", "name": f[0], "acceptedAnswer": {"@type": "Answer", "text": f[1]}} for f in faq]}
 
 def service_ld(url, name, desc, stype):
     return {"@type": "Service", "@id": url + "#service", "name": name, "serviceType": stype, "description": desc,

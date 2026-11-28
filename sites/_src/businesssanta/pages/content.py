@@ -1970,3 +1970,53 @@ _bf["faq"] = list(_bf["faq"]) + [
 _dh = _g23("guides/dental-reviews-hipaa")
 _dh["title"] = "Dentist Fined Over a Review Reply? HIPAA and Dental Reviews | Business Santa"
 _dh["desc"] = "Why dentists get fined for review replies under HIPAA, the $23,000 case from 2022, and safe ways to reply to good and bad Google reviews."
+
+# 28 Nov 2026 (Business Santa daily, cloud). Search Console via Windsor.ai, 28 days to 25 Nov 2026.
+# (1) insight-BS-20261128-1: /seo-for-law-firms is the service page closest to page 1 ("law firm seo services" 52
+# impressions at 31.0, "seo services for attorneys" 48.0, "lawyer seo services" 46.9; 7 days to 25 Nov page average 25.4).
+# An attorneys section, a cost FAQ that uses only the dated ranges on /guides/local-seo-cost, and links with the
+# anchor "law firm SEO services" from the local SEO cost guide and the AI search page.
+_lw = next(_i for _i in INDUSTRIES if _i["slug"] == "seo-for-law-firms")
+_lw["top"] = _lw.get("top", "") + (
+ '<h2>SEO services for <span class="ac">attorneys and lawyers</span></h2>'
+ "<p>Solo attorneys, small partnerships and growing firms need the same three things on Google: a Business Profile with the right primary category for the main practice area, "
+ "a clear page for each practice area, and reviews that clients leave in their own words. We do that work for attorneys across the US, remotely, and your firm approves every page before it goes live, "
+ "so it stays within your state bar's advertising rules. Lawyer SEO, attorney SEO and law firm SEO are the same work; what changes is the practice area and the city you compete in.</p>")
+_LCOST_A = ("It depends on your city, your practice areas and how much needs fixing. For a benchmark, Ahrefs' SEO pricing survey of 439 SEO service providers (published 17 December 2023, updated 15 August 2024) found that providers who offer local SEO charged an average of $1,557 a month for it, "
+            "and the most common monthly retainer across all SEO providers was $501 to $1,000. Business Santa's prices are public: a free check, one-time fixes from $120, and monthly local SEO at $299 a month for one office with no contract. "
+            "Big city personal injury terms take more work to win than a small town estate planning practice.")
+_LCOST_H = (_LCOST_A.replace("For a benchmark, Ahrefs'", 'For a benchmark, <a href="/guides/local-seo-cost">our guide to local SEO cost</a> cites Ahrefs\'')
+            .replace("2024) found that providers", "2024), which found that providers"))
+_lw["faq"] = [("How much does law firm SEO cost?", _LCOST_A, _LCOST_H) if q.startswith("How much does lawyer SEO cost") else (q, a) for q, a in _lw["faq"]]
+_lc = _g23("guides/local-seo-cost")
+_lc["top"] = _lc.get("top", "") + ('<p>Pricing SEO for a law firm? Our <a href="/seo-for-law-firms">law firm SEO services</a> use the same public prices, '
+                                   "and the survey averages below are a fair benchmark for attorneys too.</p>")
+AI_PAGE["faq"] = list(AI_PAGE["faq"]) + [
+ ("Can a law firm get named in ChatGPT answers?",
+  "Yes, if the firm is described clearly where AI assistants look: legal directories like Avvo, Justia and FindLaw, client reviews, and a website with a plain page for each practice area. Our law firm SEO services cover those places, within your state bar's advertising rules.",
+  'Yes, if the firm is described clearly where AI assistants look: legal directories like Avvo, Justia and FindLaw, client reviews, and a website with a plain page for each practice area. Our <a href="/seo-for-law-firms">law firm SEO services</a> cover those places, within your state bar\'s advertising rules.'),
+]
+
+# (2) insight-BS-20261128-2, experiment X1 (clicks before impressions): answer-first titles on two guides with impressions
+# at positions 2 to 20 and no clicks. Closed profile guide: 20 impressions at 19.5 in 19 to 25 Nov ("google my business
+# permanently closed" 2.0, "google my business temporarily closed" 9.0). Wrong pin guide: 6 at 5.5 ("my business address
+# on google maps is right but the map pin is wrong" 6.3).
+GOOGLE_HOURS = ("https://support.google.com/business/answer/15300403", "Google Business Profile Help: Edit your business hours")
+_mc["date"] = "2026-11-28"
+_mc["title"] = "Google Business Profile Permanently Closed? How to Fix It | Business Santa"
+_mc["desc"] = "Google My Business listing marked permanently or temporarily closed by mistake? Reopen it in 3 steps, when not to, and why holiday closures need Special hours."
+_mc["h1"], _mc["h1ac"] = "Google Business Profile marked closed?", "How to reopen it"
+_mc["answer"] = ("If your Google Business Profile (still often called Google My Business) is marked permanently closed or temporarily closed and you are open, reopen it: choose Edit profile, then Hours, then Open with main hours, set your days and times and save. "
+                 "Google says the profile is then no longer marked closed. Do not reopen it if it was marked permanently closed because you moved or changed your name; add and verify a new profile instead. "
+                 "For holidays such as Thanksgiving and Christmas, use Special hours, not Temporarily closed.")
+_mc["top"] = _mc.get("top", "") + ('<p class="src"><b>Holiday hours belong in Special hours, not Temporarily closed.</b> Google Business Profile Help says to use Special hours for holidays and for closures of 7 days or less, '
+  'and Temporarily closed for closures longer than 7 days, the off season or closing indefinitely. Sources: <a href="https://support.google.com/business/answer/15300196" rel="noopener">Mark your business as closed</a> and '
+  '<a href="https://support.google.com/business/answer/15300403" rel="noopener">Edit your business hours</a>, Google Business Profile Help, read November 28, 2026.</p>')
+_mc["src"] = tuple(_mc.get("src", ())) + (GOOGLE_HOURS,)
+_wl["date"] = "2026-11-28"
+_wl["title"] = "Wrong Map Pin on Google Maps? How to Move It | Business Santa"
+_wl["desc"] = "Address right but the map pin wrong on Google Maps? Move the marker in your Business Profile in 4 steps, fix a wrong address, and what to avoid."
+_wl["h1"], _wl["h1ac"] = "Wrong map pin on Google Maps?", "How to move it"
+_wl["answer"] = ("If your business address on Google Maps is right but the map pin is wrong, keep the address and move only the marker: open your Business Profile, choose Edit profile, then Location, choose Adjust and drag the map until the marker sits on your door, then save. "
+                 "If the address itself is wrong, fix it first in the same Location screen, with the full official street address and any suite or unit. "
+                 "If customers do not come to you, hide the address and set a service area instead. Edits usually show fast, but Google says some reviews take up to 30 days.")
